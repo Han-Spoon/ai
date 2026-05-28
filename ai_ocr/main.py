@@ -20,6 +20,8 @@ def analyze_menu_image(
     source: str = "upload",
     storage_key: str | None = None,
     image_url: str | None = None,
+    enable_gpt_post_process: bool = True,
+    enable_gpt_judgment: bool = True,
 ):
     image = Path(image_path)
     if not image.exists() or not image.is_file():
@@ -54,6 +56,8 @@ def analyze_menu_image(
             storage_key=storage_key,
             image_url=image_url,
             raw_lines=raw_lines,
+            enable_gpt_post_process=enable_gpt_post_process,
+            enable_gpt_judgment=enable_gpt_judgment,
         ),
     }
 
@@ -171,6 +175,16 @@ def parse_args():
         action="store_true",
         help="최종 JSON을 stdout에도 출력함. 백엔드 연동 테스트용",
     )
+    parser.add_argument(
+        "--no-gpt-post-process",
+        action="store_true",
+        help="GPT-4o-mini를 사용한 메뉴명/설명 자동 수정을 하지 않음",
+    )
+    parser.add_argument(
+        "--no-gpt-judgment",
+        action="store_true",
+        help="GPT-4o-mini를 사용한 OCR 품질 판단을 하지 않음",
+    )
     return parser.parse_args()
 
 
@@ -189,6 +203,8 @@ def main():
             source=args.source,
             storage_key=args.storage_key,
             image_url=args.image_url,
+            enable_gpt_post_process=not args.no_gpt_post_process,
+            enable_gpt_judgment=not args.no_gpt_judgment,
         )
         raw_path, final_path = build_output_paths(args.image, result["modelId"])
 

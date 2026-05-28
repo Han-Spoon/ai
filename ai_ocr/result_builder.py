@@ -11,11 +11,37 @@ def build_final_result(
     storage_key: str | None = None,
     image_url: str | None = None,
     raw_lines=None,
+    enable_gpt_post_process: bool = True,
+    enable_gpt_judgment: bool = True,
 ):
+    """
+    최종 결과 생성 (GPT 후처리 포함)
+
+    Args:
+        image_path: 이미지 경로
+        menus: 파싱된 메뉴 목록
+        scan_status: 스캔 상태
+        source: 이미지 소스
+        storage_key: 저장소 키
+        image_url: 이미지 URL
+        raw_lines: OCR 원본 라인
+        enable_gpt_post_process: GPT 후처리 활성화 여부
+        enable_gpt_judgment: GPT 품질 판단 활성화 여부
+    """
     image = Path(image_path)
     scan_quality = build_scan_quality(image, menus, raw_lines)
 
-    return {
+    menu_analyses = [
+        build_menu_analysis(menu, index)
+        for index, menu in enumerate(menus, start=1)
+    ]
+
+    if enable_gpt_post_process:
+        from post_process import post_process_menu_analyses
+
+        menu_analyses = post_process_menu_analyses(menu_analyses)
+
+    result = {
         "scan_session": {
             "title": image.name,
             "menu_count": len(menus),
@@ -31,11 +57,17 @@ def build_final_result(
             "file_size": infer_file_size(image),
         },
         "scan_quality": scan_quality,
-        "menu_analyses": [
-            build_menu_analysis(menu, index)
-            for index, menu in enumerate(menus, start=1)
-        ],
+        "menu_analyses": menu_analyses,
     }
+
+    if enable_gpt_judgment:
+        from post_process import judge_ocr_quality
+
+        gpt_judgment = judge_ocr_quality(menus, raw_lines or [])
+        if gpt_judgment:
+            result["gpt_quality_judgment"] = gpt_judgment
+
+    return result
 
 
 def build_menu_analysis(menu, display_order: int):

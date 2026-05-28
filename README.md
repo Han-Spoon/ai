@@ -44,9 +44,16 @@ pip install -r requirements.txt
 ```bash
 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource-name.cognitiveservices.azure.com/
 AZURE_DOCUMENT_INTELLIGENCE_KEY=your_azure_document_intelligence_key
+
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/
+AZURE_OPENAI_KEY=your_azure_openai_key
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+AZURE_OPENAI_API_VERSION=2024-10-01-preview
 ```
 
 `.env`에는 실제 key가 들어가므로 Git에 올리면 안 됩니다.
+
+`AZURE_OPENAI_DEPLOYMENT`에는 Azure OpenAI에서 만든 GPT-4o-mini 배포 이름을 넣습니다. 배포 이름을 모델명과 다르게 만들었다면 실제 배포 이름으로 바꿔야 합니다. `AZURE_OPENAI_KEY` 대신 `AZURE_OPENAI_API_KEY`를 써도 됩니다.
 
 ## 실제 이미지 실행
 
@@ -55,6 +62,8 @@ AZURE_DOCUMENT_INTELLIGENCE_KEY=your_azure_document_intelligence_key
 ```bash
 python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout
 ```
+
+기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, OCR 품질 판단 결과를 `gpt_quality_judgment`에 추가합니다. Azure OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
 
 다른 이미지를 실행하려면 `images/` 폴더에 이미지를 넣고 `--image`만 바꿉니다.
 
@@ -73,6 +82,13 @@ outputs/final/이미지명_result.json
 
 ```bash
 python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout --no-preprocess
+```
+
+GPT 후처리 또는 품질 판단만 끄려면:
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-post-process
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-judgment
 ```
 
 기본 전처리는 메뉴판 외곽이 잡히면 자동 원근 보정을 하고, 텍스트 방향을 기준으로 기울기를 보정합니다. 기울어진 촬영본은 보통 기본 실행만으로 보정된 이미지를 `images/preprocessed/`에 저장한 뒤 OCR에 사용합니다.

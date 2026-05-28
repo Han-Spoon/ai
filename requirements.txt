@@ -1,5 +1,6 @@
 azure-ai-documentintelligence
 azure-core
+openai
 python-dotenv
 pandas
 Pillow
