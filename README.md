@@ -75,6 +75,26 @@ outputs/final/이미지명_result.json
 python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout --no-preprocess
 ```
 
+기본 전처리는 메뉴판 외곽이 잡히면 자동 원근 보정을 하고, 텍스트 방향을 기준으로 기울기를 보정합니다. 기울어진 촬영본은 보통 기본 실행만으로 보정된 이미지를 `images/preprocessed/`에 저장한 뒤 OCR에 사용합니다.
+
+```bash
+python3 ai_ocr/main.py --image images/tilted_menu.jpg --model prebuilt-layout
+```
+
+전처리만 따로 확인하려면:
+
+```bash
+python3 ai_ocr/preprocess_image.py --image images/tilted_menu.jpg --output images/preprocessed/tilted_menu_fixed.jpg
+```
+
+원근 보정이나 기울기 보정이 오히려 결과를 망치면 개별 단계만 끌 수 있습니다.
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-perspective
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-deskew
+python3 ai_ocr/main.py --image images/menu_001.jpg --max-deskew-angle 25
+```
+
 ## 백엔드 연동용 실행
 
 백엔드가 이미지를 저장한 뒤 OCR을 호출할 때는 저장 정보를 함께 넘길 수 있습니다.
