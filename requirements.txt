@@ -3,3 +3,5 @@ azure-core
 python-dotenv
 pandas
 Pillow
+opencv-python-headless
+numpy

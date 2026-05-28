@@ -28,6 +28,14 @@ def infer_image_name(raw_path: Path):
     return raw_path.stem + ".jpg"
 
 
+def infer_image_path(raw_path: Path):
+    image_name = infer_image_name(raw_path)
+    image_path = Path("images") / image_name
+    if image_path.exists():
+        return str(image_path)
+    return image_name
+
+
 def infer_model_id(raw_path: Path):
     name = raw_path.name
     if "_prebuilt-layout_raw.json" in name:
@@ -44,7 +52,7 @@ def reprocess_raw(input_path: str, output_path: str | None = None):
     raw_lines = load_json(raw_path)
     menus = parse_menu_candidates(raw_lines)
 
-    result = build_final_result(infer_image_name(raw_path), menus)
+    result = build_final_result(infer_image_path(raw_path), menus, raw_lines=raw_lines)
 
     target_path = Path(output_path) if output_path else Path("outputs/final") / f"{Path(result['scan_session']['title']).stem}_result.json"
     save_json(result, target_path)

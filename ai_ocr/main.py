@@ -14,6 +14,9 @@ def analyze_menu_image(
     model_id: str = DEFAULT_MODEL_ID,
     fallback_read: bool = True,
     use_preprocess: bool = True,
+    perspective: bool = True,
+    deskew: bool = True,
+    max_deskew_angle: float = 25.0,
     source: str = "upload",
     storage_key: str | None = None,
     image_url: str | None = None,
@@ -22,7 +25,13 @@ def analyze_menu_image(
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
-    ocr_image_path = prepare_ocr_image(image_path, use_preprocess)
+    ocr_image_path = prepare_ocr_image(
+        image_path,
+        use_preprocess,
+        perspective=perspective,
+        deskew=deskew,
+        max_deskew_angle=max_deskew_angle,
+    )
 
     from ocr_client import AzureOCRClient
 
@@ -44,11 +53,18 @@ def analyze_menu_image(
             source=source,
             storage_key=storage_key,
             image_url=image_url,
+            raw_lines=raw_lines,
         ),
     }
 
 
-def prepare_ocr_image(image_path: str, use_preprocess: bool):
+def prepare_ocr_image(
+    image_path: str,
+    use_preprocess: bool,
+    perspective: bool = True,
+    deskew: bool = True,
+    max_deskew_angle: float = 25.0,
+):
     if not use_preprocess:
         return Path(image_path)
 
@@ -64,6 +80,9 @@ def prepare_ocr_image(image_path: str, use_preprocess: bool):
         grayscale=True,
         contrast=1.4,
         sharpness=1.6,
+        perspective=perspective,
+        deskew=deskew,
+        max_deskew_angle=max_deskew_angle,
     )
     print(f"전처리 이미지 사용: {processed_path}")
     return processed_path
@@ -118,6 +137,22 @@ def parse_args():
         help="로컬 이미지 전처리를 하지 않고 원본 이미지를 Azure OCR에 전달",
     )
     parser.add_argument(
+        "--no-perspective",
+        action="store_true",
+        help="전처리 중 자동 원근 보정을 하지 않음",
+    )
+    parser.add_argument(
+        "--no-deskew",
+        action="store_true",
+        help="전처리 중 자동 기울기 보정을 하지 않음",
+    )
+    parser.add_argument(
+        "--max-deskew-angle",
+        type=float,
+        default=25.0,
+        help="자동 회전 보정 최대 각도",
+    )
+    parser.add_argument(
         "--source",
         choices=("camera", "upload"),
         default="upload",
@@ -148,6 +183,9 @@ def main():
             args.model,
             fallback_read=not args.no_fallback_read,
             use_preprocess=not args.no_preprocess,
+            perspective=not args.no_perspective,
+            deskew=not args.no_deskew,
+            max_deskew_angle=args.max_deskew_angle,
             source=args.source,
             storage_key=args.storage_key,
             image_url=args.image_url,
