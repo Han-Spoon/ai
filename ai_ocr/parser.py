@@ -70,6 +70,10 @@ def extract_menu_items_from_row(row):
     if len(row) < 2:
         return []
 
+    bbox_items = extract_menu_items_by_bbox(row)
+    if bbox_items:
+        return bbox_items
+
     items = []
     pending_name_lines = []
 
@@ -89,6 +93,199 @@ def extract_menu_items_from_row(row):
             pending_name_lines.append(line)
 
     return items
+
+
+def extract_menu_items_by_bbox(row):
+    name_lines = []
+    price_lines = []
+
+    for line in row:
+        text = line.get("text", "").strip()
+        if not text:
+            continue
+
+        if is_price_line(text):
+            price_lines.append(line)
+            continue
+
+        if looks_like_menu_name(text) and not should_skip_menu_name(text):
+            name_lines.append(line)
+
+    if not name_lines or not price_lines:
+        return []
+
+    if len(name_lines) == 1:
+        return build_single_name_price_items(name_lines[0], price_lines)
+
+    if len(price_lines) == 1:
+        name_line = closest_name_left_of_price(price_lines[0], name_lines)
+        if not name_line:
+            return []
+        return [build_menu_item_from_lines(name_line, price_lines[0])]
+
+    return match_names_to_prices_by_position(name_lines, price_lines)
+
+
+def build_single_name_price_items(name_line, price_lines):
+    option_prices = extract_option_price_lines(price_lines)
+    if option_prices and len(option_prices) == len(price_lines):
+        first_option = option_prices[0]
+        return [
+            build_menu_item(
+                normalize_name_text(name_line["text"]),
+                first_option["price"],
+                [name_line] + price_lines,
+                price_raw=first_option["priceRaw"],
+                options=option_prices,
+            )
+        ]
+
+    price_line = closest_price_for_name(name_line, price_lines)
+    if not price_line:
+        return []
+    return [build_menu_item_from_lines(name_line, price_line)]
+
+
+def match_names_to_prices_by_position(name_lines, price_lines):
+    items = []
+    used_price_ids = set()
+    sorted_names = sorted(name_lines, key=lambda line: line["x1"])
+
+    for name_line in sorted_names:
+        available_prices = [line for line in price_lines if id(line) not in used_price_ids]
+        price_line = closest_price_for_name(name_line, available_prices)
+        if not price_line:
+            continue
+
+        used_price_ids.add(id(price_line))
+        items.append(build_menu_item_from_lines(name_line, price_line))
+
+    if len(items) < min(len(name_lines), len(price_lines)):
+        paired_items = pair_by_x_order(name_lines, price_lines)
+        if len(paired_items) > len(items):
+            return paired_items
+
+    return items
+
+
+def pair_by_x_order(name_lines, price_lines):
+    items = []
+    for name_line, price_line in zip(
+        sorted(name_lines, key=lambda line: line["x1"]),
+        sorted(price_lines, key=lambda line: line["x1"]),
+    ):
+        items.append(build_menu_item_from_lines(name_line, price_line))
+    return items
+
+
+def build_menu_item_from_lines(name_line, price_line):
+    raw_name = normalize_name_text(name_line["text"])
+    price_raw = extract_price_text(price_line["text"])
+    return build_menu_item(
+        raw_name,
+        normalize_price(price_line["text"]),
+        [name_line, price_line],
+        price_raw=price_raw,
+    )
+
+
+def closest_name_left_of_price(price_line, name_lines):
+    candidates = []
+    price_center_x = line_center_x(price_line)
+
+    for name_line in name_lines:
+        if line_center_x(name_line) > price_center_x:
+            continue
+        if not vertically_related(name_line, price_line):
+            continue
+
+        candidates.append((price_center_x - line_center_x(name_line), name_line))
+
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def closest_price_for_name(name_line, price_lines):
+    right_side_candidates = []
+    fallback_candidates = []
+    name_center_x = line_center_x(name_line)
+    name_width = max(name_line["x2"] - name_line["x1"], 1)
+
+    for price_line in price_lines:
+        if not vertically_related(name_line, price_line):
+            continue
+
+        price_center_x = line_center_x(price_line)
+        horizontal_gap = price_line["x1"] - name_line["x2"]
+        distance = abs(price_center_x - name_center_x)
+
+        if price_center_x >= name_center_x:
+            right_side_candidates.append((max(horizontal_gap, 0), distance, price_line))
+        elif distance <= name_width * 1.5:
+            fallback_candidates.append((distance, price_line))
+
+    if right_side_candidates:
+        return min(right_side_candidates, key=lambda item: (item[0], item[1]))[2]
+    if fallback_candidates:
+        return min(fallback_candidates, key=lambda item: item[0])[1]
+
+    return None
+
+
+def vertically_related(first_line, second_line):
+    first_center = line_center_y(first_line)
+    second_center = line_center_y(second_line)
+    first_height = max(first_line["y2"] - first_line["y1"], 1)
+    second_height = max(second_line["y2"] - second_line["y1"], 1)
+    limit = max(first_height, second_height) * 0.9
+    return abs(first_center - second_center) <= max(limit, infer_y_threshold([first_line, second_line]))
+
+
+def line_center_x(line):
+    return (line["x1"] + line["x2"]) / 2
+
+
+def line_center_y(line):
+    return (line["y1"] + line["y2"]) / 2
+
+
+def is_price_line(text):
+    if normalize_price(text) is None:
+        return False
+
+    without_price = remove_price(text)
+    if not without_price:
+        return True
+
+    if extract_option_label(without_price):
+        return True
+
+    return not looks_like_menu_name(without_price)
+
+
+def extract_option_price_lines(price_lines):
+    options = []
+
+    for price_line in sorted(price_lines, key=lambda line: line["x1"]):
+        option_name = extract_option_label(remove_price(price_line["text"]))
+        if not option_name:
+            return []
+
+        price_raw = extract_price_text(price_line["text"])
+        price = normalize_price(price_line["text"])
+        if price is None:
+            return []
+
+        options.append({"name": option_name, "price": price, "priceRaw": price_raw})
+
+    return options
+
+
+def extract_price_text(text):
+    match = next(find_price_matches(text), None)
+    return match.group().strip() if match else None
 
 
 def build_menu_item(raw_name, price, source_lines, price_raw=None, options=None):

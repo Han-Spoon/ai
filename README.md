@@ -63,7 +63,7 @@ AZURE_OPENAI_API_VERSION=2024-10-01-preview
 python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout
 ```
 
-기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, OCR 품질 판단 결과를 `gpt_quality_judgment`에 추가합니다. Azure OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
+기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, 후처리된 최종 메뉴 JSON과 OCR 원본을 함께 평가한 결과를 `gpt_quality_judgment`에 추가합니다. Azure OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
 
 다른 이미지를 실행하려면 `images/` 폴더에 이미지를 넣고 `--image`만 바꿉니다.
 
@@ -160,9 +160,11 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
 2. 필요하면 로컬 전처리 이미지를 만듭니다.
 3. Azure Document Intelligence로 OCR line을 추출합니다.
 4. OCR line에서 메뉴명과 가격 후보를 찾습니다.
-5. 메뉴명 앞뒤의 OCR 잡문자와 용량 표기를 제거합니다.
+5. 같은 행의 bbox 위치를 기준으로 메뉴명과 가격을 매칭합니다. 2열/3열 메뉴판처럼 메뉴명 여러 개와 가격 여러 개가 한 행에 섞인 경우도 가까운 가격을 우선 연결합니다.
+6. 대/중/소, 1인/2인, 세트, 곱빼기 같은 옵션 가격은 가능한 경우 `options`로 보존합니다.
+7. 메뉴명 앞뒤의 OCR 잡문자와 용량 표기를 제거합니다.
    예: `■김치찌개–` -> `김치찌개`, `■두루치기200g出` -> `두루치기`
-6. `scan_session`, `menu_image`, `menu_analyses` 구조의 최종 JSON을 생성합니다.
+8. `scan_session`, `menu_image`, `menu_analyses` 구조의 최종 JSON을 생성합니다.
 
 ## 출력 JSON 형식
 
@@ -192,6 +194,18 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
     "price_match_ratio": 1.0,
     "image_width": 1280,
     "image_height": 960,
+    "image_quality": {
+      "available": true,
+      "score": 92,
+      "blur_score": 180.5,
+      "brightness": 132.4,
+      "contrast": 54.2,
+      "glare_ratio": 0.01,
+      "skew_angle": 1.2,
+      "reasons": [],
+      "suggestions": []
+    },
+    "retake_suggestions": [],
     "reasons": []
   },
   "menu_analyses": [
@@ -202,7 +216,7 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
       "description_en": null,
       "price_text": "10,000",
       "risk_level": null,
-      "is_spicy": null,
+      "is_spicy": false,
       "image_url": null,
       "display_order": 1
     }
@@ -225,16 +239,17 @@ ERD 매핑:
 - `scan_quality.status == "low_confidence"`: 결과는 보여주되 사용자가 확인하도록 안내
 - `scan_quality.status == "usable"`: 정상 사용 가능
 
-초기 기준은 메뉴 후보 0개, OCR line 3개 미만, 낮은 해상도는 재촬영으로 보고, 메뉴 후보가 3개 미만이거나 가격 매칭 비율이 50% 미만이면 낮은 신뢰도로 표시합니다.
+초기 기준은 메뉴 후보 0개, OCR line 3개 미만, 낮은 해상도, 이미지 품질 점수 45점 미만은 재촬영으로 보고, 메뉴 후보가 3개 미만이거나 가격 매칭 비율이 50% 미만이면 낮은 신뢰도로 표시합니다. 이미지 품질 분석은 흐림, 밝기, 대비, 빛 반사 후보, 기울기를 확인해 `scan_quality.image_quality`와 `scan_quality.retake_suggestions`에 기록합니다.
 
 후속 파트가 채우는 필드:
 
 - `menu_name_en`
 - `description_en`
 - `risk_level`
-- `is_spicy`
 - `menu_analyses.image_url`
 - `scan_session.risky_menu_count`
+
+`is_spicy`는 OCR 텍스트에 잡힌 메뉴명/설명/맵기 표기/고추 아이콘 문자 기준으로 `true` 또는 `false`를 자동 설정합니다.
 
 ## 프론트/백엔드 연결 방향
 

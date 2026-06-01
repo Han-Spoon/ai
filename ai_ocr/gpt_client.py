@@ -45,9 +45,9 @@ class AzureGPTClient:
 
         load_dotenv()
 
-    def judge_ocr_quality(self, menus: list, raw_lines: list) -> dict:
-        """OCR 인식이 제대로 되었는지 판단"""
-        if not menus or not raw_lines:
+    def judge_ocr_quality(self, menu_analyses: list, raw_lines: list) -> dict:
+        """OCR 원본과 최종 메뉴 JSON 품질을 함께 판단"""
+        if not menu_analyses or not raw_lines:
             return {
                 "is_reliable": False,
                 "confidence": 0.0,
@@ -55,22 +55,23 @@ class AzureGPTClient:
                 "suggestions": [],
             }
 
-        menu_text = self._format_menus_for_judgment(menus)
+        menu_text = self._format_menus_for_judgment(menu_analyses)
         raw_text = "\n".join([line.get("text", "") for line in raw_lines])
 
-        prompt = f"""다음 OCR 인식 결과를 평가해주세요.
+        prompt = f"""다음 OCR 원본과 최종 메뉴 JSON 결과를 평가해주세요.
 
 [OCR 원본 텍스트]
 {raw_text}
 
-[파싱된 메뉴 데이터]
+[최종 메뉴 데이터]
 {menu_text}
 
 평가 기준:
 1. 메뉴명이 정상적으로 인식되었는가?
 2. 가격이 올바르게 추출되었는가?
 3. 설명 텍스트가 이상한 문자(오류 문자)를 포함하고 있는가?
-4. 메뉴 개수가 합리적인가?
+4. 매움 여부(is_spicy)가 메뉴명/설명/맵기 표기와 일관적인가?
+5. 메뉴 개수가 합리적인가?
 
 JSON 형식으로 다음을 반환해주세요:
 {{
@@ -86,7 +87,7 @@ JSON 형식으로 다음을 반환해주세요:
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 OCR 결과를 평가하는 전문가입니다.",
+                    "content": "당신은 OCR 원본과 최종 메뉴 JSON 결과를 평가하는 전문가입니다.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -215,13 +216,15 @@ JSON 형식으로 다음을 반환해주세요:
         formatted = []
         for i, menu in enumerate(menus, start=1):
             menu_name = (
-                menu.get("matchedMenu")
+                menu.get("menu_name_ko")
+                or menu.get("matchedMenu")
                 or menu.get("normalizedCandidate")
                 or menu.get("rawName", "")
             )
-            description = menu.get("description", "")
-            price = menu.get("priceRaw") or menu.get("price", "")
-            formatted.append(f"{i}. {menu_name} - {description} ({price}원)")
+            description = menu.get("description_ko") or menu.get("description", "")
+            price = menu.get("price_text") or menu.get("priceRaw") or menu.get("price", "")
+            is_spicy = menu.get("is_spicy")
+            formatted.append(f"{i}. {menu_name} - {description} ({price}원, is_spicy={is_spicy})")
 
         return "\n".join(formatted)
 
