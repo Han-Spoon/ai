@@ -1,0 +1,7 @@
+{
+  "religion_type": "halal",
+  "vegan_type": null,
+  "no_alcohol": false,
+  "allergies": ["shrimp"],
+  "is_spicy": false
+}
