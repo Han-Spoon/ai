@@ -100,7 +100,7 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     result = dict(menu_dict)
 
     if not menu_name:
-        result.update(is_spicy=False, risk_level="safe", risk_reasons=[],
+        result.update(risk_level="safe", risk_reasons=[],
                       reason_ko=None, reason_en=None, need_gpt=False)
         return result
 
@@ -115,16 +115,21 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         spicy_pref = "매운맛 선호" if profile_spicy else "매운맛 비선호"
         _vstep(verbose, "      ", "spicy_pref", spicy_pref)
 
-    # ── Step 2: 수식어 제거 ─────────────────────────────────────────────────
-    stripped_name, is_spicy_menu = strip_modifiers(menu_name)
-    if stripped_name != menu_name or is_spicy_menu:
-        detail = f'"{menu_name}" → "{stripped_name}"'
-        if is_spicy_menu:
-            detail += f"  {_C['yellow']}[is_spicy 감지]{_C['reset']}"
-        _vstep(verbose, "Step 2", "modifier_strip", detail, color="")
+    # ── Step 2: 수식어 제거 (메뉴명 정제용, is_spicy 판정은 OCR 값 사용) ────
+    stripped_name, _spicy_from_name = strip_modifiers(menu_name)
+    # OCR spicy_detector 값 우선, 없으면 수식어 감지 값으로 fallback
+    ocr_is_spicy = menu_dict.get("is_spicy")
+    effective_is_spicy = ocr_is_spicy if ocr_is_spicy is not None else _spicy_from_name
+
+    if stripped_name != menu_name:
+        _vstep(verbose, "Step 2", "modifier_strip",
+               f'"{menu_name}" → "{stripped_name}"', color="")
     else:
         _vstep(verbose, "Step 2", "modifier_strip", f'수식어 없음 → "{stripped_name}"',
                color=_C["gray"])
+    _vstep(verbose, "      ", "is_spicy (OCR)",
+           f"{ocr_is_spicy}  →  effective={effective_is_spicy}",
+           color=_C["yellow"] if effective_is_spicy else _C["gray"])
 
     # ── Step 3: 베이스 메뉴 매칭 ────────────────────────────────────────────
     base_menu, remain_tokens = find_base_menu(stripped_name)
@@ -134,7 +139,7 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
                f'❌ DB 미등록 메뉴 → unknown_menu', color=_C["yellow"])
         _vresult(verbose, "caution", ["unknown_menu"], True,
                  generate_reason_ko(["unknown_menu"]))
-        result.update(is_spicy=is_spicy_menu, risk_level="caution",
+        result.update(risk_level="caution",
                       risk_reasons=["unknown_menu"],
                       reason_ko=generate_reason_ko(["unknown_menu"]),
                       reason_en=None, need_gpt=True)
@@ -166,7 +171,7 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
                f"🔴 HIT → {_fmt_set(hits)}", color=_C["red"])
         _vresult(verbose, "danger", sorted(hits), False,
                  generate_reason_ko(sorted(hits)))
-        result.update(is_spicy=is_spicy_menu, risk_level="danger",
+        result.update(risk_level="danger",
                       risk_reasons=sorted(hits),
                       reason_ko=generate_reason_ko(sorted(hits)),
                       reason_en=None, need_gpt=False)
@@ -174,13 +179,13 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
            "교집합 없음", color=_C["gray"])
 
-    # ── Step 7: 매운맛 프로필 대조 ──────────────────────────────────────────
-    if profile_spicy is False and is_spicy_menu:
+    # ── Step 7: 매운맛 프로필 대조 (OCR is_spicy 기준) ──────────────────────
+    if profile_spicy is False and effective_is_spicy:
         _vstep(verbose, "Step 7", "spicy check",
                f"🔴 매운맛 비선호 + 매운 메뉴 → DANGER", color=_C["red"])
         _vresult(verbose, "danger", ["is_spicy"], False,
                  generate_reason_ko(["is_spicy"]))
-        result.update(is_spicy=is_spicy_menu, risk_level="danger",
+        result.update(risk_level="danger",
                       risk_reasons=["is_spicy"],
                       reason_ko=generate_reason_ko(["is_spicy"]),
                       reason_en=None, need_gpt=False)
@@ -193,7 +198,7 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         menu_tags=menu_tags,
         forbidden_tags=forbidden_tags,
         ambiguity_flags=ambiguity_flags,
-        is_spicy_menu=is_spicy_menu,
+        is_spicy_menu=effective_is_spicy,
         profile=profile,
     )
 
@@ -225,7 +230,7 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     reason_ko = generate_reason_ko(hit_reasons)
     _vresult(verbose, risk_level, hit_reasons, need_gpt, reason_ko)
 
-    result.update(is_spicy=is_spicy_menu, risk_level=risk_level,
+    result.update(risk_level=risk_level,
                   risk_reasons=hit_reasons, reason_ko=reason_ko,
                   reason_en=None, need_gpt=need_gpt)
     return result
