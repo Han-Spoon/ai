@@ -5,11 +5,11 @@ analyze(menu_dict, profile, verbose=False) → 위험도 필드가 채워진 dic
 analyze_all(ocr_result, profile, verbose=False) → OCR 전체 결과의 menu_analyses[] 일괄 처리
 """
 
-from ingredient_tagger import has_unknown_remain, tag_ingredients
+from ingredient_tagger import has_unknown_remain, tag_explicit, tag_variants
 from menu_matcher import find_base_menu
 from modifier_strip import strip_modifiers
 from profile_mapper import map_profile_to_forbidden
-from reason_generator import generate_reason_ko
+from reason_generator import generate_risk_reasons
 from risk_judge import judge_risk
 
 # ── ANSI 색상 (터미널 출력용) ────────────────────────────────────────────────
@@ -62,17 +62,16 @@ def _vstep(verbose: bool, step: str, label: str, value: str, color: str = "") ->
     print(f"      {c}{value}{_C['reset']}")
 
 
-def _vresult(verbose: bool, risk: str, reasons: list, need_gpt: bool, reason_ko: str | None) -> None:
+def _vresult(verbose: bool, risk: str, hit_tags: list, triggered_flags: list, need_gpt: bool) -> None:
     if not verbose:
         return
     color = _RISK_COLOR.get(risk, "")
     icon = {"danger": "🔴", "caution": "🟡", "safe": "🟢"}.get(risk, "⚪")
     print(f"\n  {_C['bold']}━━ 최종 판정 ━━{_C['reset']}")
-    print(f"  {icon}  risk_level  : {color}{_C['bold']}{risk.upper()}{_C['reset']}")
-    print(f"  ⚑   hit_reasons : {_fmt_list(reasons)}")
-    print(f"  🤖  need_gpt    : {need_gpt}")
-    if reason_ko:
-        print(f"  💬  reason_ko   : {reason_ko}")
+    print(f"  {icon}  risk_level      : {color}{_C['bold']}{risk.upper()}{_C['reset']}")
+    print(f"  ⚑   hit_tags        : {_fmt_list(hit_tags)}")
+    print(f"  🚩  triggered_flags : {_fmt_list(triggered_flags)}")
+    print(f"  🤖  need_gpt        : {need_gpt}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -89,20 +88,28 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
 
     Returns:
         입력 dict에 아래 필드가 추가된 새 dict:
-          is_spicy    (bool)
-          risk_level  "danger" | "caution" | "safe"
-          risk_reasons list[str]
-          reason_ko   str | None
-          reason_en   None  (영어는 후속 LLM 담당)
-          need_gpt    bool
+          is_spicy         bool
+          risk_level       "danger" | "caution" | "safe"
+          hit_tags         list[str]  — 직접 금지 태그 히트
+          triggered_flags  list[str]  — 관련 애매함 플래그
+          forbidden_tags   list[str]
+          need_gpt         bool
+          gpt_context      dict | None  — need_gpt=True 일 때만 채워짐
+          risk_reasons     list[dict] | None  — need_gpt=False 일 때만 채워짐
     """
     menu_name: str = (menu_dict.get("menu_name_ko") or "").strip()
     result = dict(menu_dict)
 
     if not menu_name:
-        result.update(risk_level="safe", risk_reasons=[],
-                      reason_ko=None, need_gpt=False,
-                      forbidden_tags=[], profile=profile)
+        result.update(
+            risk_level="safe",
+            hit_tags=[],
+            triggered_flags=[],
+            forbidden_tags=[],
+            need_gpt=False,
+            gpt_context=None,
+            risk_reasons=None,
+        )
         return result
 
     _vheader(verbose, menu_name)
@@ -111,9 +118,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     forbidden_tags = map_profile_to_forbidden(profile)
     _vstep(verbose, "Step 1", "forbidden_tags", _fmt_set(forbidden_tags))
 
-    profile_spicy = profile.get("is_spicy")
-    if profile_spicy is not None:
-        spicy_pref = "매운맛 선호" if profile_spicy else "매운맛 비선호"
+    profile_no_spicy = profile.get("no_spicy")
+    if profile_no_spicy is not None:
+        spicy_pref = "매운맛 비선호" if profile_no_spicy else "매운맛 선호"
         _vstep(verbose, "      ", "spicy_pref", spicy_pref)
 
     # ── Step 2: 수식어 제거 (메뉴명 정제용, is_spicy 판정은 OCR 값 사용) ────
@@ -138,14 +145,22 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     if base_menu is None:
         _vstep(verbose, "Step 3", "menu_match",
                f'❌ DB 미등록 메뉴 → unknown_menu', color=_C["yellow"])
-        _vresult(verbose, "caution", ["unknown_menu"], True,
-                 generate_reason_ko(["unknown_menu"]))
-        result.update(risk_level="caution",
-                      risk_reasons=["unknown_menu"],
-                      reason_ko=generate_reason_ko(["unknown_menu"]),
-                      need_gpt=True,
-                      forbidden_tags=sorted(forbidden_tags),
-                      profile=profile)
+        _vresult(verbose, "caution", [], [], True)
+        result.update(
+            is_spicy=effective_is_spicy,
+            risk_level="caution",
+            hit_tags=[],
+            triggered_flags=[],
+            forbidden_tags=sorted(forbidden_tags),
+            need_gpt=True,
+            gpt_context={
+                "base_menu": None,
+                "ingredients_explicit": [],
+                "explicit_tags": [],
+                "variant_tags": [],
+            },
+            risk_reasons=None,
+        )
         return result
 
     ambiguity_flags = base_menu.get("ambiguity_flags", set())
@@ -156,46 +171,63 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     )
     _vstep(verbose, "Step 3", "menu_match", match_detail)
 
-    # ── Step 4–5: 재료 태깅 ─────────────────────────────────────────────────
-    menu_tags = tag_ingredients(base_menu, remain_tokens)
+    # ── Step 4–5: 재료 태깅 (explicit / variant 분리) ───────────────────────
+    explicit_tags = tag_explicit(base_menu)
+    variant_tags_set = tag_variants(remain_tokens)
+    menu_tags = explicit_tags | variant_tags_set
     need_gpt_unknown = has_unknown_remain(remain_tokens)
 
     _vstep(verbose, "Step 4", "base ingredients → tags",
-           f"레시피 {len(base_menu['ingredients'])}개 → {_fmt_set(menu_tags)}")
+           f"레시피 {len(base_menu['ingredients'])}개 → {_fmt_set(explicit_tags)}")
     if remain_tokens:
         unknown_flag = "  ⚠ 미확인 토큰 포함" if need_gpt_unknown else ""
         _vstep(verbose, "Step 5", "remain tokens → tags",
                f"{remain_tokens}{unknown_flag}")
 
+    def _gpt_context() -> dict:
+        return {
+            "base_menu": base_menu["name"],
+            "ingredients_explicit": base_menu.get("ingredients", []),
+            "explicit_tags": sorted(explicit_tags),
+            "variant_tags": sorted(variant_tags_set),
+        }
+
     # ── Step 6: 금지 재료 교집합 ────────────────────────────────────────────
     hits = forbidden_tags & menu_tags
     if hits:
+        hit_list = sorted(hits)
         _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
                f"🔴 HIT → {_fmt_set(hits)}", color=_C["red"])
-        _vresult(verbose, "danger", sorted(hits), False,
-                 generate_reason_ko(sorted(hits)))
-        result.update(risk_level="danger",
-                      risk_reasons=sorted(hits),
-                      reason_ko=generate_reason_ko(sorted(hits)),
-                      need_gpt=False,
-                      forbidden_tags=sorted(forbidden_tags),
-                      profile=profile)
+        _vresult(verbose, "danger", hit_list, [], False)
+        result.update(
+            is_spicy=effective_is_spicy,
+            risk_level="danger",
+            hit_tags=hit_list,
+            triggered_flags=[],
+            forbidden_tags=sorted(forbidden_tags),
+            need_gpt=False,
+            gpt_context=None,
+            risk_reasons=generate_risk_reasons(hit_list, profile),
+        )
         return result
     _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
            "교집합 없음", color=_C["gray"])
 
     # ── Step 7: 매운맛 프로필 대조 (OCR is_spicy 기준) ──────────────────────
-    if profile_spicy is False and effective_is_spicy:
+    if profile_no_spicy and effective_is_spicy:
         _vstep(verbose, "Step 7", "spicy check",
-               f"🔴 매운맛 비선호 + 매운 메뉴 → DANGER", color=_C["red"])
-        _vresult(verbose, "danger", ["is_spicy"], False,
-                 generate_reason_ko(["is_spicy"]))
-        result.update(risk_level="danger",
-                      risk_reasons=["is_spicy"],
-                      reason_ko=generate_reason_ko(["is_spicy"]),
-                      need_gpt=False,
-                      forbidden_tags=sorted(forbidden_tags),
-                      profile=profile)
+               f"🟡 매운맛 비선호 + 매운 메뉴 → CAUTION (GPT 에스컬레이션)", color=_C["yellow"])
+        _vresult(verbose, "caution", ["is_spicy"], [], True)
+        result.update(
+            is_spicy=effective_is_spicy,
+            risk_level="caution",
+            hit_tags=["is_spicy"],
+            triggered_flags=[],
+            forbidden_tags=sorted(forbidden_tags),
+            need_gpt=True,
+            gpt_context=_gpt_context(),
+            risk_reasons=None,
+        )
         return result
     _vstep(verbose, "Step 7", "spicy check",
            "해당 없음", color=_C["gray"])
@@ -208,6 +240,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         is_spicy_menu=effective_is_spicy,
         profile=profile,
     )
+
+    # hit_reasons at this point = relevant ambiguity flags (or [] for safe)
+    triggered_flags = list(hit_reasons)
 
     if ambiguity_flags:
         from risk_judge import _relevant_ambiguity_flags
@@ -231,17 +266,19 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         need_gpt = True
         if risk_level == "safe":
             risk_level = "caution"
-            hit_reasons = ["unknown_remain"]
 
-    # ── Step 10: 이유 생성 ──────────────────────────────────────────────────
-    reason_ko = generate_reason_ko(hit_reasons)
-    _vresult(verbose, risk_level, hit_reasons, need_gpt, reason_ko)
+    _vresult(verbose, risk_level, [], triggered_flags, need_gpt)
 
-    result.update(risk_level=risk_level,
-                  risk_reasons=hit_reasons, reason_ko=reason_ko,
-                  need_gpt=need_gpt,
-                  forbidden_tags=sorted(forbidden_tags),
-                  profile=profile)
+    result.update(
+        is_spicy=effective_is_spicy,
+        risk_level=risk_level,
+        hit_tags=[],
+        triggered_flags=triggered_flags,
+        forbidden_tags=sorted(forbidden_tags),
+        need_gpt=need_gpt,
+        gpt_context=_gpt_context() if need_gpt else None,
+        risk_reasons=None,
+    )
     return result
 
 
