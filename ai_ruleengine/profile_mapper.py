@@ -43,41 +43,18 @@ _VEGAN_MAP: dict[str, set[str]] = {
     },
 }
 
-# 알레르기 한국어 명칭 → 태그 매핑 (편의 제공)
-_KO_ALLERGY_MAP: dict[str, str] = {
-    "달걀": "is_egg",   "계란": "is_egg",
-    "우유": "is_milk",  "유제품": "is_milk",
-    "메밀": "is_buckwheat",
-    "땅콩": "is_peanut",
-    "대두": "is_soybean", "콩": "is_soybean",
-    "밀": "is_wheat",
-    "잣": "is_pinenut",
-    "호두": "is_walnut",
-    "게": "is_crab",    "꽃게": "is_crab",
-    "새우": "is_shrimp",
-    "오징어": "is_squid",
-    "고등어": "is_mackerel",
-    "조개": "is_shellfish", "조갯살": "is_shellfish",
-    "복숭아": "is_peach",
-    "토마토": "is_tomato",
-    "닭고기": "is_chicken", "닭": "is_chicken",
-    "돼지고기": "is_pork",  "돼지": "is_pork",
-    "소고기": "is_beef",    "쇠고기": "is_beef",
-    "아황산": "is_sulfite",
-    "갑각류": "is_crab",    # 갑각류 표기 편의 → 게 대표로 매핑
-}
-
 
 def map_profile_to_forbidden(profile: dict) -> set[str]:
     """
     사용자 프로필 dict → 금지 재료 태그 set.
 
     profile 키:
-      religion_type : "halal" | "kosher" | "hindu" | None
-      vegan_type    : "vegan" | "lacto" | "ovo" | "lacto_ovo" | "pesco" | None
-      no_alcohol    : bool
-      allergies     : list[str]  — "crab", "shrimp", "새우" 등 영/한 혼용 가능
-      is_spicy      : True | False | None  — 별도 분기 처리, 이 함수에서는 무시
+      religion_type   : "halal" | "kosher" | "hindu" | None
+      is_vegetarian   : bool
+      vegetarian_type : "vegan" | "lacto" | "ovo" | "lacto_ovo" | "pesco" | None
+      no_alcohol      : bool
+      allergies       : list[str]  — is_ 태그명 (예: "is_egg", "is_shrimp")
+      no_spicy        : bool  — 별도 분기 처리, 이 함수에서는 무시
     """
     forbidden: set[str] = set()
 
@@ -85,9 +62,10 @@ def map_profile_to_forbidden(profile: dict) -> set[str]:
     if religion and religion in _RELIGION_MAP:
         forbidden |= _RELIGION_MAP[religion]
 
-    vegan = profile.get("vegan_type")
-    if vegan and vegan in _VEGAN_MAP:
-        forbidden |= _VEGAN_MAP[vegan]
+    if profile.get("is_vegetarian"):
+        vegan = profile.get("vegetarian_type")
+        if vegan and vegan in _VEGAN_MAP:
+            forbidden |= _VEGAN_MAP[vegan]
 
     # §2.3 — halal / no_alcohol 은 모두 is_alcohol 로 처리
     if profile.get("no_alcohol"):
@@ -97,13 +75,36 @@ def map_profile_to_forbidden(profile: dict) -> set[str]:
         allergy = allergy.strip()
         if not allergy:
             continue
-        # 한국어 매핑 시도
-        if allergy in _KO_ALLERGY_MAP:
-            forbidden.add(_KO_ALLERGY_MAP[allergy])
-            continue
-        # is_ 접두어 처리
         tag = allergy if allergy.startswith("is_") else f"is_{allergy}"
         if tag in ALL_TAGS:
             forbidden.add(tag)
 
     return forbidden
+
+
+def get_reason_type(tag: str, profile: dict) -> str:
+    """태그 + 프로필 → reason_type 문자열 반환."""
+    religion = profile.get("religion_type")
+    if religion and tag in _RELIGION_MAP.get(religion, set()):
+        return religion
+
+    if profile.get("is_vegetarian"):
+        vt = profile.get("vegetarian_type")
+        if vt and tag in _VEGAN_MAP.get(vt, set()):
+            return "vegetarian"
+
+    allergy_tags = {
+        a if a.startswith("is_") else f"is_{a}"
+        for a in profile.get("allergies", [])
+        if a
+    }
+    if tag in allergy_tags:
+        return "allergy"
+
+    if tag == "is_alcohol" and profile.get("no_alcohol"):
+        return "alcohol"
+
+    if tag == "is_spicy":
+        return "spicy"
+
+    return "other"

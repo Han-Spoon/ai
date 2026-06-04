@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help=(
             "사용자 프로필 JSON 파일 경로. "
-            "키: religion_type, vegan_type, no_alcohol, allergies, is_spicy"
+            "키: religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy"
         ),
     )
     parser.add_argument(

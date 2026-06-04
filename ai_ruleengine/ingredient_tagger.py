@@ -23,6 +23,25 @@ def _tag_text(text: str, tags: set[str]) -> None:
                 break
 
 
+def tag_explicit(menu_row: dict) -> set[str]:
+    """베이스 메뉴 명시 재료만 → 태그 set (Step 4)."""
+    tags: set[str] = set()
+    for ingredient in menu_row.get("ingredients", []):
+        _tag_text(ingredient, tags)
+    return tags
+
+
+def tag_variants(remain_tokens: list[str]) -> set[str]:
+    """remain 토큰만 → 태그 set (Step 5)."""
+    tags: set[str] = set()
+    for token in remain_tokens:
+        for group_key, group_tags in GROUP_VARIANTS.items():
+            if group_key in token:
+                tags.update(group_tags)
+        _tag_text(token, tags)
+    return tags
+
+
 def tag_ingredients(menu_row: dict, remain_tokens: list[str]) -> set[str]:
     """
     Returns 재료 태그 set.
@@ -30,21 +49,7 @@ def tag_ingredients(menu_row: dict, remain_tokens: list[str]) -> set[str]:
     Step 4: base menu 의 ingredients 를 순회하며 태깅.
     Step 5: remain_tokens 을 순회하며 GROUP_VARIANTS 우선 → VARIANT_INGREDIENTS 순서로 태깅.
     """
-    tags: set[str] = set()
-
-    # Step 4 — 명시 재료
-    for ingredient in menu_row.get("ingredients", []):
-        _tag_text(ingredient, tags)
-
-    # Step 5 — 변형 재료 (메뉴명 remain 토큰)
-    for token in remain_tokens:
-        # GROUP_VARIANTS 우선 (예: "해물" → seafood 계열 전체)
-        for group_key, group_tags in GROUP_VARIANTS.items():
-            if group_key in token:
-                tags.update(group_tags)
-        _tag_text(token, tags)
-
-    return tags
+    return tag_explicit(menu_row) | tag_variants(remain_tokens)
 
 
 def has_unknown_remain(remain_tokens: list[str]) -> bool:

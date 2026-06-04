@@ -67,3 +67,24 @@ def generate_reason_ko(risk_reasons: list[str]) -> str | None:
             sentences.append(f"[{reason}] 성분 또는 조리 방식에 주의가 필요합니다")
 
     return " / ".join(sentences)
+
+
+def generate_risk_reasons(hit_tags: list[str], profile: dict) -> list[dict] | None:
+    """
+    hit_tags + 프로필 → 구조화된 risk_reasons 리스트 반환.
+    빈 경우 None.
+    """
+    if not hit_tags:
+        return None
+
+    from profile_mapper import get_reason_type
+
+    return [
+        {
+            "reason_type": get_reason_type(tag, profile),
+            "reason_ko": _TAG_REASON_KO.get(
+                tag, f"[{tag}] 성분 또는 조리 방식에 주의가 필요합니다"
+            ),
+        }
+        for tag in hit_tags
+    ]
