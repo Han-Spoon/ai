@@ -4,13 +4,22 @@ from difflib import SequenceMatcher
 from menu_dictionary import MENU_NAMES, MENU_TO_CATEGORY
 
 
-PRICE_MIN = 1000
+PRICE_MIN = 500
 PRICE_MAX = 50000
+PRICE_PATTERN = r"[₩]?\s*(?:[\dOoO]{3,5}|[\dOoO]{1,2}\s*[,\.]\s*[\dOoO]{3}|[\dOoO]{1,2}\s*\.\s*[\dOoO]{1,2})\s*원?"
 
 
 def normalize_price(text: str):
     if not text:
         return None
+
+    shorthand_match = re.search(r"(?<!\d)([\dOoO]{1,2})\s*\.\s*([\dOoO]{1,2})(?!\d)", text)
+    if shorthand_match:
+        whole = int(shorthand_match.group(1).replace("O", "0").replace("o", "0"))
+        decimal = shorthand_match.group(2).replace("O", "0").replace("o", "0")
+        price = (whole * 1000) + int(decimal.ljust(3, "0"))
+        if PRICE_MIN <= price <= PRICE_MAX:
+            return price
 
     cleaned = text.replace("O", "0").replace("o", "0")
     cleaned = cleaned.replace("₩", "").replace("원", "")
@@ -50,7 +59,7 @@ def extract_price_raw(text: str):
     if not text:
         return None
 
-    match = re.search(r"[₩]?\s*(?:\d{1,2}|[OoO])\s*[,\.]?\s*[\dOoO]{3}\s*원?", text)
+    match = re.search(PRICE_PATTERN, text)
     if match:
         return match.group().strip()
 
@@ -99,8 +108,7 @@ def normalize_menu_name(text: str):
     for wrong, correct in replacements.items():
         text = text.replace(wrong, correct)
 
-    matched = match_known_menu_name(text)
-    return matched["name"] if matched else text
+    return text
 
 
 def match_known_menu_name(text: str):

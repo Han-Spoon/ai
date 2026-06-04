@@ -1,4 +1,5 @@
 from normalizer import (
+    PRICE_PATTERN,
     looks_like_description,
     looks_like_menu_name,
     match_known_menu_name,
@@ -28,7 +29,7 @@ def parse_menu_candidates(lines):
         consumed_line_ids.add(id(line))
         for pair in pairs:
             raw_name = pair["rawName"]
-            if not looks_like_menu_name(raw_name) or should_skip_menu_name(raw_name):
+            if not looks_like_menu_name_with_price(raw_name) or should_skip_menu_name(raw_name):
                 continue
 
             menus.append(
@@ -57,7 +58,7 @@ def parse_menu_candidates(lines):
             continue
 
         raw_name = extract_name_from_row(row)
-        if not looks_like_menu_name(raw_name) or should_skip_menu_name(raw_name):
+        if not looks_like_menu_name_with_price(raw_name) or should_skip_menu_name(raw_name):
             continue
 
         menus.append(build_menu_item(raw_name, price, row))
@@ -84,12 +85,12 @@ def extract_menu_items_from_row(row):
         if price is not None:
             if pending_name_lines:
                 raw_name = normalize_name_text(" ".join(name_line["text"] for name_line in pending_name_lines))
-                if looks_like_menu_name(raw_name) and not should_skip_menu_name(raw_name):
+                if looks_like_menu_name_with_price(raw_name) and not should_skip_menu_name(raw_name):
                     items.append(build_menu_item(raw_name, price, pending_name_lines + [line]))
                 pending_name_lines = []
             continue
 
-        if looks_like_menu_name(text) and not should_skip_menu_name(text):
+        if looks_like_menu_name_with_price(text) and not should_skip_menu_name(text):
             pending_name_lines.append(line)
 
     return items
@@ -108,7 +109,7 @@ def extract_menu_items_by_bbox(row):
             price_lines.append(line)
             continue
 
-        if looks_like_menu_name(text) and not should_skip_menu_name(text):
+        if looks_like_menu_name_with_price(text) and not should_skip_menu_name(text):
             name_lines.append(line)
 
     if not name_lines or not price_lines:
@@ -364,7 +365,7 @@ def extract_mixed_plain_and_option_pairs(text):
         return []
 
     raw_name = remove_trailing_option_label(option_menu_name)
-    if not raw_name or not looks_like_menu_name(raw_name):
+    if not raw_name or not looks_like_menu_name_with_price(raw_name):
         return []
 
     options = []
@@ -395,7 +396,7 @@ def extract_option_menu_from_text(text):
         return None
 
     raw_name = clean_inline_menu_name(text[: matches[0].start()])
-    if not raw_name or not looks_like_menu_name(raw_name):
+    if not raw_name or not looks_like_menu_name_with_price(raw_name):
         return None
 
     options = []
@@ -504,9 +505,16 @@ def extract_option_label(text):
 
 
 def find_price_matches(text):
-    # Handles 11,000 / 11000 / 7.000 / 8,O00 / ₩9,000 / 10,000원.
-    pattern = r"[₩]?\s*(?:\d{1,2}|[OoO])\s*[,\.]?\s*[\dOoO]{3}\s*원?"
-    return re.finditer(pattern, text)
+    # Handles 500 / 11,000 / 11000 / 7.000 / 8,O00 / 7.0 / ₩9,000 / 10,000원.
+    return re.finditer(PRICE_PATTERN, text)
+
+
+def looks_like_menu_name_with_price(text):
+    if looks_like_menu_name(text):
+        return True
+
+    compact = re.sub(r"\s+", "", normalize_name_text(text))
+    return len(compact) == 1 and bool(re.fullmatch(r"[가-힣]", compact))
 
 
 def clean_inline_menu_name(text):

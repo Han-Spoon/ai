@@ -1,10 +1,27 @@
 """메뉴 분석 결과 후처리"""
 
+import re
+
 
 def create_gpt_client():
     from gpt_client import AzureGPTClient
 
     return AzureGPTClient()
+
+
+def clean_description_ko(description: str | None) -> str:
+    """한국어 설명으로 보기 어려운 OCR/GPT 조각은 제거"""
+    if description is None:
+        return ""
+
+    cleaned = str(description).strip()
+    if not cleaned:
+        return ""
+
+    if not re.search(r"[가-힣]", cleaned):
+        return ""
+
+    return cleaned
 
 
 def post_process_menu_analyses(
@@ -24,6 +41,11 @@ def post_process_menu_analyses(
     if not menu_analyses:
         return menu_analyses
 
+    for menu_analysis in menu_analyses:
+        menu_analysis["description_ko"] = clean_description_ko(
+            menu_analysis.get("description_ko")
+        )
+
     if not enable_gpt_correction:
         return menu_analyses
 
@@ -37,6 +59,9 @@ def post_process_menu_analyses(
     for menu_analysis in menu_analyses:
         try:
             corrected = gpt_client.post_process_menu_analysis(menu_analysis)
+            corrected["description_ko"] = clean_description_ko(
+                corrected.get("description_ko")
+            )
             processed.append(corrected)
         except Exception as e:
             print(

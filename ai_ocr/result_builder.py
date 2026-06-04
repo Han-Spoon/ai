@@ -76,9 +76,9 @@ def build_final_result(
 
 
 def build_menu_analysis(menu, display_order: int):
-    menu_name = menu.get("matchedMenu") or menu.get("normalizedCandidate") or menu.get("rawName")
+    menu_name = menu.get("normalizedCandidate") or menu.get("rawName") or menu.get("matchedMenu")
     description = menu.get("description") or ""
-    price_text = menu.get("priceRaw") or stringify_price(menu.get("price"))
+    price_text = stringify_price(menu.get("price")) or menu.get("priceRaw")
 
     return {
         "menu_name_ko": menu_name,
