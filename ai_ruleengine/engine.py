@@ -87,30 +87,33 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         verbose  : True 이면 각 단계별 처리 내용을 콘솔에 출력.
 
     Returns:
-        입력 dict에 아래 필드가 추가된 새 dict:
+        엔진 출력 전용 dict (OCR 원본 필드 제외):
+          menu_name_ko     str
           is_spicy         bool
           risk_level       "danger" | "caution" | "safe"
-          hit_tags         list[str]  — 직접 금지 태그 히트
+          hit_tags         list[str]  — 직접 금지 태그 히트 (is_spicy 포함 가능)
           triggered_flags  list[str]  — 관련 애매함 플래그
           forbidden_tags   list[str]
           need_gpt         bool
+          escalation_case  list[str]  — GPT 호출 사유 ("unknown_menu"|"ambiguity"|"unknown_remain")
           gpt_context      dict | None  — need_gpt=True 일 때만 채워짐
-          risk_reasons     list[dict] | None  — need_gpt=False 일 때만 채워짐
+          risk_reasons     list[dict] | None  — need_gpt=False 이고 hit_tags 있을 때만 채워짐
     """
     menu_name: str = (menu_dict.get("menu_name_ko") or "").strip()
-    result = dict(menu_dict)
 
     if not menu_name:
-        result.update(
-            risk_level="safe",
-            hit_tags=[],
-            triggered_flags=[],
-            forbidden_tags=[],
-            need_gpt=False,
-            gpt_context=None,
-            risk_reasons=None,
-        )
-        return result
+        return {
+            "menu_name_ko": menu_dict.get("menu_name_ko"),
+            "is_spicy": None,
+            "risk_level": "safe",
+            "hit_tags": [],
+            "triggered_flags": [],
+            "forbidden_tags": [],
+            "need_gpt": False,
+            "escalation_case": [],
+            "gpt_context": None,
+            "risk_reasons": None,
+        }
 
     _vheader(verbose, menu_name)
 
@@ -118,9 +121,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
     forbidden_tags = map_profile_to_forbidden(profile)
     _vstep(verbose, "Step 1", "forbidden_tags", _fmt_set(forbidden_tags))
 
-    profile_no_spicy = profile.get("no_spicy")
-    if profile_no_spicy is not None:
-        spicy_pref = "매운맛 비선호" if profile_no_spicy else "매운맛 선호"
+    no_spicy = profile.get("no_spicy")
+    if no_spicy is not None:
+        spicy_pref = "매운맛 비선호" if no_spicy else "매운맛 선호"
         _vstep(verbose, "      ", "spicy_pref", spicy_pref)
 
     # ── Step 2: 수식어 제거 (메뉴명 정제용, is_spicy 판정은 OCR 값 사용) ────
@@ -146,22 +149,23 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         _vstep(verbose, "Step 3", "menu_match",
                f'❌ DB 미등록 메뉴 → unknown_menu', color=_C["yellow"])
         _vresult(verbose, "caution", [], [], True)
-        result.update(
-            is_spicy=effective_is_spicy,
-            risk_level="caution",
-            hit_tags=[],
-            triggered_flags=[],
-            forbidden_tags=sorted(forbidden_tags),
-            need_gpt=True,
-            gpt_context={
+        return {
+            "menu_name_ko": menu_name,
+            "is_spicy": effective_is_spicy,
+            "risk_level": "caution",
+            "hit_tags": [],
+            "triggered_flags": [],
+            "forbidden_tags": sorted(forbidden_tags),
+            "need_gpt": True,
+            "escalation_case": ["unknown_menu"],
+            "gpt_context": {
                 "base_menu": None,
                 "ingredients_explicit": [],
                 "explicit_tags": [],
                 "variant_tags": [],
             },
-            risk_reasons=None,
-        )
-        return result
+            "risk_reasons": None,
+        }
 
     ambiguity_flags = base_menu.get("ambiguity_flags", set())
     match_detail = (
@@ -199,38 +203,28 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
                f"🔴 HIT → {_fmt_set(hits)}", color=_C["red"])
         _vresult(verbose, "danger", hit_list, [], False)
-        result.update(
-            is_spicy=effective_is_spicy,
-            risk_level="danger",
-            hit_tags=hit_list,
-            triggered_flags=[],
-            forbidden_tags=sorted(forbidden_tags),
-            need_gpt=False,
-            gpt_context=None,
-            risk_reasons=generate_risk_reasons(hit_list, profile),
-        )
-        return result
+        return {
+            "menu_name_ko": menu_name,
+            "is_spicy": effective_is_spicy,
+            "risk_level": "danger",
+            "hit_tags": hit_list,
+            "triggered_flags": [],
+            "forbidden_tags": sorted(forbidden_tags),
+            "need_gpt": False,
+            "escalation_case": [],
+            "gpt_context": None,
+            "risk_reasons": generate_risk_reasons(hit_list, profile),
+        }
     _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
            "교집합 없음", color=_C["gray"])
 
-    # ── Step 7: 매운맛 프로필 대조 (OCR is_spicy 기준) ──────────────────────
-    if profile_no_spicy and effective_is_spicy:
+    # ── Step 7: 매운맛 프로필 대조 — 플래그만 세우고 Step 8·9 계속 ──────────
+    spicy_hit = bool(no_spicy and effective_is_spicy)
+    if spicy_hit:
         _vstep(verbose, "Step 7", "spicy check",
-               f"🟡 매운맛 비선호 + 매운 메뉴 → CAUTION (GPT 에스컬레이션)", color=_C["yellow"])
-        _vresult(verbose, "caution", ["is_spicy"], [], True)
-        result.update(
-            is_spicy=effective_is_spicy,
-            risk_level="caution",
-            hit_tags=["is_spicy"],
-            triggered_flags=[],
-            forbidden_tags=sorted(forbidden_tags),
-            need_gpt=True,
-            gpt_context=_gpt_context(),
-            risk_reasons=None,
-        )
-        return result
-    _vstep(verbose, "Step 7", "spicy check",
-           "해당 없음", color=_C["gray"])
+               "🔴 매운맛 비선호 + 매운 메뉴 → danger 플래그 (Step 8·9 계속)", color=_C["yellow"])
+    else:
+        _vstep(verbose, "Step 7", "spicy check", "해당 없음", color=_C["gray"])
 
     # ── Step 8: 애매함 플래그 관련성 판단 ───────────────────────────────────
     risk_level, hit_reasons, need_gpt = judge_risk(
@@ -267,19 +261,34 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         if risk_level == "safe":
             risk_level = "caution"
 
-    _vresult(verbose, risk_level, [], triggered_flags, need_gpt)
+    # ── Step 10: spicy_hit 결과 합산 ────────────────────────────────────────
+    hit_tags: list[str] = []
+    if spicy_hit:
+        hit_tags.append("is_spicy")
+        if risk_level == "safe":
+            risk_level = "caution"
 
-    result.update(
-        is_spicy=effective_is_spicy,
-        risk_level=risk_level,
-        hit_tags=[],
-        triggered_flags=triggered_flags,
-        forbidden_tags=sorted(forbidden_tags),
-        need_gpt=need_gpt,
-        gpt_context=_gpt_context() if need_gpt else None,
-        risk_reasons=None,
-    )
-    return result
+    escalation_case: list[str] = []
+    if need_gpt:
+        if base_menu is not None and need_gpt_unknown:
+            escalation_case.append("unknown_remain")
+        if triggered_flags:
+            escalation_case.append("ambiguity")
+
+    _vresult(verbose, risk_level, hit_tags, triggered_flags, need_gpt)
+
+    return {
+        "menu_name_ko": menu_name,
+        "is_spicy": effective_is_spicy,
+        "risk_level": risk_level,
+        "hit_tags": hit_tags,
+        "triggered_flags": triggered_flags,
+        "forbidden_tags": sorted(forbidden_tags),
+        "need_gpt": need_gpt,
+        "escalation_case": escalation_case,
+        "gpt_context": _gpt_context() if need_gpt else None,
+        "risk_reasons": generate_risk_reasons(hit_tags, profile) if (hit_tags and not need_gpt) else None,
+    }
 
 
 def analyze_all(ocr_result: dict, profile: dict, verbose: bool = False) -> dict:
