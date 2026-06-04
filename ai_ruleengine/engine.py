@@ -101,7 +101,8 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
 
     if not menu_name:
         result.update(risk_level="safe", risk_reasons=[],
-                      reason_ko=None, reason_en=None, need_gpt=False)
+                      reason_ko=None, need_gpt=False,
+                      forbidden_tags=[], profile=profile)
         return result
 
     _vheader(verbose, menu_name)
@@ -142,7 +143,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         result.update(risk_level="caution",
                       risk_reasons=["unknown_menu"],
                       reason_ko=generate_reason_ko(["unknown_menu"]),
-                      reason_en=None, need_gpt=True)
+                      need_gpt=True,
+                      forbidden_tags=sorted(forbidden_tags),
+                      profile=profile)
         return result
 
     ambiguity_flags = base_menu.get("ambiguity_flags", set())
@@ -174,7 +177,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         result.update(risk_level="danger",
                       risk_reasons=sorted(hits),
                       reason_ko=generate_reason_ko(sorted(hits)),
-                      reason_en=None, need_gpt=False)
+                      need_gpt=False,
+                      forbidden_tags=sorted(forbidden_tags),
+                      profile=profile)
         return result
     _vstep(verbose, "Step 6", "forbidden ∩ menu_tags",
            "교집합 없음", color=_C["gray"])
@@ -188,7 +193,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
         result.update(risk_level="danger",
                       risk_reasons=["is_spicy"],
                       reason_ko=generate_reason_ko(["is_spicy"]),
-                      reason_en=None, need_gpt=False)
+                      need_gpt=False,
+                      forbidden_tags=sorted(forbidden_tags),
+                      profile=profile)
         return result
     _vstep(verbose, "Step 7", "spicy check",
            "해당 없음", color=_C["gray"])
@@ -232,7 +239,9 @@ def analyze(menu_dict: dict, profile: dict, verbose: bool = False) -> dict:
 
     result.update(risk_level=risk_level,
                   risk_reasons=hit_reasons, reason_ko=reason_ko,
-                  reason_en=None, need_gpt=need_gpt)
+                  need_gpt=need_gpt,
+                  forbidden_tags=sorted(forbidden_tags),
+                  profile=profile)
     return result
 
 
