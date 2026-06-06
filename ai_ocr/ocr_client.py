@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
 from azure.core.credentials import AzureKeyCredential
 from dotenv import load_dotenv
 
@@ -63,6 +64,25 @@ class AzureOCRClient:
                 model_id=model_id,
                 body=image_file,
             )
+
+        result = poller.result()
+        return extract_raw_lines(result)
+
+    def analyze_image_url(self, image_url: str, model_id: str = DEFAULT_MODEL_ID):
+        if model_id not in SUPPORTED_MODEL_IDS:
+            raise ValueError(
+                f"지원하지 않는 모델입니다: {model_id}. "
+                f"사용 가능: {', '.join(SUPPORTED_MODEL_IDS)}"
+            )
+        if not image_url:
+            raise ValueError("이미지 URL이 비어 있습니다.")
+
+        client = self._build_client(model_id)
+
+        poller = client.begin_analyze_document(
+            model_id=model_id,
+            body=AnalyzeDocumentRequest(url_source=image_url),
+        )
 
         result = poller.result()
         return extract_raw_lines(result)

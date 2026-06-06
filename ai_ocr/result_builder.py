@@ -13,6 +13,9 @@ def build_final_result(
     source: str = "upload",
     storage_key: str | None = None,
     image_url: str | None = None,
+    mime_type: str | None = None,
+    file_size: int | None = None,
+    image_title: str | None = None,
     raw_lines=None,
     enable_gpt_post_process: bool = True,
     enable_gpt_judgment: bool = True,
@@ -27,6 +30,9 @@ def build_final_result(
         source: 이미지 소스
         storage_key: 저장소 키
         image_url: 이미지 URL
+        mime_type: 이미지 MIME 타입
+        file_size: 이미지 파일 크기
+        image_title: 결과 제목에 사용할 이미지 이름
         raw_lines: OCR 원본 라인
         enable_gpt_post_process: GPT 후처리 활성화 여부
         enable_gpt_judgment: GPT 품질 판단 활성화 여부
@@ -48,7 +54,7 @@ def build_final_result(
 
     result = {
         "scan_session": {
-            "title": image.name,
+            "title": image_title or image.name,
             "menu_count": len(menus),
             "risky_menu_count": None,
             "scan_status": scan_status,
@@ -58,8 +64,8 @@ def build_final_result(
             "source": source,
             "storage_key": storage_key,
             "image_url": image_url,
-            "mime_type": infer_mime_type(image),
-            "file_size": infer_file_size(image),
+            "mime_type": mime_type or infer_mime_type(image),
+            "file_size": file_size if file_size is not None else infer_file_size(image),
         },
         "scan_quality": scan_quality,
         "menu_analyses": menu_analyses,
