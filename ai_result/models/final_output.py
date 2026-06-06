@@ -25,5 +25,5 @@ class FinalOutput(BaseModel):
     menu_name: str
     risk_level: Literal["danger", "caution", "safe"]
     hits: list[str]
-    message: FinalMessage
+    message: FinalMessage | None = None
     owner_card: OwnerCard | None = None

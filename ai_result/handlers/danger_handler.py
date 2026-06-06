@@ -1,6 +1,7 @@
+from ai_result.core.message_builder import build_message
 from ai_result.core.template_builder import build_final_output
 from ai_result.models.final_output import FinalOutput
-from ai_result.models.rule_engine_input import RuleEngineInput
+from ai_result.models.input_verification import RuleEngineInput
 
 
 def handle_danger(rule_input: RuleEngineInput) -> FinalOutput:
@@ -9,5 +10,5 @@ def handle_danger(rule_input: RuleEngineInput) -> FinalOutput:
         menu_name=rule_input.menu_name_ko,
         risk_level="danger",
         hits=hits,
-        message_ko=f"{', '.join(hits)} 성분이 포함되어 있어 섭취에 주의가 필요합니다.",
+        message=build_message(hits, "danger"),
     )

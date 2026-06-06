@@ -1,12 +1,13 @@
 # risk_level과 escalation_case를 보고 어느 handler로 보낼지 결정하는 분기 로직
 
 from ai_result.core.template_builder import build_final_output
+from ai_result.core.message_builder import build_message
 from ai_result.handlers.caution_handler import handle_caution
 from ai_result.handlers.danger_handler import handle_danger
 from ai_result.handlers.unknown_menu_handler import handle_unknown_menu
 from ai_result.handlers.unknown_remain_handler import handle_unknown_remain
 from ai_result.models.final_output import FinalOutput
-from ai_result.models.rule_engine_input import RuleEngineInput
+from ai_result.models.input_verification import RuleEngineInput
 
 
 def route_case(rule_input: RuleEngineInput) -> FinalOutput:
@@ -20,6 +21,7 @@ def route_case(rule_input: RuleEngineInput) -> FinalOutput:
             menu_name=rule_input.menu_name_ko,
             risk_level="safe",
             hits=[],
+            message=build_message([], "safe"),
         )
 
     if "unknown_menu" in rule_input.escalation_case:
@@ -31,8 +33,7 @@ def route_case(rule_input: RuleEngineInput) -> FinalOutput:
     if rule_input.risk_level == "caution":
         return handle_caution(rule_input)
 
-    return build_final_output(
-        menu_name=rule_input.menu_name_ko,
-        risk_level="safe",
-        hits=[],
+    raise ValueError(
+        f"처리되지 않은 케이스: risk_level={rule_input.risk_level}, "
+        f"escalation_case={rule_input.escalation_case}"
     )

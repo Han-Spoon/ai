@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ai_result.core.case_router import route_case
 from ai_result.models.final_output import FinalOutput
-from ai_result.models.rule_engine_input import RuleEngineInput
+from ai_result.models.input_verification import RuleEngineInput
 
 
 def build_final_result(payload: dict) -> FinalOutput:
