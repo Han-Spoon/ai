@@ -140,8 +140,8 @@ VARIANT_INGREDIENTS = {
 # ingredient(레시피)가 아닌 메뉴명 remain 토큰 분석에서 사용.
 # ============================================================
 GROUP_VARIANTS = {
-    "해물":   ["is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_fish"],
-    "해산물": ["is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_fish"],
+    "해물":   ["is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_fish", "is_mackerel"],
+    "해산물": ["is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_fish", "is_mackerel"],
     "모듬":   [],  # 컨텍스트 의존 → has_variant 플래그로 위임
 }
 
