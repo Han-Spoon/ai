@@ -1,11 +1,5 @@
 """
 한스푼 Rule Engine - 프로필 → 금지 태그 집합 매퍼 (AI2 §2)
-
-is_fish / is_duck 은 내부 전용 태그:
-  - is_duck: 비건/페스코에서 직접 forbidden 에 추가 (조류이지만 19종 미포함)
-  - is_fish: forbidden 에 직접 추가하지 않고, 애매함 플래그 관련성 판단에만 사용.
-    (이유: 된장찌개처럼 레시피에 멸치가 명시되어도 육수 종류가 불분명한 경우가 많아
-     직접 danger 처리 대신 has_unclear_broth 플래그로 GPT 에스컬레이션)
 """
 
 from constants import ALL_TAGS
@@ -17,25 +11,25 @@ _RELIGION_MAP: dict[str, set[str]] = {
     "hindu":  {"is_beef"},
 }
 
-# ── AI2 §2.2 채식 금지 태그 (is_duck 추가, is_fish 는 내부 전용) ──────────────
+# ── AI2 §2.2 채식 금지 태그 ────────────────────────────────────────────────────
 _VEGAN_MAP: dict[str, set[str]] = {
     "vegan": {
-        "is_pork", "is_beef", "is_chicken", "is_duck",
+        "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish",
         "is_milk", "is_egg",
         "is_shrimp", "is_crab", "is_squid", "is_mackerel", "is_shellfish",
     },
     "lacto": {
-        "is_pork", "is_beef", "is_chicken", "is_duck",
+        "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish",
         "is_egg",
         "is_shrimp", "is_crab", "is_squid", "is_mackerel", "is_shellfish",
     },
     "ovo": {
-        "is_pork", "is_beef", "is_chicken", "is_duck",
+        "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish",
         "is_milk",
         "is_shrimp", "is_crab", "is_squid", "is_mackerel", "is_shellfish",
     },
     "lacto_ovo": {
-        "is_pork", "is_beef", "is_chicken", "is_duck",
+        "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish",
         "is_shrimp", "is_crab", "is_squid", "is_mackerel", "is_shellfish",
     },
     "pesco": {
