@@ -72,7 +72,7 @@ python ai_ruleengine/main.py \
 | religion_type | 금지 태그 |
 |---------------|-----------|
 | `halal` | `is_pork`, `is_alcohol` |
-| `kosher` | `is_pork`, `is_crab`, `is_shrimp`, `is_shellfish` |
+| `kosher` | `is_pork`, `is_crab`, `is_shrimp`, `is_shellfish`, `is_squid` |
 | `hindu` | `is_beef` |
 
 **채식 유형별 금지 태그**
