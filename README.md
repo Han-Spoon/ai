@@ -138,6 +138,37 @@ python3 ai_ocr/main.py \
 | `--image-url` | `menu_image.image_url` | 백엔드가 접근 가능한 이미지 URL |
 | `--print-json` | stdout | 최종 JSON을 터미널에도 출력 |
 
+## FastAPI 서버 (백엔드 AiClient 연동)
+
+백엔드(Spring) `AiClient`가 호출하는 내부 서비스용 HTTP 래퍼입니다. 
+기존 OCR/룰엔진 로직을 그대로 재사용하며 엔드포인트 2개만 노출합니다. 인증은 없고 사설 네트워크를 가정합니다.
+
+로컬 직접 실행:
+
+```bash
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+Docker (compose 권장):
+
+```bash
+docker compose up -d --build   # 처음 / 코드 변경 후: 이미지 빌드 + 백그라운드 실행
+docker compose up -d           # 그 다음부터: 그냥 다시 띄우기
+docker compose logs -f ai      # 로그 보기
+docker compose down            # 내리기
+```
+
+Azure 키(OCR/OpenAI)는 기존 `.env` 방식을 그대로 사용합니다.
+
+| Method | Endpoint | 기능 설명 |
+| --- | --- | --- |
+| `POST` | `/v1/ocr` | `{ "source", "storage_key", "image_url" }`를 받아 `image_url`을 다운로드한 뒤 OCR 파이프라인을 실행하고 `build_final_result` dict를 그대로 반환. 다운로드 실패 시 502, 처리 실패 시 500. |
+| `POST` | `/v1/ruleengine` | `{ "profile", "ocr_result" }`를 받아 `analyze_all(ocr_result, profile)` 결과 dict를 그대로 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
+| `GET` | `/health` | 헬스체크 (`{"status": "ok"}`). |
+
+`profile` 키: `religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy`. `allergies`는 이미 `is_*` 태그 형태(예: `["is_milk"]`)로 전달합니다.
+
 ## Azure 비용 없이 테스트
 
 parser만 테스트할 때는 mock 데이터를 사용합니다. Azure 비용이 발생하지 않습니다.

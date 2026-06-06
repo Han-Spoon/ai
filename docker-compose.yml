@@ -1,0 +1,10 @@
+services:
+  ai:
+    build: .
+    image: hanspoon-ai
+    container_name: hanspoon-ai
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
