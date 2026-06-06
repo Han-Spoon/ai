@@ -141,7 +141,7 @@ python3 ai_ocr/main.py \
 ## FastAPI 서버 (백엔드 AiClient 연동)
 
 백엔드(Spring) `AiClient`가 호출하는 내부 서비스용 HTTP 래퍼입니다. 
-기존 OCR/룰엔진 로직을 그대로 재사용하며 엔드포인트 2개만 노출합니다. 인증은 없고 사설 네트워크를 가정합니다.
+기존 OCR/룰엔진/결과생성 로직을 그대로 재사용하며, 파이프라인(OCR → RuleEngine → Result)을 엔드포인트로 노출합니다. 인증은 없고 사설 네트워크를 가정합니다.
 
 로컬 직접 실행:
 
@@ -165,6 +165,7 @@ Azure 키(OCR/OpenAI)는 기존 `.env` 방식을 그대로 사용합니다.
 | --- | --- | --- |
 | `POST` | `/v1/ocr` | `{ "source", "storage_key", "image_url" }`를 받아 `image_url`을 다운로드한 뒤 OCR 파이프라인을 실행하고 `build_final_result` dict를 그대로 반환. 다운로드 실패 시 502, 처리 실패 시 500. |
 | `POST` | `/v1/ruleengine` | `{ "profile", "ocr_result" }`를 받아 `analyze_all(ocr_result, profile)` 결과 dict를 그대로 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
+| `POST` | `/v1/result` | `/v1/ruleengine` 응답(judged_result) dict를 그대로 받아 `build_final_results_from_judged`로 `menu_analyses`를 최종 `FinalOutput`(message/owner_card 포함)으로 교체해 반환. 처리 실패 시 500. |
 | `GET` | `/health` | 헬스체크 (`{"status": "ok"}`). |
 
 `profile` 키: `religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy`. `allergies`는 이미 `is_*` 태그 형태(예: `["is_milk"]`)로 전달합니다.
