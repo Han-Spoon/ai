@@ -7,7 +7,7 @@ from constants import ALL_TAGS
 # ── AI2 §2.1 종교 금지 태그 ──────────────────────────────────────────────────
 _RELIGION_MAP: dict[str, set[str]] = {
     "halal":  {"is_pork", "is_alcohol"},
-    "kosher": {"is_pork", "is_crab", "is_shrimp", "is_shellfish"},
+    "kosher": {"is_pork", "is_crab", "is_shrimp", "is_shellfish", "is_squid"},
     "hindu":  {"is_beef"},
 }
 
