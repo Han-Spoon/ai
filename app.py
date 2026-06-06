@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from pydantic import BaseModel
 
 # ── 기존 패키지 모듈을 재사용하기 위한 경로 설정 ──────────────────────────────
@@ -29,16 +29,23 @@ from pydantic import BaseModel
 BASE_DIR = Path(__file__).resolve().parent
 OCR_DIR = BASE_DIR / "ai_ocr"
 RULE_DIR = BASE_DIR / "ai_ruleengine"
-for _p in (OCR_DIR, RULE_DIR):
+# ai_ocr/ai_ruleengine 은 flat import 라 각 디렉터리를, ai_result 는 절대 패키지
+# import(`from ai_result....`)라 BASE_DIR 를 sys.path 에 둔다.
+for _p in (BASE_DIR, OCR_DIR, RULE_DIR):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-# ai_ocr/main.py 와 ai_ruleengine/main.py 모듈명이 둘 다 `main` 이라 충돌한다.
-# OCR 진입 함수는 파일 경로로 명시 로드해 충돌을 피한다.
+# ai_ocr/main.py, ai_ruleengine/main.py, ai_result/main.py 모듈명이 모두 `main`
+# 이라 충돌한다. OCR/Result 진입 함수는 파일 경로로 고유 이름 로드해 충돌을 피한다.
 _ocr_spec = importlib.util.spec_from_file_location("ai_ocr_main", OCR_DIR / "main.py")
 _ocr_main = importlib.util.module_from_spec(_ocr_spec)
 _ocr_spec.loader.exec_module(_ocr_main)
 analyze_menu_image = _ocr_main.analyze_menu_image
+
+_result_spec = importlib.util.spec_from_file_location("ai_result_main", BASE_DIR / "ai_result" / "main.py")
+_result_main = importlib.util.module_from_spec(_result_spec)
+_result_spec.loader.exec_module(_result_main)
+build_final_results_from_judged = _result_main.build_final_results_from_judged
 
 # 룰엔진 진입 함수 (engine 모듈명은 고유라 충돌 없음)
 from engine import analyze_all  # noqa: E402
@@ -114,6 +121,19 @@ def run_ruleengine(req: RuleEngineRequest):
         return analyze_all(req.ocr_result, req.profile)
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"룰엔진 처리 실패: {err}") from err
+
+
+# ── 3) Result ─────────────────────────────────────────────────────────────────
+@app.post("/v1/result")
+def run_result(judged_result: dict = Body(...)):
+    """/v1/ruleengine 응답(judged_result)을 받아 menu_analyses 를 FinalOutput 으로 교체한다.
+
+    GPT 호출은 ai_result 내부(unknown_menu/unknown_remain 케이스)에서만 일어난다.
+    """
+    try:
+        return build_final_results_from_judged(judged_result)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"결과 생성 실패: {err}") from err
 
 
 def _infer_suffix(storage_key: str | None, image_url: str) -> str:
