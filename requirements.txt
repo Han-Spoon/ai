@@ -6,3 +6,6 @@ pandas
 Pillow
 opencv-python-headless
 numpy
+fastapi
+uvicorn[standard]
+httpx
