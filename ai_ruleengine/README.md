@@ -8,7 +8,7 @@
 
 ```text
 ai_ruleengine/
-  constants.py          # 재료 태그 사전 + 수식어 토큰 (수정 금지)
+  constants.py          # 재료 태그 사전 + 수식어 토큰
   data/menus.csv        # 76개 메뉴 DB (카테고리/레시피/애매함 플래그)
   menu_db.py            # CSV 로더
   profile_mapper.py     # 프로필 → 금지 태그 set
@@ -79,11 +79,11 @@ python ai_ruleengine/main.py \
 
 | vegetarian_type | 금지 태그 |
 |-----------------|-----------|
-| `vegan` | 모든 육류 + 갑각류/해물 + `is_milk`, `is_egg` |
-| `lacto` | 모든 육류 + 갑각류/해물 + `is_egg` |
-| `ovo` | 모든 육류 + 갑각류/해물 + `is_milk` |
-| `lacto_ovo` | 모든 육류 + 갑각류/해물 |
-| `pesco` | 모든 육류(`is_pork`, `is_beef`, `is_chicken`, `is_duck`) |
+| `vegan` | `is_pork`, `is_beef`, `is_chicken`, `is_duck`, `is_fish` + 갑각류/해물 + `is_milk`, `is_egg` |
+| `lacto` | `is_pork`, `is_beef`, `is_chicken`, `is_duck`, `is_fish` + 갑각류/해물 + `is_egg` |
+| `ovo` | `is_pork`, `is_beef`, `is_chicken`, `is_duck`, `is_fish` + 갑각류/해물 + `is_milk` |
+| `lacto_ovo` | `is_pork`, `is_beef`, `is_chicken`, `is_duck`, `is_fish` + 갑각류/해물 |
+| `pesco` | `is_pork`, `is_beef`, `is_chicken`, `is_duck` (생선류 제외) |
 
 ---
 

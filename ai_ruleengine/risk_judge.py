@@ -6,9 +6,6 @@ Step 7: 매운맛 프로필 대조 → DANGER
 Step 8: 애매함 플래그 관련성 판단 → CAUTION + need_gpt=True
         (hidden_rules 는 미사용 결정 → 애매함 플래그가 있으면 GPT 에스컬레이션)
 Step 9: 최종 → SAFE
-
-is_fish / is_duck 은 forbidden_tags 에 직접 포함되지 않지만
-애매함 플래그 관련성 판단에서 내부 기준으로 활용된다.
 """
 
 # 해물 계열 (has_unclear_jeotgal 관련성 판단용)
@@ -16,8 +13,7 @@ _SEAFOOD_TAGS = {"is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_mackere
 
 # 동물성 계열 (has_hidden_animal 관련성 판단용)
 _ANIMAL_TAGS = {
-    "is_pork", "is_beef", "is_chicken", "is_duck",
-    "is_fish",   # 내부 전용
+    "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish",
 } | _SEAFOOD_TAGS
 
 # 비건 / 세미-베지테리언 타입
