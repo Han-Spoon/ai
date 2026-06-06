@@ -66,6 +66,12 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
             {"name": "밀", "tag": "is_wheat"},
         ],
     },
+    "된장찌개": {
+        "has_unclear_broth": [
+            {"name": "멸치육수", "tag": "is_fish"},
+            {"name": "육수용 멸치", "tag": "is_fish"},
+        ],
+    },
     "일본된장": {
         "has_unclear_seasoning": [
             {"name": "대두", "tag": "is_soybean"},

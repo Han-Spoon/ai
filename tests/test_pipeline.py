@@ -76,7 +76,7 @@ def test_safe_returns_safe_template():
     assert result.owner_card is None
 
 
-def test_caution_turns_safe_when_no_hidden_rules_and_no_gpt_needed():
+def test_ambiguity_doenjang_jjigae_hidden_rule_keeps_caution():
     result = build_final_result(
         _payload(
             menu_name_ko="된장찌개",
@@ -106,6 +106,28 @@ def test_caution_turns_safe_when_no_hidden_rules_and_no_gpt_needed():
                 "explicit_tags": ["is_soybean"],
                 "variant_tags": [],
             },
+        )
+    )
+
+    _assert_final_output(result)
+    assert result.risk_level == "caution"
+    assert result.hits == ["is_fish"]
+    assert result.owner_card is not None
+    assert result.owner_card.flag == "has_unclear_broth"
+
+
+def test_caution_turns_safe_when_no_hidden_rules_match_forbidden_tags():
+    result = build_final_result(
+        _payload(
+            menu_name_ko="콩나물국",
+            is_spicy=False,
+            risk_level="caution",
+            hit_tags=[],
+            triggered_flags=[],
+            forbidden_tags=["is_milk"],
+            need_gpt=False,
+            escalation_case=[],
+            gpt_context=None,
         )
     )
 

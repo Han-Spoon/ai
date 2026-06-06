@@ -98,8 +98,8 @@ PIPELINE_CASES = [
         ),
     },
     {
-        "case_id": "03_ambiguity_to_safe_vegan_doenjang_jjigae",
-        "description": "비건 사용자의 된장찌개가 ambiguity로 넘어왔지만 hidden_rules와 forbidden_tags 교집합이 없어 safe로 전환된다.",
+        "case_id": "03_ambiguity_to_caution_vegan_doenjang_jjigae",
+        "description": "비건 사용자의 된장찌개가 ambiguity로 넘어오고, 된장찌개 hidden_rules의 멸치육수 가능성이 is_fish caution을 만든다.",
         "assumed_user_profile": {
             "religion_type": None,
             "vegan_type": "vegan",

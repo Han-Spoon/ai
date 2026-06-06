@@ -44,3 +44,28 @@ class CautionHandlerTest(unittest.TestCase):
         self.assertEqual(result.hits, ["is_fish"])
         self.assertIsNotNone(result.owner_card)
         self.assertEqual(result.owner_card.flag, "has_unclear_jeotgal")
+
+    def test_doenjang_jjigae_broth_flag_hits_fish(self):
+        result = build_final_result(
+            {
+                "menu_name_ko": "된장찌개",
+                "is_spicy": False,
+                "risk_level": "caution",
+                "hit_tags": [],
+                "triggered_flags": ["has_unclear_broth", "has_unclear_jeotgal"],
+                "forbidden_tags": ["is_fish"],
+                "need_gpt": True,
+                "escalation_case": ["ambiguity"],
+                "gpt_context": {
+                    "base_menu": "된장찌개",
+                    "ingredients_explicit": ["된장", "두부", "애호박", "감자", "양파", "대파", "마늘", "고춧가루"],
+                    "explicit_tags": ["is_soybean"],
+                    "variant_tags": [],
+                },
+            }
+        )
+
+        self.assertEqual(result.risk_level, "caution")
+        self.assertEqual(result.hits, ["is_fish"])
+        self.assertIsNotNone(result.owner_card)
+        self.assertEqual(result.owner_card.flag, "has_unclear_broth")
