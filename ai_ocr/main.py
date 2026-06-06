@@ -1,7 +1,9 @@
 import argparse
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
+from api_response_builder import build_api_response
 from parser import parse_menu_candidates
 from result_builder import build_final_result
 
@@ -20,6 +22,8 @@ def analyze_menu_image(
     source: str = "upload",
     storage_key: str | None = None,
     image_url: str | None = None,
+    mime_type: str | None = None,
+    file_size: int | None = None,
     enable_gpt_post_process: bool = True,
     enable_gpt_judgment: bool = True,
 ):
@@ -55,6 +59,50 @@ def analyze_menu_image(
             source=source,
             storage_key=storage_key,
             image_url=image_url,
+            mime_type=mime_type,
+            file_size=file_size,
+            raw_lines=raw_lines,
+            enable_gpt_post_process=enable_gpt_post_process,
+            enable_gpt_judgment=enable_gpt_judgment,
+        ),
+    }
+
+
+def analyze_menu_image_by_url(
+    image_url: str,
+    model_id: str = DEFAULT_MODEL_ID,
+    fallback_read: bool = True,
+    source: str = "upload",
+    storage_key: str | None = None,
+    mime_type: str | None = None,
+    file_size: int | None = None,
+    enable_gpt_post_process: bool = True,
+    enable_gpt_judgment: bool = True,
+):
+    from ocr_client import AzureOCRClient
+
+    client = AzureOCRClient()
+    raw_lines, used_model_id = analyze_url_with_optional_fallback(
+        client=client,
+        image_url=image_url,
+        model_id=model_id,
+        fallback_read=fallback_read,
+    )
+    menus = parse_menu_candidates(raw_lines)
+    image_title = infer_image_title(storage_key, image_url)
+
+    return {
+        "modelId": used_model_id,
+        "rawLines": raw_lines,
+        "final": build_final_result(
+            image_title,
+            menus,
+            source=source,
+            storage_key=storage_key,
+            image_url=image_url,
+            mime_type=mime_type,
+            file_size=file_size,
+            image_title=image_title,
             raw_lines=raw_lines,
             enable_gpt_post_process=enable_gpt_post_process,
             enable_gpt_judgment=enable_gpt_judgment,
@@ -112,23 +160,57 @@ def analyze_with_optional_fallback(client, image_path: str, model_id: str, fallb
         raise
 
 
+def analyze_url_with_optional_fallback(client, image_url: str, model_id: str, fallback_read: bool):
+    try:
+        raw_lines = client.analyze_image_url(image_url, model_id=model_id)
+        if raw_lines:
+            return raw_lines, model_id
+
+        if fallback_read and model_id == "prebuilt-layout":
+            print("[안내] prebuilt-layout 결과 line이 0개라서 prebuilt-read로 한 번만 재시도합니다.")
+            return client.analyze_image_url(image_url, model_id="prebuilt-read"), "prebuilt-read"
+
+        return raw_lines, model_id
+    except Exception as error:
+        if fallback_read and model_id == "prebuilt-layout":
+            print(f"[안내] prebuilt-layout 호출 실패: {error}")
+            print("[안내] prebuilt-read로 한 번만 재시도합니다.")
+            return client.analyze_image_url(image_url, model_id="prebuilt-read"), "prebuilt-read"
+
+        raise
+
+
 def save_json(data, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as json_file:
         json.dump(data, json_file, ensure_ascii=False, indent=2)
 
 
-def build_output_paths(image_path: str, model_id: str):
-    image_stem = Path(image_path).stem
+def build_output_paths(image_ref: str, model_id: str):
+    image_stem = Path(image_ref).stem
     safe_model_id = model_id.replace("/", "_")
     raw_path = Path("outputs/raw") / f"{image_stem}_{safe_model_id}_raw.json"
     final_path = Path("outputs/final") / f"{image_stem}_result.json"
-    return raw_path, final_path
+    api_path = Path("outputs/api") / f"{image_stem}_api_result.json"
+    return raw_path, final_path, api_path
+
+
+def infer_image_title(storage_key: str | None, image_url: str):
+    if storage_key:
+        return Path(storage_key).name
+
+    parsed = urlparse(image_url)
+    name = Path(parsed.path).name
+    return name or "blob_image"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Azure OCR 메뉴판 구조화 실행")
-    parser.add_argument("--image", required=True, help="분석할 메뉴판 이미지 경로")
+    parser.add_argument("--image", help="분석할 메뉴판 이미지 경로")
+    parser.add_argument(
+        "--ocr-image-url",
+        help="Azure OCR이 읽을 수 있는 Blob read SAS URL. 지정하면 로컬 이미지 대신 URL로 분석",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL_ID, help="Azure Document Intelligence 모델 ID")
     parser.add_argument(
         "--no-fallback-read",
@@ -171,6 +253,21 @@ def parse_args():
         help="백엔드 또는 외부 저장소 이미지 접근 URL. menu_images.image_url에 들어감",
     )
     parser.add_argument(
+        "--mime-type",
+        help="백엔드가 전달한 이미지 MIME 타입. menu_images.mime_type에 들어감",
+    )
+    parser.add_argument(
+        "--file-size",
+        type=int,
+        help="백엔드가 전달한 이미지 파일 크기. menu_images.file_size에 들어감",
+    )
+    parser.add_argument(
+        "--language-code",
+        choices=("ko", "en", "ar"),
+        default="ko",
+        help="API 응답용 사용자 언어 코드",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="최종 JSON을 stdout에도 출력함. 백엔드 연동 테스트용",
@@ -192,27 +289,51 @@ def main():
     args = parse_args()
 
     try:
-        result = analyze_menu_image(
-            args.image,
-            args.model,
-            fallback_read=not args.no_fallback_read,
-            use_preprocess=not args.no_preprocess,
-            perspective=not args.no_perspective,
-            deskew=not args.no_deskew,
-            max_deskew_angle=args.max_deskew_angle,
-            source=args.source,
-            storage_key=args.storage_key,
-            image_url=args.image_url,
-            enable_gpt_post_process=not args.no_gpt_post_process,
-            enable_gpt_judgment=not args.no_gpt_judgment,
-        )
-        raw_path, final_path = build_output_paths(args.image, result["modelId"])
+        if args.ocr_image_url:
+            result = analyze_menu_image_by_url(
+                args.ocr_image_url,
+                args.model,
+                fallback_read=not args.no_fallback_read,
+                source=args.source,
+                storage_key=args.storage_key,
+                mime_type=args.mime_type,
+                file_size=args.file_size,
+                enable_gpt_post_process=not args.no_gpt_post_process,
+                enable_gpt_judgment=not args.no_gpt_judgment,
+            )
+            output_ref = infer_image_title(args.storage_key, args.ocr_image_url)
+        else:
+            if not args.image:
+                raise ValueError("--image 또는 --ocr-image-url 중 하나는 필요합니다.")
+
+            result = analyze_menu_image(
+                args.image,
+                args.model,
+                fallback_read=not args.no_fallback_read,
+                use_preprocess=not args.no_preprocess,
+                perspective=not args.no_perspective,
+                deskew=not args.no_deskew,
+                max_deskew_angle=args.max_deskew_angle,
+                source=args.source,
+                storage_key=args.storage_key,
+                image_url=args.image_url,
+                mime_type=args.mime_type,
+                file_size=args.file_size,
+                enable_gpt_post_process=not args.no_gpt_post_process,
+                enable_gpt_judgment=not args.no_gpt_judgment,
+            )
+            output_ref = args.image
+
+        raw_path, final_path, api_path = build_output_paths(output_ref, result["modelId"])
+        api_result = build_api_response(result["final"], language_code=args.language_code)
 
         save_json(result["rawLines"], raw_path)
         save_json(result["final"], final_path)
+        save_json(api_result, api_path)
 
         print(f"OCR raw line 저장 완료: {raw_path}")
         print(f"최종 JSON 저장 완료: {final_path}")
+        print(f"API 응답용 JSON 저장 완료: {api_path}")
         print(f"메뉴 후보 {result['final']['scan_session']['menu_count']}개 추출")
         if args.print_json:
             print(json.dumps(result["final"], ensure_ascii=False, indent=2))
