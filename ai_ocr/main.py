@@ -38,34 +38,39 @@ def analyze_menu_image(
         deskew=deskew,
         max_deskew_angle=max_deskew_angle,
     )
+    should_cleanup_ocr_image = Path(ocr_image_path) != image
 
-    from ocr_client import AzureOCRClient
+    try:
+        from ocr_client import AzureOCRClient
 
-    client = AzureOCRClient()
-    raw_lines, used_model_id = analyze_with_optional_fallback(
-        client=client,
-        image_path=str(ocr_image_path),
-        model_id=model_id,
-        fallback_read=fallback_read,
-    )
-    menus = parse_menu_candidates(raw_lines)
+        client = AzureOCRClient()
+        raw_lines, used_model_id = analyze_with_optional_fallback(
+            client=client,
+            image_path=str(ocr_image_path),
+            model_id=model_id,
+            fallback_read=fallback_read,
+        )
+        menus = parse_menu_candidates(raw_lines)
 
-    return {
-        "modelId": used_model_id,
-        "rawLines": raw_lines,
-        "final": build_final_result(
-            image_path,
-            menus,
-            source=source,
-            storage_key=storage_key,
-            image_url=image_url,
-            mime_type=mime_type,
-            file_size=file_size,
-            raw_lines=raw_lines,
-            enable_gpt_post_process=enable_gpt_post_process,
-            enable_gpt_judgment=enable_gpt_judgment,
-        ),
-    }
+        return {
+            "modelId": used_model_id,
+            "rawLines": raw_lines,
+            "final": build_final_result(
+                image_path,
+                menus,
+                source=source,
+                storage_key=storage_key,
+                image_url=image_url,
+                mime_type=mime_type,
+                file_size=file_size,
+                raw_lines=raw_lines,
+                enable_gpt_post_process=enable_gpt_post_process,
+                enable_gpt_judgment=enable_gpt_judgment,
+            ),
+        }
+    finally:
+        if should_cleanup_ocr_image and Path(ocr_image_path).exists():
+            Path(ocr_image_path).unlink()
 
 
 def analyze_menu_image_by_url(
