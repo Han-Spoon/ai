@@ -85,11 +85,18 @@ def run_ocr(req: OcrRequest):
                 resp = client.get(req.image_url)
                 resp.raise_for_status()
                 content = resp.content
+                mime_type = _normalize_content_type(resp.headers.get("content-type"))
         except httpx.HTTPError as err:
             raise HTTPException(
                 status_code=502,
                 detail=f"이미지 다운로드 실패: {err}",
             ) from err
+
+        if mime_type and not mime_type.startswith("image/"):
+            raise HTTPException(
+                status_code=415,
+                detail=f"이미지 MIME 타입이 아닙니다: {mime_type}",
+            )
 
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(content)
@@ -101,6 +108,8 @@ def run_ocr(req: OcrRequest):
             source=req.source or "upload",
             storage_key=req.storage_key,
             image_url=req.image_url,
+            mime_type=mime_type,
+            file_size=len(content),
         )
         # build_final_result 가 만든 dict 를 그대로 반환
         return result["final"]
@@ -144,3 +153,9 @@ def _infer_suffix(storage_key: str | None, image_url: str) -> str:
             return ext
     ext = Path(urlparse(image_url).path).suffix
     return ext or ".jpg"
+
+
+def _normalize_content_type(content_type: str | None) -> str | None:
+    if not content_type:
+        return None
+    return content_type.split(";", 1)[0].strip().lower() or None
