@@ -1,0 +1,102 @@
+name: Deploy (prod)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "images/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: hanspoon-prod-ai
+  ECS_CLUSTER: hanspoon-prod-cluster
+  ECS_SERVICE: hanspoon-prod-app
+  TASK_FAMILY: hanspoon-prod-app
+  CONTAINER_NAME: ai
+  HEALTH_URL: https://api.han-spoon.site/actuator/health
+
+jobs:
+  deploy:
+    # ARM64 네이티브 러너
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 커밋 SHA 태그
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA::12}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # 현재 리비전에서 출발 — backend 컨테이너 이미지 태그 보존
+      - name: Fetch current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition | {
+              family: family,
+              taskRoleArn: taskRoleArn,
+              executionRoleArn: executionRoleArn,
+              networkMode: networkMode,
+              containerDefinitions: containerDefinitions,
+              requiresCompatibilities: requiresCompatibilities,
+              cpu: cpu,
+              memory: memory,
+              runtimePlatform: runtimePlatform
+            }' > task-definition.json
+
+      - name: Render task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.uri }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # AI 서비스는 외부 미노출 → 백엔드 actuator 로 태스크 전체 기동 확인
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "$HEALTH_URL" > /dev/null; then
+              echo "healthy"
+              exit 0
+            fi
+            echo "waiting... ($i/30)"
+            sleep 10
+          done
+          exit 1
