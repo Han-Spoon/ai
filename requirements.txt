@@ -1,11 +1,18 @@
-azure-ai-documentintelligence
-azure-core
-openai
-python-dotenv
-pandas
-Pillow
-opencv-python-headless
-numpy
-fastapi
-uvicorn[standard]
-httpx
+# OCR
+azure-ai-documentintelligence==1.0.2
+azure-core==1.41.0
+
+# LLM
+openai==3.8.0
+
+# 이미지 전처리
+opencv-python-headless==5.0.0.93
+numpy==2.4.6
+pillow==12.3.0
+
+# HTTP 서비스
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+httpx==0.28.1
+
+python-dotenv==1.2.3
