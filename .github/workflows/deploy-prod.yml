@@ -28,6 +28,7 @@ env:
 
 jobs:
   deploy:
+    if: github.repository == 'Han-Spoon/ai'
     # ARM64 네이티브 러너
     runs-on: ubuntu-24.04-arm
     steps:
