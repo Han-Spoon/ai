@@ -1,0 +1,834 @@
+{
+  "version": "V2",
+  "requestId": "B4A59EAE-683F-4B8F-B7B2-919B3CBE0EC8",
+  "timestamp": 1788902283280,
+  "images": [
+    {
+      "uid": "be84ee1a74d142258d30e031f0d7d145",
+      "name": "menu_001",
+      "inferResult": "SUCCESS",
+      "message": "SUCCESS",
+      "validationResult": {
+        "result": "NO_REQUESTED"
+      },
+      "convertedImageInfo": {
+        "width": 1280,
+        "height": 720,
+        "pageIndex": 0,
+        "longImage": false
+      },
+      "fields": [
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 276.0, "y": 198.0 },
+              { "x": 354.0, "y": 198.0 },
+              { "x": 354.0, "y": 225.0 },
+              { "x": 276.0, "y": 225.0 }
+            ]
+          },
+          "inferText": "고기류",
+          "inferConfidence": 0.9994879,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 530.0, "y": 198.0 },
+              { "x": 608.0, "y": 198.0 },
+              { "x": 608.0, "y": 225.0 },
+              { "x": 530.0, "y": 225.0 }
+            ]
+          },
+          "inferText": "찌개류",
+          "inferConfidence": 0.997224,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 773.0, "y": 196.0 },
+              { "x": 878.0, "y": 196.0 },
+              { "x": 878.0, "y": 225.0 },
+              { "x": 773.0, "y": 225.0 }
+            ]
+          },
+          "inferText": "계절메뉴",
+          "inferConfidence": 0.9981577,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 1056.0, "y": 227.0 },
+              { "x": 1115.0, "y": 225.0 },
+              { "x": 1124.0, "y": 435.0 },
+              { "x": 1065.0, "y": 438.0 }
+            ]
+          },
+          "inferText": "부대찌개",
+          "inferConfidence": 0.98933816,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 1183.0, "y": 253.0 },
+              { "x": 1237.0, "y": 252.0 },
+              { "x": 1241.0, "y": 437.0 },
+              { "x": 1186.0, "y": 438.0 }
+            ]
+          },
+          "inferText": "징어볶음",
+          "inferConfidence": 0.54413444,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 410.0, "y": 236.0 },
+              { "x": 449.0, "y": 235.0 },
+              { "x": 450.0, "y": 264.0 },
+              { "x": 411.0, "y": 265.0 }
+            ]
+          },
+          "inferText": "00",
+          "inferConfidence": 0.6528674,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 462.0, "y": 235.0 },
+              { "x": 602.0, "y": 234.0 },
+              { "x": 603.0, "y": 265.0 },
+              { "x": 463.0, "y": 266.0 }
+            ]
+          },
+          "inferText": "동태찌개",
+          "inferConfidence": 0.6528674,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 606.0, "y": 236.0 },
+              { "x": 696.0, "y": 236.0 },
+              { "x": 696.0, "y": 268.0 },
+              { "x": 606.0, "y": 268.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.9968771,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 722.0, "y": 235.0 },
+              { "x": 752.0, "y": 234.0 },
+              { "x": 753.0, "y": 267.0 },
+              { "x": 723.0, "y": 268.0 }
+            ]
+          },
+          "inferText": "떡",
+          "inferConfidence": 0.8098182,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 830.0, "y": 235.0 },
+              { "x": 860.0, "y": 234.0 },
+              { "x": 861.0, "y": 265.0 },
+              { "x": 831.0, "y": 266.0 }
+            ]
+          },
+          "inferText": "국",
+          "inferConfidence": 0.8098182,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 864.0, "y": 233.0 },
+              { "x": 951.0, "y": 233.0 },
+              { "x": 951.0, "y": 264.0 },
+              { "x": 865.0, "y": 265.0 }
+            ]
+          },
+          "inferText": "9,000",
+          "inferConfidence": 0.9986077,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 189.0, "y": 285.0 },
+              { "x": 361.0, "y": 284.0 },
+              { "x": 361.0, "y": 318.0 },
+              { "x": 190.0, "y": 318.0 }
+            ]
+          },
+          "inferText": "돼지불백",
+          "inferConfidence": 0.9475212,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 359.0, "y": 285.0 },
+              { "x": 451.0, "y": 284.0 },
+              { "x": 451.0, "y": 316.0 },
+              { "x": 360.0, "y": 316.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.98943686,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 464.0, "y": 281.0 },
+              { "x": 603.0, "y": 281.0 },
+              { "x": 603.0, "y": 313.0 },
+              { "x": 465.0, "y": 313.0 }
+            ]
+          },
+          "inferText": "김치찌개",
+          "inferConfidence": 0.9928605,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 603.0, "y": 283.0 },
+              { "x": 696.0, "y": 283.0 },
+              { "x": 696.0, "y": 314.0 },
+              { "x": 603.0, "y": 315.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.9961701,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 189.0, "y": 333.0 },
+              { "x": 358.0, "y": 333.0 },
+              { "x": 358.0, "y": 366.0 },
+              { "x": 190.0, "y": 366.0 }
+            ]
+          },
+          "inferText": "불백비빔",
+          "inferConfidence": 0.9703388,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 358.0, "y": 331.0 },
+              { "x": 449.0, "y": 331.0 },
+              { "x": 450.0, "y": 363.0 },
+              { "x": 358.0, "y": 363.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.99805486,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 461.0, "y": 328.0 },
+              { "x": 604.0, "y": 328.0 },
+              { "x": 605.0, "y": 361.0 },
+              { "x": 461.0, "y": 361.0 }
+            ]
+          },
+          "inferText": "짜글이찌개",
+          "inferConfidence": 0.9966875,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 604.0, "y": 330.0 },
+              { "x": 696.0, "y": 329.0 },
+              { "x": 696.0, "y": 361.0 },
+              { "x": 605.0, "y": 361.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.98013717,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 189.0, "y": 380.0 },
+              { "x": 358.0, "y": 380.0 },
+              { "x": 358.0, "y": 414.0 },
+              { "x": 189.0, "y": 415.0 }
+            ]
+          },
+          "inferText": "제육볶음",
+          "inferConfidence": 0.83657646,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 358.0, "y": 378.0 },
+              { "x": 449.0, "y": 378.0 },
+              { "x": 450.0, "y": 409.0 },
+              { "x": 358.0, "y": 410.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.99870706,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 463.0, "y": 375.0 },
+              { "x": 603.0, "y": 374.0 },
+              { "x": 603.0, "y": 408.0 },
+              { "x": 463.0, "y": 408.0 }
+            ]
+          },
+          "inferText": "된장찌개",
+          "inferConfidence": 0.9328131,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 611.0, "y": 378.0 },
+              { "x": 696.0, "y": 378.0 },
+              { "x": 696.0, "y": 409.0 },
+              { "x": 611.0, "y": 410.0 }
+            ]
+          },
+          "inferText": "9,000",
+          "inferConfidence": 0.99914765,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 395.0, "y": 426.0 },
+              { "x": 449.0, "y": 425.0 },
+              { "x": 450.0, "y": 455.0 },
+              { "x": 396.0, "y": 456.0 }
+            ]
+          },
+          "inferText": "000",
+          "inferConfidence": 0.9593299,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 462.0, "y": 423.0 },
+              { "x": 604.0, "y": 422.0 },
+              { "x": 605.0, "y": 455.0 },
+              { "x": 463.0, "y": 456.0 }
+            ]
+          },
+          "inferText": "순두부찌개",
+          "inferConfidence": 0.9593299,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 608.0, "y": 424.0 },
+              { "x": 698.0, "y": 424.0 },
+              { "x": 698.0, "y": 457.0 },
+              { "x": 608.0, "y": 457.0 }
+            ]
+          },
+          "inferText": "9,000",
+          "inferConfidence": 0.997322,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 189.0, "y": 478.0 },
+              { "x": 358.0, "y": 478.0 },
+              { "x": 358.0, "y": 511.0 },
+              { "x": 190.0, "y": 511.0 }
+            ]
+          },
+          "inferText": "닭도리탕",
+          "inferConfidence": 0.952624,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 358.0, "y": 475.0 },
+              { "x": 449.0, "y": 474.0 },
+              { "x": 450.0, "y": 508.0 },
+              { "x": 358.0, "y": 508.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.9916224,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 463.0, "y": 471.0 },
+              { "x": 604.0, "y": 471.0 },
+              { "x": 605.0, "y": 504.0 },
+              { "x": 463.0, "y": 505.0 }
+            ]
+          },
+          "inferText": "부대찌개",
+          "inferConfidence": 0.9879844,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 606.0, "y": 471.0 },
+              { "x": 698.0, "y": 471.0 },
+              { "x": 698.0, "y": 501.0 },
+              { "x": 606.0, "y": 501.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.83877015,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 187.0, "y": 528.0 },
+              { "x": 219.0, "y": 527.0 },
+              { "x": 220.0, "y": 559.0 },
+              { "x": 188.0, "y": 560.0 }
+            ]
+          },
+          "inferText": "반",
+          "inferConfidence": 0.99921703,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 254.0, "y": 526.0 },
+              { "x": 287.0, "y": 525.0 },
+              { "x": 288.0, "y": 559.0 },
+              { "x": 255.0, "y": 560.0 }
+            ]
+          },
+          "inferText": "계",
+          "inferConfidence": 0.99921703,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 327.0, "y": 523.0 },
+              { "x": 450.0, "y": 523.0 },
+              { "x": 450.0, "y": 558.0 },
+              { "x": 328.0, "y": 559.0 }
+            ]
+          },
+          "inferText": "탕11,000",
+          "inferConfidence": 0.997787,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 591.0, "y": 500.0 },
+              { "x": 698.0, "y": 500.0 },
+              { "x": 698.0, "y": 516.0 },
+              { "x": 591.0, "y": 516.0 }
+            ]
+          },
+          "inferText": "*사리추가2,000원",
+          "inferConfidence": 0.8542723,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 537.0, "y": 528.0 },
+              { "x": 580.0, "y": 527.0 },
+              { "x": 581.0, "y": 552.0 },
+              { "x": 538.0, "y": 553.0 }
+            ]
+          },
+          "inferText": "소주",
+          "inferConfidence": 0.6463263,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 585.0, "y": 530.0 },
+              { "x": 649.0, "y": 529.0 },
+              { "x": 650.0, "y": 552.0 },
+              { "x": 586.0, "y": 553.0 }
+            ]
+          },
+          "inferText": "5,000",
+          "inferConfidence": 0.6463263,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 659.0, "y": 531.0 },
+              { "x": 669.0, "y": 530.0 },
+              { "x": 670.0, "y": 549.0 },
+              { "x": 660.0, "y": 550.0 }
+            ]
+          },
+          "inferText": "/",
+          "inferConfidence": 0.98552585,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 680.0, "y": 528.0 },
+              { "x": 724.0, "y": 527.0 },
+              { "x": 725.0, "y": 552.0 },
+              { "x": 681.0, "y": 553.0 }
+            ]
+          },
+          "inferText": "맥주",
+          "inferConfidence": 0.98552585,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 728.0, "y": 528.0 },
+              { "x": 793.0, "y": 528.0 },
+              { "x": 793.0, "y": 553.0 },
+              { "x": 728.0, "y": 553.0 }
+            ]
+          },
+          "inferText": "5,000",
+          "inferConfidence": 0.99731785,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 792.0, "y": 530.0 },
+              { "x": 805.0, "y": 529.0 },
+              { "x": 806.0, "y": 549.0 },
+              { "x": 793.0, "y": 550.0 }
+            ]
+          },
+          "inferText": "/",
+          "inferConfidence": 0.8706908,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 809.0, "y": 526.0 },
+              { "x": 874.0, "y": 525.0 },
+              { "x": 875.0, "y": 550.0 },
+              { "x": 810.0, "y": 551.0 }
+            ]
+          },
+          "inferText": "막걸리",
+          "inferConfidence": 0.8706908,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 876.0, "y": 528.0 },
+              { "x": 943.0, "y": 528.0 },
+              { "x": 943.0, "y": 551.0 },
+              { "x": 876.0, "y": 551.0 }
+            ]
+          },
+          "inferText": "5,000",
+          "inferConfidence": 0.9986731,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 771.0, "y": 356.0 },
+              { "x": 883.0, "y": 356.0 },
+              { "x": 883.0, "y": 385.0 },
+              { "x": 771.0, "y": 385.0 }
+            ]
+          },
+          "inferText": "볶음/구이",
+          "inferConfidence": 0.9990527,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 725.0, "y": 436.0 },
+              { "x": 868.0, "y": 436.0 },
+              { "x": 868.0, "y": 470.0 },
+              { "x": 725.0, "y": 470.0 }
+            ]
+          },
+          "inferText": "오징어볶음",
+          "inferConfidence": 0.99744886,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 865.0, "y": 436.0 },
+              { "x": 956.0, "y": 436.0 },
+              { "x": 956.0, "y": 468.0 },
+              { "x": 865.0, "y": 468.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.9991326,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 725.0, "y": 478.0 },
+              { "x": 866.0, "y": 478.0 },
+              { "x": 866.0, "y": 511.0 },
+              { "x": 725.0, "y": 511.0 }
+            ]
+          },
+          "inferText": "고등어구이",
+          "inferConfidence": 0.99881446,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 865.0, "y": 478.0 },
+              { "x": 958.0, "y": 478.0 },
+              { "x": 958.0, "y": 510.0 },
+              { "x": 865.0, "y": 510.0 }
+            ]
+          },
+          "inferText": "11,000",
+          "inferConfidence": 0.99881256,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 1171.0, "y": 530.0 },
+              { "x": 1208.0, "y": 530.0 },
+              { "x": 1208.0, "y": 561.0 },
+              { "x": 1171.0, "y": 561.0 }
+            ]
+          },
+          "inferText": "19세",
+          "inferConfidence": 0.9947537,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 1206.0, "y": 531.0 },
+              { "x": 1235.0, "y": 531.0 },
+              { "x": 1235.0, "y": 560.0 },
+              { "x": 1206.0, "y": 560.0 }
+            ]
+          },
+          "inferText": "미만",
+          "inferConfidence": 0.9947537,
+          "type": "NORMAL",
+          "lineBreak": false
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 1231.0, "y": 528.0 },
+              { "x": 1278.0, "y": 528.0 },
+              { "x": 1278.0, "y": 561.0 },
+              { "x": 1231.0, "y": 561.0 }
+            ]
+          },
+          "inferText": "청소년",
+          "inferConfidence": 0.9947537,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 940.0, "y": 398.0 },
+              { "x": 955.0, "y": 398.0 },
+              { "x": 955.0, "y": 421.0 },
+              { "x": 940.0, "y": 421.0 }
+            ]
+          },
+          "inferText": ")",
+          "inferConfidence": 0.9044677,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 476.0, "y": 530.0 },
+              { "x": 521.0, "y": 530.0 },
+              { "x": 521.0, "y": 555.0 },
+              { "x": 476.0, "y": 555.0 }
+            ]
+          },
+          "inferText": "주류",
+          "inferConfidence": 0.9988305,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 775.0, "y": 651.0 },
+              { "x": 816.0, "y": 651.0 },
+              { "x": 816.0, "y": 710.0 },
+              { "x": 775.0, "y": 710.0 }
+            ]
+          },
+          "inferText": "물",
+          "inferConfidence": 0.9775532,
+          "type": "NORMAL",
+          "lineBreak": true
+        },
+        {
+          "valueType": "ALL",
+          "boundingPoly": {
+            "vertices": [
+              { "x": 863.0, "y": 650.0 },
+              { "x": 946.0, "y": 650.0 },
+              { "x": 946.0, "y": 705.0 },
+              { "x": 863.0, "y": 705.0 }
+            ]
+          },
+          "inferText": "셀프",
+          "inferConfidence": 0.9775532,
+          "type": "NORMAL",
+          "lineBreak": true
+        }
+      ]
+    }
+  ]
+}
