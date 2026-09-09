@@ -7,35 +7,27 @@ class GPTConfigError(RuntimeError):
     pass
 
 
-class AzureGPTClient:
-    """Azure OpenAI GPT-4o-mini를 사용한 후처리 및 판단 클라이언트"""
+class OpenAIGPTClient:
+    """OpenAI GPT-4o-mini를 사용한 후처리 및 판단 클라이언트"""
 
     def __init__(self):
         self._load_dotenv_if_available()
 
         try:
-            from openai import AzureOpenAI
+            from openai import OpenAI
         except ImportError as error:
             raise GPTConfigError(
                 "GPT 후처리를 사용하려면 openai 패키지를 설치해주세요. "
                 "예: pip install -r requirements.txt"
             ) from error
 
-        self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.key = os.getenv("AZURE_OPENAI_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-01-preview")
+        self.key = os.getenv("OPENAI_API_KEY")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-        if not self.endpoint or not self.key:
-            raise GPTConfigError(
-                ".env에 AZURE_OPENAI_ENDPOINT와 AZURE_OPENAI_KEY를 설정해주세요."
-            )
+        if not self.key:
+            raise GPTConfigError(".env에 OPENAI_API_KEY를 설정해주세요.")
 
-        self.client = AzureOpenAI(
-            api_key=self.key,
-            api_version=self.api_version,
-            azure_endpoint=self.endpoint,
-        )
+        self.client = OpenAI(api_key=self.key)
 
     def _load_dotenv_if_available(self):
         try:
@@ -83,7 +75,8 @@ JSON 형식으로 다음을 반환해주세요:
 """
 
         response = self.client.chat.completions.create(
-            model=self.deployment,
+            model=self.model,
+            response_format={"type": "json_object"},
             messages=[
                 {
                     "role": "system",
@@ -130,7 +123,8 @@ JSON 형식으로 다음을 반환해주세요:
 """
 
         response = self.client.chat.completions.create(
-            model=self.deployment,
+            model=self.model,
+            response_format={"type": "json_object"},
             messages=[
                 {
                     "role": "system",

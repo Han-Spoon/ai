@@ -4,9 +4,9 @@ import re
 
 
 def create_gpt_client():
-    from gpt_client import AzureGPTClient
+    from gpt_client import OpenAIGPTClient
 
-    return AzureGPTClient()
+    return OpenAIGPTClient()
 
 
 def clean_description_ko(description: str | None) -> str:

@@ -4,31 +4,24 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import OpenAI
 
 load_dotenv()
 load_dotenv(Path(__file__).parents[1] / ".env")
 
-# 배포/버전은 .env 가 있으면 그 값을 쓰고, 없으면 ai_result 기본값으로 폴백한다.
-_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-nano")
-_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+# ai_ocr 과 같은 모델로 통일. (임시)
+_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 @lru_cache(maxsize=1)
-def _get_client() -> AzureOpenAI:
-    # 클라이언트를 지연 생성한다. 키가 없어도 import 단계에서 죽지 않고,
-    # GPT 가 실제로 호출되는 케이스(unknown_menu/unknown_remain)에서만 실패한다.
-    # 키 이름은 기존 .env(ai_ocr) 와 동일하게 AZURE_OPENAI_KEY 우선, API_KEY 폴백.
-    return AzureOpenAI(
-        api_key=os.getenv("AZURE_OPENAI_KEY") or os.getenv("AZURE_OPENAI_API_KEY"),
-        api_version=_API_VERSION,
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    )
+def _get_client() -> OpenAI:
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def ask_gpt_json(prompt: dict) -> dict:
     response = _get_client().chat.completions.create(
-        model=_DEPLOYMENT,
+        model=_MODEL,
+        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": prompt["system"]},
             {"role": "user", "content": prompt["user"]},

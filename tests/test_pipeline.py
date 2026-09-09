@@ -1,8 +1,7 @@
 import os
 from unittest.mock import patch
 
-os.environ.setdefault("AZURE_OPENAI_API_KEY", "test-key")
-os.environ.setdefault("AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com")
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from ai_result.main import build_final_result
 from ai_result.models.final_output import FinalOutput
