@@ -13,10 +13,13 @@ import re
 
 
 NOISE_KEYWORDS = ("영업", "전화", "예약", "원산지", "포장", "배달", "OPEN", "CLOSE", "메뉴판")
-NON_FOOD_KEYWORDS = ("주류", "소주", "맥주", "막걸리", "사리추가")
+NON_FOOD_KEYWORDS = ("사리추가",)
 
 
 def parse_menu_candidates(lines):
+    if any(line.get("source") == "clova_field" for line in lines):
+        return parse_clova_menu_candidates(lines)
+
     clean_lines = [line for line in lines if should_keep_line(line)]
     menus = []
     consumed_line_ids = set()
@@ -64,6 +67,27 @@ def parse_menu_candidates(lines):
         menus.append(build_menu_item(raw_name, price, row))
 
     attach_descriptions(menus, lines, consumed_line_ids)
+    return menus
+
+
+def parse_clova_menu_candidates(tokens):
+    from clova_layout import parse_spatial_pairs
+
+    menus = []
+    for pair in parse_spatial_pairs(tokens):
+        menu = build_menu_item(
+            pair.name,
+            pair.price,
+            list(pair.source_tokens),
+            price_raw=pair.price_raw,
+        )
+        menu["confidence"] = pair.confidence
+        menu["source"]["provider"] = "clova"
+        menu["source"]["polygon"] = [
+            list(token.get("polygon") or []) for token in pair.source_tokens
+        ]
+        menus.append(menu)
+
     return menus
 
 

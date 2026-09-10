@@ -214,7 +214,7 @@ def parse_crop(crop_text: str | None):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Azure OCR 전에 메뉴판 이미지를 로컬 전처리")
+    parser = argparse.ArgumentParser(description="CLOVA OCR 재시도용 메뉴판 이미지를 로컬 전처리")
     parser.add_argument("--image", required=True, help="전처리할 원본 이미지 경로")
     parser.add_argument("--output", help="저장할 전처리 이미지 경로")
     parser.add_argument("--crop", help="잘라낼 영역: left,top,right,bottom")
