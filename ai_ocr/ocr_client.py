@@ -1,135 +1,207 @@
+"""NAVER CLOVA General OCR V2 클라이언트."""
+
+from __future__ import annotations
+
+import base64
 import os
+import threading
+import time
+import uuid
 from pathlib import Path
 
-from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
-from azure.core.credentials import AzureKeyCredential
+import httpx
+from clova_layout import extract_clova_fields
 from dotenv import load_dotenv
 
 
-DEFAULT_MODEL_ID = "prebuilt-layout"
-SUPPORTED_MODEL_IDS = ("prebuilt-read", "prebuilt-layout", "prebuilt-document")
-MODEL_API_VERSIONS = {
-    "prebuilt-document": "2023-07-31",
-}
+DEFAULT_MODEL_ID = "clova-general-v2"
+SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "pdf", "tif", "tiff"}
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class OCRConfigError(RuntimeError):
     pass
 
 
-class AzureOCRClient:
-    def __init__(self):
-        load_dotenv()
+class OCRServiceError(RuntimeError):
+    def __init__(
+        self, message: str, *, status_code: int = 502, retryable: bool = False
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
 
-        self.endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
-        self.key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 
-        if not self.endpoint or not self.key:
-            raise OCRConfigError(
-                ".env에 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT와 "
-                "AZURE_DOCUMENT_INTELLIGENCE_KEY를 설정해주세요."
-            )
+class _RequestRateLimiter:
+    """단일 AI 인스턴스에서 CLOVA 호출 시작 간격을 제한한다."""
 
-        self.client = self._build_client()
+    def __init__(self, min_interval_seconds: float):
+        self.min_interval_seconds = max(min_interval_seconds, 0.0)
+        self._lock = threading.Lock()
+        self._last_started_at = 0.0
 
-    def _build_client(self, model_id: str = DEFAULT_MODEL_ID):
-        kwargs = {}
-        if model_id in MODEL_API_VERSIONS:
-            kwargs["api_version"] = MODEL_API_VERSIONS[model_id]
+    def wait(self):
+        with self._lock:
+            now = time.monotonic()
+            delay = self.min_interval_seconds - (now - self._last_started_at)
+            if delay > 0:
+                time.sleep(delay)
+            self._last_started_at = time.monotonic()
 
-        return DocumentIntelligenceClient(
-            endpoint=self.endpoint,
-            credential=AzureKeyCredential(self.key),
-            **kwargs,
+
+_RATE_LIMITER_REGISTRY: dict[float, _RequestRateLimiter] = {}
+_RATE_LIMITER_REGISTRY_LOCK = threading.Lock()
+
+
+def _shared_rate_limiter(min_interval_seconds: float) -> _RequestRateLimiter:
+    with _RATE_LIMITER_REGISTRY_LOCK:
+        return _RATE_LIMITER_REGISTRY.setdefault(
+            min_interval_seconds,
+            _RequestRateLimiter(min_interval_seconds),
         )
 
-    def analyze_image(self, image_path: str, model_id: str = DEFAULT_MODEL_ID):
-        if model_id not in SUPPORTED_MODEL_IDS:
-            raise ValueError(
-                f"지원하지 않는 모델입니다: {model_id}. "
-                f"사용 가능: {', '.join(SUPPORTED_MODEL_IDS)}"
-            )
 
+class ClovaOCRClient:
+    def __init__(self, *, client: httpx.Client | None = None):
+        load_dotenv()
+
+        self.endpoint = os.getenv("CLOVA_OCR_URL")
+        self.secret = os.getenv("CLOVA_OCR_SECRET")
+        if not self.endpoint or not self.secret:
+            raise OCRConfigError("CLOVA_OCR_URL과 CLOVA_OCR_SECRET을 설정해주세요.")
+
+        timeout_seconds = float(os.getenv("CLOVA_OCR_TIMEOUT_SECONDS", "60"))
+        self.max_attempts = max(1, int(os.getenv("CLOVA_OCR_MAX_ATTEMPTS", "3")))
+        self._client = client or httpx.Client(
+            timeout=httpx.Timeout(timeout_seconds, connect=10.0),
+            follow_redirects=False,
+        )
+        self._owns_client = client is None
+        self._rate_limiter = _shared_rate_limiter(
+            float(os.getenv("CLOVA_OCR_MIN_INTERVAL_SECONDS", "1.0"))
+        )
+
+    def analyze_image(
+        self, image_path: str, model_id: str = DEFAULT_MODEL_ID
+    ) -> list[dict]:
         image = Path(image_path)
-        if not image.exists():
+        if not image.exists() or not image.is_file():
             raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
-        if not image.is_file():
-            raise FileNotFoundError(f"이미지 경로가 파일이 아닙니다: {image_path}")
 
-        client = self._build_client(model_id)
+        max_bytes = int(os.getenv("OCR_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+        if image.stat().st_size > max_bytes:
+            raise ValueError("OCR 이미지 파일이 허용 크기를 초과했습니다.")
 
-        with image.open("rb") as image_file:
-            poller = client.begin_analyze_document(
-                model_id=model_id,
-                body=image_file,
-            )
+        image_format = _infer_clova_format(image.suffix)
+        encoded = base64.b64encode(image.read_bytes()).decode("ascii")
+        payload = self._request_payload(
+            image_format=image_format,
+            image_name=image.stem or "menu",
+            data=encoded,
+        )
+        return self._extract_fields(self._post(payload))
 
-        result = poller.result()
-        return extract_raw_lines(result)
-
-    def analyze_image_url(self, image_url: str, model_id: str = DEFAULT_MODEL_ID):
-        if model_id not in SUPPORTED_MODEL_IDS:
-            raise ValueError(
-                f"지원하지 않는 모델입니다: {model_id}. "
-                f"사용 가능: {', '.join(SUPPORTED_MODEL_IDS)}"
-            )
+    def analyze_image_url(
+        self, image_url: str, model_id: str = DEFAULT_MODEL_ID
+    ) -> list[dict]:
         if not image_url:
             raise ValueError("이미지 URL이 비어 있습니다.")
 
-        client = self._build_client(model_id)
-
-        poller = client.begin_analyze_document(
-            model_id=model_id,
-            body=AnalyzeDocumentRequest(url_source=image_url),
+        suffix = Path(httpx.URL(image_url).path).suffix
+        payload = self._request_payload(
+            image_format=_infer_clova_format(suffix),
+            image_name=Path(httpx.URL(image_url).path).stem or "menu",
+            url=image_url,
         )
+        return self._extract_fields(self._post(payload))
 
-        result = poller.result()
-        return extract_raw_lines(result)
+    def close(self):
+        if self._owns_client:
+            self._client.close()
+
+    @staticmethod
+    def _extract_fields(response_payload: dict) -> list[dict]:
+        try:
+            return extract_clova_fields(response_payload)
+        except ValueError as error:
+            raise OCRServiceError(f"CLOVA OCR 응답 오류: {error}") from error
+
+    def _request_payload(
+        self,
+        *,
+        image_format: str,
+        image_name: str,
+        data: str | None = None,
+        url: str | None = None,
+    ) -> dict:
+        image: dict[str, str] = {"format": image_format, "name": image_name}
+        if data is not None:
+            image["data"] = data
+        elif url is not None:
+            image["url"] = url
+        else:
+            raise ValueError("CLOVA OCR 요청에는 data 또는 url이 필요합니다.")
+
+        return {
+            "version": "V2",
+            "requestId": str(uuid.uuid4()),
+            "timestamp": int(time.time() * 1000),
+            "lang": "ko",
+            "images": [image],
+            "enableTableDetection": False,
+        }
+
+    def _post(self, payload: dict) -> dict:
+        last_error: Exception | None = None
+
+        for attempt in range(1, self.max_attempts + 1):
+            self._rate_limiter.wait()
+            try:
+                response = self._client.post(
+                    self.endpoint,
+                    headers={
+                        "X-OCR-SECRET": self.secret,
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    raise OCRServiceError(
+                        f"CLOVA OCR 일시 오류: HTTP {response.status_code}",
+                        status_code=503 if response.status_code == 429 else 502,
+                        retryable=True,
+                    )
+                if response.is_error:
+                    raise OCRServiceError(
+                        f"CLOVA OCR 요청 거부: HTTP {response.status_code}",
+                        status_code=502,
+                        retryable=False,
+                    )
+                return response.json()
+            except (httpx.TimeoutException, httpx.NetworkError) as error:
+                last_error = error
+                service_error = OCRServiceError(
+                    "CLOVA OCR에 연결하지 못했습니다.", status_code=503, retryable=True
+                )
+            except OCRServiceError as error:
+                last_error = error
+                service_error = error
+            except ValueError as error:
+                raise OCRServiceError(
+                    "CLOVA OCR 응답 JSON이 올바르지 않습니다."
+                ) from error
+
+            if not service_error.retryable or attempt == self.max_attempts:
+                raise service_error from last_error
+            time.sleep(min(0.5 * (2 ** (attempt - 1)), 2.0))
+
+        raise OCRServiceError("CLOVA OCR 호출에 실패했습니다.") from last_error
 
 
-def extract_raw_lines(result):
-    lines = []
-
-    for page in getattr(result, "pages", []) or []:
-        for line in getattr(page, "lines", []) or []:
-            x_values, y_values = polygon_to_xy(line.polygon)
-            if not x_values or not y_values:
-                continue
-
-            lines.append(
-                {
-                    "text": line.content,
-                    "page": page.page_number,
-                    "x1": min(x_values),
-                    "y1": min(y_values),
-                    "x2": max(x_values),
-                    "y2": max(y_values),
-                    "confidence": 1.0,
-                }
-            )
-
-    return lines
-
-
-def polygon_to_xy(polygon):
-    if not polygon:
-        return [], []
-
-    x_values = []
-    y_values = []
-
-    for point in polygon:
-        if hasattr(point, "x") and hasattr(point, "y"):
-            x_values.append(float(point.x))
-            y_values.append(float(point.y))
-        elif isinstance(point, dict) and "x" in point and "y" in point:
-            x_values.append(float(point["x"]))
-            y_values.append(float(point["y"]))
-
-    if not x_values and all(isinstance(value, (int, float)) for value in polygon):
-        coords = list(polygon)
-        x_values = [float(value) for value in coords[0::2]]
-        y_values = [float(value) for value in coords[1::2]]
-
-    return x_values, y_values
+def _infer_clova_format(suffix: str) -> str:
+    image_format = suffix.lower().lstrip(".") or "jpg"
+    if image_format == "jpeg":
+        return "jpg"
+    if image_format not in SUPPORTED_IMAGE_FORMATS:
+        raise ValueError(f"지원하지 않는 OCR 이미지 형식입니다: {suffix or '(없음)'}")
+    return image_format

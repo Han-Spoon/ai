@@ -8,13 +8,12 @@ from parser import parse_menu_candidates
 from result_builder import build_final_result
 
 
-DEFAULT_MODEL_ID = "prebuilt-layout"
+DEFAULT_MODEL_ID = "clova-general-v2"
 
 
 def analyze_menu_image(
     image_path: str,
     model_id: str = DEFAULT_MODEL_ID,
-    fallback_read: bool = True,
     use_preprocess: bool = True,
     perspective: bool = True,
     deskew: bool = True,
@@ -31,30 +30,42 @@ def analyze_menu_image(
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
-    ocr_image_path = prepare_ocr_image(
-        image_path,
-        use_preprocess,
-        perspective=perspective,
-        deskew=deskew,
-        max_deskew_angle=max_deskew_angle,
-    )
-    should_cleanup_ocr_image = Path(ocr_image_path) != image
-
+    preprocessed_path = None
     try:
-        from ocr_client import AzureOCRClient
+        from clova_layout import parse_attempt_score, should_retry_with_preprocessing
+        from ocr_client import ClovaOCRClient
 
-        client = AzureOCRClient()
-        raw_lines, used_model_id = analyze_with_optional_fallback(
-            client=client,
-            image_path=str(ocr_image_path),
-            model_id=model_id,
-            fallback_read=fallback_read,
-        )
+        client = ClovaOCRClient()
+        raw_lines = client.analyze_image(str(image), model_id=model_id)
         menus = parse_menu_candidates(raw_lines)
+        preprocessing_applied = False
+
+        # 원본 OCR이 구조적으로 불량할 때만 전처리 비용을 지불한다.
+        if use_preprocess and should_retry_with_preprocessing(raw_lines, menus):
+            try:
+                preprocessed_path = prepare_ocr_image(
+                    image_path,
+                    True,
+                    perspective=perspective,
+                    deskew=deskew,
+                    max_deskew_angle=max_deskew_angle,
+                )
+                retry_lines = client.analyze_image(str(preprocessed_path), model_id=model_id)
+                retry_menus = parse_menu_candidates(retry_lines)
+                retry_score = parse_attempt_score(retry_lines, retry_menus)
+                original_score = parse_attempt_score(raw_lines, menus)
+                if retry_score > original_score:
+                    raw_lines = retry_lines
+                    menus = retry_menus
+                    preprocessing_applied = True
+            except (OSError, RuntimeError, ValueError) as error:
+                # 보정 경로의 실패 때문에 이미 얻은 원본 OCR 결과까지 버리지 않는다.
+                print(f"[경고] OCR 전처리 재시도 실패, 원본 결과 사용: {error}")
 
         return {
-            "modelId": used_model_id,
+            "modelId": model_id,
             "rawLines": raw_lines,
+            "preprocessingApplied": preprocessing_applied,
             "final": build_final_result(
                 image_path,
                 menus,
@@ -69,14 +80,15 @@ def analyze_menu_image(
             ),
         }
     finally:
-        if should_cleanup_ocr_image and Path(ocr_image_path).exists():
-            Path(ocr_image_path).unlink()
+        if preprocessed_path and Path(preprocessed_path).exists():
+            Path(preprocessed_path).unlink()
+        if "client" in locals():
+            client.close()
 
 
 def analyze_menu_image_by_url(
     image_url: str,
     model_id: str = DEFAULT_MODEL_ID,
-    fallback_read: bool = True,
     source: str = "upload",
     storage_key: str | None = None,
     mime_type: str | None = None,
@@ -84,35 +96,34 @@ def analyze_menu_image_by_url(
     enable_gpt_post_process: bool = True,
     enable_gpt_judgment: bool = True,
 ):
-    from ocr_client import AzureOCRClient
+    from ocr_client import ClovaOCRClient
 
-    client = AzureOCRClient()
-    raw_lines, used_model_id = analyze_url_with_optional_fallback(
-        client=client,
-        image_url=image_url,
-        model_id=model_id,
-        fallback_read=fallback_read,
-    )
-    menus = parse_menu_candidates(raw_lines)
-    image_title = infer_image_title(storage_key, image_url)
+    client = ClovaOCRClient()
+    try:
+        raw_lines = client.analyze_image_url(image_url, model_id=model_id)
+        menus = parse_menu_candidates(raw_lines)
+        image_title = infer_image_title(storage_key, image_url)
 
-    return {
-        "modelId": used_model_id,
-        "rawLines": raw_lines,
-        "final": build_final_result(
-            image_title,
-            menus,
-            source=source,
-            storage_key=storage_key,
-            image_url=image_url,
-            mime_type=mime_type,
-            file_size=file_size,
-            image_title=image_title,
-            raw_lines=raw_lines,
-            enable_gpt_post_process=enable_gpt_post_process,
-            enable_gpt_judgment=enable_gpt_judgment,
-        ),
-    }
+        return {
+            "modelId": model_id,
+            "rawLines": raw_lines,
+            "preprocessingApplied": False,
+            "final": build_final_result(
+                image_title,
+                menus,
+                source=source,
+                storage_key=storage_key,
+                image_url=image_url,
+                mime_type=mime_type,
+                file_size=file_size,
+                image_title=image_title,
+                raw_lines=raw_lines,
+                enable_gpt_post_process=enable_gpt_post_process,
+                enable_gpt_judgment=enable_gpt_judgment,
+            ),
+        }
+    finally:
+        client.close()
 
 
 def prepare_ocr_image(
@@ -145,46 +156,6 @@ def prepare_ocr_image(
     return processed_path
 
 
-def analyze_with_optional_fallback(client, image_path: str, model_id: str, fallback_read: bool):
-    try:
-        raw_lines = client.analyze_image(image_path, model_id=model_id)
-        if raw_lines:
-            return raw_lines, model_id
-
-        if fallback_read and model_id == "prebuilt-layout":
-            print("[안내] prebuilt-layout 결과 line이 0개라서 prebuilt-read로 한 번만 재시도합니다.")
-            return client.analyze_image(image_path, model_id="prebuilt-read"), "prebuilt-read"
-
-        return raw_lines, model_id
-    except Exception as error:
-        if fallback_read and model_id == "prebuilt-layout":
-            print(f"[안내] prebuilt-layout 호출 실패: {error}")
-            print("[안내] prebuilt-read로 한 번만 재시도합니다.")
-            return client.analyze_image(image_path, model_id="prebuilt-read"), "prebuilt-read"
-
-        raise
-
-
-def analyze_url_with_optional_fallback(client, image_url: str, model_id: str, fallback_read: bool):
-    try:
-        raw_lines = client.analyze_image_url(image_url, model_id=model_id)
-        if raw_lines:
-            return raw_lines, model_id
-
-        if fallback_read and model_id == "prebuilt-layout":
-            print("[안내] prebuilt-layout 결과 line이 0개라서 prebuilt-read로 한 번만 재시도합니다.")
-            return client.analyze_image_url(image_url, model_id="prebuilt-read"), "prebuilt-read"
-
-        return raw_lines, model_id
-    except Exception as error:
-        if fallback_read and model_id == "prebuilt-layout":
-            print(f"[안내] prebuilt-layout 호출 실패: {error}")
-            print("[안내] prebuilt-read로 한 번만 재시도합니다.")
-            return client.analyze_image_url(image_url, model_id="prebuilt-read"), "prebuilt-read"
-
-        raise
-
-
 def save_json(data, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as json_file:
@@ -210,22 +181,16 @@ def infer_image_title(storage_key: str | None, image_url: str):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Azure OCR 메뉴판 구조화 실행")
+    parser = argparse.ArgumentParser(description="CLOVA General OCR 메뉴판 구조화 실행")
     parser.add_argument("--image", help="분석할 메뉴판 이미지 경로")
     parser.add_argument(
         "--ocr-image-url",
-        help="Azure OCR이 읽을 수 있는 Blob read SAS URL. 지정하면 로컬 이미지 대신 URL로 분석",
-    )
-    parser.add_argument("--model", default=DEFAULT_MODEL_ID, help="Azure Document Intelligence 모델 ID")
-    parser.add_argument(
-        "--no-fallback-read",
-        action="store_true",
-        help="prebuilt-layout 실패 시 prebuilt-read 재시도를 하지 않음",
+        help="CLOVA OCR이 읽을 수 있는 HTTPS 이미지 URL. 지정하면 로컬 이미지 대신 URL로 분석",
     )
     parser.add_argument(
         "--no-preprocess",
         action="store_true",
-        help="로컬 이미지 전처리를 하지 않고 원본 이미지를 Azure OCR에 전달",
+        help="원본 결과가 불량해도 전처리 재시도를 하지 않음",
     )
     parser.add_argument(
         "--no-perspective",
@@ -297,8 +262,6 @@ def main():
         if args.ocr_image_url:
             result = analyze_menu_image_by_url(
                 args.ocr_image_url,
-                args.model,
-                fallback_read=not args.no_fallback_read,
                 source=args.source,
                 storage_key=args.storage_key,
                 mime_type=args.mime_type,
@@ -313,8 +276,6 @@ def main():
 
             result = analyze_menu_image(
                 args.image,
-                args.model,
-                fallback_read=not args.no_fallback_read,
                 use_preprocess=not args.no_preprocess,
                 perspective=not args.no_perspective,
                 deskew=not args.no_deskew,

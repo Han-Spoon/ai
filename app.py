@@ -16,11 +16,13 @@ import importlib.util
 import os
 import sys
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import Body, FastAPI, HTTPException
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 
 # ── 기존 패키지 모듈을 재사용하기 위한 경로 설정 ──────────────────────────────
@@ -49,6 +51,7 @@ build_final_results_from_judged = _result_main.build_final_results_from_judged
 
 # 룰엔진 진입 함수 (engine 모듈명은 고유라 충돌 없음)
 from engine import analyze_all  # noqa: E402
+from ocr_client import OCRServiceError  # noqa: E402
 
 app = FastAPI(title="Hanspoon AI", version="1.0.0")
 
@@ -79,24 +82,7 @@ def run_ocr(req: OcrRequest):
 
     tmp_path: str | None = None
     try:
-        # 이미지 다운로드 (실패 시 502)
-        try:
-            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-                resp = client.get(req.image_url)
-                resp.raise_for_status()
-                content = resp.content
-                mime_type = _normalize_content_type(resp.headers.get("content-type"))
-        except httpx.HTTPError as err:
-            raise HTTPException(
-                status_code=502,
-                detail=f"이미지 다운로드 실패: {err}",
-            ) from err
-
-        if mime_type and not mime_type.startswith("image/"):
-            raise HTTPException(
-                status_code=415,
-                detail=f"이미지 MIME 타입이 아닙니다: {mime_type}",
-            )
+        content, mime_type = _download_and_validate_image(req.image_url)
 
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(content)
@@ -115,6 +101,8 @@ def run_ocr(req: OcrRequest):
         return result["final"]
     except HTTPException:
         raise
+    except OCRServiceError as err:
+        raise HTTPException(status_code=err.status_code, detail=str(err)) from err
     except Exception as err:  # OCR/GPT 등 파이프라인 오류 → 500
         raise HTTPException(status_code=500, detail=f"OCR 처리 실패: {err}") from err
     finally:
@@ -159,3 +147,63 @@ def _normalize_content_type(content_type: str | None) -> str | None:
     if not content_type:
         return None
     return content_type.split(";", 1)[0].strip().lower() or None
+
+
+def _download_and_validate_image(image_url: str) -> tuple[bytes, str | None]:
+    parsed = urlparse(image_url)
+    allow_http = os.getenv("OCR_ALLOW_HTTP", "false").lower() == "true"
+    if parsed.scheme != "https" and not (allow_http and parsed.scheme == "http"):
+        raise HTTPException(status_code=400, detail="이미지는 HTTPS URL만 사용할 수 있습니다.")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="이미지 URL 호스트가 올바르지 않습니다.")
+
+    allowed_hosts = {
+        host.strip().lower()
+        for host in os.getenv("OCR_ALLOWED_IMAGE_HOSTS", "").split(",")
+        if host.strip()
+    }
+    if allowed_hosts and parsed.hostname.lower() not in allowed_hosts:
+        raise HTTPException(status_code=400, detail="허용되지 않은 이미지 저장소입니다.")
+
+    max_bytes = int(os.getenv("OCR_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+    try:
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+            with client.stream("GET", image_url) as response:
+                response.raise_for_status()
+                mime_type = _normalize_content_type(response.headers.get("content-type"))
+                if mime_type and not mime_type.startswith("image/"):
+                    raise HTTPException(
+                        status_code=415,
+                        detail=f"이미지 MIME 타입이 아닙니다: {mime_type}",
+                    )
+
+                declared_size = int(response.headers.get("content-length") or 0)
+                if declared_size > max_bytes:
+                    raise HTTPException(status_code=413, detail="이미지 파일이 너무 큽니다.")
+
+                chunks = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise HTTPException(status_code=413, detail="이미지 파일이 너무 큽니다.")
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+    except HTTPException:
+        raise
+    except httpx.HTTPError as err:
+        raise HTTPException(status_code=502, detail=f"이미지 다운로드 실패: {err}") from err
+
+    try:
+        with Image.open(BytesIO(content)) as image:
+            width, height = image.size
+            max_pixels = int(os.getenv("OCR_MAX_IMAGE_PIXELS", "40000000"))
+            if width <= 0 or height <= 0 or width * height > max_pixels:
+                raise HTTPException(status_code=413, detail="이미지 해상도가 허용 범위를 벗어났습니다.")
+            image.verify()
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError) as err:
+        raise HTTPException(status_code=415, detail="유효한 이미지 파일이 아닙니다.") from err
+
+    return content, mime_type
