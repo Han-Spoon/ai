@@ -49,9 +49,14 @@ pip install -r requirements.txt
 ```bash
 CLOVA_OCR_URL=https://...apigw.ntruss.com/custom/v1/...
 CLOVA_OCR_SECRET=your_clova_ocr_secret
-CLOVA_OCR_TIMEOUT_SECONDS=60
-CLOVA_OCR_MAX_ATTEMPTS=3
+CLOVA_OCR_TIMEOUT_SECONDS=10
+CLOVA_OCR_MAX_ATTEMPTS=2
+CLOVA_OCR_MAX_CALLS_PER_SCAN=2
 CLOVA_OCR_MIN_INTERVAL_SECONDS=1.0
+OCR_REQUEST_BUDGET_SECONDS=25
+OCR_TOTAL_BUDGET_SECONDS=22
+OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS=8
+OCR_MAX_CONCURRENT_SCANS=2
 
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o-mini
@@ -69,7 +74,7 @@ OPENAI_MODEL=gpt-4o-mini
 python3 ai_ocr/main.py --image images/menu_001.jpg
 ```
 
-기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, 후처리된 최종 메뉴 JSON과 OCR 원본을 함께 평가한 결과를 `gpt_quality_judgment`에 추가합니다. OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
+CLI 기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini 후처리와 품질 판단을 시도합니다. 반면 FastAPI `/v1/ocr`은 30초 이내 결과를 위해 두 기능을 기본으로 끄고, 결정론적 파싱·정규화·품질 점수만 사용합니다. 운영 경로에서 GPT를 다시 켜려면 `OCR_ENABLE_GPT_POST_PROCESS`, `OCR_ENABLE_GPT_JUDGMENT`를 명시적으로 `true`로 설정해야 합니다.
 
 다른 이미지를 실행하려면 `images/` 폴더에 이미지를 넣고 `--image`만 바꿉니다.
 
@@ -97,7 +102,7 @@ python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-post-process
 python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-judgment
 ```
 
-기본 실행은 먼저 원본을 OCR 처리합니다. 메뉴-가격 매칭률이 낮을 때만 자동 원근 보정, 기울기 보정, 확대를 적용해 한 번 더 호출하고 구조 점수가 높은 결과를 선택합니다.
+기본 실행은 로컬 품질 지표(해상도·흐림·기울기)로 원본과 보정본 중 첫 CLOVA 입력을 선택합니다. 첫 결과의 메뉴-가격 구조가 불량하고 전체 시간 예산이 8초 이상 남았을 때만 반대 입력으로 한 번 더 호출합니다. 네트워크 재시도와 품질 재시도를 합쳐 스캔당 CLOVA 외부 호출은 기본 최대 2회입니다.
 
 ```bash
 python3 ai_ocr/main.py --image images/tilted_menu.jpg
@@ -164,12 +169,41 @@ CLOVA OCR과 OpenAI 키는 `.env` 또는 ECS Secret 환경 변수로 주입합�
 
 | Method | Endpoint | 기능 설명 |
 | --- | --- | --- |
-| `POST` | `/v1/ocr` | `{ "source", "storage_key", "image_url" }`를 받아 `image_url`을 다운로드한 뒤 OCR 파이프라인을 실행하고 `build_final_result` dict를 그대로 반환. 다운로드 실패 시 502, 처리 실패 시 500. |
+| `POST` | `/v1/ocr` | 기존 `{ "source", "storage_key", "image_url" }`와 호환. `OCR_S3_FETCH_ENABLED=true`면 `storage_key` + ECS task role로 S3에서 스트리밍하고, 아니면 `image_url`을 사용. OCR Fast Path는 GPT를 기본 사용하지 않음. |
 | `POST` | `/v1/ruleengine` | `{ "profile", "ocr_result" }`를 받아 `analyze_all(ocr_result, profile)` 결과 dict를 그대로 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
 | `POST` | `/v1/result` | `/v1/ruleengine` 응답(judged_result) dict를 그대로 받아 `build_final_results_from_judged`로 `menu_analyses`를 최종 `FinalOutput`(message/owner_card 포함)으로 교체해 반환. 처리 실패 시 500. |
 | `GET` | `/health` | 헬스체크 (`{"status": "ok"}`). |
 
 `profile` 키: `religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy`. `allergies`는 이미 `is_*` 태그 형태(예: `["is_milk"]`)로 전달합니다.
+
+### 30초 SLA 운영 설정
+
+```bash
+# OCR 단일 호출 timeout / 전체 deadline
+CLOVA_OCR_TIMEOUT_SECONDS=10
+CLOVA_OCR_MAX_ATTEMPTS=2
+CLOVA_OCR_MAX_CALLS_PER_SCAN=2
+OCR_REQUEST_BUDGET_SECONDS=25
+OCR_TOTAL_BUDGET_SECONDS=22
+OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS=8
+
+# 768MB AI 컨테이너에서 메모리 폭주를 막는 backpressure
+OCR_MAX_CONCURRENT_SCANS=2
+OCR_QUEUE_WAIT_SECONDS=1
+OCR_PREPROCESS_MAX_PIXELS=20000000
+```
+
+`scan_quality`에 `ocr_attempt_count`, `selected_ocr_attempt`, `preprocessing_applied`, `ocr_processing_time_ms`, `queue_wait_ms`, `image_fetch_source`가 포함되어 병목을 구간별로 관찰할 수 있습니다.
+
+### S3 IAM 스트리밍(운영 권장)
+
+```bash
+OCR_S3_FETCH_ENABLED=true
+OCR_S3_BUCKET=hanspoon-prod-images-...
+AWS_REGION=ap-northeast-2
+```
+
+AI ECS task role에 해당 버킷의 `s3:GetObject`가 있어야 합니다. 활성화 전에는 기존 Presigned URL 다운로드가 그대로 작동합니다. URL fallback을 운영에서 사용하면 `OCR_ALLOWED_IMAGE_HOSTS`를 정확한 S3 호스트로 설정하고 `OCR_REQUIRE_IMAGE_HOST_ALLOWLIST=true`로 fail-closed 처리하세요.
 
 ## CLOVA 호출 없이 테스트
 

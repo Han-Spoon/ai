@@ -1,3 +1,5 @@
+import re
+
 from normalizer import (
     PRICE_PATTERN,
     looks_like_description,
@@ -9,8 +11,6 @@ from normalizer import (
     normalize_price_detail,
     remove_price,
 )
-import re
-
 
 NOISE_KEYWORDS = ("영업", "전화", "예약", "원산지", "포장", "배달", "OPEN", "CLOSE", "메뉴판")
 NON_FOOD_KEYWORDS = ("사리추가",)
@@ -351,6 +351,11 @@ def build_menu_item(raw_name, price, source_lines, price_raw=None, options=None)
         item["category"] = None
         item["matchScore"] = None
         item["nameCorrected"] = normalized_name != re.sub(r"\s+", "", raw_name)
+
+    if item["nameCorrected"]:
+        item["correctionReason"] = "known_ocr_typo_or_dictionary_match"
+    else:
+        item["correctionReason"] = None
 
     item["description"] = ""
     item["descriptionLines"] = []

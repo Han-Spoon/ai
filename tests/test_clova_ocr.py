@@ -6,14 +6,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 OCR_DIR = ROOT / "ai_ocr"
 if str(OCR_DIR) not in sys.path:
     sys.path.insert(0, str(OCR_DIR))
 
-from clova_layout import count_price_anchors, extract_clova_fields  # noqa: E402
+import image_quality  # noqa: E402
 import ocr_client  # noqa: E402
+from clova_layout import count_price_anchors, extract_clova_fields  # noqa: E402
 from ocr_client import ClovaOCRClient  # noqa: E402
 from parser import parse_menu_candidates  # noqa: E402
 from result_builder import build_final_result  # noqa: E402
@@ -25,7 +25,9 @@ ocr_main = importlib.util.module_from_spec(_OCR_MAIN_SPEC)
 _OCR_MAIN_SPEC.loader.exec_module(ocr_main)
 
 
-EXPECTED_MENUS = {
+# CLOVA 원문을 공간 파싱하고, 확정적 메뉴명 교정까지 적용한 계약.
+# rawName은 아래 별도 assertion으로 보존 여부를 검증한다.
+EXPECTED_NORMALIZED_MENUS = {
     "menu_001": {
         ("돼지불백", 11000),
         ("불백비빔", 11000),
@@ -70,7 +72,7 @@ EXPECTED_MENUS = {
         ("된장찌개", 6500),
         ("참치회덮밥", 6500),
         ("제육덮밥", 6500),
-        ("가재미탕", 6500),
+        ("가자미탕", 6500),
         ("연포탕", 8000),
         ("닭도리탕", 6500),
     },
@@ -86,9 +88,15 @@ def test_clova_sample_extracts_exact_menu_price_pairs(sample_name):
     menus = parse_menu_candidates(tokens)
     actual = {(menu["normalizedCandidate"], menu["price"]) for menu in menus}
 
-    assert actual == EXPECTED_MENUS[sample_name]
+    assert actual == EXPECTED_NORMALIZED_MENUS[sample_name]
     assert all(menu["confidence"] > 0 for menu in menus)
     assert all(menu["source"]["provider"] == "clova" for menu in menus)
+    if sample_name == "menu_003":
+        corrected = next(
+            menu for menu in menus if menu["normalizedCandidate"] == "가자미탕"
+        )
+        assert corrected["rawName"].replace(" ", "") == "가재미탕"
+        assert corrected["nameCorrected"] is True
 
 
 def test_calendar_range_and_url_are_not_prices():
@@ -124,7 +132,7 @@ def test_low_resolution_with_complete_pairs_is_reviewable_not_hard_failure():
     assert quality["pair_coverage"] == 1.0
 
 
-def test_clova_client_sends_v2_base64_request(tmp_path, monkeypatch):
+def test_clova_client_sends_v2_multipart_request(tmp_path, monkeypatch):
     monkeypatch.setenv("CLOVA_OCR_URL", "https://example.test/ocr")
     monkeypatch.setenv("CLOVA_OCR_SECRET", "test-secret")
     monkeypatch.setenv("CLOVA_OCR_MIN_INTERVAL_SECONDS", "0")
@@ -137,12 +145,15 @@ def test_clova_client_sends_v2_base64_request(tmp_path, monkeypatch):
     )
 
     def handler(request: httpx.Request):
-        body = json.loads(request.content)
         assert request.headers["X-OCR-SECRET"] == "test-secret"
-        assert body["version"] == "V2"
-        assert body["enableTableDetection"] is False
-        assert body["images"][0]["format"] == "jpg"
-        assert body["images"][0]["data"]
+        assert request.headers["content-type"].startswith("multipart/form-data")
+        body = request.content.decode("utf-8")
+        assert 'name="message"' in body
+        assert '"version": "V2"' in body
+        assert '"enableTableDetection": false' in body
+        assert '"format": "jpg"' in body
+        assert 'name="file"; filename="menu.jpg"' in body
+        assert "fake-image" in body
         return httpx.Response(200, json=sample)
 
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -158,17 +169,25 @@ def test_pipeline_uses_original_when_clova_parse_is_good(monkeypatch):
     tokens = _sample_tokens("menu_001")
 
     class FakeClient:
-        calls = 0
+        calls_started = 0
 
         def analyze_image(self, image_path, model_id):
-            self.calls += 1
+            self.calls_started += 1
             return tokens
+
+        def can_start_call(self, min_remaining_seconds=0):
+            return self.calls_started < 2
 
         def close(self):
             pass
 
     fake = FakeClient()
-    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda: fake)
+    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda **kwargs: fake)
+    monkeypatch.setattr(
+        image_quality,
+        "analyze_image_quality",
+        lambda path: {"available": False},
+    )
 
     result = ocr_main.analyze_menu_image(
         str(ROOT / "images" / "menu_001.jpg"),
@@ -176,7 +195,7 @@ def test_pipeline_uses_original_when_clova_parse_is_good(monkeypatch):
         enable_gpt_judgment=False,
     )
 
-    assert fake.calls == 1
+    assert fake.calls_started == 1
     assert result["preprocessingApplied"] is False
     assert result["final"]["scan_session"]["menu_count"] == 17
 
@@ -191,17 +210,25 @@ def test_pipeline_retries_once_and_selects_better_preprocessed_result(
     processed.write_bytes(b"processed")
 
     class FakeClient:
-        calls = 0
+        calls_started = 0
 
         def analyze_image(self, image_path, model_id):
-            self.calls += 1
-            return [] if self.calls == 1 else good_tokens
+            self.calls_started += 1
+            return [] if self.calls_started == 1 else good_tokens
+
+        def can_start_call(self, min_remaining_seconds=0):
+            return self.calls_started < 2
 
         def close(self):
             pass
 
     fake = FakeClient()
-    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda: fake)
+    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda **kwargs: fake)
+    monkeypatch.setattr(
+        image_quality,
+        "analyze_image_quality",
+        lambda path: {"available": False},
+    )
     monkeypatch.setattr(
         ocr_main, "prepare_ocr_image", lambda *args, **kwargs: processed
     )
@@ -212,10 +239,128 @@ def test_pipeline_retries_once_and_selects_better_preprocessed_result(
         enable_gpt_judgment=False,
     )
 
-    assert fake.calls == 2
+    assert fake.calls_started == 2
     assert result["preprocessingApplied"] is True
     assert result["final"]["scan_session"]["menu_count"] == 12
     assert not processed.exists()
+
+
+def test_pipeline_preprocesses_before_first_clova_call_for_clearly_bad_image(
+    tmp_path, monkeypatch
+):
+    tokens = _sample_tokens("menu_003")
+    source = tmp_path / "source.jpg"
+    processed = tmp_path / "processed.jpg"
+    source.write_bytes(b"source")
+    processed.write_bytes(b"processed")
+
+    class FakeClient:
+        def __init__(self):
+            self.calls_started = 0
+            self.received_paths = []
+
+        def analyze_image(self, image_path, model_id):
+            self.calls_started += 1
+            self.received_paths.append(image_path)
+            return tokens
+
+        def can_start_call(self, min_remaining_seconds=0):
+            return self.calls_started < 2
+
+        def close(self):
+            pass
+
+    fake = FakeClient()
+    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda **kwargs: fake)
+    monkeypatch.setattr(
+        image_quality,
+        "analyze_image_quality",
+        lambda path: {
+            "available": True,
+            "width": 500,
+            "height": 900,
+            "blur_score": 120,
+            "skew_angle": 0,
+        },
+    )
+    monkeypatch.setattr(
+        ocr_main, "prepare_ocr_image", lambda *args, **kwargs: processed
+    )
+
+    result = ocr_main.analyze_menu_image(
+        str(source),
+        enable_gpt_post_process=False,
+        enable_gpt_judgment=False,
+    )
+
+    assert fake.calls_started == 1
+    assert fake.received_paths == [str(processed)]
+    assert result["preprocessingApplied"] is True
+    assert result["final"]["scan_quality"]["selected_ocr_attempt"] == "preprocessed"
+    assert not processed.exists()
+
+
+def test_pipeline_skips_quality_retry_when_deadline_budget_is_insufficient(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source.jpg"
+    source.write_bytes(b"source")
+
+    class FakeClient:
+        calls_started = 0
+
+        def analyze_image(self, image_path, model_id):
+            self.calls_started += 1
+            return []
+
+        def can_start_call(self, min_remaining_seconds=0):
+            return False
+
+        def close(self):
+            pass
+
+    fake = FakeClient()
+    monkeypatch.setattr(ocr_client, "ClovaOCRClient", lambda **kwargs: fake)
+    monkeypatch.setattr(
+        image_quality,
+        "analyze_image_quality",
+        lambda path: {"available": False},
+    )
+
+    result = ocr_main.analyze_menu_image(
+        str(source),
+        enable_gpt_post_process=False,
+        enable_gpt_judgment=False,
+    )
+
+    assert fake.calls_started == 1
+    assert result["final"]["scan_quality"]["retry_skipped_reason"] == (
+        "insufficient_time_or_call_budget"
+    )
+
+
+def test_clova_client_caps_total_outbound_calls_per_scan(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOVA_OCR_URL", "https://example.test/ocr")
+    monkeypatch.setenv("CLOVA_OCR_SECRET", "test-secret")
+    monkeypatch.setenv("CLOVA_OCR_MIN_INTERVAL_SECONDS", "0")
+    monkeypatch.setenv("CLOVA_OCR_MAX_ATTEMPTS", "5")
+    image_path = tmp_path / "menu.jpg"
+    image_path.write_bytes(b"fake-image")
+    requests = 0
+
+    def handler(request: httpx.Request):
+        nonlocal requests
+        requests += 1
+        return httpx.Response(503, json={"message": "temporary"})
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = ClovaOCRClient(client=http_client, max_calls_per_scan=2)
+
+    with pytest.raises(ocr_client.OCRServiceError):
+        client.analyze_image(str(image_path))
+
+    assert requests == 2
+    assert client.calls_started == 2
 
 
 def _sample_tokens(sample_name: str) -> list[dict]:

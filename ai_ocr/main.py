@@ -1,5 +1,8 @@
 import argparse
 import json
+import os
+import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,18 +33,26 @@ def analyze_menu_image(
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
+    started_at = time.monotonic()
+    total_budget_seconds = float(os.getenv("OCR_TOTAL_BUDGET_SECONDS", "22"))
+    retry_min_remaining = float(
+        os.getenv("OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS", "8")
+    )
+    deadline = started_at + max(total_budget_seconds, 1.0)
     preprocessed_path = None
+    preprocessing_attempted = False
+    retry_skipped_reason = None
     try:
         from clova_layout import parse_attempt_score, should_retry_with_preprocessing
+        from image_quality import analyze_image_quality, should_preprocess_before_ocr
         from ocr_client import ClovaOCRClient
 
-        client = ClovaOCRClient()
-        raw_lines = client.analyze_image(str(image), model_id=model_id)
-        menus = parse_menu_candidates(raw_lines)
-        preprocessing_applied = False
+        input_quality = analyze_image_quality(image)
+        first_input = image
+        first_attempt_name = "original"
 
-        # 원본 OCR이 구조적으로 불량할 때만 전처리 비용을 지불한다.
-        if use_preprocess and should_retry_with_preprocessing(raw_lines, menus):
+        # 원본+재시도 2회 대기 대신 보정본을 첫 입력으로 선택.
+        if use_preprocess and should_preprocess_before_ocr(input_quality):
             try:
                 preprocessed_path = prepare_ocr_image(
                     image_path,
@@ -50,34 +61,87 @@ def analyze_menu_image(
                     deskew=deskew,
                     max_deskew_angle=max_deskew_angle,
                 )
-                retry_lines = client.analyze_image(str(preprocessed_path), model_id=model_id)
-                retry_menus = parse_menu_candidates(retry_lines)
-                retry_score = parse_attempt_score(retry_lines, retry_menus)
-                original_score = parse_attempt_score(raw_lines, menus)
-                if retry_score > original_score:
-                    raw_lines = retry_lines
-                    menus = retry_menus
-                    preprocessing_applied = True
+                preprocessing_attempted = True
+                first_input = Path(preprocessed_path)
+                first_attempt_name = "preprocessed"
             except (OSError, RuntimeError, ValueError) as error:
-                # 보정 경로의 실패 때문에 이미 얻은 원본 OCR 결과까지 버리지 않는다.
-                print(f"[경고] OCR 전처리 재시도 실패, 원본 결과 사용: {error}")
+                print(f"[경고] OCR 사전 전처리 실패, 원본 사용: {error}")
+
+        client = ClovaOCRClient(
+            deadline_monotonic=deadline,
+            max_calls_per_scan=int(os.getenv("CLOVA_OCR_MAX_CALLS_PER_SCAN", "2")),
+        )
+        raw_lines = client.analyze_image(str(first_input), model_id=model_id)
+        menus = parse_menu_candidates(raw_lines)
+        selected_attempt = first_attempt_name
+
+        # 첫 OCR이 구조적으로 불량하고 전체 deadline이 충분할 때만
+        # 반대 입력(원본 또는 보정본)으로 단 한 번 품질 재시도한다.
+        if use_preprocess and should_retry_with_preprocessing(raw_lines, menus):
+            if not client.can_start_call(retry_min_remaining):
+                retry_skipped_reason = "insufficient_time_or_call_budget"
+            else:
+                try:
+                    if first_attempt_name == "preprocessed":
+                        retry_input = image
+                        retry_attempt_name = "original"
+                    else:
+                        preprocessed_path = prepare_ocr_image(
+                            image_path,
+                            True,
+                            perspective=perspective,
+                            deskew=deskew,
+                            max_deskew_angle=max_deskew_angle,
+                        )
+                        preprocessing_attempted = True
+                        retry_input = Path(preprocessed_path)
+                        retry_attempt_name = "preprocessed"
+
+                    retry_lines = client.analyze_image(
+                        str(retry_input), model_id=model_id
+                    )
+                    retry_menus = parse_menu_candidates(retry_lines)
+                    retry_score = parse_attempt_score(retry_lines, retry_menus)
+                    first_score = parse_attempt_score(raw_lines, menus)
+                    if retry_score > first_score:
+                        raw_lines = retry_lines
+                        menus = retry_menus
+                        selected_attempt = retry_attempt_name
+                except (OSError, RuntimeError, ValueError) as error:
+                    # 보정/대체 경로의 실패 때문에 이미 얻은 OCR 결과까지 버리지 않는다.
+                    retry_skipped_reason = "alternate_attempt_failed"
+                    print(f"[경고] OCR 대체 입력 재시도 실패, 첫 결과 사용: {error}")
+
+        final = build_final_result(
+            image_path,
+            menus,
+            source=source,
+            storage_key=storage_key,
+            image_url=image_url,
+            mime_type=mime_type,
+            file_size=file_size,
+            raw_lines=raw_lines,
+            enable_gpt_post_process=enable_gpt_post_process,
+            enable_gpt_judgment=enable_gpt_judgment,
+        )
+        processing_time_ms = int((time.monotonic() - started_at) * 1000)
+        final["scan_quality"].update(
+            {
+                "preprocessing_attempted": preprocessing_attempted,
+                "preprocessing_applied": selected_attempt == "preprocessed",
+                "selected_ocr_attempt": selected_attempt,
+                "ocr_attempt_count": client.calls_started,
+                "retry_skipped_reason": retry_skipped_reason,
+                "ocr_processing_time_ms": processing_time_ms,
+                "ocr_budget_ms": int(total_budget_seconds * 1000),
+            }
+        )
 
         return {
             "modelId": model_id,
             "rawLines": raw_lines,
-            "preprocessingApplied": preprocessing_applied,
-            "final": build_final_result(
-                image_path,
-                menus,
-                source=source,
-                storage_key=storage_key,
-                image_url=image_url,
-                mime_type=mime_type,
-                file_size=file_size,
-                raw_lines=raw_lines,
-                enable_gpt_post_process=enable_gpt_post_process,
-                enable_gpt_judgment=enable_gpt_judgment,
-            ),
+            "preprocessingApplied": selected_attempt == "preprocessed",
+            "final": final,
         }
     finally:
         if preprocessed_path and Path(preprocessed_path).exists():
@@ -137,7 +201,10 @@ def prepare_ocr_image(
         return Path(image_path)
 
     source = Path(image_path)
-    output_path = Path("images/preprocessed") / f"{source.stem}_preprocessed{source.suffix}"
+    with tempfile.NamedTemporaryFile(
+        prefix=f"{source.stem}_preprocessed_", suffix=".jpg", delete=False
+    ) as temporary:
+        output_path = Path(temporary.name)
     from preprocess_image import preprocess_image
 
     processed_path = preprocess_image(
