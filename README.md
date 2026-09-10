@@ -1,6 +1,6 @@
 # Menu OCR AI
 
-한국 로컬 식당 메뉴판 이미지를 Azure Document Intelligence로 OCR 처리한 뒤, 백엔드가 저장하기 쉬운 JSON으로 구조화하는 Python MVP 모듈입니다.
+한국 로컬 식당 메뉴판 이미지를 NAVER CLOVA General OCR V2로 처리한 뒤, 백엔드가 저장하기 쉬운 JSON으로 구조화하는 Python 모듈입니다.
 
 이 파트는 OCR, 메뉴명/가격 추출, 메뉴명 후처리, ERD 기반 JSON 생성까지만 담당합니다. 번역, 위험도 판단, 매움 여부 판단, DB 저장은 후속 파트와 백엔드가 담당합니다.
 
@@ -14,21 +14,22 @@
 AI_industry_lecture/
   ai_ocr/                    # OCR 실행 코드
     main.py                  # 실제 이미지 OCR 실행
-    ocr_client.py            # Azure Document Intelligence 호출
-    parser.py                # OCR line에서 메뉴 후보 추출
+    ocr_client.py            # CLOVA General OCR V2 호출
+    clova_layout.py          # 가격 anchor 기반 공간 파싱
+    parser.py                # OCR token에서 메뉴 후보 추출
     normalizer.py            # 가격/메뉴명 정규화와 OCR 잡문자 제거
     menu_dictionary.py       # 메뉴명 사전
     preprocess_image.py      # 이미지 전처리
     reprocess_raw.py         # 저장된 raw OCR 재처리
-    compare_models.py        # Azure OCR 모델 비교
+    compare_models.py        # 원본/전처리 CLOVA 결과 비교
     result_builder.py        # ERD 기반 최종 JSON 생성
     test_parser_with_mock.py # mock 데이터 테스트
   images/                    # OCR 테스트 이미지
-  sample_data/               # Azure 호출 없는 mock 데이터
+  sample_data/               # CLOVA 호출 없는 회귀 테스트 데이터
   outputs/
-    raw/                     # Azure OCR 원본 line JSON
+    raw/                     # 공급자 중립 CLOVA token JSON
     final/                   # 백엔드 전달용 최종 JSON
-    model_compare/           # 모델 비교 결과
+    preprocess_compare/      # 원본/전처리 비교 결과
   requirements.txt
   README.md
 ```
@@ -46,46 +47,47 @@ pip install -r requirements.txt
 프로젝트 루트에 `.env` 파일이 없으면 새로 만들고 아래 값을 입력합니다. 이미 있으면 그대로 사용하면 됩니다.
 
 ```bash
-AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource-name.cognitiveservices.azure.com/
-AZURE_DOCUMENT_INTELLIGENCE_KEY=your_azure_document_intelligence_key
+CLOVA_OCR_URL=https://...apigw.ntruss.com/custom/v1/...
+CLOVA_OCR_SECRET=your_clova_ocr_secret
+CLOVA_OCR_TIMEOUT_SECONDS=60
+CLOVA_OCR_MAX_ATTEMPTS=3
+CLOVA_OCR_MIN_INTERVAL_SECONDS=1.0
 
-AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/
-AZURE_OPENAI_KEY=your_azure_openai_key
-AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
-AZURE_OPENAI_API_VERSION=2024-10-01-preview
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 `.env`에는 실제 key가 들어가므로 Git에 올리면 안 됩니다.
 
-`AZURE_OPENAI_DEPLOYMENT`에는 Azure OpenAI에서 만든 GPT-4o-mini 배포 이름을 넣습니다. 배포 이름을 모델명과 다르게 만들었다면 실제 배포 이름으로 바꿔야 합니다. `AZURE_OPENAI_KEY` 대신 `AZURE_OPENAI_API_KEY`를 써도 됩니다.
+운영에서는 `OCR_ALLOWED_IMAGE_HOSTS`에 Presigned GET URL의 S3 호스트를 지정하고, `OCR_MAX_IMAGE_BYTES`와 `OCR_MAX_IMAGE_PIXELS`로 입력 크기를 제한할 수 있습니다.
 
 ## 실제 이미지 실행
 
 기본 실행:
 
 ```bash
-python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout
+python3 ai_ocr/main.py --image images/menu_001.jpg
 ```
 
-기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, 후처리된 최종 메뉴 JSON과 OCR 원본을 함께 평가한 결과를 `gpt_quality_judgment`에 추가합니다. Azure OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
+기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini로 메뉴명/설명 후처리를 시도하고, 후처리된 최종 메뉴 JSON과 OCR 원본을 함께 평가한 결과를 `gpt_quality_judgment`에 추가합니다. OpenAI 설정이나 패키지가 없으면 경고만 출력하고 기존 룰 기반 결과로 계속 진행합니다.
 
 다른 이미지를 실행하려면 `images/` 폴더에 이미지를 넣고 `--image`만 바꿉니다.
 
 ```bash
-python3 ai_ocr/main.py --image images/내이미지파일.jpg --model prebuilt-layout
+python3 ai_ocr/main.py --image images/내이미지파일.jpg
 ```
 
 생성 파일:
 
 ```text
-outputs/raw/이미지명_prebuilt-layout_raw.json
+outputs/raw/이미지명_clova-general-v2_raw.json
 outputs/final/이미지명_result.json
 ```
 
-원본 이미지를 전처리 없이 바로 Azure에 보내려면:
+원본 결과가 낮아도 전처리 재시도를 하지 않으려면:
 
 ```bash
-python3 ai_ocr/main.py --image images/menu_001.jpg --model prebuilt-layout --no-preprocess
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-preprocess
 ```
 
 GPT 후처리 또는 품질 판단만 끄려면:
@@ -95,10 +97,10 @@ python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-post-process
 python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-judgment
 ```
 
-기본 전처리는 메뉴판 외곽이 잡히면 자동 원근 보정을 하고, 텍스트 방향을 기준으로 기울기를 보정합니다. 기울어진 촬영본은 보통 기본 실행만으로 보정된 이미지를 `images/preprocessed/`에 저장한 뒤 OCR에 사용합니다.
+기본 실행은 먼저 원본을 OCR 처리합니다. 메뉴-가격 매칭률이 낮을 때만 자동 원근 보정, 기울기 보정, 확대를 적용해 한 번 더 호출하고 구조 점수가 높은 결과를 선택합니다.
 
 ```bash
-python3 ai_ocr/main.py --image images/tilted_menu.jpg --model prebuilt-layout
+python3 ai_ocr/main.py --image images/tilted_menu.jpg
 ```
 
 전처리만 따로 확인하려면:
@@ -122,7 +124,6 @@ python3 ai_ocr/main.py --image images/menu_001.jpg --max-deskew-angle 25
 ```bash
 python3 ai_ocr/main.py \
   --image uploads/menu_003.jpg \
-  --model prebuilt-layout \
   --source camera \
   --storage-key scans/menu_003.jpg \
   --image-url https://example.com/scans/menu_003.jpg \
@@ -159,7 +160,7 @@ docker compose logs -f ai      # 로그 보기
 docker compose down            # 내리기
 ```
 
-Azure 키(OCR/OpenAI)는 기존 `.env` 방식을 그대로 사용합니다.
+CLOVA OCR과 OpenAI 키는 `.env` 또는 ECS Secret 환경 변수로 주입합니다.
 
 | Method | Endpoint | 기능 설명 |
 | --- | --- | --- |
@@ -170,9 +171,9 @@ Azure 키(OCR/OpenAI)는 기존 `.env` 방식을 그대로 사용합니다.
 
 `profile` 키: `religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy`. `allergies`는 이미 `is_*` 태그 형태(예: `["is_milk"]`)로 전달합니다.
 
-## Azure 비용 없이 테스트
+## CLOVA 호출 없이 테스트
 
-parser만 테스트할 때는 mock 데이터를 사용합니다. Azure 비용이 발생하지 않습니다.
+parser만 테스트할 때는 mock 또는 저장된 CLOVA 응답을 사용합니다. CLOVA 비용이 발생하지 않습니다.
 
 ```bash
 python3 ai_ocr/test_parser_with_mock.py --input sample_data/mock_ocr_lines.json
@@ -181,10 +182,10 @@ python3 ai_ocr/test_parser_with_mock.py --input sample_data/mock_ocr_lines.json
 이미 저장된 raw OCR 결과를 다시 후처리하려면:
 
 ```bash
-python3 ai_ocr/reprocess_raw.py --input outputs/raw/menu_001_prebuilt-layout_raw.json
+python3 ai_ocr/reprocess_raw.py --input sample_data/clova_response_menu_001.json
 ```
 
-모델 비교가 필요할 때만 아래 명령을 사용합니다. 여러 Azure 모델을 호출하므로 비용이 더 발생할 수 있습니다.
+원본과 전처리 결과를 실제로 비교할 때만 아래 명령을 사용합니다. CLOVA를 두 번 호출하므로 비용이 더 발생할 수 있습니다.
 
 ```bash
 python3 ai_ocr/compare_models.py --image images/menu_001.jpg
@@ -194,9 +195,9 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
 
 1. 메뉴판 이미지를 입력합니다.
 2. 필요하면 로컬 전처리 이미지를 만듭니다.
-3. Azure Document Intelligence로 OCR line을 추출합니다.
-4. OCR line에서 메뉴명과 가격 후보를 찾습니다.
-5. 같은 행의 bbox 위치를 기준으로 메뉴명과 가격을 매칭합니다. 2열/3열 메뉴판처럼 메뉴명 여러 개와 가격 여러 개가 한 행에 섞인 경우도 가까운 가격을 우선 연결합니다.
+3. CLOVA General OCR로 polygon과 confidence가 포함된 field를 추출합니다.
+4. 엄격한 가격 형식으로 가격 anchor를 찾습니다.
+5. polygon의 지역 기준선과 앞 가격 열 경계를 이용해 낱글자 메뉴명을 결합하고 가격과 매칭합니다.
 6. 대/중/소, 1인/2인, 세트, 곱빼기 같은 옵션 가격은 가능한 경우 `options`로 보존합니다.
 7. 메뉴명 앞뒤의 OCR 잡문자와 용량 표기를 제거합니다.
    예: `■김치찌개–` -> `김치찌개`, `■두루치기200g出` -> `두루치기`
@@ -275,7 +276,7 @@ ERD 매핑:
 - `scan_quality.status == "low_confidence"`: 결과는 보여주되 사용자가 확인하도록 안내
 - `scan_quality.status == "usable"`: 정상 사용 가능
 
-초기 기준은 메뉴 후보 0개, OCR line 3개 미만, 낮은 해상도, 이미지 품질 점수 45점 미만은 재촬영으로 보고, 메뉴 후보가 3개 미만이거나 가격 매칭 비율이 50% 미만이면 낮은 신뢰도로 표시합니다. 이미지 품질 분석은 흐림, 밝기, 대비, 빛 반사 후보, 기울기를 확인해 `scan_quality.image_quality`와 `scan_quality.retake_suggestions`에 기록합니다.
+메뉴 후보가 없거나 OCR token이 3개 미만이면 재촬영으로 판단합니다. 낮은 해상도는 단독으로 결과를 폐기하지 않고, 가격 anchor 대비 정상 메뉴-가격 쌍 비율(`pair_coverage`)까지 낮을 때만 재촬영을 강제합니다. 흐림, 밝기, 대비, 빛 반사, 기울기는 `scan_quality.image_quality`와 `scan_quality.retake_suggestions`에 기록합니다.
 
 후속 파트가 채우는 필드:
 
