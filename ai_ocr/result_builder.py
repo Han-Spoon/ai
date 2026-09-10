@@ -116,7 +116,35 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
     raw_line_count = len(raw_lines) if raw_lines is not None else None
     menu_count = len(menus)
     price_match_count = count_price_matches(menus)
-    price_match_ratio = round(price_match_count / menu_count, 2) if menu_count else 0.0
+    price_anchor_count = count_detected_price_anchors(raw_lines or [])
+    pair_coverage = (
+        round(min(price_match_count / price_anchor_count, 1.0), 2)
+        if price_anchor_count
+        else 0.0
+    )
+    price_match_ratio = pair_coverage if price_anchor_count else (
+        round(price_match_count / menu_count, 2) if menu_count else 0.0
+    )
+    ocr_confidences = [
+        float(line.get("confidence"))
+        for line in (raw_lines or [])
+        if line.get("confidence") is not None
+    ]
+    mean_ocr_confidence = (
+        round(sum(ocr_confidences) / len(ocr_confidences), 3)
+        if ocr_confidences
+        else None
+    )
+    pair_confidences = [
+        float(menu.get("confidence"))
+        for menu in menus
+        if menu.get("confidence") is not None
+    ]
+    mean_pair_confidence = (
+        round(sum(pair_confidences) / len(pair_confidences), 3)
+        if pair_confidences
+        else None
+    )
     image_width, image_height = infer_image_size(image)
     image_quality = analyze_image_quality(image)
 
@@ -136,12 +164,20 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         elif raw_line_count < 8:
             reasons.append("OCR로 읽힌 텍스트 줄 수가 적습니다.")
 
-    if menu_count and price_match_ratio < 0.5:
+    if price_anchor_count and pair_coverage < 0.5:
         reasons.append("가격과 매칭된 메뉴 비율이 낮습니다.")
 
+    if mean_pair_confidence is not None and mean_pair_confidence < 0.65:
+        reasons.append("메뉴명과 가격의 OCR/위치 신뢰도가 낮습니다.")
+        if mean_pair_confidence < 0.45:
+            hard_retake = True
+
     if image_width and image_height and min(image_width, image_height) < 600:
-        hard_retake = True
         reasons.append("이미지 해상도가 낮아 메뉴판 판독이 어렵습니다.")
+        # 낮은 해상도만으로 결과를 폐기하지 않는다. OCR 구조가 함께 나쁠 때만
+        # 재촬영을 강제하고, 충분히 매칭되면 사용자 확인 가능한 결과를 제공한다.
+        if menu_count < 3 or (price_anchor_count and pair_coverage < 0.5):
+            hard_retake = True
 
     if image_quality.get("available"):
         reasons.extend(image_quality.get("reasons", []))
@@ -170,6 +206,10 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         "raw_line_count": raw_line_count,
         "price_match_count": price_match_count,
         "price_match_ratio": price_match_ratio,
+        "price_anchor_count": price_anchor_count,
+        "pair_coverage": pair_coverage,
+        "mean_ocr_confidence": mean_ocr_confidence,
+        "mean_pair_confidence": mean_pair_confidence,
         "image_width": image_width,
         "image_height": image_height,
         "image_quality": image_quality,
@@ -180,6 +220,15 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
 
 def count_price_matches(menus):
     return sum(1 for menu in menus if menu.get("priceRaw") or menu.get("price") is not None)
+
+
+def count_detected_price_anchors(raw_lines):
+    if not raw_lines or not any(line.get("source") == "clova_field" for line in raw_lines):
+        return 0
+
+    from clova_layout import count_price_anchors
+
+    return count_price_anchors(raw_lines)
 
 
 def calculate_scan_quality_score(

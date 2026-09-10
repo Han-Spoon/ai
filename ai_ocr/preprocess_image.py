@@ -1,4 +1,6 @@
 import argparse
+import math
+import os
 from pathlib import Path
 
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
@@ -15,6 +17,7 @@ def preprocess_image(
     perspective: bool = True,
     deskew: bool = True,
     max_deskew_angle: float = 25.0,
+    max_output_pixels: int | None = None,
 ):
     source = Path(input_path)
     if not source.exists() or not source.is_file():
@@ -32,9 +35,17 @@ def preprocess_image(
     if deskew:
         image = auto_deskew(image, max_angle=max_deskew_angle)
 
-    if scale != 1:
-        width = int(image.width * scale)
-        height = int(image.height * scale)
+    if max_output_pixels is None:
+        max_output_pixels = int(os.getenv("OCR_PREPROCESS_MAX_PIXELS", "20000000"))
+
+    effective_scale = max(float(scale), 0.1)
+    target_pixels = image.width * image.height * (effective_scale**2)
+    if max_output_pixels > 0 and target_pixels > max_output_pixels:
+        effective_scale = math.sqrt(max_output_pixels / (image.width * image.height))
+
+    if abs(effective_scale - 1.0) > 0.001:
+        width = max(1, int(image.width * effective_scale))
+        height = max(1, int(image.height * effective_scale))
         image = image.resize((width, height), Image.Resampling.LANCZOS)
 
     if grayscale:
@@ -214,7 +225,7 @@ def parse_crop(crop_text: str | None):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Azure OCR 전에 메뉴판 이미지를 로컬 전처리")
+    parser = argparse.ArgumentParser(description="CLOVA OCR 재시도용 메뉴판 이미지를 로컬 전처리")
     parser.add_argument("--image", required=True, help="전처리할 원본 이미지 경로")
     parser.add_argument("--output", help="저장할 전처리 이미지 경로")
     parser.add_argument("--crop", help="잘라낼 영역: left,top,right,bottom")

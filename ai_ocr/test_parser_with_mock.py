@@ -1,6 +1,11 @@
 import argparse
 import json
+import sys
 from pathlib import Path
+
+OCR_DIR = Path(__file__).resolve().parent
+if str(OCR_DIR) not in sys.path:
+    sys.path.insert(0, str(OCR_DIR))
 
 from parser import parse_menu_candidates
 from result_builder import build_final_result

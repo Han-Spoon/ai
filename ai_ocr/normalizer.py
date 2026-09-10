@@ -3,10 +3,13 @@ from difflib import SequenceMatcher
 
 from menu_dictionary import MENU_NAMES, MENU_TO_CATEGORY
 
-
 PRICE_MIN = 500
 PRICE_MAX = 50000
 PRICE_PATTERN = r"[₩]?\s*(?:[\dOoO]{3,5}|[\dOoO]{1,2}\s*[,\.]\s*[\dOoO]{3}|[\dOoO]{1,2}\s*\.\s*[\dOoO]{1,2})\s*원?"
+
+KNOWN_OCR_MENU_CORRECTIONS = {
+    "가재미탕": "가자미탕",
+}
 
 
 def normalize_price(text: str):
@@ -108,7 +111,7 @@ def normalize_menu_name(text: str):
     for wrong, correct in replacements.items():
         text = text.replace(wrong, correct)
 
-    return text
+    return KNOWN_OCR_MENU_CORRECTIONS.get(text, text)
 
 
 def match_known_menu_name(text: str):
@@ -119,6 +122,7 @@ def match_known_menu_name(text: str):
     candidate = clean_menu_name_artifacts(candidate)
     candidate = re.sub(r"\s+", "", candidate)
     candidate = candidate.replace("찌게", "찌개")
+    candidate = KNOWN_OCR_MENU_CORRECTIONS.get(candidate, candidate)
 
     if candidate in MENU_TO_CATEGORY:
         return {"name": candidate, "category": MENU_TO_CATEGORY[candidate], "score": 1.0}

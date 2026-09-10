@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+from clova_layout import extract_clova_fields
 from parser import parse_menu_candidates
 from result_builder import build_final_result
 
@@ -36,20 +37,10 @@ def infer_image_path(raw_path: Path):
     return image_name
 
 
-def infer_model_id(raw_path: Path):
-    name = raw_path.name
-    if "_prebuilt-layout_raw.json" in name:
-        return "prebuilt-layout"
-    if "_prebuilt-read_raw.json" in name:
-        return "prebuilt-read"
-    if "_prebuilt-document_raw.json" in name:
-        return "prebuilt-document"
-    return "unknown"
-
-
 def reprocess_raw(input_path: str, output_path: str | None = None):
     raw_path = Path(input_path)
-    raw_lines = load_json(raw_path)
+    raw_data = load_json(raw_path)
+    raw_lines = extract_clova_fields(raw_data) if isinstance(raw_data, dict) and raw_data.get("images") else raw_data
     menus = parse_menu_candidates(raw_lines)
 
     result = build_final_result(infer_image_path(raw_path), menus, raw_lines=raw_lines)
@@ -62,7 +53,7 @@ def reprocess_raw(input_path: str, output_path: str | None = None):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="저장된 raw OCR JSON을 Azure 재호출 없이 다시 후처리")
+    parser = argparse.ArgumentParser(description="저장된 raw/CLOVA OCR JSON을 API 재호출 없이 다시 후처리")
     parser.add_argument("--input", required=True, help="outputs/raw/*_raw.json 경로")
     parser.add_argument("--output", help="저장할 final JSON 경로")
     return parser.parse_args()

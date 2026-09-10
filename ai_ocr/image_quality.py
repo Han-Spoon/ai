@@ -1,6 +1,25 @@
 from pathlib import Path
 
 
+def should_preprocess_before_ocr(quality: dict) -> bool:
+    """
+    로컬 품질 지표로 첫 CLOVA 입력을 선택.
+    해상도·흐림·기울기가 명확한 경우만 첫 호출 전에 보정.
+    """
+    if not quality.get("available"):
+        return False
+
+    width = int(quality.get("width") or 0)
+    height = int(quality.get("height") or 0)
+    blur_score = quality.get("blur_score")
+    skew_angle = quality.get("skew_angle")
+
+    low_resolution = width > 0 and height > 0 and min(width, height) < 700
+    clearly_blurred = blur_score is not None and float(blur_score) < 80
+    clearly_skewed = skew_angle is not None and abs(float(skew_angle)) >= 8
+    return low_resolution or clearly_blurred or clearly_skewed
+
+
 def analyze_image_quality(image_path: str | Path) -> dict:
     try:
         import cv2
@@ -96,6 +115,8 @@ def analyze_image_quality(image_path: str | Path) -> dict:
     return {
         "available": True,
         "score": max(0, min(100, score)),
+        "width": width,
+        "height": height,
         "blur_score": blur_score,
         "brightness": brightness,
         "contrast": contrast,
