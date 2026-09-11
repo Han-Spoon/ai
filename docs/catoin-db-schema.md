@@ -227,3 +227,4 @@ PK: `(store_id, menu_id)`
 3. 웹서치 에이전트가 새 메뉴 발견 시 `menus` INSERT(`source: web_search_generated`)가 반드시 먼저 실행
 4. `owner_verification_requests.resolved_confirmation_id`는 사장님 답변이 실제로 확정 테이블에 반영된 시점에 채움
 5. 이름 변형 메뉴(remain 토큰 매칭)는 원본 메뉴 row를 재사용하지 말고 `base_menu_id`로 연결된 새 `menus` INSERT(`source: variant_generated`)가 먼저 실행 — 원본 메뉴와 변형 메뉴의 증거/확률이 섞이지 않게 하기 위함
+6. 3·5번의 웹서치/변형 태깅 기반 INSERT는 **AI가 실시간으로 자동 실행하지 않음** — 사용자에게 결과를 보여주는 흐름과는 분리된 관리자 페이지에서, 사람이 컨펌한 시점에만 실행됨 (사장님 답변 기반 `ingredient_confirmations`는 예외로 즉시 반영)
