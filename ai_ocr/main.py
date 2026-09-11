@@ -28,13 +28,15 @@ def analyze_menu_image(
     file_size: int | None = None,
     enable_gpt_post_process: bool = True,
     enable_gpt_judgment: bool = True,
+    total_budget_seconds: float | None = None,
 ):
     image = Path(image_path)
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
     started_at = time.monotonic()
-    total_budget_seconds = float(os.getenv("OCR_TOTAL_BUDGET_SECONDS", "22"))
+    if total_budget_seconds is None:
+        total_budget_seconds = float(os.getenv("OCR_TOTAL_BUDGET_SECONDS", "14"))
     retry_min_remaining = float(
         os.getenv("OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS", "8")
     )

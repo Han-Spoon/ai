@@ -9,6 +9,13 @@ from fastapi.testclient import TestClient
 app_module = importlib.import_module("app")
 
 
+def test_runtime_ocr_pipeline_accepts_request_budget(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        app_module._ocr_main.analyze_menu_image(
+            str(tmp_path / "missing.jpg"), total_budget_seconds=14
+        )
+
+
 def test_v1_ocr_uses_latency_fast_path_without_gpt(tmp_path, monkeypatch):
     image_path = tmp_path / "menu.jpg"
     image_path.write_bytes(b"temporary")
@@ -38,6 +45,9 @@ def test_v1_ocr_uses_latency_fast_path_without_gpt(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "analyze_menu_image", fake_analyze_menu_image)
     monkeypatch.delenv("OCR_ENABLE_GPT_POST_PROCESS", raising=False)
     monkeypatch.delenv("OCR_ENABLE_GPT_JUDGMENT", raising=False)
+    # 개발자의 개인 .env 값과 무관하게 운영 요청 예산을 검증한다.
+    monkeypatch.setenv("OCR_REQUEST_BUDGET_SECONDS", "16")
+    monkeypatch.setenv("OCR_TOTAL_BUDGET_SECONDS", "14")
 
     response = TestClient(app_module.app).post(
         "/v1/ocr",
@@ -51,7 +61,7 @@ def test_v1_ocr_uses_latency_fast_path_without_gpt(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert captured["enable_gpt_post_process"] is False
     assert captured["enable_gpt_judgment"] is False
-    assert 0 < captured["total_budget_seconds"] <= 25
+    assert 0 < captured["total_budget_seconds"] <= 14
     assert response.json()["scan_quality"]["image_fetch_source"] == "presigned_url"
     assert not image_path.exists()
 
@@ -134,5 +144,49 @@ def test_s3_iam_fetch_streams_the_validated_object_version(tmp_path, monkeypatch
         }
         assert downloaded.source == "s3_iam"
         assert downloaded.mime_type == "image/jpeg"
+    finally:
+        app_module._safe_unlink(downloaded.path)
+
+
+def test_s3_iam_fetch_fails_closed_when_etag_is_missing(tmp_path, monkeypatch):
+    import boto3
+
+    class FakeS3:
+        def get_object(self, **request):
+            return {
+                "ContentLength": 3,
+                "Body": io.BytesIO(b"bad"),
+            }
+
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: FakeS3())
+    monkeypatch.setenv("OCR_S3_BUCKET", "private-menu-images")
+
+    with pytest.raises(HTTPException) as raised:
+        app_module._download_s3_image(
+            "scans/00000000-0000-0000-0000-000000000000/menu.jpg",
+            version_id="version-1",
+            expected_etag='"etag-1"',
+        )
+
+    assert raised.value.status_code == 409
+
+
+def test_exif_orientation_is_applied_before_ocr(tmp_path):
+    from PIL import Image
+
+    image_path = tmp_path / "rotated.img"
+    image = Image.new("RGB", (20, 10), "white")
+    exif = image.getexif()
+    exif[274] = 6
+    image.save(image_path, format="JPEG", exif=exif)
+
+    downloaded = app_module._validate_and_normalize_image(
+        str(image_path), image_path.stat().st_size, source="test"
+    )
+
+    try:
+        with Image.open(downloaded.path) as normalized:
+            assert normalized.size == (10, 20)
+            assert normalized.getexif().get(274, 1) == 1
     finally:
         app_module._safe_unlink(downloaded.path)

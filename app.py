@@ -5,7 +5,7 @@
 기존 ai_ocr / ai_ruleengine 로직을 그대로 재사용한다 (비즈니스 로직 중복 없음).
 
 엔드포인트:
-    POST /v1/ocr        : image_url 다운로드 → OCR 파이프라인 → 최종 dict
+    POST /v1/ocr        : S3 IAM 조회(우선) 또는 image_url 다운로드 → OCR 파이프라인 → 최종 dict
     POST /v1/ruleengine : ocr_result + profile → 위험도 판정 dict
 
 실행:
@@ -90,7 +90,7 @@ def run_ocr(req: OcrRequest):
     """S3 객체 키(우선) 또는 image_url을 스트리밍해 OCR을 실행한다."""
     queue_started_at = time.monotonic()
     request_deadline = queue_started_at + float(
-        os.getenv("OCR_REQUEST_BUDGET_SECONDS", "25")
+        os.getenv("OCR_REQUEST_BUDGET_SECONDS", "16")
     )
     acquired = _OCR_SEMAPHORE.acquire(
         timeout=float(os.getenv("OCR_QUEUE_WAIT_SECONDS", "1"))
@@ -114,6 +114,13 @@ def run_ocr(req: OcrRequest):
                 detail="이미지를 가져오는 동안 OCR 처리 시간 예산이 종료되었습니다.",
             )
 
+        # 요청 전체 예산(큐 대기·다운로드 포함)과 OCR 파이프라인 자체 예산 중
+        # 더 작은 값을 사용해 Spring의 18초 read timeout 안에 응답할 여유를 둔다.
+        pipeline_budget = min(
+            remaining_budget,
+            float(os.getenv("OCR_TOTAL_BUDGET_SECONDS", "14")),
+        )
+
         # 기존 OCR 파이프라인 실행. source/storage_key/image_url 그대로 전달.
         result = analyze_menu_image(
             tmp_path,
@@ -125,7 +132,7 @@ def run_ocr(req: OcrRequest):
             # 사용자 대기 경로에서 외부 GPT 호출을 제거한다.
             enable_gpt_post_process=_env_bool("OCR_ENABLE_GPT_POST_PROCESS", False),
             enable_gpt_judgment=_env_bool("OCR_ENABLE_GPT_JUDGMENT", False),
-            total_budget_seconds=remaining_budget,
+            total_budget_seconds=pipeline_budget,
         )
         result["final"]["scan_quality"]["image_fetch_source"] = downloaded.source
         result["final"]["scan_quality"]["queue_wait_ms"] = queue_wait_ms
@@ -317,7 +324,9 @@ def _download_s3_image(
             raise HTTPException(status_code=413, detail="이미지 파일이 너무 큽니다.")
 
         actual_etag = str(response.get("ETag") or "")
-        if expected_etag and actual_etag and expected_etag != actual_etag:
+        # 백엔드가 HeadObject로 검증한 객체와 정확히 같은 바이트만 OCR한다.
+        # ETag가 누락돼도 비교를 생략하지 않고 fail-closed 한다.
+        if expected_etag and expected_etag != actual_etag:
             raise HTTPException(
                 status_code=409, detail="검증한 S3 객체와 다운로드 버전이 다릅니다."
             )
@@ -381,7 +390,7 @@ def _validate_and_normalize_image(
     except HTTPException:
         _safe_unlink(path)
         raise
-    except (UnidentifiedImageError, OSError) as err:
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as err:
         _safe_unlink(path)
         raise HTTPException(
             status_code=415, detail="유효한 이미지 파일이 아닙니다."
@@ -397,10 +406,20 @@ def _validate_and_normalize_image(
     suffix = ".jpg" if detected_format in {"JPEG", "WEBP"} else ".png"
     normalized_path = str(Path(path).with_suffix(suffix))
     try:
-        if detected_format == "WEBP":
+        with Image.open(path) as image:
+            exif_orientation = image.getexif().get(274, 1)
+
+        # 휴대폰 사진의 EXIF 방향값을 실제 픽셀 방향으로 반영한다.
+        # OpenCV 기반 전처리는 EXIF를 항상 존중하지 않으므로 OCR 전에 정규화해야 한다.
+        if detected_format == "WEBP" or exif_orientation != 1:
             with Image.open(path) as image:
-                normalized = ImageOps.exif_transpose(image).convert("RGB")
-                normalized.save(normalized_path, format="JPEG", quality=95)
+                normalized = ImageOps.exif_transpose(image)
+                if suffix == ".jpg":
+                    normalized.convert("RGB").save(
+                        normalized_path, format="JPEG", quality=95
+                    )
+                else:
+                    normalized.save(normalized_path, format="PNG")
             _safe_unlink(path)
             file_size = os.path.getsize(normalized_path)
         else:
