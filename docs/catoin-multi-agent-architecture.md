@@ -256,5 +256,5 @@ graph TB
 - 사장님 피드백의 신뢰도 가중치를 일반 사용자 피드백과 다르게 줄 것인지 (McCoy & Prelec 2024 hierarchical trust-weight 적용 여부)
 - 웹서치 크롤링 결과와 기존 DB 값이 충돌할 때 병합 규칙
 - 메뉴판 1장당 수십 개 아이템이 나올 때 무거운 경로(웹서치, 확률모델) 호출을 얼마나 배치/캐싱할지
-- ⑤ Bayesian 에이전트의 확률 계산 방식 확정 필요: 현재 공식(α=k_count+1, β=(n_total−k_count)+1)이 doc2의 신규 가게 초기화 규칙(explicit 재료 α=5/β=1, 아니면 α=1/β=5 + 증거 발생 시 누적)과 다름 — 팀 확인 대기 중
+- ⑤ Bayesian 에이전트의 확률 계산 방식 확정 필요: 현재 공식(α=k_count+1, β=(n_total−k_count)+1)이 doc2의 신규 가게 초기화 규칙(explicit 재료 α=5/β=1, 아니면 α=1/β=5 + 증거 발생 시 누적)과 다름 — 확률 팀 확인 필요
 - `ingredient_confirmations.flagged_anomaly` 처리 방식: doc2는 anomaly 여부와 무관하게 확정값을 그대로 신뢰하도록 되어 있는데, 이게 FN-minimization 원칙과 충돌할 수 있음 (예: 사장님이 잘못/거짓으로 "돼지고기 없음"이라 답해도 그대로 SAFE 처리됨) — 재검토 필요
