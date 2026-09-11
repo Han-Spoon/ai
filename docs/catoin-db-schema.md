@@ -54,13 +54,16 @@ erDiagram
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `id` | PK | |
-| `name_ko` | varchar | 베이스 메뉴명 |
+| `name_ko` | varchar | 베이스 메뉴명 (변형 메뉴면 변형 표기 그대로, 예: "차돌된장찌개") |
+| `base_menu_id` | FK → menus, nullable | 이름 변형 메뉴가 참조하는 원본 메뉴. `NULL`이면 독립 메뉴(변형 아님) |
 | `category` | varchar | 메뉴 카테고리 |
 | `ambiguity_flags` | text[] | `has_unclear_broth` 등 |
-| `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(웹서치 에이전트가 자동 생성) |
-| `needs_review` | boolean | `web_search_generated`로 들어온 메뉴는 기본 `true` |
+| `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(웹서치 에이전트가 자동 생성) \| `variant_generated`(변형 태깅 과정에서 자동 생성) |
+| `needs_review` | boolean | `web_search_generated`/`variant_generated`로 들어온 메뉴는 기본 `true` |
 
 > **웹서치 에이전트 플로우**: DB에 없는 메뉴 발견 시, `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
+
+> **변형 메뉴 플로우**: 메뉴명이 기존 메뉴와 longest-match 되고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행을 `source: variant_generated`로 생성 → 그 변형 메뉴의 `menu_id`로 `recipe_ingredients`(변형 재료, `evidence_type: variant`)와 `ingredient_evidence_log`를 채움. 이렇게 분리해야 변형 메뉴("차돌된장찌개")에서 나온 증거가 원본 메뉴("된장찌개")의 확률과 섞이지 않음.
 
 ### `ingredients`
 | 컬럼 | 타입 | 설명 |
@@ -146,7 +149,7 @@ PK: `(store_id, menu_id)`
 | `evidence_ref_id` | bigint | 위 테이블의 PK |
 | `created_at` | timestamp | |
 
-**OCR 변형재료 반영**: `ai_ruleengine`이 remain 토큰에서 변형 재료를 태깅하면(예: "차돌된장찌개" → 소고기), `menu_analyses` 저장과 별개로 `ingredient_evidence_log`에 `source_type: ocr_variant_tag`로 한 줄 남김.
+**OCR 변형재료 반영**: 기존 변형 토큰 태깅 로직(remain 토큰 → 재료 태그 매핑, 예: "차돌" → 소고기)을 재사용해서, `menu_analyses` 저장과 별개로 (위 변형 메뉴 플로우로 생성된) 변형 `menu_id` 기준으로 `ingredient_evidence_log`에 `source_type: ocr_variant_tag`로 한 줄 남김. **이건 다른 출처(`web_search`/`owner_feedback`/`user_feedback`)와 동등한 확률 갱신용 증거 신호일 뿐, 확정 판정이 아님** — 하드 오버라이드는 `ingredient_confirmations`만 담당.
 
 ### `ingredient_confirmations` (구 store_menu_ingredient_exact)
 **"확정된 사실"** — hard evidence override
@@ -223,3 +226,4 @@ PK: `(store_id, menu_id)`
 2. **`ingredient_risk_scores`는 직접 UPDATE 금지** — 항상 `ingredient_evidence_log` INSERT → 재계산 순서
 3. 웹서치 에이전트가 새 메뉴 발견 시 `menus` INSERT(`source: web_search_generated`)가 반드시 먼저 실행
 4. `owner_verification_requests.resolved_confirmation_id`는 사장님 답변이 실제로 확정 테이블에 반영된 시점에 채움
+5. 이름 변형 메뉴(remain 토큰 매칭)는 원본 메뉴 row를 재사용하지 말고 `base_menu_id`로 연결된 새 `menus` INSERT(`source: variant_generated`)가 먼저 실행 — 원본 메뉴와 변형 메뉴의 증거/확률이 섞이지 않게 하기 위함
