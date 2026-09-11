@@ -1,0 +1,52 @@
+name: AI CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 같은 브랜치/PR에 새 커밋이 올라오면 이전 검증은 중단해 Actions 시간을 절약한다.
+concurrency:
+  group: ai-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# PR 검증에는 AWS, ECR, OIDC, 운영 Secret 권한이 필요하지 않다.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.11 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # PR CI가 개발자 로컬 .env나 운영 Secret에 우연히 의존하지 않도록 한다.
+      PYTHON_DOTENV_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 운영 Dockerfile과 같은 Python 버전으로 검증한다.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Verify dependency consistency
+        run: python -m pip check
+
+      - name: Compile Python sources
+        run: python -m compileall -q app.py ai_ocr ai_ruleengine ai_result
+
+      - name: Run tests
+        run: python -m pytest -q
