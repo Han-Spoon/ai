@@ -37,6 +37,91 @@ flowchart TD
 
 ※ 이 흐름도는 처리 순서만 보여주며, 실제 호출은 전부 Supervisor를 경유함 (2번 오케스트레이션 구조 참고)
 
+### 케이스별 시나리오
+
+**1) DB에 있는 메뉴 + 사장님 피드백 없음**
+
+```mermaid
+flowchart TB
+    SUP{{Supervisor}}
+    SUP -.- B
+    SUP -.- C
+    SUP -.- D
+    SUP -.- E
+    SUP -.- F
+
+    A[OCR: 메뉴명 추출] --> B[② 정규화]
+    B --> C["③ Exact 피드백\n(확인된 재료 없음)"]
+    C --> D["④ DB/온톨로지 조회\n(메뉴 존재 → 재귀 확장)"]
+    D --> E["⑤ Bayesian\n(store별 α/β로 확률 계산)"]
+    E --> F[⑧ XAI 판정]
+    F --> G[사용자: 결과 제공]
+    F -.필요시.-> H[사장님 질문 생성]
+```
+
+**2) DB에 있는 메뉴 + 사장님 피드백 있음**
+
+```mermaid
+flowchart TB
+    SUP{{Supervisor}}
+    SUP -.- B
+    SUP -.- C
+    SUP -.- D
+    SUP -.- E
+    SUP -.- F
+
+    A[OCR: 메뉴명 추출] --> B[② 정규화]
+    B --> C["③ Exact 피드백\n(ingredient_confirmations 존재)"]
+    C -->|전부 확인됨| F[⑧ XAI 판정]
+    C -->|일부만 확인됨| D["④ DB/온톨로지 조회\n(나머지 재료만)"]
+    D --> E["⑤ Bayesian\n(나머지 재료 확률 계산)"]
+    E --> F
+    F --> G[사용자: 결과 제공]
+```
+
+**3) DB에 있는 변형 재료 (예: 차돌된장찌개)**
+
+```mermaid
+flowchart TB
+    SUP{{Supervisor}}
+    SUP -.- B
+    SUP -.- C
+    SUP -.- D
+    SUP -.- U
+    SUP -.- E
+    SUP -.- F
+
+    A[OCR: 메뉴명 추출] --> B[② 정규화]
+    B --> C["③ Exact 피드백\n(변형 menu_id 기준, 보통 미확인)"]
+    C --> D["④ DB/온톨로지·변형 태깅\n(remain 토큰 감지 → base_menu_id로\n변형 menu_id 생성/조회, evidence_type: variant)"]
+    D --> U["⑦ DB 업데이트\n(ocr_variant_tag로 evidence_log 기록)"]
+    U --> E["⑤ Bayesian\n(변형 menu_id 기준 확률, 원본과 분리)"]
+    E --> F[⑧ XAI 판정]
+    F --> G[사용자: 결과 제공]
+```
+
+**4) DB에 없는 unknown 메뉴**
+
+```mermaid
+flowchart TB
+    SUP{{Supervisor}}
+    SUP -.- B
+    SUP -.- C
+    SUP -.- D
+    SUP -.- W
+    SUP -.- E
+    SUP -.- F
+
+    A[OCR: 메뉴명 추출] --> B["② 정규화\n(매칭 실패)"]
+    B --> C["③ Exact 피드백\n(메뉴 자체 없음, 미확인)"]
+    C --> D["④ DB/온톨로지 조회\n(DB에 없음 확인)"]
+    D --> W[⑥ 웹서치]
+    W --> E["⑤ Bayesian\n(웹서치 결과 기반 확률 계산, DB 저장 없이 즉시 사용)"]
+    E --> F["⑧ XAI 판정\n(웹서치 실패 시 CAUTION 이상 유지)"]
+    F --> G[사용자: 결과 제공]
+    F -.검토 자료 전달.-> ADMIN["⑦ DB 업데이트\n(관리자 페이지에서 사람이 컨펌 후 반영)"]
+```
+
 ---
 
 ## 2. 오케스트레이션 구조
@@ -123,9 +208,10 @@ graph TB
 ### ⑦ DB 업데이트 에이전트
 - **입력**: 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
 - **처리**:
-  - **확률 갱신(soft evidence)**: 웹서치/변형 태깅 결과는 `ingredient_evidence_log`에 이벤트 INSERT(`source_type: web_search`/`ocr_variant_tag`) → 이 로그를 재계산해서 `ingredient_risk_scores`의 α/β 갱신. **`ingredient_risk_scores`는 직접 UPDATE 금지, 항상 이 순서를 거침**
-  - **확정 저장(hard evidence)**: 사장님 확인 답변은 `ingredient_confirmations`에 override로 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly` 처리 후 저장
+  - **웹서치/변형 태깅 결과(신규 메뉴·재료)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
+  - **사장님 답변 피드백(확정 저장, hard evidence)**: `ingredient_confirmations`에 override로 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly` 처리 후 저장. 이건 사장님이 이미 확인해준 값이라 즉시 반영.
 - **출력**: 갱신된 DB (다음 조회부터 반영)
+- **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임
 
 ### ⑧ XAI/설명 에이전트
 - **입력**: 확인된 재료 override 결과 + 확률 에이전트 결과 + 사용자 알레르기/식이 태그
