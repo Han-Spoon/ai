@@ -35,6 +35,8 @@ flowchart TD
     L --> O[사용자에게 결과 제공]
 ```
 
+※ 이 흐름도는 처리 순서만 보여주며, 실제 호출은 전부 Supervisor를 경유함 (2번 오케스트레이션 구조 참고)
+
 ---
 
 ## 2. 오케스트레이션 구조
@@ -98,10 +100,12 @@ graph TB
 - **출력**: `{재료: 확인여부}` 맵. 전부 확인되면 확률 모델 스킵, 일부만 확인되면 나머지만 다음 단계로 전달
 - **설계 원칙**: 메뉴 단위 이분법 금지 — 부분 확인을 지원해야 함
 
-### ④ DB/온톨로지 조회 + 재귀 확장 에이전트
+### ④ DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트
 - **입력**: 메뉴명 (Exact로 미확인된 재료만)
-- **처리**: menus.csv / 레시피 DB 조회 → `recursive_expand.py` 로직으로 재귀 확장 (예: 김치찌개 → 김치 → 액젓 → 새우) → hidden_rules.py 99개 재료 taxonomy 매핑
-- **출력**: 확장된 재료 리스트 (교차오염/발효장류/소스/육수/양념/고명견과/유지류 카테고리 태깅 포함)
+- **처리**:
+  - **기본 조회**: 레시피 DB(`menus`/`recipe_ingredients`) 조회 → `recursive_expand.py` 로직으로 재귀 확장 (예: 김치찌개 → 김치 → 액젓 → 새우) → hidden_rules.py 99개 재료 taxonomy 매핑
+  - **변형 태깅**: longest-match로 기본 메뉴를 찾고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행(`source: variant_generated`)을 만들고, 그 변형 menu_id로 `recipe_ingredients`(`evidence_type: variant`)에 재료 태깅 — 원본 메뉴의 확률과 안 섞이게 하기 위함
+- **출력**: 확장된 재료 리스트 (교차오염/발효장류/소스/육수/양념/고명견과/유지류 카테고리 태깅 포함) + (변형 메뉴인 경우) 변형 menu_id
 - **분기**: 메뉴가 DB에 없으면 → 웹서치 에이전트로
 
 ### ⑤ 확률(Bayesian) 에이전트
@@ -117,8 +121,10 @@ graph TB
 - **fallback**: 웹서치도 실패하면 "정보 없음" 상태로 CAUTION 이상 처리 (SAFE로 떨어뜨리지 않음 — FN-minimization 원칙)
 
 ### ⑦ DB 업데이트 에이전트
-- **입력**: 웹서치 결과 OR 사장님 답변 피드백
-- **처리**: store_id 스코프로 DB/prior 테이블에 반영. 사장님 확인 답변은 hard evidence로 override 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") 플래그 처리 후 저장.
+- **입력**: 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
+- **처리**:
+  - **확률 갱신(soft evidence)**: 웹서치/변형 태깅 결과는 `ingredient_evidence_log`에 이벤트 INSERT(`source_type: web_search`/`ocr_variant_tag`) → 이 로그를 재계산해서 `ingredient_risk_scores`의 α/β 갱신. **`ingredient_risk_scores`는 직접 UPDATE 금지, 항상 이 순서를 거침**
+  - **확정 저장(hard evidence)**: 사장님 확인 답변은 `ingredient_confirmations`에 override로 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly` 처리 후 저장
 - **출력**: 갱신된 DB (다음 조회부터 반영)
 
 ### ⑧ XAI/설명 에이전트
