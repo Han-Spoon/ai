@@ -180,43 +180,44 @@ graph TB
 - **출력**: 정규화된 메뉴명 리스트 → Supervisor에게 반환
 
 ### ③ Exact 피드백 에이전트 (재료 단위로 재설계)
-- **입력**: store_id, 메뉴명
+- **입력**: store_id, 메뉴명 (Supervisor로부터 전달받음)
 - **처리**: 해당 가게·메뉴에 대해 **재료 단위**로 이미 확인된 정보(사장님 확인 or 과거 사용자 hard evidence)가 있는지 조회
-- **출력**: `{재료: 확인여부}` 맵. 전부 확인되면 확률 모델 스킵, 일부만 확인되면 나머지만 다음 단계로 전달
+- **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면 나머지 재료만 Supervisor가 다음 에이전트로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법 금지 — 부분 확인을 지원해야 함
 
 ### ④ DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트
-- **입력**: 메뉴명 (Exact로 미확인된 재료만)
+- **입력**: 메뉴명 (Exact로 미확인된 재료만, Supervisor로부터 전달받음)
 - **처리**:
   - **기본 조회**: 레시피 DB(`menus`/`recipe_ingredients`) 조회 → `recursive_expand.py` 로직으로 재귀 확장 (예: 김치찌개 → 김치 → 액젓 → 새우) → hidden_rules.py 99개 재료 taxonomy 매핑
   - **변형 태깅**: longest-match로 기본 메뉴를 찾고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행(`source: variant_generated`)을 만들고, 그 변형 menu_id로 `recipe_ingredients`(`evidence_type: variant`)에 재료 태깅 — 원본 메뉴의 확률과 안 섞이게 하기 위함
-- **출력**: 확장된 재료 리스트 (교차오염/발효장류/소스/육수/양념/고명견과/유지류 카테고리 태깅 포함) + (변형 메뉴인 경우) 변형 menu_id
-- **분기**: 메뉴가 DB에 없으면 → 웹서치 에이전트로
+- **출력**: 확장된 재료 리스트(교차오염/발효장류/소스/육수/양념/고명견과/유지류 카테고리 태깅 포함) + (변형 메뉴인 경우) 변형 menu_id + 메뉴 DB 존재 여부 → **Supervisor에게 반환**
+- **분기**: 메뉴가 DB에 없으면 Supervisor가 그 결과를 보고 웹서치 에이전트 호출 여부를 결정
 
 ### ⑤ 확률(Bayesian) 에이전트
-- **입력**: store_id, 확장된 재료 리스트, 각 재료의 alpha/beta prior
+- **입력**: store_id, 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
 - **처리**: Beta-Binomial 업데이트 (α_prior = k_count+1, β_prior = (n_total−k_count)+1) — **store_id 스코프로 분리된 prior 사용**
-- **출력**: 재료별 존재 확률 (posterior mean)
+- **출력**: 재료별 존재 확률 (posterior mean) → **Supervisor에게 반환**
 - **주의**: 여기서 전역 prior를 쓰면 안 됨. store별 prior가 없으면 유사 가게 클러스터 prior로 fallback (완전 전역은 최후의 수단)
 
 ### ⑥ 웹서치 에이전트
-- **입력**: 메뉴명 (DB에 없는 경우만 호출 — 전체 아이템마다 호출 금지, 비용/속도 문제)
+- **입력**: 메뉴명 (Supervisor가 DB에 없는 경우에만 호출 — 전체 아이템마다 호출 금지, 비용/속도 문제)
 - **처리**: 웹 크롤링으로 레시피/재료 정보 수집
-- **출력**: 크롤링된 재료 후보 리스트 → DB 업데이트 에이전트로 전달
+- **출력**: 크롤링된 재료 후보 리스트 → **Supervisor에게 반환** (Supervisor가 확률 계산에 즉시 사용하고, 관리자 검토용으로 DB 업데이트 에이전트도 호출)
 - **fallback**: 웹서치도 실패하면 "정보 없음" 상태로 CAUTION 이상 처리 (SAFE로 떨어뜨리지 않음 — FN-minimization 원칙)
 
 ### ⑦ DB 업데이트 에이전트
-- **입력**: 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
+- **입력**: Supervisor로부터 전달받은 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
 - **처리**:
   - **웹서치/변형 태깅 결과(신규 메뉴·재료)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
   - **사장님 답변 피드백(확정 저장, hard evidence)**: `ingredient_confirmations`에 override로 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly` 처리 후 저장. 이건 사장님이 이미 확인해준 값이라 즉시 반영.
-- **출력**: 갱신된 DB (다음 조회부터 반영)
+- **출력**: 갱신된 DB (다음 조회부터 반영) → 처리 완료 여부를 **Supervisor에게 반환**
 - **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임
 
 ### ⑧ XAI/설명 에이전트
-- **입력**: 확인된 재료 override 결과 + 확률 에이전트 결과 + 사용자 알레르기/식이 태그
+- **입력**: Supervisor가 취합해서 전달한 확인된 재료 override 결과 + 확률 에이전트 결과 + 사용자 알레르기/식이 태그
 - **처리**: 사용자 태그와 충돌하는 재료 식별, 확률 기반 근거 설명, DANGER/CAUTION/SAFE 판정(F2 최적화 threshold 적용), 사장님에게 물어볼 질문 생성
-- **출력**: 사용자용 최종 설명 + 판정 결과 + 사장님 질문 텍스트
+- **출력**: 사용자용 최종 설명 + 판정 결과 + 사장님 질문 텍스트 → **Supervisor에게 반환**
+- **분리 이유**: 판정 로직(확률 계산)과 설명/표현 로직을 분리해두면, 판정 기준이나 문구/언어가 바뀔 때 XAI 에이전트만 수정하면 되어 유지보수가 쉬움
 
 ---
 
