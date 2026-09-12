@@ -227,15 +227,15 @@ graph TB
 - **처리**:
   - **기본 조회**: 레시피 DB(`menus`/`recipe_ingredients`) 조회 → `recursive_expand.py` 로직으로 재귀 확장 (예: 김치찌개 → 김치 → 액젓 → 새우) → hidden_rules.py 99개 재료 taxonomy 매핑
   - **변형 태깅**: longest-match로 기본 메뉴를 찾고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), 변형 재료를 태깅해서 **제안**(이 시점엔 DB에 쓰지 않고, ⑤ Bayesian이 즉시 사용). 실제 DB 반영 시엔 **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행(`source: variant_generated`)을 만들어야 함 — 원본 메뉴의 확률과 안 섞이게 하기 위함이며, 이 INSERT는 ⑦ DB 업데이트 에이전트가 관리자 컨펌 후 처리
-- **출력**: 확장된 재료 리스트(교차오염/발효장류/소스/육수/양념/고명견과/유지류 카테고리 태깅 포함) + (변형 메뉴인 경우) 제안된 변형 재료 태그(DB 미반영 상태) + 메뉴 DB 존재 여부 → **Supervisor에게 반환**
+- **출력**: 확장된 재료 리스트(발효장류/소스/육수/양념/고명견과/유지류/기타 카테고리 태깅 포함, 교차오염은 모델 범위 외로 제외) + (변형 메뉴인 경우) 제안된 변형 재료 태그(DB 미반영 상태) + 메뉴 DB 존재 여부 → **Supervisor에게 반환**
 - **분기**: 메뉴가 DB에 없으면 Supervisor가 그 결과를 보고 웹서치 에이전트 호출 여부를 결정
 
 ### ⑤ 확률(Bayesian) 에이전트
 - **역할 개요**: Exact 피드백으로 확인되지 않은 재료에 대해 "이 가게 이 메뉴에 얼마나 있을 것 같은지"를 가게별 과거 데이터로 추정하는 확률 엔진. 확정값이 아니라 추정치이기 때문에, 이 결과는 항상 XAI가 임계값과 함께 해석해서 DANGER/CAUTION/SAFE로 변환한다.
 - **입력**: store_id, 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
-- **처리**: Beta-Binomial 업데이트 (α_prior = k_count+1, β_prior = (n_total−k_count)+1) — **store_id 스코프로 분리된 prior 사용**
+- **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **agent-5-Statistics.md 확정 공식**(doc2 갱신 완료). store_id 스코프 prior를 `store → cluster(menu_category) → global → uninformative` 순으로 fallback해서 사용하고, 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
 - **출력**: 재료별 존재 확률 (posterior mean) → **Supervisor에게 반환**
-- **주의**: 여기서 전역 prior를 쓰면 안 됨. store별 prior가 없으면 유사 가게 클러스터 prior로 fallback (완전 전역은 최후의 수단). 이 계산 공식 자체가 doc2의 신규 가게 초기화 규칙과 다르다는 점이 아직 미확정 상태(5번 섹션 참고).
+- **주의**: 전역 prior는 최후의 수단(`uninformative`). ③에서 override 거부된 anomaly 재료는 `anomaly_locked: true`로 표시되어, 확률 값과 무관하게 ⑧이 CAUTION 이상을 강제하도록 함.
 
 ### ⑥ 웹서치 에이전트
 - **역할 개요**: DB/온톨로지(④)가 메뉴 자체를 못 찾았을 때만 호출되는 마지막 정보 수집 수단. 비용·속도 문제로 전체 메뉴 아이템마다 부르지 않고 "완전히 모르는 메뉴"에만 사용한다. 크롤링 데이터는 실제 이 가게의 레시피가 아니므로 태생적으로 신뢰도가 낮은 정보원으로 취급된다.
@@ -270,4 +270,5 @@ graph TB
 - 사장님 피드백의 신뢰도 가중치를 일반 사용자 피드백과 다르게 줄 것인지 (McCoy & Prelec 2024 hierarchical trust-weight 적용 여부)
 - 웹서치 크롤링 결과와 기존 DB 값이 충돌할 때 병합 규칙
 - 메뉴판 1장당 수십 개 아이템이 나올 때 무거운 경로(웹서치, 확률모델) 호출을 얼마나 배치/캐싱할지
-- ⑤ Bayesian 에이전트의 확률 계산 방식 확정 필요: 현재 공식(α=k_count+1, β=(n_total−k_count)+1)이 doc2의 신규 가게 초기화 규칙(explicit 재료 α=5/β=1, 아니면 α=1/β=5 + 증거 발생 시 누적)과 다름 — 확률 팀 확인 필요
+- `ingredient_confirmations` UNIQUE `(store_id, menu_id, ingredient_id)` 제약과 `agent-3-exact.md`의 "동일 재료 중복 레코드 존재" 가정이 서로 충돌 — DB가 애초에 중복을 막는데 agent-3은 중복을 걷어내는 dedupe/conflict 로직을 전제로 설계됨. 둘 중 하나를 고쳐야 함
+- ⚠️ **[위험] `anomaly_locked` 정보가 ④→⑤ 전달 경로에서 유실됨**: ③이 override 거부한 재료에 붙이는 `anomaly_locked` 플래그를 ⑤가 입력으로 기대하는데, 이 값을 만들어 전달해야 할 ④의 출력 스키마(`agent-4-DBontology.md`)에 해당 필드가 없음. 이대로면 ⑧이 "확률과 무관하게 CAUTION 이상 강제"를 발동시킬 방법이 없어져 **FN(위험 누락)으로 직결될 수 있음** — 우선 수정 필요

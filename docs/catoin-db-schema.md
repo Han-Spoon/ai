@@ -71,7 +71,9 @@ erDiagram
 | `id` | PK | |
 | `name_ko` | varchar | 재료명 |
 | `tag` | varchar | `is_pork`, `is_shrimp` 등 |
-| `taxonomy_category` | varchar | 교차오염 / 발효장류 / 소스 / 육수 / 양념 / 고명견과 / 유지류 |
+| `taxonomy_category` | varchar | 발효장류 / 소스 / 육수 / 양념 / 고명견과 / 유지류 / 기타 |
+
+**교차오염 카테고리 제외 (agent-4 확정)**: 조리 과정의 교차오염(공유 기름·도마·불판 등)은 가게 단위로 관측 불가능해 확률 모델 범위에서 제외 — 해당 위험은 XAI(⑧)의 사장님 질문 생성 경로로 위임. 기존 교차오염 소속 재료는 실제 성격에 맞는 카테고리로 재배치하거나(예: 소스/양념/유지류) `기타`로 분류. 31개 재료의 상세 재배치 매핑표는 `agent-4-DBontology.md` §8에서 작업 중(미완성).
 
 ### `recipe_ingredients` (구 menu_recipe_ingredients)
 베이스 레시피 — 메뉴당 재료 목록, store 무관
@@ -132,7 +134,7 @@ PK: `(store_id, menu_id)`
 
 **이 테이블은 직접 UPDATE 하지 않음.** 항상 `ingredient_evidence_log`에 이벤트 INSERT → 애플리케이션 로직이 재계산해서 반영.
 
-**신규 가게 초기화**: 새 테이블 안 만들고, `recipe_ingredients`에 `explicit`로 태깅된 재료는 `alpha=5, beta=1`(있을 가능성 높음), 안 된 재료는 `alpha=1, beta=5`로 규칙 기반 디폴트 생성.
+**확률 공식 및 초기화 (agent-5 확정, 기존 α=5/β=1 규칙은 폐기)**: Beta(1,1) 균등 사전분포로 시작(`α0=β0=1`, 라플라스 스무딩), `α = k_count+1, β = (n_total−k_count)+1`. store 고유 prior(`ingredient_risk_scores`에 해당 store_id 레코드 존재)가 없으면 `menu_category` 클러스터 prior → 전역 prior → 완전 무정보(`uninformative`) 순으로 fallback(전역은 최후의 수단). 재료 출처(`recipe`/`expanded`/`variant_suggested`)에 따라 α·β를 **동일 비율로** 스케일 조정해 신뢰도를 반영(mean은 보존하고 분산만 키움 — α만 줄이면 SAFE 쪽으로 오판하는 FN 위험이 있어 금지). 상세는 `agent-5-Statistics.md` 참고.
 
 ### `ingredient_evidence_log` (구 prior_update_log)
 **"왜 그 확률로 바뀌었냐"의 원본 증거 로그.** 나중에 출처 신뢰도 학습(Dawid & Skene 1979 / Whitehill et al. 2009 GLAD / Kim & Ghahramani Bayesian Classifier Combination 계열) 붙일 때 이 테이블이 학습 데이터가 됨.
