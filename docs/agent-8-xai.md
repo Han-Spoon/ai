@@ -127,11 +127,11 @@ flowchart TD
 | ⑧이 받는 것 | 보장 사항 |
 |---|---|
 | `confirmed_results`/`probability_results` | Supervisor가 ③/⑤ 호출을 마친 뒤에만 전달 — 부분적으로만 채워질 수 있음(둘 다 없을 수도 있음, 그 경우 `no_information` 처리) |
-| `user_profile` | 스캔 요청 시점에 이미 확보된 사용자 프로필. 없으면 이 에이전트를 호출하지 않는 것이 원칙(§6 예외 참고) |
+| `user_profile` | 온보딩 단계에서 필수로 수집되므로 항상 존재함이 보장됨 (비로그인/미입력 케이스 없음) |
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
-| `owner_card != null` | Supervisor가 `owner_verification_requests` 생성을 트리거 (실제 INSERT 주체는 §8 미확정) |
+| `owner_card != null` | Supervisor가 ⑦ DB 업데이트 에이전트에 전달 → **⑦이 `owner_verification_requests`에 INSERT**. XAI는 질문 텍스트만 생성하고 DB에 직접 쓰지 않음 — "DB 쓰기는 ⑦만 수행한다" 원칙과 일관 |
 | `risk_level` | 최종 사용자 응답에 그대로 포함, 추가 라우팅 없음 (파이프라인의 마지막 단계) |
 
 ---
@@ -140,7 +140,6 @@ flowchart TD
 
 | 상황 | 처리 |
 |---|---|
-| `user_profile`이 아예 없음(비로그인 등) | 알레르기/식이 판정 자체가 불가능 — Supervisor가 이 에이전트를 호출하지 않거나, 일반 정보만 제공하는 별도 모드 필요 (§8) |
 | `confirmed_results`와 `probability_results`가 동시에 같은 재료를 다르게 판정 | `confirmed_results`(hard evidence)가 항상 우선 |
 | `proposed_variant_ingredients`만 있고 나머지는 다 없음 | caution으로 처리하되 `confidence: estimated`, danger로 격상 금지 |
 | 사용자 태그와 무관한 재료만 애매함 | `owner_card` 생성 안 함 — 관련 없는 질문으로 사장님 피로도 유발 방지 |
@@ -164,6 +163,4 @@ flowchart TD
 
 - [ ] **DANGER/CAUTION/SAFE 컷오프 실제 값** — F2 최적화로 정하기로만 합의, 숫자 미정
 - [ ] **컷오프 계산/보관 주체** — Supervisor 내부 규칙인지 XAI 내부 상수인지
-- [ ] **`owner_verification_requests` 실제 INSERT 주체** — doc2엔 "XAI 에이전트가 생성한 질문"이라고만 되어있고, 질문 텍스트를 XAI가 만드는 것과 그걸 DB에 저장하는 주체(Supervisor? ⑦?)가 분리되어야 하는지 불명확
 - [ ] **`flagged_anomaly` 신뢰 여부가 XAI 판정에 반영되는지** — 현재는 ⑦이 그대로 확정값으로 저장하므로 XAI 입장에선 구분 불가. anomaly 정보를 XAI까지 전달해서 문구를 다르게 할지 논의 필요
-- [ ] **`user_profile` 없는 사용자(비로그인) 처리 방식** — 별도 모드 필요 여부

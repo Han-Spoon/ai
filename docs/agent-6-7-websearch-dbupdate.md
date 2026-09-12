@@ -69,7 +69,8 @@ graph LR
 ```
 
 - `found: false`면 `candidates`는 빈 배열. → ⑧ XAI가 "완전 정보 없음" 경로(엣지 케이스 4)로 처리.
-- 검색 결과가 여러 개면 후보를 전부 담아서 반환 — 병합/선택은 이 에이전트가 하지 않는다(§8 미확정).
+- **크롤링 개수: 상위 10개 출처**. FN-minimization 원칙상 후보를 넓게 모아 놓치는 재료 확률을 낮추는 쪽을 택함 — 대신 관리자가 검토할 후보가 많아지는 트레이드오프는 그대로 있음(§8).
+- 10개 후보를 전부 담아서 반환 — 병합/선택은 이 에이전트가 하지 않는다(§8 미확정).
 
 ### 2-2. 처리 로직
 
@@ -159,7 +160,7 @@ flowchart TD
 ```
 
 - `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 같은 조합에 재답변이 오면 upsert.
-- `flagged_anomaly=true`여도 **현재 스펙상 확정값 자체는 그대로 저장·신뢰됨** (`catoin-db-schema.md` 원칙). 이게 FN-minimization과 충돌할 수 있다는 문제는 아직 미확정 (§8, `catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈).
+- `flagged_anomaly=true`여도 **⑦은 저장만 함, "그대로 신뢰할지"는 ⑦의 책임이 아님** — `present: false`(없음 확정)이면서 anomaly인 값은 `catoin-multi-agent-architecture.md` ③ Exact 피드백이 미확인으로 재분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정함 (`catoin-db-schema.md` 예외 조항 참고). 저장(⑦)과 신뢰 판단(③)의 책임을 분리한 것.
 - 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — XAI가 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 3-4. Supervisor와의 계약
@@ -203,16 +204,15 @@ flowchart TD
 | 3 | 관리자가 웹서치 제안 승인 | `menus`→`recipe_ingredients`→`ingredient_evidence_log` 순서로 INSERT | FK 순서 위반 시 실패해야 함 |
 | 4 | 관리자가 제안 반려 | DB 변경 없음 | `ingredient_risk_scores` 그대로 |
 | 5 | 사장님 정상 답변 (돈까스 + "돼지고기 있음") | `ingredient_confirmations` 즉시 INSERT, `flagged_anomaly: false` | 다음 조회 시 확정값 그대로 반환 |
-| 6 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장은 되지만 **그대로 반영됨** | 현재 스펙상 SAFE로 내려갈 수 있음 — 재검토 필요 항목과 연결 |
+| 6 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장은 되지만, ③이 미확인으로 재분류해서 Bayesian 확률과 비교 | 확률이 낮지 않으면 SAFE로 내려가지 않고 CAUTION 이상 유지될 것 |
 | 7 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 
 ---
 
 ## 5. 미확정 항목 (팀 확인 대기)
 
-- [ ] **웹서치 후보가 여러 개일 때 병합/선택 규칙** — 관리자가 하나씩 다 보고 고르는지, 자동으로 합치는 로직이 필요한지 (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈)
+- [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈)
 - [ ] **관리자 컨펌 SLA** — 검토 대기가 얼마나 길어질 수 있는지, 오래 방치된 review item을 어떻게 표시할지
-- [ ] **`flagged_anomaly` 신뢰 여부** — anomaly로 표시돼도 확정값을 그대로 쓰는 현재 규칙이 FN-minimization과 충돌 가능 (재검토 필요)
 - [ ] **사장님 오조작(버튼 잘못 누름) 대비** — anomaly 플래그는 통계적으로 이상한 답변만 잡지, 그럴듯한 오조작은 못 걸러냄. 재확인 UI 등 필요
 - [ ] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 덮어쓰기만 할지, 변경 이력을 남길지
 - [ ] **메뉴판 1장당 여러 unknown 메뉴가 나올 때 ⑥ 호출 배치/캐싱 전략** (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈)

@@ -217,8 +217,8 @@ graph TB
 ### ③ Exact 피드백 에이전트 (재료 단위로 재설계)
 - **역할 개요**: 확률로 추정하기 전에 "이미 사람이 확인해준 확실한 값이 있는지"부터 재료 단위로 체크하는 1차 관문. 여기서 확인되면 Bayesian 계산 자체가 불필요해 비용·속도 면에서 이득이고, 무엇보다 사람이 확인한 값이 확률 추정치보다 신뢰도가 높음.
 - **입력**: store_id, 메뉴명 (Supervisor로부터 전달받음)
-- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인).
-- **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면 나머지 재료만 Supervisor가 다음 에이전트로 라우팅
+- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 확정으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`catoin-db-schema.md` 참고)
+- **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면(anomaly 예외 포함) 나머지 재료만 Supervisor가 다음 에이전트로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법(전부 확인 vs 전부 미확인) 금지 — 부분 확인을 지원해야 "새우젓만 사장님이 확인해줬고 나머지는 아직 모름" 같은 현실적인 상황을 표현할 수 있음.
 
 ### ④ DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트
@@ -251,7 +251,7 @@ graph TB
   - **웹서치/변형 태깅 결과(신규 메뉴·재료, soft evidence)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
   - **사장님 답변 피드백(확정 저장, hard evidence)**: `ingredient_confirmations`에 override로 저장하되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly` 처리 후 저장. 이건 사장님이 이미 확인해준 값이라 즉시 반영.
 - **출력**: 갱신된 DB (다음 조회부터 반영) → 처리 완료 여부를 **Supervisor에게 반환**
-- **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임. flagged_anomaly가 붙어도 확정값을 그대로 신뢰하는 현재 규칙이 FN-minimization과 충돌할 수 있다는 점도 아직 미확정(5번 섹션 참고).
+- **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임. `flagged_anomaly: true` + `present: false`인 확정값은 저장은 그대로 하되, ③ Exact 피드백이 이를 미확인으로 분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정하도록 함 — 저장(⑦)과 신뢰 여부 판단(③)의 책임을 분리.
 
 ### ⑧ XAI/설명 에이전트
 - **역할 개요**: 판정과 설명을 담당하는 파이프라인의 마지막 단계. Bayesian이 만든 확률과 Exact 피드백이 만든 확정값을 사용자 개인의 알레르기·식이 제약과 대조해 최종 위험도를 정하고, 그 근거를 사람이 이해할 수 있는 문장으로 바꾼다. 동시에 정보가 부족한 재료에 대해 사장님에게 물어볼 질문도 함께 만든다.
@@ -271,4 +271,3 @@ graph TB
 - 웹서치 크롤링 결과와 기존 DB 값이 충돌할 때 병합 규칙
 - 메뉴판 1장당 수십 개 아이템이 나올 때 무거운 경로(웹서치, 확률모델) 호출을 얼마나 배치/캐싱할지
 - ⑤ Bayesian 에이전트의 확률 계산 방식 확정 필요: 현재 공식(α=k_count+1, β=(n_total−k_count)+1)이 doc2의 신규 가게 초기화 규칙(explicit 재료 α=5/β=1, 아니면 α=1/β=5 + 증거 발생 시 누적)과 다름 — 확률 팀 확인 필요
-- `ingredient_confirmations.flagged_anomaly` 처리 방식: doc2는 anomaly 여부와 무관하게 확정값을 그대로 신뢰하도록 되어 있는데, 이게 FN-minimization 원칙과 충돌할 수 있음 (예: 사장님이 잘못/거짓으로 "돼지고기 없음"이라 답해도 그대로 SAFE 처리됨) — 재검토 필요
