@@ -163,7 +163,9 @@ PK: `(store_id, menu_id)`
 | `flagged_anomaly` | boolean | base rate와 극단적으로 어긋나는 답변 플래그 |
 | `confirmed_at` | timestamp | |
 
-**UNIQUE `(store_id, menu_id, ingredient_id)`**. 이 테이블에 행이 있으면 `ingredient_risk_scores` 조회를 스킵하고 이 값을 그대로 씀.
+**UNIQUE `(store_id, menu_id, ingredient_id)`**. 이 테이블에 행이 있으면 원칙적으로 `ingredient_risk_scores` 조회를 스킵하고 이 값을 그대로 씀.
+
+**예외 — `flagged_anomaly: true` + `present: false`**: "재료 없음" 확정 답변이 base rate와 극단적으로 어긋나는 경우엔 확정값을 무조건 신뢰하지 않는다. 이때는 `ingredient_risk_scores` 확률도 함께 조회해서, 확률이 낮지 않으면 확정값(없음) 대신 CAUTION 이상으로 유지한다. `present: true`인 이상 답변(예: 원래 안 들어가는 재료를 있다고 확인)은 이미 안전한 방향(위험 인정)이라 이 예외 대상이 아님 — FN-minimization 원칙상 "없다"는 이상 답변으로 실제 위험을 놓치는 경우만 막으면 됨.
 
 ### `owner_verification_requests` (구 owner_questions)
 **"사장님에게 검증을 요청한 건"** — XAI 에이전트가 생성한 질문과 답변 로그
