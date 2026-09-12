@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from clova_layout import extract_clova_fields
@@ -29,6 +30,27 @@ class OCRServiceError(RuntimeError):
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
+
+
+def validate_clova_config() -> tuple[str, str]:
+    """CLOVA 설정을 실제 네트워크 호출 전에 검증한다.
+
+    ECS/SSM의 초기 PLACEHOLDER가 그대로 주입되거나 URL scheme이 빠지면
+    httpx 호출 시점의 불명확한 500 대신 기동 헬스체크에서 즉시 발견한다.
+    """
+    endpoint = (os.getenv("CLOVA_OCR_URL") or "").strip()
+    secret = (os.getenv("CLOVA_OCR_SECRET") or "").strip()
+
+    if not endpoint or endpoint == "PLACEHOLDER":
+        raise OCRConfigError("CLOVA_OCR_URL이 설정되지 않았습니다.")
+    if not secret or secret == "PLACEHOLDER":
+        raise OCRConfigError("CLOVA_OCR_SECRET이 설정되지 않았습니다.")
+
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise OCRConfigError("CLOVA_OCR_URL은 절대 HTTPS URL이어야 합니다.")
+
+    return endpoint, secret
 
 
 class _RequestRateLimiter:
@@ -75,11 +97,7 @@ class ClovaOCRClient:
         max_calls_per_scan: int | None = None,
     ):
         load_dotenv()
-
-        self.endpoint = os.getenv("CLOVA_OCR_URL")
-        self.secret = os.getenv("CLOVA_OCR_SECRET")
-        if not self.endpoint or not self.secret:
-            raise OCRConfigError("CLOVA_OCR_URL과 CLOVA_OCR_SECRET을 설정해주세요.")
+        self.endpoint, self.secret = validate_clova_config()
 
         self.timeout_seconds = float(os.getenv("CLOVA_OCR_TIMEOUT_SECONDS", "10"))
         self.max_attempts = max(1, int(os.getenv("CLOVA_OCR_MAX_ATTEMPTS", "2")))

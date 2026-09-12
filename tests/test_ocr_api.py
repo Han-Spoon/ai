@@ -9,6 +9,26 @@ from fastapi.testclient import TestClient
 app_module = importlib.import_module("app")
 
 
+def test_health_rejects_placeholder_clova_configuration(monkeypatch):
+    monkeypatch.setenv("CLOVA_OCR_URL", "PLACEHOLDER")
+    monkeypatch.setenv("CLOVA_OCR_SECRET", "PLACEHOLDER")
+
+    response = TestClient(app_module.app).get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "OCR runtime configuration is invalid."}
+
+
+def test_health_accepts_valid_clova_configuration(monkeypatch):
+    monkeypatch.setenv("CLOVA_OCR_URL", "https://example.test/ocr")
+    monkeypatch.setenv("CLOVA_OCR_SECRET", "test-secret")
+
+    response = TestClient(app_module.app).get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_runtime_ocr_pipeline_accepts_request_budget(tmp_path):
     with pytest.raises(FileNotFoundError):
         app_module._ocr_main.analyze_menu_image(

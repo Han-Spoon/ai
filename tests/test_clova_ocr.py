@@ -14,7 +14,7 @@ if str(OCR_DIR) not in sys.path:
 import image_quality  # noqa: E402
 import ocr_client  # noqa: E402
 from clova_layout import count_price_anchors, extract_clova_fields  # noqa: E402
-from ocr_client import ClovaOCRClient  # noqa: E402
+from ocr_client import ClovaOCRClient, OCRConfigError  # noqa: E402
 from parser import parse_menu_candidates  # noqa: E402
 from result_builder import build_final_result  # noqa: E402
 
@@ -23,6 +23,20 @@ _OCR_MAIN_SPEC = importlib.util.spec_from_file_location(
 )
 ocr_main = importlib.util.module_from_spec(_OCR_MAIN_SPEC)
 _OCR_MAIN_SPEC.loader.exec_module(ocr_main)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["PLACEHOLDER", "clova.example.test/ocr", "http://example.test/ocr"],
+)
+def test_clova_client_rejects_placeholder_or_non_https_endpoint(
+    endpoint, monkeypatch
+):
+    monkeypatch.setenv("CLOVA_OCR_URL", endpoint)
+    monkeypatch.setenv("CLOVA_OCR_SECRET", "test-secret")
+
+    with pytest.raises(OCRConfigError):
+        ClovaOCRClient()
 
 
 # CLOVA 원문을 공간 파싱하고, 확정적 메뉴명 교정까지 적용한 계약.

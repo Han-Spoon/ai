@@ -13,6 +13,7 @@
 """
 
 import importlib.util
+import logging
 import os
 import re
 import shutil
@@ -57,9 +58,14 @@ build_final_results_from_judged = _result_main.build_final_results_from_judged
 
 # 룰엔진 진입 함수 (engine 모듈명은 고유라 충돌 없음)
 from engine import analyze_all  # noqa: E402
-from ocr_client import OCRServiceError  # noqa: E402
+from ocr_client import (  # noqa: E402
+    OCRConfigError,
+    OCRServiceError,
+    validate_clova_config,
+)
 
 app = FastAPI(title="Hanspoon AI", version="1.0.0")
+logger = logging.getLogger(__name__)
 _OCR_CONCURRENCY = max(1, int(os.getenv("OCR_MAX_CONCURRENT_SCANS", "2")))
 _OCR_SEMAPHORE = threading.BoundedSemaphore(_OCR_CONCURRENCY)
 
@@ -81,6 +87,14 @@ class RuleEngineRequest(BaseModel):
 # ── 헬스체크 ──────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
+    try:
+        validate_clova_config()
+    except OCRConfigError as err:
+        logger.error("OCR runtime configuration is invalid: %s", err)
+        raise HTTPException(
+            status_code=503,
+            detail="OCR runtime configuration is invalid.",
+        ) from err
     return {"status": "ok"}
 
 
@@ -140,10 +154,25 @@ def run_ocr(req: OcrRequest):
         return result["final"]
     except HTTPException:
         raise
+    except OCRConfigError as err:
+        logger.error("OCR request rejected due to invalid runtime configuration: %s", err)
+        raise HTTPException(
+            status_code=503,
+            detail="OCR service configuration is invalid.",
+        ) from err
     except OCRServiceError as err:
+        logger.warning(
+            "OCR upstream request failed (status=%d, retryable=%s)",
+            err.status_code,
+            err.retryable,
+        )
         raise HTTPException(status_code=err.status_code, detail=str(err)) from err
     except Exception as err:  # OCR/GPT 등 파이프라인 오류 → 500
-        raise HTTPException(status_code=500, detail=f"OCR 처리 실패: {err}") from err
+        logger.exception("Unexpected OCR processing failure")
+        raise HTTPException(
+            status_code=500,
+            detail="OCR 처리 중 예상하지 못한 오류가 발생했습니다.",
+        ) from err
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
