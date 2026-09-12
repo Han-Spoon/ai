@@ -1,10 +1,33 @@
 import unittest
 from unittest.mock import patch
 
+from ai_result.gpt.gpt_client import GPTServiceError
 from ai_result.main import build_final_result
 
 
 class UnknownRemainHandlerTest(unittest.TestCase):
+    def test_unknown_remain_uses_caution_fallback_when_gpt_is_unavailable(self):
+        with patch(
+            "ai_result.handlers.unknown_remain_handler.ask_gpt_json",
+            side_effect=GPTServiceError("unavailable"),
+        ):
+            result = build_final_result(
+                {
+                    "menu_name_ko": "셰프특선비빔밥",
+                    "risk_level": "caution",
+                    "hit_tags": [],
+                    "triggered_flags": [],
+                    "forbidden_tags": ["is_pork"],
+                    "need_gpt": True,
+                    "escalation_case": ["unknown_remain"],
+                }
+            )
+
+        self.assertEqual(result.risk_level, "caution")
+        self.assertEqual(result.hits, [])
+        self.assertEqual(result.message.ko, "확인이 필요한 재료가 있을 수 있어요.")
+        self.assertEqual(result.owner_card.flag, "unknown_remain")
+
     def test_unknown_remain_keeps_caution_without_hits(self):
         with patch(
             "ai_result.handlers.unknown_remain_handler.ask_gpt_json",

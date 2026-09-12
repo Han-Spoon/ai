@@ -29,6 +29,40 @@ def test_health_accepts_valid_clova_configuration(monkeypatch):
     assert response.json() == {"status": "ok"}
 
 
+def test_result_endpoint_degrades_unknown_menu_to_caution_without_openai_key(
+    monkeypatch,
+):
+    from ai_result.gpt.gpt_client import _get_client
+
+    monkeypatch.setenv("OPENAI_API_KEY", "PLACEHOLDER")
+    _get_client.cache_clear()
+    try:
+        response = TestClient(app_module.app).post(
+            "/v1/result",
+            json={
+                "menu_analyses": [
+                    {
+                        "menu_name_ko": "DB미등록메뉴",
+                        "risk_level": "caution",
+                        "hit_tags": [],
+                        "triggered_flags": [],
+                        "forbidden_tags": ["is_pork"],
+                        "need_gpt": True,
+                        "escalation_case": ["unknown_menu"],
+                    }
+                ]
+            },
+        )
+    finally:
+        _get_client.cache_clear()
+
+    assert response.status_code == 200
+    menu = response.json()["menu_analyses"][0]
+    assert menu["risk_level"] == "caution"
+    assert menu["hits"] == []
+    assert menu["owner_card"]["flag"] == "unknown_menu"
+
+
 def test_runtime_ocr_pipeline_accepts_request_budget(tmp_path):
     with pytest.raises(FileNotFoundError):
         app_module._ocr_main.analyze_menu_image(

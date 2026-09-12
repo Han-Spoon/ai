@@ -2,9 +2,11 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from ai_result.core.case_router import route_case
+from ai_result.gpt.gpt_client import GPTServiceError, gpt_request_budget
 from ai_result.models.final_output import FinalOutput
 from ai_result.models.input_verification import RuleEngineInput
 
@@ -18,10 +20,19 @@ def build_final_result(payload: dict) -> FinalOutput:
 def build_final_results_from_judged(judged_result: dict) -> dict:
     """룰엔진 전체 결과 JSON의 각 메뉴를 케이스 라우팅해 최종 템플릿으로 교체한다."""
     result = dict(judged_result)
-    result["menu_analyses"] = [
-        build_final_result(menu).model_dump()
-        for menu in judged_result.get("menu_analyses", [])
-    ]
+    try:
+        total_seconds = float(os.getenv("RESULT_GPT_TOTAL_BUDGET_SECONDS", "5"))
+        max_calls = int(os.getenv("RESULT_GPT_MAX_CALLS", "1"))
+    except ValueError as error:
+        raise GPTServiceError("GPT 결과 처리 예산 설정이 올바르지 않습니다.") from error
+
+    # 메뉴판에 unknown 항목이 많아도 GPT 호출이 직렬로 누적되어 백엔드의
+    # 7초 read timeout을 넘지 않게 한다. 예산 밖 메뉴는 caution으로 폴백한다.
+    with gpt_request_budget(total_seconds=total_seconds, max_calls=max_calls):
+        result["menu_analyses"] = [
+            build_final_result(menu).model_dump()
+            for menu in judged_result.get("menu_analyses", [])
+        ]
     return result
 
 

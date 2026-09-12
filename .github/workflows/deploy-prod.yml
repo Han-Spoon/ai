@@ -169,6 +169,9 @@ jobs:
             OCR_QUEUE_WAIT_SECONDS=1
             OCR_ENABLE_GPT_POST_PROCESS=false
             OCR_ENABLE_GPT_JUDGMENT=false
+            OPENAI_TIMEOUT_SECONDS=5
+            RESULT_GPT_TOTAL_BUDGET_SECONDS=5
+            RESULT_GPT_MAX_CALLS=1
 
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

@@ -1,10 +1,34 @@
 import unittest
 from unittest.mock import patch
 
+from ai_result.gpt.gpt_client import GPTServiceError
 from ai_result.main import build_final_result
 
 
 class UnknownMenuHandlerTest(unittest.TestCase):
+    def test_unknown_menu_uses_caution_fallback_when_gpt_is_unavailable(self):
+        with patch(
+            "ai_result.handlers.unknown_menu_handler.ask_gpt_json",
+            side_effect=GPTServiceError("unavailable"),
+        ):
+            result = build_final_result(
+                {
+                    "menu_name_ko": "버터갈릭쉬림프파스타",
+                    "risk_level": "caution",
+                    "hit_tags": [],
+                    "triggered_flags": [],
+                    "forbidden_tags": ["is_pork"],
+                    "need_gpt": True,
+                    "escalation_case": ["unknown_menu"],
+                }
+            )
+
+        self.assertEqual(result.risk_level, "caution")
+        self.assertEqual(result.hits, [])
+        self.assertEqual(result.message.ko, "확인이 필요한 재료가 있을 수 있어요.")
+        self.assertEqual(result.owner_card.flag, "unknown_menu")
+        self.assertEqual(result.owner_card.question.ko, "이 메뉴에 돼지고기 성분이 들어가나요?")
+
     def test_unknown_menu_uses_gpt_template(self):
         with patch(
             "ai_result.handlers.unknown_menu_handler.ask_gpt_json",

@@ -199,7 +199,11 @@ def run_result(judged_result: dict = Body(...)):
     try:
         return build_final_results_from_judged(judged_result)
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"결과 생성 실패: {err}") from err
+        logger.exception("Unexpected result generation failure")
+        raise HTTPException(
+            status_code=500,
+            detail="결과 생성 중 예상하지 못한 오류가 발생했습니다.",
+        ) from err
 
 
 @dataclass(frozen=True)
