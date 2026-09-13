@@ -15,8 +15,9 @@ import image_quality  # noqa: E402
 import ocr_client  # noqa: E402
 from clova_layout import count_price_anchors, extract_clova_fields  # noqa: E402
 from ocr_client import ClovaOCRClient, OCRConfigError  # noqa: E402
-from parser import parse_menu_candidates  # noqa: E402
-from result_builder import build_final_result  # noqa: E402
+from normalizer import normalize_menu_name, split_menu_name_and_origin  # noqa: E402
+from parser import build_menu_item, parse_menu_candidates  # noqa: E402
+from result_builder import build_final_result, build_menu_analysis  # noqa: E402
 
 _OCR_MAIN_SPEC = importlib.util.spec_from_file_location(
     "ocr_main_under_test", OCR_DIR / "main.py"
@@ -91,6 +92,54 @@ EXPECTED_NORMALIZED_MENUS = {
         ("닭도리탕", 6500),
     },
 }
+
+
+@pytest.mark.parametrize(
+    ("raw_name", "expected_menu", "expected_origin"),
+    [
+        ("육회국내산 암소한우", "육회", "국내산 암소한우"),
+        ("육회비빔밥 국내산", "육회비빔밥", "국내산"),
+        ("소고기국밥호주산", "소고기국밥", "호주산"),
+        ("도가니탕 미국산", "도가니탕", "미국산"),
+        ("수제돈까스(국내산)", "수제돈까스", "국내산"),
+    ],
+)
+def test_origin_suffix_is_separated_from_menu_name(
+    raw_name, expected_menu, expected_origin
+):
+    menu_name, origin_text = split_menu_name_and_origin(raw_name)
+
+    assert normalize_menu_name(menu_name) == expected_menu
+    assert origin_text == expected_origin
+
+
+@pytest.mark.parametrize(
+    "menu_name",
+    ["자연산광어회", "부산어묵", "산채비빔밥", "한우육회", "국내산 한우육회"],
+)
+def test_non_suffix_origin_like_text_is_not_removed(menu_name):
+    split_name, origin_text = split_menu_name_and_origin(menu_name)
+
+    assert split_name == menu_name
+    assert origin_text is None
+
+
+def test_origin_is_preserved_in_ocr_menu_response():
+    source_lines = [
+        {"text": "소고기국밥 호주산", "page": 1, "x1": 0, "y1": 0, "x2": 100, "y2": 20},
+        {"text": "8,000", "page": 1, "x1": 110, "y1": 0, "x2": 160, "y2": 20},
+    ]
+    menu = build_menu_item(
+        "소고기국밥 호주산", 8000, source_lines, price_raw="8,000"
+    )
+
+    assert menu["normalizedCandidate"] == "소고기국밥"
+    assert menu["originText"] == "호주산"
+    assert menu["correctionReason"] == "origin_metadata_removed"
+
+    response = build_menu_analysis(menu, display_order=1)
+    assert response["menu_name_ko"] == "소고기국밥"
+    assert response["origin_text"] == "호주산"
 
 
 @pytest.mark.parametrize("sample_name", ["menu_001", "menu_002", "menu_003"])

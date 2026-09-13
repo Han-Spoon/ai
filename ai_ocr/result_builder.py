@@ -92,6 +92,7 @@ def build_menu_analysis(menu, display_order: int):
         "description_ko": description,
         "description_en": None,
         "price_text": price_text,
+        "origin_text": menu.get("originText"),
         "risk_level": None,
         "is_spicy": infer_is_spicy(
             {
