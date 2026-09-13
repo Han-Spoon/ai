@@ -1,6 +1,6 @@
 # ① Supervisor 에이전트 스펙
 
-담당: 미정
+담당: 박다은
 상태: 초안 (미확정 항목은 §8 참조)
 상위 문서: `catoin-multi-agent-architecture.md`, `catoin-db-schema.md`
 
