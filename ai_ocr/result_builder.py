@@ -4,6 +4,7 @@ import mimetypes
 
 from spicy_detector import infer_is_spicy
 from image_quality import analyze_image_quality
+from price_metrics import count_matched_price_anchors
 
 
 def build_final_result(
@@ -89,6 +90,7 @@ def build_menu_analysis(menu, display_order: int):
         {
             "label": option.get("name"),
             "price": option.get("price"),
+            **({"inferred": True} if option.get("inferred") else {}),
         }
         for option in menu.get("options", [])
         if option.get("name") and option.get("price") is not None
@@ -133,7 +135,9 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         else 0.0
     )
     price_match_ratio = pair_coverage if price_anchor_count else (
-        round(price_match_count / menu_count, 2) if menu_count else 0.0
+        round(min(price_match_count / menu_count, 1.0), 2)
+        if menu_count
+        else 0.0
     )
     ocr_confidences = [
         float(line.get("confidence"))
@@ -229,7 +233,7 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
 
 
 def count_price_matches(menus):
-    return sum(1 for menu in menus if menu.get("priceRaw") or menu.get("price") is not None)
+    return count_matched_price_anchors(menus)
 
 
 def count_detected_price_anchors(raw_lines):

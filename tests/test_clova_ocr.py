@@ -17,6 +17,7 @@ from clova_layout import (  # noqa: E402
     count_price_anchors,
     extract_clova_fields,
     parse_spatial_pairs,
+    should_retry_with_preprocessing,
 )
 from ocr_client import ClovaOCRClient, OCRConfigError  # noqa: E402
 from normalizer import normalize_menu_name, split_menu_name_and_origin  # noqa: E402
@@ -241,17 +242,77 @@ def test_menu_005_recovers_cjk_and_observed_misread_size_labels():
     assert menus_by_name["감자탕"]["options"] == [
         {"name": "대", "price": 39000, "priceRaw": "39,000"},
         {"name": "중", "price": 34000, "priceRaw": "34,000"},
+        {
+            "name": "소",
+            "price": 28000,
+            "priceRaw": "28,000",
+            "inferred": True,
+        },
     ]
     assert menus_by_name["등뼈찜"]["options"] == [
         {"name": "대", "price": 44000, "priceRaw": "44,000"},
         {"name": "중", "price": 38000, "priceRaw": "38,000"},
     ]
 
-    # 라벨이 없는 28,000원은 다음 작업 단위에서 공간 순서로 추론한다.
-    assert all(
-        option["price"] != 28000
-        for option in menus_by_name["감자탕"]["options"]
-    )
+    response = build_menu_analysis(menus_by_name["감자탕"], display_order=1)
+    assert response["price_options"][-1] == {
+        "label": "소",
+        "price": 28000,
+        "inferred": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("missing_label", "visible_rows", "missing_price"),
+    [
+        ("대", [("중", 34000), ("소", 28000)], 39000),
+        ("중", [("대", 39000), ("소", 28000)], 34000),
+        ("소", [("대", 39000), ("중", 34000)], 28000),
+    ],
+)
+def test_missing_size_label_is_inferred_at_any_position(
+    missing_label, visible_rows, missing_price
+):
+    rows = [("대", 39000), ("중", 34000), ("소", 28000)]
+    tokens = [_clova_token("감자탕", 100, 100, 180, 124)]
+    for index, (label, price) in enumerate(rows):
+        y1 = 100 + (index * 32)
+        if (label, price) in visible_rows:
+            tokens.append(_clova_token(label, 250, y1, 270, y1 + 24))
+        tokens.append(
+            _clova_token(f"{price:,}", 290, y1, 350, y1 + 24)
+        )
+
+    pairs = parse_spatial_pairs(tokens)
+
+    assert len(pairs) == 1
+    inferred = next(option for option in pairs[0].options if option.inferred)
+    assert (inferred.label, inferred.price) == (missing_label, missing_price)
+
+
+def test_missing_label_inference_does_not_absorb_next_menu_price():
+    tokens = [
+        _clova_token("감자탕", 100, 100, 180, 124),
+        _clova_token("대", 250, 100, 270, 124),
+        _clova_token("39,000", 290, 100, 350, 124),
+        _clova_token("중", 250, 132, 270, 156),
+        _clova_token("34,000", 290, 132, 350, 156),
+        _clova_token("해물부추전", 100, 164, 220, 188),
+        _clova_token("15,000", 290, 164, 350, 188),
+    ]
+
+    pairs = parse_spatial_pairs(tokens)
+    pairs_by_name = {pair.name: pair for pair in pairs}
+
+    assert {pair.name for pair in pairs} == {"감자탕", "해물부추전"}
+    actual_options = [
+        (option.label, option.price)
+        for option in pairs_by_name["감자탕"].options
+    ]
+    assert actual_options == [
+        ("대", 39000),
+        ("중", 34000),
+    ]
 
 
 def test_observed_misread_symbol_is_not_corrected_without_repeated_option_rows():
@@ -319,6 +380,45 @@ def test_low_resolution_with_complete_pairs_is_reviewable_not_hard_failure():
     assert quality["status"] == "low_confidence"
     assert quality["price_anchor_count"] == 12
     assert quality["pair_coverage"] == 1.0
+
+
+def test_menu_005_quality_counts_all_option_price_anchors():
+    tokens = _sample_tokens("menu_005")
+    menus = parse_menu_candidates(tokens)
+
+    result = build_final_result(
+        str(ROOT / "images" / "menu_005.jpg"),
+        menus,
+        raw_lines=tokens,
+        enable_gpt_post_process=False,
+        enable_gpt_judgment=False,
+    )
+    quality = result["scan_quality"]
+
+    assert len(menus) == 18
+    assert quality["price_anchor_count"] == 21
+    assert quality["price_match_count"] == 21
+    assert quality["pair_coverage"] == 1.0
+
+
+def test_option_prices_prevent_unnecessary_preprocessing_retry():
+    tokens = []
+    for menu_index, menu_name in enumerate(("감자탕", "전골", "갈비찜")):
+        y1 = 100 + (menu_index * 80)
+        tokens.extend(
+            [
+                _clova_token(menu_name, 100, y1, 180, y1 + 24),
+                _clova_token("소", 250, y1, 270, y1 + 24),
+                _clova_token("20,000", 290, y1, 350, y1 + 24),
+                _clova_token("대", 250, y1 + 32, 270, y1 + 56),
+                _clova_token("30,000", 290, y1 + 32, 350, y1 + 56),
+            ]
+        )
+
+    menus = parse_menu_candidates(tokens)
+
+    assert len(menus) == 3
+    assert should_retry_with_preprocessing(tokens, menus) is False
 
 
 def test_clova_client_sends_v2_multipart_request(tmp_path, monkeypatch):

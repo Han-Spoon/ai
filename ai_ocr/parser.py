@@ -76,14 +76,16 @@ def parse_clova_menu_candidates(tokens):
 
     menus = []
     for pair in parse_spatial_pairs(tokens):
-        options = [
-            {
+        options = []
+        for option in pair.options:
+            parsed_option = {
                 "name": option.label,
                 "price": option.price,
                 "priceRaw": option.price_raw,
             }
-            for option in pair.options
-        ]
+            if option.inferred:
+                parsed_option["inferred"] = True
+            options.append(parsed_option)
         menu = build_menu_item(
             pair.name,
             pair.price,
