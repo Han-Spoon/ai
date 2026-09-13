@@ -76,11 +76,20 @@ def parse_clova_menu_candidates(tokens):
 
     menus = []
     for pair in parse_spatial_pairs(tokens):
+        options = [
+            {
+                "name": option.label,
+                "price": option.price,
+                "priceRaw": option.price_raw,
+            }
+            for option in pair.options
+        ]
         menu = build_menu_item(
             pair.name,
             pair.price,
             list(pair.source_tokens),
             price_raw=pair.price_raw,
+            options=options,
         )
         menu["confidence"] = pair.confidence
         menu["source"]["provider"] = "clova"

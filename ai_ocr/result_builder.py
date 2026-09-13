@@ -85,6 +85,14 @@ def build_menu_analysis(menu, display_order: int):
     menu_name = menu.get("normalizedCandidate") or menu.get("rawName") or menu.get("matchedMenu")
     description = menu.get("description") or ""
     price_text = stringify_price(menu.get("price")) or menu.get("priceRaw")
+    price_options = [
+        {
+            "label": option.get("name"),
+            "price": option.get("price"),
+        }
+        for option in menu.get("options", [])
+        if option.get("name") and option.get("price") is not None
+    ]
 
     return {
         "menu_name_ko": menu_name,
@@ -92,6 +100,7 @@ def build_menu_analysis(menu, display_order: int):
         "description_ko": description,
         "description_en": None,
         "price_text": price_text,
+        "price_options": price_options,
         "origin_text": menu.get("originText"),
         "risk_level": None,
         "is_spicy": infer_is_spicy(

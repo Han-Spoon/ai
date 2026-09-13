@@ -36,6 +36,17 @@ _NOISE_PARTS = (
     "포장됩니다",
 )
 _EXCLUDED_MENU_PARTS = ("사리추가",)
+_KOREAN_SIZE_LABELS = {"소", "중", "대"}
+
+
+@dataclass(frozen=True)
+class SpatialOption:
+    label: str
+    price: int
+    price_raw: str
+    confidence: float
+    label_token: dict
+    price_token: dict
 
 
 @dataclass(frozen=True)
@@ -45,6 +56,7 @@ class SpatialPair:
     price_raw: str
     confidence: float
     source_tokens: tuple[dict, ...]
+    options: tuple[SpatialOption, ...] = ()
 
 
 def extract_clova_fields(payload: dict) -> list[dict]:
@@ -106,13 +118,159 @@ def parse_spatial_pairs(tokens: list[dict]) -> list[SpatialPair]:
     text_tokens = [token for token in expanded if token.get("price") is None]
     pairs: list[SpatialPair] = []
 
+    consumed_price_ids: set[int] = set()
+    for option_group in _find_korean_size_option_groups(price_tokens, text_tokens):
+        pair = _pair_option_group_with_name(option_group, price_tokens, text_tokens)
+        if pair is None:
+            continue
+        pairs.append(pair)
+        consumed_price_ids.update(id(option.price_token) for option in option_group)
+
     for price_token in price_tokens:
+        if id(price_token) in consumed_price_ids:
+            continue
         pair = _pair_price_with_name(price_token, price_tokens, text_tokens)
         if pair is not None:
             pairs.append(pair)
 
     pairs.sort(key=lambda pair: _reading_order(pair.source_tokens))
     return _deduplicate_pairs(pairs)
+
+
+def _find_korean_size_option_groups(
+    prices: list[dict], texts: list[dict]
+) -> list[list[SpatialOption]]:
+    """같은 열에 반복되는 한글 소/중/대와 가격을 옵션 그룹으로 묶는다."""
+    used_price_ids: set[int] = set()
+    options: list[SpatialOption] = []
+
+    size_tokens = sorted(
+        (
+            token
+            for token in texts
+            if re.sub(r"\s+", "", token.get("text", "")) in _KOREAN_SIZE_LABELS
+        ),
+        key=lambda token: (int(token.get("page") or 1), _centerline_y_at(token, _center_x(token))),
+    )
+
+    for label_token in size_tokens:
+        candidates = []
+        for price_token in prices:
+            if id(price_token) in used_price_ids:
+                continue
+            if price_token.get("page") != label_token.get("page"):
+                continue
+
+            horizontal_gap = float(price_token["x1"]) - float(label_token["x2"])
+            if horizontal_gap < -2:
+                continue
+            max_gap = max(_height(label_token), _height(price_token)) * 3.0
+            if horizontal_gap > max_gap:
+                continue
+
+            baseline_error = _baseline_error(label_token, price_token)
+            tolerance = max(_height(label_token), _height(price_token)) * 0.7 + 4.0
+            if baseline_error > tolerance:
+                continue
+            candidates.append((baseline_error, max(horizontal_gap, 0.0), price_token))
+
+        if not candidates:
+            continue
+
+        _, _, price_token = min(candidates, key=lambda item: (item[0], item[1]))
+        used_price_ids.add(id(price_token))
+        options.append(
+            SpatialOption(
+                label=re.sub(r"\s+", "", label_token["text"]),
+                price=int(price_token["price"]),
+                price_raw=str(price_token["priceRaw"]),
+                confidence=round(
+                    mean(
+                        (
+                            float(label_token.get("confidence") or 0.0),
+                            float(price_token.get("confidence") or 0.0),
+                        )
+                    ),
+                    3,
+                ),
+                label_token=label_token,
+                price_token=price_token,
+            )
+        )
+
+    groups: list[list[SpatialOption]] = []
+    current: list[SpatialOption] = []
+    for option in options:
+        if current and (
+            option.label in {item.label for item in current}
+            or not _is_same_option_column(current[-1], option)
+        ):
+            if len(current) >= 2:
+                groups.append(current)
+            current = []
+        current.append(option)
+
+    if len(current) >= 2:
+        groups.append(current)
+    return groups
+
+
+def _is_same_option_column(first: SpatialOption, second: SpatialOption) -> bool:
+    if first.label_token.get("page") != second.label_token.get("page"):
+        return False
+
+    row_gap = _centerline_y_at(second.label_token, _center_x(second.label_token)) - _centerline_y_at(
+        first.label_token, _center_x(first.label_token)
+    )
+    typical_height = max(
+        _height(first.label_token),
+        _height(second.label_token),
+        _height(first.price_token),
+        _height(second.price_token),
+    )
+    if row_gap <= 0 or row_gap > typical_height * 2.4:
+        return False
+
+    label_x_gap = abs(_center_x(first.label_token) - _center_x(second.label_token))
+    price_x_gap = abs(float(first.price_token["x1"]) - float(second.price_token["x1"]))
+    return label_x_gap <= typical_height and price_x_gap <= typical_height * 1.5
+
+
+def _pair_option_group_with_name(
+    options: list[SpatialOption], prices: list[dict], texts: list[dict]
+) -> SpatialPair | None:
+    option_label_ids = {id(option.label_token) for option in options}
+    name_tokens = [token for token in texts if id(token) not in option_label_ids]
+
+    anchor = None
+    for option in options:
+        anchor = _pair_price_with_name(option.price_token, prices, name_tokens)
+        if anchor is not None:
+            break
+    if anchor is None:
+        return None
+
+    source_tokens = list(anchor.source_tokens[:-1])
+    for option in options:
+        source_tokens.extend((option.label_token, option.price_token))
+
+    unique_tokens = []
+    seen_ids = set()
+    for token in source_tokens:
+        if id(token) in seen_ids:
+            continue
+        seen_ids.add(id(token))
+        unique_tokens.append(token)
+
+    option_confidence = mean(option.confidence for option in options)
+    return SpatialPair(
+        name=anchor.name,
+        price=options[0].price,
+        price_raw=options[0].price_raw,
+        confidence=round((anchor.confidence * 0.75) + (option_confidence * 0.25), 3),
+        source_tokens=tuple(unique_tokens),
+        options=tuple(options),
+    )
 
 
 def count_price_anchors(tokens: list[dict]) -> int:
