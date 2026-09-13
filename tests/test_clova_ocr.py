@@ -212,6 +212,62 @@ def test_single_korean_size_token_is_not_treated_as_option_group():
     assert pairs[0].options == ()
 
 
+def test_cjk_size_labels_are_normalized_to_korean_options():
+    tokens = [
+        _clova_token("감자탕", 100, 100, 180, 124),
+        _clova_token("大", 250, 100, 270, 124),
+        _clova_token("39,000", 290, 100, 350, 124),
+        _clova_token("中", 250, 132, 270, 156),
+        _clova_token("34,000", 290, 132, 350, 156),
+        _clova_token("小", 250, 164, 270, 188),
+        _clova_token("28,000", 290, 164, 350, 188),
+    ]
+
+    pairs = parse_spatial_pairs(tokens)
+
+    assert len(pairs) == 1
+    assert pairs[0].name == "감자탕"
+    assert [(option.label, option.price) for option in pairs[0].options] == [
+        ("대", 39000),
+        ("중", 34000),
+        ("소", 28000),
+    ]
+
+
+def test_menu_005_recovers_cjk_and_observed_misread_size_labels():
+    menus = parse_menu_candidates(_sample_tokens("menu_005"))
+    menus_by_name = {menu["normalizedCandidate"]: menu for menu in menus}
+
+    assert menus_by_name["감자탕"]["options"] == [
+        {"name": "대", "price": 39000, "priceRaw": "39,000"},
+        {"name": "중", "price": 34000, "priceRaw": "34,000"},
+    ]
+    assert menus_by_name["등뼈찜"]["options"] == [
+        {"name": "대", "price": 44000, "priceRaw": "44,000"},
+        {"name": "중", "price": 38000, "priceRaw": "38,000"},
+    ]
+
+    # 라벨이 없는 28,000원은 다음 작업 단위에서 공간 순서로 추론한다.
+    assert all(
+        option["price"] != 28000
+        for option in menus_by_name["감자탕"]["options"]
+    )
+
+
+def test_observed_misread_symbol_is_not_corrected_without_repeated_option_rows():
+    tokens = [
+        _clova_token("감자탕", 100, 100, 180, 124),
+        _clova_token("★", 250, 100, 270, 124),
+        _clova_token("39,000", 290, 100, 350, 124),
+    ]
+
+    pairs = parse_spatial_pairs(tokens)
+
+    assert len(pairs) == 1
+    assert pairs[0].name == "감자탕"
+    assert pairs[0].options == ()
+
+
 @pytest.mark.parametrize("sample_name", ["menu_001", "menu_002", "menu_003"])
 def test_clova_sample_extracts_exact_menu_price_pairs(sample_name):
     payload_path = ROOT / "sample_data" / f"clova_response_{sample_name}.json"

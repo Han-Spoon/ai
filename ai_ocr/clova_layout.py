@@ -36,7 +36,19 @@ _NOISE_PARTS = (
     "포장됩니다",
 )
 _EXCLUDED_MENU_PARTS = ("사리추가",)
-_KOREAN_SIZE_LABELS = {"소", "중", "대"}
+_SIZE_LABELS = {
+    "소": "소",
+    "중": "중",
+    "대": "대",
+    "小": "소",
+    "中": "중",
+    "大": "대",
+}
+# menu_005에서 실제로 확인된 CLOVA 오인식이다. 단독 문자열 교정에는 사용하지 않음.
+_OBSERVED_SIZE_LABEL_MISREADS = {
+    "★": "대",
+    "ㅊ": "대",
+}
 
 
 @dataclass(frozen=True)
@@ -119,7 +131,7 @@ def parse_spatial_pairs(tokens: list[dict]) -> list[SpatialPair]:
     pairs: list[SpatialPair] = []
 
     consumed_price_ids: set[int] = set()
-    for option_group in _find_korean_size_option_groups(price_tokens, text_tokens):
+    for option_group in _find_size_option_groups(price_tokens, text_tokens):
         pair = _pair_option_group_with_name(option_group, price_tokens, text_tokens)
         if pair is None:
             continue
@@ -137,10 +149,10 @@ def parse_spatial_pairs(tokens: list[dict]) -> list[SpatialPair]:
     return _deduplicate_pairs(pairs)
 
 
-def _find_korean_size_option_groups(
+def _find_size_option_groups(
     prices: list[dict], texts: list[dict]
 ) -> list[list[SpatialOption]]:
-    """같은 열에 반복되는 한글 소/중/대와 가격을 옵션 그룹으로 묶는다."""
+    """같은 열에 반복되는 크기 라벨과 가격을 옵션 그룹으로 묶는다."""
     used_price_ids: set[int] = set()
     options: list[SpatialOption] = []
 
@@ -148,7 +160,7 @@ def _find_korean_size_option_groups(
         (
             token
             for token in texts
-            if re.sub(r"\s+", "", token.get("text", "")) in _KOREAN_SIZE_LABELS
+            if _normalize_size_label(token.get("text", "")) is not None
         ),
         key=lambda token: (int(token.get("page") or 1), _centerline_y_at(token, _center_x(token))),
     )
@@ -181,7 +193,7 @@ def _find_korean_size_option_groups(
         used_price_ids.add(id(price_token))
         options.append(
             SpatialOption(
-                label=re.sub(r"\s+", "", label_token["text"]),
+                label=_normalize_size_label(label_token["text"]),
                 price=int(price_token["price"]),
                 price_raw=str(price_token["priceRaw"]),
                 confidence=round(
@@ -213,6 +225,11 @@ def _find_korean_size_option_groups(
     if len(current) >= 2:
         groups.append(current)
     return groups
+
+
+def _normalize_size_label(text: str) -> str | None:
+    compact = re.sub(r"\s+", "", text)
+    return _SIZE_LABELS.get(compact) or _OBSERVED_SIZE_LABEL_MISREADS.get(compact)
 
 
 def _is_same_option_column(first: SpatialOption, second: SpatialOption) -> bool:
