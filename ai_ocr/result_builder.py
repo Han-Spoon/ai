@@ -4,6 +4,7 @@ import mimetypes
 
 from spicy_detector import infer_is_spicy
 from image_quality import analyze_image_quality
+from price_metrics import count_matched_price_anchors
 
 
 def build_final_result(
@@ -85,6 +86,15 @@ def build_menu_analysis(menu, display_order: int):
     menu_name = menu.get("normalizedCandidate") or menu.get("rawName") or menu.get("matchedMenu")
     description = menu.get("description") or ""
     price_text = stringify_price(menu.get("price")) or menu.get("priceRaw")
+    price_options = [
+        {
+            "label": option.get("name"),
+            "price": option.get("price"),
+            **({"inferred": True} if option.get("inferred") else {}),
+        }
+        for option in menu.get("options", [])
+        if option.get("name") and option.get("price") is not None
+    ]
 
     return {
         "menu_name_ko": menu_name,
@@ -92,6 +102,8 @@ def build_menu_analysis(menu, display_order: int):
         "description_ko": description,
         "description_en": None,
         "price_text": price_text,
+        "price_options": price_options,
+        "origin_text": menu.get("originText"),
         "risk_level": None,
         "is_spicy": infer_is_spicy(
             {
@@ -123,7 +135,9 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         else 0.0
     )
     price_match_ratio = pair_coverage if price_anchor_count else (
-        round(price_match_count / menu_count, 2) if menu_count else 0.0
+        round(min(price_match_count / menu_count, 1.0), 2)
+        if menu_count
+        else 0.0
     )
     ocr_confidences = [
         float(line.get("confidence"))
@@ -219,7 +233,7 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
 
 
 def count_price_matches(menus):
-    return sum(1 for menu in menus if menu.get("priceRaw") or menu.get("price") is not None)
+    return count_matched_price_anchors(menus)
 
 
 def count_detected_price_anchors(raw_lines):

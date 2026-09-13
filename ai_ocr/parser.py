@@ -10,6 +10,7 @@ from normalizer import (
     normalize_price,
     normalize_price_detail,
     remove_price,
+    split_menu_name_and_origin,
 )
 
 NOISE_KEYWORDS = ("영업", "전화", "예약", "원산지", "포장", "배달", "OPEN", "CLOSE", "메뉴판")
@@ -75,11 +76,22 @@ def parse_clova_menu_candidates(tokens):
 
     menus = []
     for pair in parse_spatial_pairs(tokens):
+        options = []
+        for option in pair.options:
+            parsed_option = {
+                "name": option.label,
+                "price": option.price,
+                "priceRaw": option.price_raw,
+            }
+            if option.inferred:
+                parsed_option["inferred"] = True
+            options.append(parsed_option)
         menu = build_menu_item(
             pair.name,
             pair.price,
             list(pair.source_tokens),
             price_raw=pair.price_raw,
+            options=options,
         )
         menu["confidence"] = pair.confidence
         menu["source"]["provider"] = "clova"
@@ -314,8 +326,9 @@ def extract_price_text(text):
 
 
 def build_menu_item(raw_name, price, source_lines, price_raw=None, options=None):
-    normalized_name = normalize_menu_name(raw_name)
-    matched = match_known_menu_name(raw_name)
+    menu_name, origin_text = split_menu_name_and_origin(raw_name)
+    normalized_name = normalize_menu_name(menu_name)
+    matched = match_known_menu_name(menu_name)
     price_detail = normalize_price_detail(" ".join(line["text"] for line in source_lines))
     if price_raw:
         price_detail = normalize_price_detail(price_raw)
@@ -323,6 +336,7 @@ def build_menu_item(raw_name, price, source_lines, price_raw=None, options=None)
     item = {
         "rawName": raw_name,
         "normalizedCandidate": normalized_name,
+        "originText": origin_text,
         "price": price,
         "priceRaw": price_raw or price_detail["priceRaw"],
         "priceCorrected": price_detail["priceCorrected"],
@@ -352,7 +366,9 @@ def build_menu_item(raw_name, price, source_lines, price_raw=None, options=None)
         item["matchScore"] = None
         item["nameCorrected"] = normalized_name != re.sub(r"\s+", "", raw_name)
 
-    if item["nameCorrected"]:
+    if origin_text:
+        item["correctionReason"] = "origin_metadata_removed"
+    elif item["nameCorrected"]:
         item["correctionReason"] = "known_ocr_typo_or_dictionary_match"
     else:
         item["correctionReason"] = None

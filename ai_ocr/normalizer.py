@@ -11,6 +11,37 @@ KNOWN_OCR_MENU_CORRECTIONS = {
     "가재미탕": "가자미탕",
 }
 
+# 음식명 뒤에 반복적으로 표기되는 주요 원산지만 명시적으로 분리.
+ORIGIN_LABELS = (
+    "뉴질랜드산",
+    "네덜란드산",
+    "노르웨이산",
+    "오스트리아산",
+    "국내산",
+    "캐나다산",
+    "브라질산",
+    "스페인산",
+    "이탈리아산",
+    "베트남산",
+    "러시아산",
+    "멕시코산",
+    "프랑스산",
+    "덴마크산",
+    "호주산",
+    "미국산",
+    "중국산",
+    "일본산",
+    "태국산",
+    "칠레산",
+    "독일산",
+    "국산",
+)
+_ORIGIN_QUALIFIERS = ("암소한우", "한우", "육우", "암소", "거세우")
+_ORIGIN_SUFFIX_RE = re.compile(
+    rf"(?P<origin>{'|'.join(re.escape(label) for label in ORIGIN_LABELS)})"
+    rf"\s*(?P<qualifier>{'|'.join(re.escape(label) for label in _ORIGIN_QUALIFIERS)})?\s*$"
+)
+
 
 def normalize_price(text: str):
     if not text:
@@ -95,8 +126,32 @@ def remove_price(text: str):
     return normalize_name_text(without_price)
 
 
+def split_menu_name_and_origin(text: str) -> tuple[str, str | None]:
+    """메뉴명 뒤의 원산지 표기를 분리하되 원문 의미는 보존.
+
+    CLOVA 공간 파서가 괄호를 공백으로 정규화할 수 있어
+    `국내산(암소한우)`와 `국내산 암소한우`를 같은 형태로 처리.
+    """
+    normalized = normalize_name_text(text)
+    if not normalized:
+        return "", None
+
+    match = _ORIGIN_SUFFIX_RE.search(normalized)
+    if not match:
+        return normalized, None
+
+    menu_name = normalized[: match.start()].strip()
+    if len(re.sub(r"\s+", "", menu_name)) < 2:
+        return normalized, None
+
+    origin_parts = [match.group("origin")]
+    if match.group("qualifier"):
+        origin_parts.append(match.group("qualifier"))
+    return menu_name, " ".join(origin_parts)
+
+
 def normalize_menu_name(text: str):
-    text = normalize_name_text(text)
+    text, _ = split_menu_name_and_origin(text)
     text = clean_menu_name_artifacts(text)
     text = re.sub(r"\s+", "", text)
 
@@ -118,7 +173,7 @@ def match_known_menu_name(text: str):
     if not text:
         return None
 
-    candidate = normalize_name_text(text)
+    candidate, _ = split_menu_name_and_origin(text)
     candidate = clean_menu_name_artifacts(candidate)
     candidate = re.sub(r"\s+", "", candidate)
     candidate = candidate.replace("찌게", "찌개")

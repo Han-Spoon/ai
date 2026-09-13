@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from statistics import mean, median
 
 from normalizer import normalize_name_text, normalize_price, remove_serving_amount
+from price_metrics import count_matched_price_anchors
 
 
 _FORMATTED_PRICE_RE = re.compile(
@@ -36,6 +37,32 @@ _NOISE_PARTS = (
     "포장됩니다",
 )
 _EXCLUDED_MENU_PARTS = ("사리추가",)
+_SIZE_LABELS = {
+    "소": "소",
+    "중": "중",
+    "대": "대",
+    "小": "소",
+    "中": "중",
+    "大": "대",
+}
+_SIZE_ORDER = ("소", "중", "대")
+# menu_005에서 실제로 확인된 CLOVA 오인식이다.
+# 단독 문자열 교정에는 사용하지 않는다.
+_OBSERVED_SIZE_LABEL_MISREADS = {
+    "★": "대",
+    "ㅊ": "대",
+}
+
+
+@dataclass(frozen=True)
+class SpatialOption:
+    label: str
+    price: int
+    price_raw: str
+    confidence: float
+    label_token: dict | None
+    price_token: dict
+    inferred: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +72,7 @@ class SpatialPair:
     price_raw: str
     confidence: float
     source_tokens: tuple[dict, ...]
+    options: tuple[SpatialOption, ...] = ()
 
 
 def extract_clova_fields(payload: dict) -> list[dict]:
@@ -106,13 +134,304 @@ def parse_spatial_pairs(tokens: list[dict]) -> list[SpatialPair]:
     text_tokens = [token for token in expanded if token.get("price") is None]
     pairs: list[SpatialPair] = []
 
+    consumed_price_ids: set[int] = set()
+    for option_group in _find_size_option_groups(price_tokens, text_tokens):
+        pair = _pair_option_group_with_name(option_group, price_tokens, text_tokens)
+        if pair is None:
+            continue
+        pairs.append(pair)
+        consumed_price_ids.update(id(option.price_token) for option in pair.options)
+
     for price_token in price_tokens:
+        if id(price_token) in consumed_price_ids:
+            continue
         pair = _pair_price_with_name(price_token, price_tokens, text_tokens)
         if pair is not None:
             pairs.append(pair)
 
     pairs.sort(key=lambda pair: _reading_order(pair.source_tokens))
     return _deduplicate_pairs(pairs)
+
+
+def _find_size_option_groups(
+    prices: list[dict], texts: list[dict]
+) -> list[list[SpatialOption]]:
+    """같은 열에 반복되는 크기 라벨과 가격을 옵션 그룹으로 묶는다."""
+    used_price_ids: set[int] = set()
+    options: list[SpatialOption] = []
+
+    size_tokens = sorted(
+        (
+            token
+            for token in texts
+            if _normalize_size_label(token.get("text", "")) is not None
+        ),
+        key=lambda token: (int(token.get("page") or 1), _centerline_y_at(token, _center_x(token))),
+    )
+
+    for label_token in size_tokens:
+        candidates = []
+        for price_token in prices:
+            if id(price_token) in used_price_ids:
+                continue
+            match_score = _label_price_match_score(label_token, price_token)
+            if match_score is None:
+                continue
+            candidates.append((*match_score, price_token))
+
+        if not candidates:
+            continue
+
+        _, _, price_token = min(candidates, key=lambda item: (item[0], item[1]))
+        used_price_ids.add(id(price_token))
+        options.append(
+            SpatialOption(
+                label=_normalize_size_label(label_token["text"]),
+                price=int(price_token["price"]),
+                price_raw=str(price_token["priceRaw"]),
+                confidence=round(
+                    mean(
+                        (
+                            float(label_token.get("confidence") or 0.0),
+                            float(price_token.get("confidence") or 0.0),
+                        )
+                    ),
+                    3,
+                ),
+                label_token=label_token,
+                price_token=price_token,
+            )
+        )
+
+    groups: list[list[SpatialOption]] = []
+    current: list[SpatialOption] = []
+    for option in options:
+        if current and (
+            option.label in {item.label for item in current}
+            or not _is_same_option_column(current[-1], option)
+        ):
+            if len(current) >= 2:
+                groups.append(current)
+            current = []
+        current.append(option)
+
+    if len(current) >= 2:
+        groups.append(current)
+    return groups
+
+
+def _normalize_size_label(text: str) -> str | None:
+    compact = re.sub(r"\s+", "", text)
+    return _SIZE_LABELS.get(compact) or _OBSERVED_SIZE_LABEL_MISREADS.get(compact)
+
+
+def _label_price_match_score(
+    label_token: dict, price_token: dict
+) -> tuple[float, float] | None:
+    if price_token.get("page") != label_token.get("page"):
+        return None
+
+    horizontal_gap = float(price_token["x1"]) - float(label_token["x2"])
+    if horizontal_gap < -2:
+        return None
+    max_gap = max(_height(label_token), _height(price_token)) * 3.0
+    if horizontal_gap > max_gap:
+        return None
+
+    baseline_error = _baseline_error(label_token, price_token)
+    tolerance = max(_height(label_token), _height(price_token)) * 0.7 + 4.0
+    if baseline_error > tolerance:
+        return None
+    return baseline_error, max(horizontal_gap, 0.0)
+
+
+def _is_same_option_column(first: SpatialOption, second: SpatialOption) -> bool:
+    if first.label_token.get("page") != second.label_token.get("page"):
+        return False
+
+    row_gap = _centerline_y_at(second.label_token, _center_x(second.label_token)) - _centerline_y_at(
+        first.label_token, _center_x(first.label_token)
+    )
+    typical_height = max(
+        _height(first.label_token),
+        _height(second.label_token),
+        _height(first.price_token),
+        _height(second.price_token),
+    )
+    if row_gap <= 0 or row_gap > typical_height * 3.0:
+        return False
+
+    label_x_gap = abs(_center_x(first.label_token) - _center_x(second.label_token))
+    price_x_gap = abs(float(first.price_token["x1"]) - float(second.price_token["x1"]))
+    return label_x_gap <= typical_height and price_x_gap <= typical_height * 1.5
+
+
+def _pair_option_group_with_name(
+    options: list[SpatialOption], prices: list[dict], texts: list[dict]
+) -> SpatialPair | None:
+    option_label_ids = {id(option.label_token) for option in options}
+    name_tokens = [token for token in texts if id(token) not in option_label_ids]
+
+    anchor = _find_option_name_anchor(options, prices, name_tokens)
+    options = _infer_missing_size_option(
+        options,
+        prices,
+        texts,
+        menu_name=anchor.name if anchor is not None else None,
+    )
+    if anchor is None:
+        anchor = _find_option_name_anchor(options, prices, name_tokens)
+    if anchor is None:
+        return None
+
+    source_tokens = list(anchor.source_tokens[:-1])
+    for option in options:
+        if option.label_token is not None:
+            source_tokens.append(option.label_token)
+        source_tokens.append(option.price_token)
+
+    unique_tokens: list[dict] = []
+    seen_ids = set()
+    for token in source_tokens:
+        if id(token) in seen_ids:
+            continue
+        seen_ids.add(id(token))
+        unique_tokens.append(token)
+
+    option_confidence = mean(option.confidence for option in options)
+    return SpatialPair(
+        name=anchor.name,
+        price=options[0].price,
+        price_raw=options[0].price_raw,
+        confidence=round((anchor.confidence * 0.75) + (option_confidence * 0.25), 3),
+        source_tokens=tuple(unique_tokens),
+        options=tuple(options),
+    )
+
+
+def _find_option_name_anchor(
+    options: list[SpatialOption], prices: list[dict], texts: list[dict]
+) -> SpatialPair | None:
+    for option in options:
+        anchor = _pair_price_with_name(option.price_token, prices, texts)
+        if anchor is not None:
+            return anchor
+    return None
+
+
+def _infer_missing_size_option(
+    options: list[SpatialOption],
+    prices: list[dict],
+    texts: list[dict],
+    menu_name: str | None,
+) -> list[SpatialOption]:
+    """두 확정 옵션 사이 또는 끝의 단 하나의 누락 라벨만 추론."""
+    if len(options) != 2 or len({option.label for option in options}) != 2:
+        return options
+
+    ordered = sorted(options, key=lambda option: _centerline_y_at(
+        option.price_token, _center_x(option.price_token)
+    ))
+    first_rank = _SIZE_ORDER.index(ordered[0].label)
+    second_rank = _SIZE_ORDER.index(ordered[1].label)
+    direction = 1 if second_rank > first_rank else -1
+    display_order = _SIZE_ORDER if direction > 0 else tuple(reversed(_SIZE_ORDER))
+    missing_labels = set(_SIZE_ORDER) - {option.label for option in ordered}
+    if len(missing_labels) != 1:
+        return options
+
+    missing_label = missing_labels.pop()
+    first_index = display_order.index(ordered[0].label)
+    second_index = display_order.index(ordered[1].label)
+    missing_index = display_order.index(missing_label)
+    if first_index == second_index:
+        return options
+
+    first_y = _centerline_y_at(
+        ordered[0].price_token, _center_x(ordered[0].price_token)
+    )
+    second_y = _centerline_y_at(
+        ordered[1].price_token, _center_x(ordered[1].price_token)
+    )
+    row_step = (second_y - first_y) / (second_index - first_index)
+    typical_height = median(_height(option.price_token) for option in ordered)
+    if row_step < typical_height * 0.45 or row_step > typical_height * 2.5:
+        return options
+
+    expected_y = first_y + (row_step * (missing_index - first_index))
+    candidates = []
+    used_price_ids = {id(option.price_token) for option in ordered}
+    reference_x = mean(float(option.price_token["x2"]) for option in ordered)
+    for price_token in prices:
+        if id(price_token) in used_price_ids:
+            continue
+        if price_token.get("page") != ordered[0].price_token.get("page"):
+            continue
+        if abs(float(price_token["x2"]) - reference_x) > typical_height * 1.5:
+            continue
+
+        price_y = _centerline_y_at(price_token, _center_x(price_token))
+        y_error = abs(price_y - expected_y)
+        if y_error > max(4.0, typical_height * 0.55, row_step * 0.35):
+            continue
+        if not _is_monotonic_size_price(missing_label, price_token, ordered):
+            continue
+        if any(
+            _normalize_size_label(token.get("text", "")) is not None
+            and _label_price_match_score(token, price_token) is not None
+            for token in texts
+        ):
+            continue
+
+        candidate_name = _pair_price_with_name(price_token, prices, texts)
+        if (
+            menu_name
+            and candidate_name is not None
+            and re.sub(r"\s+", "", candidate_name.name)
+            != re.sub(r"\s+", "", menu_name)
+        ):
+            continue
+        candidates.append((y_error, price_token))
+
+    if len(candidates) != 1:
+        return options
+
+    _, price_token = candidates[0]
+    inferred = SpatialOption(
+        label=missing_label,
+        price=int(price_token["price"]),
+        price_raw=str(price_token["priceRaw"]),
+        confidence=round(
+            min(
+                float(price_token.get("confidence") or 0.0),
+                mean(option.confidence for option in ordered) * 0.75,
+            ),
+            3,
+        ),
+        label_token=None,
+        price_token=price_token,
+        inferred=True,
+    )
+    return sorted(
+        [*options, inferred],
+        key=lambda option: _centerline_y_at(
+            option.price_token, _center_x(option.price_token)
+        ),
+    )
+
+
+def _is_monotonic_size_price(
+    missing_label: str, price_token: dict, options: list[SpatialOption]
+) -> bool:
+    missing_rank = _SIZE_ORDER.index(missing_label)
+    missing_price = int(price_token["price"])
+    for option in options:
+        option_rank = _SIZE_ORDER.index(option.label)
+        if missing_rank > option_rank and missing_price <= option.price:
+            return False
+        if missing_rank < option_rank and missing_price >= option.price:
+            return False
+    return True
 
 
 def count_price_anchors(tokens: list[dict]) -> int:
@@ -128,7 +447,8 @@ def parse_attempt_score(tokens: list[dict], menus: list[dict]) -> float:
     """원본/전처리 OCR 결과 중 더 구조적으로 일관된 결과를 고른다."""
     anchors = count_price_anchors(tokens)
     paired = len(menus)
-    coverage = min(paired / anchors, 1.0) if anchors else 0.0
+    matched_prices = count_matched_price_anchors(menus)
+    coverage = min(matched_prices / anchors, 1.0) if anchors else 0.0
     confidences = [float(menu.get("confidence") or 0.0) for menu in menus]
     confidence = mean(confidences) if confidences else 0.0
     single_char_ratio = (
@@ -150,7 +470,8 @@ def should_retry_with_preprocessing(tokens: list[dict], menus: list[dict]) -> bo
     anchors = count_price_anchors(tokens)
     if not tokens or not menus or len(menus) < 3:
         return True
-    coverage = len(menus) / anchors if anchors else 0.0
+    matched_prices = count_matched_price_anchors(menus)
+    coverage = matched_prices / anchors if anchors else 0.0
     single_chars = sum(
         len(re.sub(r"\s+", "", menu.get("rawName", ""))) == 1 for menu in menus
     )
