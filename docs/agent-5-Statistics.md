@@ -57,7 +57,7 @@ Beta(1,1)이 사전분포이므로 관측 0건이면 `α=1, β=1` → `posterior
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `store_id` | string | **필수** | prior 스코프. null이면 에러 |
+| `store_id` | integer | **필수** | prior 스코프. 양수만 허용하며 null이면 에러 |
 | `menu_category` | string | 필수 | 클러스터 fallback용 (④ 출력) |
 | `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `source`, `depth`, `k_count`, `n_total`, **`anomaly_locked`**(④가 ③/Supervisor로부터 받아 그대로 보존한 값) 포함 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
@@ -75,7 +75,7 @@ Beta(1,1)이 사전분포이므로 관측 0건이면 `α=1, β=1` → `posterior
 
 ```json
 {
-  "store_id": "str",
+  "store_id": 123456,
   "probabilities": [
     {
       "ingredient": "새우",
@@ -165,7 +165,7 @@ A0, B0 = 1.0, 1.0                                      # Beta(1,1) 라플라스 
 
 
 def estimate_probabilities(
-    store_id: str,                                     # 필수
+    store_id: int,                                     # 필수·양수
     menu_category: str,
     ingredients: list[IngredientNode],
     inherited_confirmations: list[Confirmation] | None = None,
@@ -174,7 +174,7 @@ def estimate_probabilities(
 
 
 def resolve_prior(
-    store_id: str, ingredient: str, menu_category: str,
+    store_id: int, ingredient: str, menu_category: str,
 ) -> tuple[float, float, PriorSource]:
     """store → cluster → global → uninformative 순 fallback.
     전역 prior는 최후의 수단이며 confidence를 low로 강등."""

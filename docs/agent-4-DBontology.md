@@ -110,7 +110,7 @@ graph TB
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `store_id` | string | **필수** | null이면 즉시 에러. 전역 조회 금지 |
+| `store_id` | integer | **필수** | 양수만 허용. null이면 즉시 에러. 전역 조회 금지 |
 | `normalized_menu_name` | string | 필수 | ② 정규화 출력. ④는 재정규화하지 않음 |
 | `unconfirmed_only` | bool | 필수 | 미확인 재료만 처리할지 |
 | `confirmed_ingredients` | string[] | 선택 | ③ 출력 중 `status != unknown` **AND** `override_eligible: true` 인 재료만 |
@@ -122,7 +122,7 @@ graph TB
 
 ```json
 {
-  "store_id": "str",
+  "store_id": 123456,
   "menu_id": "str | null",
   "base_menu_id": "str | null",
   "remain_token": "str | null",
@@ -236,7 +236,7 @@ flowchart TD
 
 ```python
 def query_ontology(
-    store_id: str,                          # 필수. None → StoreIdRequiredError
+    store_id: int,                          # 필수·양수. None/0 이하 → StoreIdRequiredError
     normalized_menu_name: str,
     unconfirmed_only: bool = True,
     confirmed_ingredients: list[str] | None = None,
@@ -264,9 +264,9 @@ def attach_taxonomy(nodes: list[IngredientNode]) -> list[IngredientNode]:
 
 
 def update_ingredient_cache(
-    store_id: str, menu_id: str, nodes: list[IngredientNode]
-) -> None:
-    """menu_ingredient_cache 갱신. 파생 캐시이며 도메인 데이터가 아니다 (§6-4)."""
+    store_id: int, menu_id: str, nodes: list[IngredientNode]
+) -> CacheWriteCommand:
+    """백엔드에 전달할 menu_ingredient_cache 저장 명령 생성. AI가 직접 쓰지 않는다."""
 ```
 
 ### 5-5. 의사코드

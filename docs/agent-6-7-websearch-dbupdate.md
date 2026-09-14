@@ -12,8 +12,8 @@
 
 | 구분 | 예시 | 처리 주체 | 반영 시점 |
 |---|---|---|---|
-| **soft evidence** | 웹서치 크롤링 결과, ④의 변형 태깅 제안 | ⑥ → ⑦ | **관리자 컨펌 후에만** DB 반영 |
-| **hard evidence** | 사장님 답변 | ⑦만 | **즉시** 반영 |
+| **soft evidence** | 웹서치 크롤링 결과, ④의 변형 태깅 제안 | ⑥ → ⑦ → 백엔드 | **관리자 컨펌 후에만** DB 반영 |
+| **hard evidence** | 사장님 답변 | ⑦ → 백엔드 | **즉시** 반영 |
 
 이 구분이 왜 필요한가: `catoin-db-schema.md` §6 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이므로 이 위험이 없어 즉시 반영한다.
 
@@ -26,18 +26,19 @@ graph LR
     ONTO["④ DB/온톨로지<br/>(메뉴 없음 확인)"] --> WEB["⑥ 웹서치<br/>수집만, 저장 안 함"]
     WEB -->|"크롤링 결과"| SUP1{{Supervisor}}
     SUP1 -->|"즉시 사용"| BAYES["⑤ Bayesian"]
-    SUP1 -->|"검토 자료 전달"| DBUP["⑦ DB 업데이트<br/>저장 담당"]
+    SUP1 -->|"검토 자료 전달"| DBUP["⑦ DB 업데이트 요청<br/>저장 명령 생성"]
 
     OWNER["사장님 답변"] --> SUP2{{Supervisor}}
     SUP2 -->|"즉시 반영 요청"| DBUP
 
     DBUP -.관리자 컨펌 대기.-> ADMIN[관리자 페이지]
     ADMIN -.컨펌.-> DBUP
-    DBUP --> DB[(DB)]
+    DBUP --> API["백엔드 영속화 계층<br/>권한·FK·멱등성 검증"]
+    API --> DB[(DB)]
 ```
 
-- **⑥ 웹서치**: DB에 없는 메뉴를 크롤링으로 조사만 함. **DB에 아무것도 쓰지 않는다.** 크롤링 원본은 캐시에만 남긴다.
-- **⑦ DB 업데이트**: 이 파이프라인에서 유일하게 실제 스키마 테이블에 쓰기 권한을 가진 에이전트. 증거 종류에 따라 즉시 반영/컨펌 대기를 분기한다.
+- **⑥ 웹서치**: DB에 없는 메뉴를 크롤링으로 조사만 함. **DB에 아무것도 쓰지 않는다.** 크롤링 원본과 캐시 저장 요청을 함께 반환한다.
+- **⑦ DB 업데이트 요청**: 증거 종류에 따라 관리자 검토 명령과 즉시 반영 명령을 구분해 만든다. DB 자격 증명은 갖지 않으며 실제 저장은 백엔드가 수행한다.
 
 ---
 
@@ -49,7 +50,7 @@ graph LR
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `store_id` | string | 필수 | 로그·캐시 연결용 (web_search_cache 자체는 store 무관이지만 호출 맥락 기록용) |
+| `store_id` | integer | 필수 | 양수인 가게 컨텍스트. 로그·캐시 연결용 (web_search_cache 자체는 store 무관) |
 | `menu_name` | string | 필수 | ④가 `exists_in_db: false`로 반환한 정규화된 메뉴명 |
 
 **출력 (Supervisor에게 반환)**
@@ -78,13 +79,13 @@ graph LR
 flowchart TD
     S[Supervisor 호출] --> Q[웹 크롤링 실행]
     Q --> R{결과 있음?}
-    R -->|Yes| C["web_search_cache에 원본 저장<br/>(menu_id는 아직 null)"]
+    R -->|Yes| C["크롤링 원본 + 캐시 저장 명령 생성<br/>(menu_id는 아직 null)"]
     R -->|No/에러/타임아웃| F["found: false 반환"]
     C --> OUT["candidates를 Supervisor에 반환"]
 ```
 
 1. `menu_name`으로 웹 검색 실행 (실패/타임아웃 시 바로 `found: false`)
-2. 검색 결과마다 `web_search_cache`에 **즉시** 한 행씩 INSERT — `menu_id`는 아직 존재하지 않으므로 `null`. 이건 관리자 컨펌과 무관하게 항상 저장한다 (원본 로그이지 risk-affecting 데이터가 아니므로 게이트 대상이 아님).
+2. 검색 결과마다 `web_search_cache` 저장 명령 생성 — `menu_id`는 아직 존재하지 않으므로 `null`. 백엔드는 멱등 키를 검증해 즉시 저장한다(원본 로그이지 risk-affecting 데이터가 아니므로 관리자 게이트 대상이 아님).
 3. 캐시된 `extracted_ingredients`를 그대로 Supervisor에 반환.
 
 ### 2-3. 이 에이전트가 하지 않는 것
@@ -98,7 +99,7 @@ flowchart TD
 
 ---
 
-## 3. ⑦ DB 업데이트 에이전트
+## 3. ⑦ DB 업데이트 요청 에이전트
 
 ### 3-1. 입력 / 출력
 
@@ -115,9 +116,9 @@ flowchart TD
 
 ```json
 {
-  "status": "pending_admin_review" ,
-  "review_item_id": "str | null",
-  "applied": false
+  "action": "create_review_item",
+  "idempotency_key": "str",
+  "payload": {}
 }
 ```
 질문 생성 처리 시:
@@ -131,18 +132,22 @@ flowchart TD
 hard evidence 처리 시:
 ```json
 {
-  "status": "applied",
-  "confirmation_id": "str",
-  "flagged_anomaly": false,
-  "applied": true
+  "action": "upsert_ingredient_confirmation",
+  "idempotency_key": "str",
+  "payload": {
+    "flagged_anomaly": false
+  }
 }
 ```
+
+이 출력은 저장 완료 응답이 아니라 **백엔드에 대한 명령**이다. 백엔드가 성공적으로 커밋한 뒤 생성 ID와 최종 상태를 응답한다.
 
 ### 3-2. soft evidence 처리 (관리자 컨펌 게이트)
 
 ```mermaid
 flowchart TD
-    IN["웹서치 결과 OR 변형 태깅 제안"] --> REVIEW["관리자 페이지에 검토 항목 생성<br/>(source_url/extracted_ingredients 또는\nbase_menu_id/remain_token/suggested_ingredients 노출)"]
+    IN["웹서치 결과 OR 변형 태깅 제안"] --> CMD["⑦ 저장 명령 생성"]
+    CMD --> REVIEW["백엔드: 관리자 검토 항목 저장<br/>(source_url/extracted_ingredients 또는\nbase_menu_id/remain_token/suggested_ingredients 포함)"]
     REVIEW --> WAIT{관리자 판단}
     WAIT -->|반려| DROP["반영 안 함, 로그만 남김"]
     WAIT -->|승인| M1["1. menus INSERT\n(source: web_search_generated 또는 variant_generated)"]
@@ -192,10 +197,10 @@ flowchart TD
 | soft evidence 트리거 | 실시간 사용자 응답 흐름과 완전히 분리된 별도 호출. 응답을 기다리지 않음(fire-and-forget에 가까움) |
 | hard evidence 트리거 | 사장님이 질문에 답변을 제출한 시점에 호출, 즉시 완료 응답 기대 |
 
-| ⑦이 돌려주는 것 | Supervisor의 후속 판단 |
+| ⑦이 돌려주는 것 | 백엔드의 후속 처리 |
 |---|---|
-| soft evidence `status: pending_admin_review` | 사용자에게는 이미 별도로 결과가 나간 뒤이므로 후속 조치 없음 (로그용) |
-| hard evidence `status: applied` | 다음 조회부터 이 메뉴는 시나리오 2(사장님 피드백 있음) 경로를 탐 |
+| soft evidence `action: create_review_item` | 멱등 검증 후 검토 항목 저장. 사용자 분석 응답과 분리 |
+| hard evidence `action: upsert_ingredient_confirmation` | 권한·FK 검증 후 트랜잭션 저장. 커밋 성공 뒤에만 반영 완료 응답 |
 
 ### 3-6. 예외 처리
 
@@ -214,6 +219,7 @@ flowchart TD
 | 확률 계산 | ⑤ Bayesian |
 | DANGER/CAUTION/SAFE 판정 | ⑧ XAI |
 | 관리자 승인/반려 판단 자체 | 관리자 (사람) |
+| 물리 DB 쓰기와 트랜잭션 | 백엔드 영속화 계층 |
 
 ### 3-8. 예외 — `menu_ingredient_cache`는 ⑦을 거치지 않음
 
@@ -225,11 +231,11 @@ flowchart TD
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | ⑥ 웹서치 성공 (마라탕) | `web_search_cache`에 즉시 저장, `menus`/`recipe_ingredients`는 미반영 | 관리자 컨펌 전엔 risk score에 영향 없을 것 |
+| 1 | ⑥ 웹서치 성공 (마라탕) | 캐시 저장 명령 반환, 백엔드가 `web_search_cache`에 즉시 저장 | `menus`/`recipe_ingredients`는 미반영일 것 |
 | 2 | ⑥ 웹서치 실패/타임아웃 | `found: false` 반환, 캐시에 아무것도 안 남음 | ⑧이 "완전 정보 없음" 경로로 감 |
-| 3 | 관리자가 웹서치 제안 승인 | `menus`→`recipe_ingredients`→`ingredient_evidence_log` 순서로 INSERT | FK 순서 위반 시 실패해야 함 |
+| 3 | 관리자가 웹서치 제안 승인 | 백엔드가 `menus`→`recipe_ingredients`→`ingredient_evidence_log` 순서로 INSERT | FK 순서 위반 시 트랜잭션 전체 실패 |
 | 4 | 관리자가 제안 반려 | DB 변경 없음 | `ingredient_risk_scores` 그대로 |
-| 5 | 사장님 정상 답변 (돈까스 + "돼지고기 있음") | `ingredient_confirmations` 즉시 INSERT, `flagged_anomaly: false` | 다음 조회 시 확정값 그대로 반환 |
+| 5 | 사장님 정상 답변 (돈까스 + "돼지고기 있음") | ⑦이 명령 생성, 백엔드가 `ingredient_confirmations` 즉시 UPSERT | 커밋 후 다음 조회부터 확정값 반환 |
 | 6 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장은 되지만, ③이 미확인으로 재분류해서 Bayesian 확률과 비교 | 확률이 낮지 않으면 SAFE로 내려가지 않고 CAUTION 이상 유지될 것 |
 | 7 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 
