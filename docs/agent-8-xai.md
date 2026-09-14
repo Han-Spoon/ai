@@ -24,7 +24,7 @@
 | 필드 | 타입 | 필수 | 출처 | 설명 |
 |---|---|---|---|---|
 | `confirmed_results` | `{ingredient_id: bool}` | 있으면 전달 | ③ Exact 피드백 | hard evidence. 없으면 빈 객체 |
-| `probability_results` | `{ingredient_id: float}` | 있으면 전달 | ⑤ Bayesian | soft evidence(posterior mean) |
+| `probability_results` | `{ingredient_id: {posterior_mean: float, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian | soft evidence. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
 | `proposed_variant_ingredients` | `{ingredient_id: source}` | 있으면 전달 | ④ 변형 태깅 | **DB 미반영 제안**, source=`variant_suggested` 등 신뢰도 낮음 |
 | `no_information` | bool | 필수 | ④/⑥ | 메뉴/재료 정보 자체가 없을 때 true (엣지 케이스 4) |
 | `user_profile` | object | 필수 | `user_profiles` | `religion_type`, `is_vegetarian`, `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy` |
@@ -72,7 +72,10 @@ flowchart TD
     P2 -->|Yes| DANGER["risk_level: danger\nconfidence: confirmed\n즉시 확정"]
     P2 -->|No| P3{no_information?}
     P3 -->|Yes| CAUTION1["risk_level: caution 이상 강제\nconfidence: unknown\n(FN-minimization)"]
-    P3 -->|No| P4["probability_results에 threshold 적용"]
+    P3 -->|No| P3B{"anomaly_locked: true인\n재료 존재?"}
+    P3B -->|Yes| CAUTION2["risk_level: caution 이상 강제\nconfidence: estimated\n확률값 무시"]
+    P3B -->|No| P4["probability_results에 threshold 적용"]
+    CAUTION2 --> P4
     P4 --> P5{proposed_variant_ingredients\n존재?}
     P5 -->|Yes| P6["낮은 신뢰도로 반영\n(확정형 문구 금지, 최소 caution)"]
     P5 -->|No| P7[결과 확정]
@@ -92,7 +95,8 @@ flowchart TD
 1. **forbidden_tags 매핑**: `religion_type`(halal→is_pork/is_alcohol 등), `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy`를 하나의 금지 태그 집합으로 변환.
 2. **hard evidence 우선 체크**: `confirmed_results`에 forbidden_tags와 겹치는 재료가 있으면 다른 계산 없이 즉시 `danger` + `confidence: confirmed`.
 3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙).
-4. **확률 기반 판정**: `probability_results`에 판정 임계값(§3, 미확정)을 적용해 caution/safe 결정.
+3-1. **anomaly_locked 강제**: `probability_results[ingredient_id].anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `confidence: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
+4. **확률 기반 판정**: (anomaly_locked가 아닌 재료에 한해) `probability_results`에 판정 임계값(§3, 미확정)을 적용해 caution/safe 결정.
 5. **변형 제안 반영**: `proposed_variant_ingredients`가 있으면 확정 재료와 **절대 같은 신뢰도로 취급하지 않는다** — 최소 caution 처리하고, 문구도 추정형으로만 생성 (danger 확정 근거로 쓰지 않음).
 6. **메시지 생성**: `confidence`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
 7. **사장님 질문 생성**: 확정도 안 되고 확률도 애매한 재료 중 사용자 태그와 관련 있는 것 하나를 골라 `owner_card` 생성.
@@ -163,4 +167,3 @@ flowchart TD
 
 - [ ] **DANGER/CAUTION/SAFE 컷오프 실제 값** — F2 최적화로 정하기로만 합의, 숫자 미정
 - [ ] **컷오프 계산/보관 주체** — Supervisor 내부 규칙인지 XAI 내부 상수인지
-- [ ] **`flagged_anomaly` 신뢰 여부가 XAI 판정에 반영되는지** — 현재는 ⑦이 그대로 확정값으로 저장하므로 XAI 입장에선 구분 불가. anomaly 정보를 XAI까지 전달해서 문구를 다르게 할지 논의 필요

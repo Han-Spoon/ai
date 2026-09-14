@@ -116,6 +116,7 @@ graph TB
 | `confirmed_ingredients` | string[] | 선택 | ③ 출력 중 `status != unknown` **AND** `override_eligible: true` 인 재료만 |
 
 > ⚠️ `override_eligible: false`인 재료(anomaly)는 `confirmed_ingredients`에 **포함되지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다.
+> Supervisor는 이런 재료를 미확인 재료 목록에 섞어 넣을 때 **`anomaly_locked: true`를 함께 전달**한다. ④는 이 값을 가공하거나 재판단하지 않고 **그대로 보존**해서 출력의 해당 재료 노드에 실어 반환해야 한다 (아래 §4-2 `ingredients[].anomaly_locked` 참고) — 이 값이 ④에서 끊기면 ⑤/⑧까지 전달이 안 돼 CAUTION 강제가 무력화된다.
 
 ### 4-2. 출력 (Supervisor에게 반환)
 
@@ -138,7 +139,8 @@ graph TB
       "parent": "김치",
       "source": "expanded",
       "k_count": 41,
-      "n_total": 57
+      "n_total": 57,
+      "anomaly_locked": false
     }
   ],
   "variant_suggestion": null,
