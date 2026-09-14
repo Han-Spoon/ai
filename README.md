@@ -169,8 +169,8 @@ CLOVA OCR과 OpenAI 키는 `.env` 또는 ECS Secret 환경 변수로 주입합�
 
 | Method | Endpoint | 기능 설명 |
 | --- | --- | --- |
-| `POST` | `/v1/ocr` | 기존 `{ "source", "storage_key", "image_url" }`와 호환. `OCR_S3_FETCH_ENABLED=true`면 `storage_key` + ECS task role로 S3에서 스트리밍하고, 아니면 `image_url`을 사용. OCR Fast Path는 GPT를 기본 사용하지 않음. |
-| `POST` | `/v1/ruleengine` | `{ "profile", "ocr_result" }`를 받아 `analyze_all(ocr_result, profile)` 결과 dict를 그대로 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
+| `POST` | `/v1/ocr` | `{ "store_id", "source", "storage_key", "image_url" }`를 수신하고 `store_id`를 `scan_session`에 그대로 반환. 롤링 배포 호환을 위해 누락은 한시적으로 허용. `OCR_S3_FETCH_ENABLED=true`면 `storage_key` + ECS task role로 S3에서 스트리밍하고, 아니면 `image_url`을 사용. OCR Fast Path는 GPT를 기본 사용하지 않음. |
+| `POST` | `/v1/ruleengine` | `{ "store_id", "profile", "ocr_result" }`를 받아 최상위 ID와 `ocr_result.scan_session.store_id` 일치 여부를 검증한 뒤 `analyze_all(ocr_result, profile)` 결과를 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
 | `POST` | `/v1/result` | `/v1/ruleengine` 응답(judged_result) dict를 그대로 받아 `build_final_results_from_judged`로 `menu_analyses`를 최종 `FinalOutput`(message/owner_card 포함)으로 교체해 반환. 처리 실패 시 500. |
 | `GET` | `/health` | 헬스체크 (`{"status": "ok"}`). |
 

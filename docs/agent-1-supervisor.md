@@ -146,7 +146,7 @@ flowchart TD
 
 | 주체 | 책임 |
 |---|---|
-| 백엔드 | GPS 동의/입력 처리, 공공데이터 후보 조회, Kakao fallback, 사용자 선택, 신규 가게 생성, `scan_sessions` 연결 및 스냅샷 저장 |
+| 백엔드 | GPS 동의/입력 처리, 공공데이터 후보 조회, Kakao fallback, 사용자 선택, 기존 공공데이터 가게 매칭, `scan_sessions` 연결 및 스냅샷 저장 |
 | AI Supervisor | 전달받은 `store_id` 형식 검증, 동일 값을 ③~⑧ 호출에 전파, 분석 결과에 그대로 반환 |
 
 백엔드는 AI 호출 전에 `stores.id`의 존재와 `status='active'`를 검증한다. AI는 가게 마스터 DB를 조회·생성·수정하지 않는다. 가게가 선택되지 않은 요청은 백엔드가 거절하므로 AI에는 GPS, 검색어, 가게 후보 목록 계약을 두지 않는다.
@@ -262,7 +262,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [x] 가게 검색·선택·생성은 백엔드 책임, Supervisor는 확정된 `store_id`만 입력받음
+- [x] 가게 검색·선택·기존 공공데이터 매칭은 백엔드 책임, Supervisor는 확정된 `store_id`만 입력받음
 - [ ] 메뉴판 1장 기준 ③④⑤⑧ 호출의 실제 배치 API 형태
 - [ ] 일부 메뉴 에러 발생 시 사용자 응답에서 메뉴별 오류를 어떤 문구로 보여줄지
 - [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ XAI가 들고 있을지

@@ -23,12 +23,13 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import Body, FastAPI, HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictInt
 
 # ── 기존 패키지 모듈을 재사용하기 위한 경로 설정 ──────────────────────────────
 # ai_ocr / ai_ruleengine 내부 모듈은 flat import (`from parser import ...`)를
@@ -72,6 +73,9 @@ _OCR_SEMAPHORE = threading.BoundedSemaphore(_OCR_CONCURRENCY)
 
 # ── 요청 모델 ─────────────────────────────────────────────────────────────────
 class OcrRequest(BaseModel):
+    # 이전 백엔드와 무중단 배포할 수 있도록 AI에서는 한시적으로 optional로 받는다.
+    # 신규 백엔드는 항상 양의 정수를 전달하고 응답 전 단계에서 동일성을 검증한다.
+    store_id: Annotated[StrictInt, Field(gt=0)] | None = None
     source: str | None = None
     storage_key: str | None = None
     image_url: str | None = None
@@ -80,6 +84,7 @@ class OcrRequest(BaseModel):
 
 
 class RuleEngineRequest(BaseModel):
+    store_id: Annotated[StrictInt, Field(gt=0)] | None = None
     profile: dict
     ocr_result: dict
 
@@ -150,6 +155,8 @@ def run_ocr(req: OcrRequest):
         )
         result["final"]["scan_quality"]["image_fetch_source"] = downloaded.source
         result["final"]["scan_quality"]["queue_wait_ms"] = queue_wait_ms
+        if req.store_id is not None:
+            result["final"].setdefault("scan_session", {})["store_id"] = req.store_id
         # build_final_result 가 만든 dict 를 그대로 반환
         return result["final"]
     except HTTPException:
@@ -184,7 +191,10 @@ def run_ocr(req: OcrRequest):
 def run_ruleengine(req: RuleEngineRequest):
     """analyze_all(ocr_result, profile) 결과 dict 를 그대로 반환한다."""
     try:
+        _validate_store_context(req.store_id, req.ocr_result, "ocr_result")
         return analyze_all(req.ocr_result, req.profile)
+    except HTTPException:
+        raise
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"룰엔진 처리 실패: {err}") from err
 
@@ -197,7 +207,10 @@ def run_result(judged_result: dict = Body(...)):
     GPT 호출은 ai_result 내부(unknown_menu/unknown_remain 케이스)에서만 일어난다.
     """
     try:
+        _validate_store_context(None, judged_result, "judged_result")
         return build_final_results_from_judged(judged_result)
+    except HTTPException:
+        raise
     except Exception as err:
         logger.exception("Unexpected result generation failure")
         raise HTTPException(
@@ -212,6 +225,29 @@ class DownloadedImage:
     mime_type: str
     file_size: int
     source: str
+
+
+def _validate_store_context(
+    expected_store_id: int | None, payload: dict, field_name: str
+) -> None:
+    """신·구 버전 공존은 허용하되 전달된 가게 컨텍스트의 타입과 동일성은 엄격히 검증한다."""
+    session = payload.get("scan_session")
+    actual_store_id = session.get("store_id") if isinstance(session, dict) else None
+
+    if actual_store_id is not None and (
+        isinstance(actual_store_id, bool)
+        or not isinstance(actual_store_id, int)
+        or actual_store_id <= 0
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name}.scan_session.store_id는 양의 정수여야 합니다.",
+        )
+    if expected_store_id is not None and actual_store_id != expected_store_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"store_id가 {field_name}.scan_session과 일치하지 않습니다.",
+        )
 
 
 _STORAGE_KEY_PATTERN = re.compile(
