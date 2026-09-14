@@ -106,6 +106,7 @@ def test_v1_ocr_uses_latency_fast_path_without_gpt(tmp_path, monkeypatch):
     response = TestClient(app_module.app).post(
         "/v1/ocr",
         json={
+            "store_id": 42,
             "source": "upload",
             "storage_key": "scans/00000000-0000-0000-0000-000000000000/menu.jpg",
             "image_url": "https://example.test/menu.jpg",
@@ -116,8 +117,79 @@ def test_v1_ocr_uses_latency_fast_path_without_gpt(tmp_path, monkeypatch):
     assert captured["enable_gpt_post_process"] is False
     assert captured["enable_gpt_judgment"] is False
     assert 0 < captured["total_budget_seconds"] <= 14
+    assert response.json()["scan_session"]["store_id"] == 42
     assert response.json()["scan_quality"]["image_fetch_source"] == "presigned_url"
     assert not image_path.exists()
+
+
+def test_v1_ocr_rejects_non_positive_store_id():
+    response = TestClient(app_module.app).post(
+        "/v1/ocr",
+        json={
+            "store_id": 0,
+            "storage_key": "scans/00000000-0000-0000-0000-000000000000/menu.jpg",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_ruleengine_preserves_matching_store_context(monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "analyze_all",
+        lambda ocr_result, profile: dict(ocr_result),
+    )
+
+    response = TestClient(app_module.app).post(
+        "/v1/ruleengine",
+        json={
+            "store_id": 42,
+            "profile": {},
+            "ocr_result": {
+                "scan_session": {"store_id": 42},
+                "menu_analyses": [],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["scan_session"]["store_id"] == 42
+
+
+def test_ruleengine_rejects_store_context_mismatch():
+    response = TestClient(app_module.app).post(
+        "/v1/ruleengine",
+        json={
+            "store_id": 42,
+            "profile": {},
+            "ocr_result": {
+                "scan_session": {"store_id": 99},
+                "menu_analyses": [],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_result_preserves_valid_store_context(monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "build_final_results_from_judged",
+        lambda judged_result: dict(judged_result),
+    )
+
+    response = TestClient(app_module.app).post(
+        "/v1/result",
+        json={
+            "scan_session": {"store_id": 42},
+            "menu_analyses": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["scan_session"]["store_id"] == 42
 
 
 def test_url_fallback_can_require_a_fail_closed_host_allowlist(monkeypatch):

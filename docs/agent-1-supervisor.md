@@ -12,7 +12,7 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
 
 핵심 책임은 두 가지다.
 
-1. **가게 식별과 `store_id` 스코프 강제**
+1. **백엔드가 확정한 `store_id` 검증과 스코프 강제**
 2. **하위 에이전트 호출 순서 결정과 결과 취합**
 
 모든 하위 에이전트는 Supervisor의 호출을 받아서만 동작하고, 결과도 Supervisor에게만 반환한다. 에이전트 간 직접 호출은 금지한다.
@@ -25,7 +25,8 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
 | 재료 확장/변형 태깅 | ④ |
 | 확률 계산 | ⑤ |
 | 웹 크롤링 | ⑥ |
-| DB 쓰기 | ⑦ |
+| 물리 DB 쓰기/트랜잭션 | 백엔드 영속화 계층 |
+| 저장 명령 생성 | ⑦ |
 | 최종 위험 문구 생성 | ⑧ |
 
 ### 0-1. 중앙집중형 구조를 쓰는 이유
@@ -45,16 +46,14 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
 | `scan_session_id` | string | 필수 | 메뉴판 스캔 세션 id |
 | `user_id` | string | 필수 | 사용자 프로필 조회용 |
 | `ocr_menu_names` | string[] | 필수 | OCR이 추출한 원본 메뉴명 리스트 |
-| `gps` | `{lat, lng} \| null` | 선택 | GPS 기반 가게 후보 조회 |
-| `store_search_query` | string \| null | 선택 | GPS 부정확/미제공 시 상호명 검색어 |
-| `selected_store_id` | string \| null | 선택 | 사용자가 이미 가게를 선택한 경우 |
+| `store_id` | integer | **필수** | 백엔드가 검색·선택·존재/활성 검증을 마친 가게 ID. 양수만 허용 |
 
 ### 1-2. 출력
 
 ```json
 {
   "scan_session_id": "str",
-  "store_id": "str",
+  "store_id": 123456,
   "items": [
     {
       "raw_menu_name": "■김치 찌개",
@@ -69,12 +68,11 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
       },
       "owner_card": null
     }
-  ],
-  "store_candidates": []
+  ]
 }
 ```
 
-`store_candidates`는 사용자의 가게 선택이 아직 필요한 경우에만 채운다. 가게가 확정되지 않은 상태에서는 ③ 이후 에이전트를 호출하지 않는다.
+JSON의 `store_id`는 문자열이 아니라 정수다. DB `BIGINT` ↔ Java `Long` ↔ Python `int`로 대응하며, AI는 받은 값을 변경하거나 새로 발급하지 않는다.
 
 ---
 
@@ -82,10 +80,9 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
 
 ```mermaid
 flowchart TD
-    IN["사용자 스캔 요청"] --> PROF["user_profile 조회"]
-    IN --> STORE{"store_id 확정됨?"}
-    STORE -->|No| CAND["GPS/상호명으로 가게 후보 조회"]
-    CAND --> WAIT["사용자 선택 대기"]
+    IN["백엔드 분석 요청"] --> PROF["user_profile 조회"]
+    IN --> STORE{"store_id가 양의 정수?"}
+    STORE -->|No| ERR["StoreIdRequiredError\n하위 에이전트 호출 금지"]
     STORE -->|Yes| NORM["② 메뉴명 정규화 배치 호출"]
     PROF --> NORM
 
@@ -123,7 +120,7 @@ flowchart TD
 ### 2-1. 기본 순서
 
 1. 사용자 프로필을 조회해 ⑧에 넘길 `user_profile`을 준비한다.
-2. 가게를 식별해 `store_id`를 확정한다.
+2. 백엔드가 확정한 `store_id`가 양의 정수인지 검증한다.
 3. OCR 메뉴명 리스트를 ②에 **배치로** 전달한다.
 4. 정규화 결과의 후보를 기준으로 `menu_id`가 안정적으로 잡히는지 확인한다.
 5. `menu_id`가 있으면 ③을 먼저 호출한다.
@@ -143,30 +140,27 @@ flowchart TD
 
 ---
 
-## 3. 가게 식별 계약
+## 3. 가게 컨텍스트 계약
 
-### 3-1. 입력 우선순위
+### 3-1. 책임 경계
 
-| 조건 | 처리 |
+| 주체 | 책임 |
 |---|---|
-| `selected_store_id` 존재 | 해당 값을 확정 `store_id`로 사용 |
-| GPS 존재 | 지도 API로 반경 내 후보 조회 후 사용자 선택 |
-| GPS 없음 + 검색어 존재 | 상호명 검색 후보 조회 후 사용자 선택 |
-| 후보 없음 | 신규 가게 생성 플로우로 `stores.source="new"` 발급 |
+| 백엔드 | GPS 동의/입력 처리, 공공데이터 후보 조회, Kakao fallback, 사용자 선택, 기존 공공데이터 가게 매칭, `scan_sessions` 연결 및 스냅샷 저장 |
+| AI Supervisor | 전달받은 `store_id` 형식 검증, 동일 값을 ③~⑧ 호출에 전파, 분석 결과에 그대로 반환 |
 
-### 3-2. 신규 가게 생성
+백엔드는 AI 호출 전에 `stores.id`의 존재와 `status='active'`를 검증한다. AI는 가게 마스터 DB를 조회·생성·수정하지 않는다. 가게가 선택되지 않은 요청은 백엔드가 거절하므로 AI에는 GPS, 검색어, 가게 후보 목록 계약을 두지 않는다.
 
-신규 가게는 `stores`에 먼저 등록한 뒤 파이프라인을 진행한다. 단, 외부 지도 API가 아직 확인하지 못한 가게이므로 `source="new"`로 남겨 후속 검증이 가능하게 한다.
+### 3-2. 타입 계약
 
-```json
-{
-  "store_id": "new_store_id",
-  "source": "new",
-  "name": "사용자 입력 상호명",
-  "lat": 37.0,
-  "lng": 127.0
-}
-```
+| 경계 | 타입 |
+|---|---|
+| PostgreSQL | `BIGINT` |
+| Spring Boot | `Long` |
+| JSON | number (정수) |
+| Python | `int` |
+
+`null`, 문자열 숫자(`"123"`), 0, 음수는 모두 `StoreIdRequiredError` 대상이다. 이 검증은 다른 가게의 데이터로 fallback하는 것보다 요청을 실패시키는 편이 안전하다는 FN 최소화 원칙을 따른다.
 
 ---
 
@@ -200,9 +194,9 @@ Supervisor는 ②가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매�
 
 ④가 `exists_in_db: false`를 반환한 경우에만 호출한다. ⑥ 결과는 실시간 판정에는 사용할 수 있지만 DB에 자동 반영하지 않는다.
 
-### 4-6. ⑦ DB 업데이트
+### 4-6. ⑦ DB 업데이트 요청
 
-soft evidence(웹서치, 런타임 변형 태깅)는 관리자 검토 항목 생성까지만 요청한다. hard evidence(사장님 답변)는 즉시 `ingredient_confirmations`에 반영하도록 요청한다.
+soft evidence(웹서치, 런타임 변형 태깅)는 관리자 검토 항목 생성 명령까지만 만든다. hard evidence(사장님 답변)는 `ingredient_confirmations` 반영 명령을 만든다. 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다.
 
 ### 4-7. ⑧ XAI
 
@@ -242,7 +236,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 
 | 상황 | 처리 |
 |---|---|
-| `store_id` 확정 전 | ③④⑤⑥⑦⑧ 호출 금지, 가게 선택 응답 반환 |
+| `store_id` 누락·null·문자열·0 이하 | `StoreIdRequiredError`, ③④⑤⑥⑦⑧ 호출 금지 |
 | ② 정규화 실패 | 원본 메뉴명을 보존하고 ④ longest-match/unknown 경로로 넘김 |
 | ③ 조회 에러 | 해당 메뉴는 ④⑤⑧ heavy path로 보내되 로그 남김 |
 | ④ cycle/error | 확장 실패 재료는 `confidence: low`로 ⑤ 또는 ⑧에 전달 |
@@ -255,8 +249,8 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | `selected_store_id` + OCR 메뉴 3개 | ② 배치 호출 후 메뉴별 라우팅 | 모든 하위 호출에 같은 `store_id` 포함 |
-| 2 | GPS만 있고 가게 미선택 | 후보 반환 후 파이프라인 대기 | ③ 이후 호출 없음 |
+| 1 | 양의 정수 `store_id` + OCR 메뉴 3개 | ② 배치 호출 후 메뉴별 라우팅 | 모든 하위 호출과 응답에 같은 `store_id` 포함 |
+| 2 | `store_id` 누락/문자열/0 이하 | 즉시 검증 실패 | 모든 하위 호출 없음 |
 | 3 | Exact complete 메뉴 | ④⑤ 스킵, ⑧ 직행 | confirmed 기반 판정 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
 | 5 | `flagged_anomaly` 포함 | override 금지, ⑤와 ⑧까지 anomaly 신호 유지 | SAFE로 내려가지 않음 |
@@ -268,7 +262,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] 가게 후보 선택 UX: 후보가 여러 개인 경우 사용자가 반드시 선택해야 하는지, 가장 가까운 후보를 기본값으로 둘지
+- [x] 가게 검색·선택·기존 공공데이터 매칭은 백엔드 책임, Supervisor는 확정된 `store_id`만 입력받음
 - [ ] 메뉴판 1장 기준 ③④⑤⑧ 호출의 실제 배치 API 형태
 - [ ] 일부 메뉴 에러 발생 시 사용자 응답에서 메뉴별 오류를 어떤 문구로 보여줄지
 - [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ XAI가 들고 있을지

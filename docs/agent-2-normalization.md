@@ -37,7 +37,7 @@
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `items` | string[] | 필수 | OCR 원본 메뉴명 리스트 |
-| `store_id` | string \| null | 선택 | 매장별 별칭 사전이 있을 때만 사용 |
+| `store_id` | integer \| null | 선택 | 매장별 별칭 사전이 있을 때만 사용. 값이 있으면 양수 |
 | `locale_hint` | string \| null | 선택 | OCR 언어/사용자 언어 힌트 |
 
 `store_id`는 선택 필드다. ②는 가게별 사전이 없어도 동작해야 하며, `store_id`가 없다는 이유로 실패하면 안 된다.

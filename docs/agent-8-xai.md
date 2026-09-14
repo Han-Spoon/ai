@@ -135,7 +135,7 @@ flowchart TD
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
-| `owner_card != null` | Supervisor가 ⑦ DB 업데이트 에이전트에 전달 → **⑦이 `owner_verification_requests`에 INSERT**. XAI는 질문 텍스트만 생성하고 DB에 직접 쓰지 않음 — "DB 쓰기는 ⑦만 수행한다" 원칙과 일관 |
+| `owner_card != null` | Supervisor가 ⑦에 전달 → ⑦이 저장 명령 생성 → **백엔드가 `owner_verification_requests`에 INSERT**. XAI와 ⑦은 DB 자격 증명을 갖지 않음 |
 | `risk_level` | 최종 사용자 응답에 그대로 포함, 추가 라우팅 없음 (파이프라인의 마지막 단계) |
 
 ---

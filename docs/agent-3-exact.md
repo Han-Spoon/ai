@@ -33,7 +33,7 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `store_id` | string | **필수** | null이면 즉시 에러. 전역 조회 금지 |
+| `store_id` | integer | **필수** | 양수만 허용. null이면 즉시 에러. 전역 조회 금지 |
 | `menu_id` | string | 필수 | 조회 대상 메뉴. 변형/base 구분 없이 이 값 하나만 봄 |
 | `scope_hint` | `"exact" \| "inherited"` | 필수 | 반환 레코드에 붙일 라벨. ③은 이 값을 **해석하지 않고** 그대로 반환 |
 
@@ -41,7 +41,7 @@
 
 ```json
 {
-  "store_id": "str",
+  "store_id": 123456,
   "menu_id": "str",
   "confirmation_scope": "exact",
   "completeness": "unknown",
@@ -126,7 +126,7 @@ flowchart TD
 
 ```python
 def query_exact_confirmations(
-    store_id: str,                                  # 필수. None → StoreIdRequiredError
+    store_id: int,                                  # 필수·양수. None/0 이하 → StoreIdRequiredError
     menu_id: str,
     scope_hint: Literal["exact", "inherited"] = "exact",
 ) -> ExactResult:
@@ -136,7 +136,7 @@ def query_exact_confirmations(
 
 def check_completeness(
     confirmations: list[Confirmation],
-    store_id: str,
+    store_id: int,
     menu_id: str,
 ) -> Literal["complete", "unknown"]:
     """menu_ingredient_cache가 있고, 전 재료가 확인됐고, anomaly가 0건일 때만 complete.

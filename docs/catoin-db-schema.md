@@ -7,6 +7,8 @@ v3는 **구조 변경 없음, 테이블명만 직관적으로 정리**.
 
 ## 0. 설계 원칙
 
+물리 스키마와 마이그레이션의 소유자는 **백엔드**다. AI는 분석 결과와 저장 명령을 구조화해 반환하고, 백엔드가 권한·FK·멱등성을 검증한 뒤 트랜잭션으로 반영한다. AI 서비스는 `stores`를 직접 생성·수정하지 않는다.
+
 | 원칙 | 이유 |
 |---|---|
 | store_id 없는 학습/피드백 테이블 금지 | 가게 간 위험도 추정치 오염 방지 |
@@ -61,7 +63,7 @@ erDiagram
 | `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(웹서치 에이전트가 자동 생성) \| `variant_generated`(변형 태깅 과정에서 자동 생성) |
 | `needs_review` | boolean | `web_search_generated`/`variant_generated`로 들어온 메뉴는 기본 `true` |
 
-> **웹서치 에이전트 플로우**: DB에 없는 메뉴 발견 시, `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
+> **웹서치 에이전트 플로우**: DB에 없는 메뉴 발견 시 AI가 저장 명령을 반환하고, 백엔드가 `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
 
 > **변형 메뉴 플로우**: 메뉴명이 기존 메뉴와 longest-match 되고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행을 `source: variant_generated`로 생성 → 그 변형 메뉴의 `menu_id`로 `recipe_ingredients`(변형 재료, `evidence_type: variant`)와 `ingredient_evidence_log`를 채움. 이렇게 분리해야 변형 메뉴("차돌된장찌개")에서 나온 증거가 원본 메뉴("된장찌개")의 확률과 섞이지 않음.
 
@@ -98,15 +100,14 @@ PK: `(menu_id, ingredient_id)`
 
 ## 3. 가게 스코프 테이블 (store_id 필수)
 
-### `stores`
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | store_id |
-| `name` | varchar | 상호명 |
-| `lat`, `lng` | decimal | GPS 좌표 |
-| `address` | varchar | |
-| `source` | enum | `gps_matched` \| `manual_search` \| `new` |
-| `created_at` | timestamp | |
+### `stores` (백엔드 소유 외부 마스터)
+
+이 문서에서 `stores`를 다시 정의하지 않는다. 정본은 백엔드의 `docs/13-store-domain.md`와 마이그레이션이다. AI 스키마의 `store_id`는 백엔드 `stores.id BIGINT`를 참조하며 JSON에서는 정수, Python에서는 `int`로 전달한다.
+
+- 가게 데이터 출처: `stores.origin`
+- 스캔별 식별 방법: `scan_sessions.store_match_method`
+- AI 호출 전 검증: 존재하는 `status='active'` 가게인지 백엔드가 확인
+- 금지: AI의 GPS/지도 API 검색, 가게 후보 생성, `stores` INSERT/UPDATE
 
 ### `store_menus`
 이 가게가 실제로 취급하는 걸로 확인된 메뉴 (OCR 스캔 이력)
@@ -249,3 +250,4 @@ PK: `(store_id, menu_id)`
 4. `owner_verification_requests.resolved_confirmation_id`는 사장님 답변이 실제로 확정 테이블에 반영된 시점에 채움
 5. 이름 변형 메뉴(remain 토큰 매칭)는 원본 메뉴 row를 재사용하지 말고 `base_menu_id`로 연결된 새 `menus` INSERT(`source: variant_generated`)가 먼저 실행 — 원본 메뉴와 변형 메뉴의 증거/확률이 섞이지 않게 하기 위함
 6. 3·5번의 웹서치/변형 태깅 기반 INSERT는 **AI가 실시간으로 자동 실행하지 않음** — 사용자에게 결과를 보여주는 흐름과는 분리된 관리자 페이지에서, 사람이 컨펌한 시점에만 실행됨 (사장님 답변 기반 `ingredient_confirmations`는 예외로 즉시 반영)
+7. 물리 DB 쓰기는 백엔드만 수행. ⑦은 저장할 명령/근거를 반환하며 백엔드가 권한·FK·멱등성을 검증하고 트랜잭션으로 반영
