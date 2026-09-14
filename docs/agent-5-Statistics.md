@@ -59,7 +59,7 @@ Beta(1,1)이 사전분포이므로 관측 0건이면 `α=1, β=1` → `posterior
 |---|---|---|---|
 | `store_id` | string | **필수** | prior 스코프. null이면 에러 |
 | `menu_category` | string | 필수 | 클러스터 fallback용 (④ 출력) |
-| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `source`, `depth`, `k_count`, `n_total` 포함 |
+| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `source`, `depth`, `k_count`, `n_total`, **`anomaly_locked`**(④가 ③/Supervisor로부터 받아 그대로 보존한 값) 포함 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
 
 **이 에이전트에 오는 재료 / 오지 않는 재료**

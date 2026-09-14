@@ -108,6 +108,7 @@ flowchart TD
 |---|---|---|
 | 웹서치 결과 | `{store_id, menu_name, candidates}` (⑥ 출력 그대로) | soft |
 | ④의 변형 태깅 제안 | `{store_id, base_menu_id, remain_token, suggested_ingredients}` | soft |
+| ⑧의 질문 생성 요청(`owner_card`) | `{store_id, scan_session_id, menu_id, ingredient_id, question_text}` | 신규 질문 |
 | 사장님 답변 | `{store_id, menu_id, ingredient_id, present, question_id}` | hard |
 
 **출력 (Supervisor에게 반환)**
@@ -117,6 +118,14 @@ flowchart TD
   "status": "pending_admin_review" ,
   "review_item_id": "str | null",
   "applied": false
+}
+```
+질문 생성 처리 시:
+```json
+{
+  "status": "created",
+  "question_id": "str",
+  "applied": true
 }
 ```
 hard evidence 처리 시:
@@ -148,22 +157,35 @@ flowchart TD
 - 웹서치 건: 메뉴명, 후보 URL별 추출 재료 목록, 크롤링 시각
 - 변형 태깅 건: 원본 메뉴명, remain 토큰, 제안된 재료
 
-### 3-3. hard evidence 처리 (즉시 반영)
+### 3-3. 질문 생성 처리 (`owner_verification_requests` 최초 INSERT)
+
+```mermaid
+flowchart TD
+    IN["⑧ XAI: owner_card 생성\n(질문 텍스트 포함)"] --> INS["owner_verification_requests INSERT\n(question_text, answer_text: null,\nresolved_confirmation_id: null)"]
+    INS --> OUT["question_id를 Supervisor에 반환"]
+```
+
+- **질문 내용(무엇을 물을지)은 ⑧이 만들고, 그걸 실제로 저장하는 것만 ⑦이 한다** — "판정/설명은 ⑧, DB 쓰기는 ⑦"이라는 기존 역할 분리를 그대로 따름.
+- 이 단계에서 만들어진 `question_id`가 이후 "사장님 답변" 트리거(§3-1)에서 그대로 쓰인다 — 답변 처리는 질문이 이미 존재한다고 전제하므로, 이 단계가 빠지면 사장님 답변을 저장할 대상 행 자체가 없다.
+
+### 3-4. hard evidence 처리 (즉시 반영)
 
 ```mermaid
 flowchart TD
     IN["사장님 답변"] --> CHECK{base rate와\n극단적으로 어긋남?}
-    CHECK -->|Yes| FLAG["ingredient_confirmations INSERT\nflagged_anomaly: true"]
-    CHECK -->|No| NORMAL["ingredient_confirmations INSERT\nflagged_anomaly: false"]
-    FLAG --> LINK["owner_verification_requests.resolved_confirmation_id\n갱신"]
-    NORMAL --> LINK
+    CHECK -->|Yes| FLAG["ingredient_confirmations UPSERT\nflagged_anomaly: true"]
+    CHECK -->|No| NORMAL["ingredient_confirmations UPSERT\nflagged_anomaly: false"]
+    FLAG --> LOG["ingredient_evidence_log INSERT\nsource_type: owner_feedback\ndelta_alpha: 0, delta_beta: 0\nevidence_ref_table: owner_verification_requests"]
+    NORMAL --> LOG
+    LOG --> LINK["owner_verification_requests.resolved_confirmation_id\n갱신"]
 ```
 
-- `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 같은 조합에 재답변이 오면 upsert.
+- `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 같은 조합에 재답변이 오면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
+- **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
 - `flagged_anomaly=true`여도 **⑦은 저장만 함, "그대로 신뢰할지"는 ⑦의 책임이 아님** — `present: false`(없음 확정)이면서 anomaly인 값은 `catoin-multi-agent-architecture.md` ③ Exact 피드백이 미확인으로 재분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정함 (`catoin-db-schema.md` 예외 조항 참고). 저장(⑦)과 신뢰 판단(③)의 책임을 분리한 것.
 - 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — XAI가 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
-### 3-4. Supervisor와의 계약
+### 3-5. Supervisor와의 계약
 
 | ⑦이 받는 것 | 보장 사항 |
 |---|---|
@@ -175,16 +197,16 @@ flowchart TD
 | soft evidence `status: pending_admin_review` | 사용자에게는 이미 별도로 결과가 나간 뒤이므로 후속 조치 없음 (로그용) |
 | hard evidence `status: applied` | 다음 조회부터 이 메뉴는 시나리오 2(사장님 피드백 있음) 경로를 탐 |
 
-### 3-5. 예외 처리
+### 3-6. 예외 처리
 
 | 상황 | 처리 |
 |---|---|
 | 관리자가 오랫동안 컨펌 안 함 | review item은 대기 상태 유지, DB 미반영 (SLA 미확정, §8) |
 | 웹서치 후보가 여러 개고 서로 재료 목록이 다름 | 전부 관리자에게 노출, 병합 규칙은 관리자 판단 또는 별도 규칙 필요 (§8) |
 | 같은 메뉴에 대해 웹서치 제안과 변형 태깅 제안이 동시에 옴 | 각각 독립된 review item으로 취급 (병합하지 않음) |
-| `ingredient_confirmations` upsert 중 기존 값과 다른 답변이 옴 | 최신 답변으로 덮어쓰되 변경 이력은 남기지 않음 — 이력 추적 필요 여부 미확정 (§8) |
+| `ingredient_confirmations` upsert 중 기존 값과 다른 답변이 옴 | `ingredient_confirmations`는 최신 답변으로 덮어쓰되, `ingredient_evidence_log`(`source_type: owner_feedback`)에는 매번 새 행이 남으므로 변경 이력 자체는 보존됨 |
 
-### 3-6. 이 에이전트가 하지 않는 것
+### 3-7. 이 에이전트가 하지 않는 것
 
 | 하지 않음 | 담당 |
 |---|---|
@@ -192,6 +214,10 @@ flowchart TD
 | 확률 계산 | ⑤ Bayesian |
 | DANGER/CAUTION/SAFE 판정 | ⑧ XAI |
 | 관리자 승인/반려 판단 자체 | 관리자 (사람) |
+
+### 3-8. 예외 — `menu_ingredient_cache`는 ⑦을 거치지 않음
+
+"DB 쓰기는 ⑦만 한다"는 원칙에 **딱 하나의 예외**가 있다: `menu_ingredient_cache`(`catoin-db-schema.md` §6 참고)는 ④가 직접 쓴다. 이 테이블은 ④가 이미 계산한 재귀 확장 결과를 저장만 하는 파생 캐시이지, 새로운 증거·사실이 아니기 때문에 관리자 컨펌 게이트가 필요 없다는 게 근거다. **다른 모든 테이블(`menus`/`recipe_ingredients`/`ingredient_evidence_log`/`ingredient_risk_scores`/`ingredient_confirmations`/`owner_verification_requests`)은 예외 없이 ⑦만 쓴다.**
 
 ---
 

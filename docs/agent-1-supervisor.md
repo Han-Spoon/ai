@@ -211,12 +211,16 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 ```json
 {
   "confirmed_results": {},
-  "probability_results": {},
+  "probability_results": {
+    "<ingredient_id>": {"posterior_mean": 0.0, "anomaly_locked": false}
+  },
   "proposed_variant_ingredients": {},
   "no_information": false,
   "user_profile": {}
 }
 ```
+
+`probability_results`의 `anomaly_locked`는 ③이 override 거부한 재료가 ④를 거쳐 ⑤까지 온 값을 **그대로 옮겨 담은 것**이다 — Supervisor가 새로 계산하거나 재판단하지 않는다. 이 값이 있어야 ⑧이 확률과 무관하게 CAUTION 이상을 강제할 수 있다.
 
 ---
 
@@ -268,4 +272,3 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 - [ ] 메뉴판 1장 기준 ③④⑤⑧ 호출의 실제 배치 API 형태
 - [ ] 일부 메뉴 에러 발생 시 사용자 응답에서 메뉴별 오류를 어떤 문구로 보여줄지
 - [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ XAI가 들고 있을지
-- [ ] ④의 anomaly 관련 신호를 ⑤/⑧까지 전달하는 정확한 필드명 (`anomaly_locked` 등)

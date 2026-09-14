@@ -151,6 +151,8 @@ PK: `(store_id, menu_id)`
 | `evidence_ref_id` | bigint | 위 테이블의 PK |
 | `created_at` | timestamp | |
 
+**`source_type: owner_feedback`(사장님 확정 답변) 기록 방식**: 사장님 답변은 확률 계산을 거치지 않고 `ingredient_confirmations`에 바로 override로 반영되므로, 이 로그의 `delta_alpha`/`delta_beta`는 `0`으로 기록한다(재계산에 영향 없음). `ingredient_confirmations`는 UNIQUE 제약상 항상 최신 답변 1건만 남기지만, 이 로그엔 매 답변마다 새 행이 쌓이므로 **답변이 바뀐 이력(예: 같은 질문에 서로 다른 답이 반복됨) 자체는 여기서 확인 가능** — `evidence_ref_table: owner_verification_requests`로 어느 질문에 대한 답인지 연결.
+
 **OCR 변형재료 반영**: 기존 변형 토큰 태깅 로직(remain 토큰 → 재료 태그 매핑, 예: "차돌" → 소고기)을 재사용해서, `menu_analyses` 저장과 별개로 (위 변형 메뉴 플로우로 생성된) 변형 `menu_id` 기준으로 `ingredient_evidence_log`에 `source_type: ocr_variant_tag`로 한 줄 남김. **이건 다른 출처(`web_search`/`owner_feedback`/`user_feedback`)와 동등한 확률 갱신용 증거 신호일 뿐, 확정 판정이 아님** — 하드 오버라이드는 `ingredient_confirmations`만 담당.
 
 ### `ingredient_confirmations` (구 store_menu_ingredient_exact)
@@ -221,6 +223,21 @@ PK: `(store_id, menu_id)`
 | `fetched_at` | timestamp | |
 
 원칙: 이 캐시 데이터는 "실제 식당 레시피"로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음 (`ai_web_search_agent` 기존 원칙 유지).
+
+### `menu_ingredient_cache`
+④(DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트)가 매번 재귀 확장을 다시 계산하지 않도록, 자신이 만든 확장 결과를 저장해두는 **파생 캐시**.
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `store_id` | FK → stores | |
+| `menu_id` | FK → menus | |
+| `ingredients_snapshot` | jsonb | ④ 출력의 `ingredients[]`를 그대로 저장 (name, taxonomy_category, allergen_tags, depth, parent, source, k_count, n_total, anomaly_locked 등) |
+| `computed_at` | timestamp | |
+
+**UNIQUE `(store_id, menu_id)`**
+
+**쓰기 권한 예외**: `ingredient_risk_scores`/`ingredient_confirmations`/`recipe_ingredients`/`menus`와 달리, 이 테이블은 **④가 직접 쓴다** (`agent-4-DBontology.md` §6-4). `recipe_ingredients`나 재료 온톨로지(`hidden_rules.py`)에서 재계산 가능한 파생 데이터이지 새로운 증거·사실이 아니므로, ⑦의 관리자 컨펌 게이트를 거치지 않음. **이 테이블에 한해서만** "DB 쓰기는 ⑦만 한다"는 원칙의 예외가 적용됨.
+
+무효화 시점(`recipe_ingredients`/온톨로지 변경 시 언제 이 캐시를 지울지)은 아직 미확정 — `agent-4-DBontology.md` §8 참고.
 
 ---
 
