@@ -102,12 +102,14 @@ docs: add API specification draft
 - `.env` 파일을 읽거나 커밋하지 않는다. **실제 CLOVA OCR 시크릿과 OpenAI API 키가 들어 있다.**
 - API 키·토큰·비밀번호를 코드나 문서에 하드코딩하지 않는다. `.env.example`에는 값 없이 키 이름만 둔다.
 - `docs/`의 "확정, 변경 금지" 항목을 임의로 바꾸지 않는다. 변경이 필요하면 이슈로 올린다.
+- `docs/ppt-baseline.md`(제출 PPT 기준 문서)는 수정하지 않는다. 제출본을 그대로 옮긴 기록이며, 다른 문서가 이 내용과 다르면 다른 문서를 고친다.
 - 미확정 항목을 임의로 결정해서 구현하지 않는다. `docs/` 각 문서의 "미확정 항목" 절을 먼저 확인한다.
 
 ## 참고 문서
 
 | 문서 | 내용 |
 |---|---|
+| `docs/ppt-baseline.md` | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
 | `docs/catoin-multi-agent-architecture.md` | 전체 흐름도, 케이스별 시나리오, 에이전트별 역할 |
 | `docs/catoin-db-schema.md` | DB 스키마 v3, 백엔드 전달용 제약사항 |
 | `docs/agent-1-supervisor.md` ~ `agent-8-xai.md` | 에이전트별 입출력 스펙과 처리 로직 |
