@@ -14,13 +14,13 @@
 
 | 경로 | 역할 |
 |---|---|
-| `app.py` | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
-| `ai_ocr/` | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) |
-| `ai_ruleengine/` | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
-| `ai_result/` | ⑧ XAI/설명 에이전트. 최종 판정과 근거 메시지 생성 |
-| `ai_web_search_agent/` | ⑥ 웹서치 에이전트. DB 미등록 메뉴의 재료 후보 수집 |
-| `crawling/` | 메뉴·재료 데이터 수집 및 전처리 |
-| `docs/` | 에이전트 ①~⑧ 스펙, DB 스키마, 아키텍처 문서 |
+| [`app.py`](app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
+| [`ai_ocr/`](ai_ocr/README.md) | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) |
+| [`ai_ruleengine/`](ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
+| [`ai_result/`](ai_result/README.md) | ⑧ XAI/설명 에이전트. 최종 판정과 근거 메시지 생성 |
+| [`ai_web_search_agent/`](ai_web_search_agent/README.md) | ⑥ 웹서치 에이전트. DB 미등록 메뉴의 재료 후보 수집 |
+| [`crawling/`](crawling/README.md) | 메뉴·재료 데이터 수집 및 전처리 |
+| [`docs/`](docs/README.md) | 에이전트 ①~⑧ 스펙, DB 스키마, 아키텍처 문서 |
 
 ## 개발 명령어
 
@@ -109,9 +109,11 @@ docs: add API specification draft
 
 | 문서 | 내용 |
 |---|---|
-| `docs/ppt-baseline.md` | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
-| `docs/catoin-multi-agent-architecture.md` | 전체 흐름도, 케이스별 시나리오, 에이전트별 역할 |
-| `docs/catoin-db-schema.md` | DB 스키마 v3, 백엔드 전달용 제약사항 |
-| `docs/agent-1-supervisor.md` ~ `agent-8-xai.md` | 에이전트별 입출력 스펙과 처리 로직 |
+| [`docs/ppt-baseline.md`](docs/ppt-baseline.md) | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
+| [`docs/catoin-multi-agent-architecture.md`](docs/catoin-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, 에이전트별 역할 |
+| [`docs/catoin-db-schema.md`](docs/catoin-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
+| [`docs/agent-1-supervisor.md`](docs/agent-1-supervisor.md) ~ [`agent-8-xai.md`](docs/agent-8-xai.md) | 에이전트별 입출력 스펙과 처리 로직 |
+
+문서 전체 목록과 읽는 순서는 [`docs/README.md`](docs/README.md)에 있습니다.
 
 각 에이전트 문서 끝에 **"미확정 항목 (팀 확인 대기)"** 절이 있습니다. 구현 전 반드시 확인하세요.

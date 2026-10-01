@@ -1,0 +1,346 @@
+# Menu OCR AI
+
+한국 로컬 식당 메뉴판 이미지를 NAVER CLOVA General OCR V2로 처리한 뒤, 백엔드가 저장하기 쉬운 JSON으로 구조화하는 Python 모듈입니다.
+
+이 파트는 OCR, 메뉴명/가격 추출, 메뉴명 후처리, ERD 기반 JSON 생성까지만 담당합니다. 번역, 위험도 판단, 매움 여부 판단, DB 저장은 후속 파트와 백엔드가 담당합니다.
+
+> **AI 파이프라인 모듈 목록**
+> - `ai_ocr/` — 메뉴판 이미지 OCR 및 구조화 (이 문서)
+> - `ai_ruleengine/` — 사용자 프로필 기반 메뉴 위험도 판정 → [README](../ai_ruleengine/README.md)
+
+> 이 문서의 명령어는 모두 **저장소 루트**에서 실행하는 기준입니다.
+
+## 폴더 구조
+
+```text
+AI_industry_lecture/
+  ai_ocr/                    # OCR 실행 코드
+    main.py                  # 실제 이미지 OCR 실행
+    ocr_client.py            # CLOVA General OCR V2 호출
+    clova_layout.py          # 가격 anchor 기반 공간 파싱
+    parser.py                # OCR token에서 메뉴 후보 추출
+    normalizer.py            # 가격/메뉴명 정규화와 OCR 잡문자 제거
+    menu_dictionary.py       # 메뉴명 사전
+    preprocess_image.py      # 이미지 전처리
+    reprocess_raw.py         # 저장된 raw OCR 재처리
+    compare_models.py        # 원본/전처리 CLOVA 결과 비교
+    result_builder.py        # ERD 기반 최종 JSON 생성
+    test_parser_with_mock.py # mock 데이터 테스트
+  images/                    # OCR 테스트 이미지
+  sample_data/               # CLOVA 호출 없는 회귀 테스트 데이터
+  outputs/
+    raw/                     # 공급자 중립 CLOVA token JSON
+    final/                   # 백엔드 전달용 최종 JSON
+    preprocess_compare/      # 원본/전처리 비교 결과
+  requirements.txt
+  README.md
+```
+
+## 설치
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## .env 설정
+
+프로젝트 루트에 `.env` 파일이 없으면 새로 만들고 아래 값을 입력합니다. 이미 있으면 그대로 사용하면 됩니다.
+
+```bash
+CLOVA_OCR_URL=https://...apigw.ntruss.com/custom/v1/...
+CLOVA_OCR_SECRET=your_clova_ocr_secret
+CLOVA_OCR_TIMEOUT_SECONDS=10
+CLOVA_OCR_MAX_ATTEMPTS=2
+CLOVA_OCR_MAX_CALLS_PER_SCAN=2
+CLOVA_OCR_MIN_INTERVAL_SECONDS=1.0
+OCR_REQUEST_BUDGET_SECONDS=16
+OCR_TOTAL_BUDGET_SECONDS=14
+OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS=8
+OCR_MAX_CONCURRENT_SCANS=2
+
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+`.env`에는 실제 key가 들어가므로 Git에 올리면 안 됩니다.
+
+운영에서는 `OCR_ALLOWED_IMAGE_HOSTS`에 Presigned GET URL의 S3 호스트를 지정하고, `OCR_MAX_IMAGE_BYTES`와 `OCR_MAX_IMAGE_PIXELS`로 입력 크기를 제한할 수 있습니다.
+
+## 실제 이미지 실행
+
+기본 실행:
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg
+```
+
+CLI 기본 실행은 최종 JSON 생성 직전에 GPT-4o-mini 후처리와 품질 판단을 시도합니다. 반면 FastAPI `/v1/ocr`은 30초 이내 결과를 위해 두 기능을 기본으로 끄고, 결정론적 파싱·정규화·품질 점수만 사용합니다. 운영 경로에서 GPT를 다시 켜려면 `OCR_ENABLE_GPT_POST_PROCESS`, `OCR_ENABLE_GPT_JUDGMENT`를 명시적으로 `true`로 설정해야 합니다.
+
+다른 이미지를 실행하려면 `images/` 폴더에 이미지를 넣고 `--image`만 바꿉니다.
+
+```bash
+python3 ai_ocr/main.py --image images/내이미지파일.jpg
+```
+
+생성 파일:
+
+```text
+outputs/raw/이미지명_clova-general-v2_raw.json
+outputs/final/이미지명_result.json
+```
+
+원본 결과가 낮아도 전처리 재시도를 하지 않으려면:
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-preprocess
+```
+
+GPT 후처리 또는 품질 판단만 끄려면:
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-post-process
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-gpt-judgment
+```
+
+기본 실행은 로컬 품질 지표(해상도·흐림·기울기)로 원본과 보정본 중 첫 CLOVA 입력을 선택합니다. 첫 결과의 메뉴-가격 구조가 불량하고 전체 시간 예산이 8초 이상 남았을 때만 반대 입력으로 한 번 더 호출합니다. 네트워크 재시도와 품질 재시도를 합쳐 스캔당 CLOVA 외부 호출은 기본 최대 2회입니다.
+
+```bash
+python3 ai_ocr/main.py --image images/tilted_menu.jpg
+```
+
+전처리만 따로 확인하려면:
+
+```bash
+python3 ai_ocr/preprocess_image.py --image images/tilted_menu.jpg --output images/preprocessed/tilted_menu_fixed.jpg
+```
+
+원근 보정이나 기울기 보정이 오히려 결과를 망치면 개별 단계만 끌 수 있습니다.
+
+```bash
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-perspective
+python3 ai_ocr/main.py --image images/menu_001.jpg --no-deskew
+python3 ai_ocr/main.py --image images/menu_001.jpg --max-deskew-angle 25
+```
+
+## 백엔드 연동용 실행
+
+백엔드가 이미지를 저장한 뒤 OCR을 호출할 때는 저장 정보를 함께 넘길 수 있습니다.
+
+```bash
+python3 ai_ocr/main.py \
+  --image uploads/menu_003.jpg \
+  --source camera \
+  --storage-key scans/menu_003.jpg \
+  --image-url https://example.com/scans/menu_003.jpg \
+  --print-json
+```
+
+연동 옵션:
+
+| 옵션 | JSON 필드 | 설명 |
+| --- | --- | --- |
+| `--source` | `menu_image.source` | `camera` 또는 `upload` |
+| `--storage-key` | `menu_image.storage_key` | 서버/S3 등에 저장된 이미지 키 |
+| `--image-url` | `menu_image.image_url` | 백엔드가 접근 가능한 이미지 URL |
+| `--print-json` | stdout | 최종 JSON을 터미널에도 출력 |
+
+## FastAPI 서버 (백엔드 AiClient 연동)
+
+백엔드(Spring) `AiClient`가 호출하는 내부 서비스용 HTTP 래퍼입니다. 
+기존 OCR/룰엔진/결과생성 로직을 그대로 재사용하며, 파이프라인(OCR → RuleEngine → Result)을 엔드포인트로 노출합니다. 인증은 없고 사설 네트워크를 가정합니다.
+
+로컬 직접 실행:
+
+```bash
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+Docker (compose 권장):
+
+```bash
+docker compose up -d --build   # 처음 / 코드 변경 후: 이미지 빌드 + 백그라운드 실행
+docker compose up -d           # 그 다음부터: 그냥 다시 띄우기
+docker compose logs -f ai      # 로그 보기
+docker compose down            # 내리기
+```
+
+CLOVA OCR과 OpenAI 키는 `.env` 또는 ECS Secret 환경 변수로 주입합니다.
+
+| Method | Endpoint | 기능 설명 |
+| --- | --- | --- |
+| `POST` | `/v1/ocr` | `{ "store_id", "source", "storage_key", "image_url" }`를 수신하고 `store_id`를 `scan_session`에 그대로 반환. 롤링 배포 호환을 위해 누락은 한시적으로 허용. `OCR_S3_FETCH_ENABLED=true`면 `storage_key` + ECS task role로 S3에서 스트리밍하고, 아니면 `image_url`을 사용. OCR Fast Path는 GPT를 기본 사용하지 않음. |
+| `POST` | `/v1/ruleengine` | `{ "store_id", "profile", "ocr_result" }`를 받아 최상위 ID와 `ocr_result.scan_session.store_id` 일치 여부를 검증한 뒤 `analyze_all(ocr_result, profile)` 결과를 반환. `menu_analyses`가 위험도 판정으로 교체되고 `scan_session.risky_menu_count`가 채워짐. |
+| `POST` | `/v1/result` | `/v1/ruleengine` 응답(judged_result) dict를 그대로 받아 `build_final_results_from_judged`로 `menu_analyses`를 최종 `FinalOutput`(message/owner_card 포함)으로 교체해 반환. 처리 실패 시 500. |
+| `GET` | `/health` | 헬스체크 (`{"status": "ok"}`). |
+
+`profile` 키: `religion_type, is_vegetarian, vegetarian_type, no_alcohol, allergies, no_spicy`. `allergies`는 이미 `is_*` 태그 형태(예: `["is_milk"]`)로 전달합니다.
+
+### 30초 SLA 운영 설정
+
+```bash
+# OCR 단일 호출 timeout / 전체 deadline
+CLOVA_OCR_TIMEOUT_SECONDS=10
+CLOVA_OCR_MAX_ATTEMPTS=2
+CLOVA_OCR_MAX_CALLS_PER_SCAN=2
+OCR_REQUEST_BUDGET_SECONDS=16
+OCR_TOTAL_BUDGET_SECONDS=14
+OCR_QUALITY_RETRY_MIN_REMAINING_SECONDS=8
+
+# 768MB AI 컨테이너에서 메모리 폭주를 막는 backpressure
+OCR_MAX_CONCURRENT_SCANS=2
+OCR_QUEUE_WAIT_SECONDS=1
+OCR_PREPROCESS_MAX_PIXELS=20000000
+```
+
+`scan_quality`에 `ocr_attempt_count`, `selected_ocr_attempt`, `preprocessing_applied`, `ocr_processing_time_ms`, `queue_wait_ms`, `image_fetch_source`가 포함되어 병목을 구간별로 관찰할 수 있습니다.
+
+### S3 IAM 스트리밍(운영 권장)
+
+```bash
+OCR_S3_FETCH_ENABLED=true
+OCR_S3_BUCKET=hanspoon-prod-images-...
+AWS_REGION=ap-northeast-2
+```
+
+AI ECS task role에 해당 버킷의 `s3:GetObject`가 있어야 합니다. 활성화 전에는 기존 Presigned URL 다운로드가 그대로 작동합니다. URL fallback을 운영에서 사용하면 `OCR_ALLOWED_IMAGE_HOSTS`를 정확한 S3 호스트로 설정하고 `OCR_REQUIRE_IMAGE_HOST_ALLOWLIST=true`로 fail-closed 처리하세요.
+
+## CLOVA 호출 없이 테스트
+
+parser만 테스트할 때는 mock 또는 저장된 CLOVA 응답을 사용합니다. CLOVA 비용이 발생하지 않습니다.
+
+```bash
+python3 ai_ocr/test_parser_with_mock.py --input sample_data/mock_ocr_lines.json
+```
+
+이미 저장된 raw OCR 결과를 다시 후처리하려면:
+
+```bash
+python3 ai_ocr/reprocess_raw.py --input sample_data/clova_response_menu_001.json
+```
+
+원본과 전처리 결과를 실제로 비교할 때만 아래 명령을 사용합니다. CLOVA를 두 번 호출하므로 비용이 더 발생할 수 있습니다.
+
+```bash
+python3 ai_ocr/compare_models.py --image images/menu_001.jpg
+```
+
+## 처리 흐름
+
+1. 메뉴판 이미지를 입력합니다.
+2. 필요하면 로컬 전처리 이미지를 만듭니다.
+3. CLOVA General OCR로 polygon과 confidence가 포함된 field를 추출합니다.
+4. 엄격한 가격 형식으로 가격 anchor를 찾습니다.
+5. polygon의 지역 기준선과 앞 가격 열 경계를 이용해 낱글자 메뉴명을 결합하고 가격과 매칭합니다.
+6. 대/중/소, 1인/2인, 세트, 곱빼기 같은 옵션 가격은 가능한 경우 `options`로 보존합니다.
+7. 메뉴명 앞뒤의 OCR 잡문자와 용량 표기를 제거합니다.
+   예: `■김치찌개–` -> `김치찌개`, `■두루치기200g出` -> `두루치기`
+8. `scan_session`, `menu_image`, `menu_analyses` 구조의 최종 JSON을 생성합니다.
+
+## 출력 JSON 형식
+
+최종 출력은 `outputs/final/이미지명_result.json`입니다.
+
+```json
+{
+  "scan_session": {
+    "title": "menu_001.jpg",
+    "menu_count": 1,
+    "risky_menu_count": null,
+    "scan_status": "completed",
+    "scanned_at": "2026-05-28T12:00:00Z"
+  },
+  "menu_image": {
+    "source": "upload",
+    "storage_key": null,
+    "image_url": null,
+    "mime_type": "image/jpeg",
+    "file_size": 123456
+  },
+  "scan_quality": {
+    "status": "usable",
+    "score": 100,
+    "raw_line_count": 12,
+    "price_match_count": 1,
+    "price_match_ratio": 1.0,
+    "image_width": 1280,
+    "image_height": 960,
+    "image_quality": {
+      "available": true,
+      "score": 92,
+      "blur_score": 180.5,
+      "brightness": 132.4,
+      "contrast": 54.2,
+      "glare_ratio": 0.01,
+      "skew_angle": 1.2,
+      "reasons": [],
+      "suggestions": []
+    },
+    "retake_suggestions": [],
+    "reasons": []
+  },
+  "menu_analyses": [
+    {
+      "menu_name_ko": "수육국밥",
+      "menu_name_en": null,
+      "description_ko": "",
+      "description_en": null,
+      "price_text": "10,000",
+      "risk_level": null,
+      "is_spicy": false,
+      "image_url": null,
+      "display_order": 1
+    }
+  ]
+}
+```
+
+ERD 매핑:
+
+| JSON 키 | 저장 대상 |
+| --- | --- |
+| `scan_session` | `scan_sessions` |
+| `menu_image` | `menu_images` |
+| `scan_quality` | 재촬영/검수 판단용 OCR 품질 메타데이터 |
+| `menu_analyses[]` | `menu_analyses` |
+
+재촬영 판단 기준:
+
+- `scan_quality.status == "needs_retake"`: 재촬영 요청
+- `scan_quality.status == "low_confidence"`: 결과는 보여주되 사용자가 확인하도록 안내
+- `scan_quality.status == "usable"`: 정상 사용 가능
+
+메뉴 후보가 없거나 OCR token이 3개 미만이면 재촬영으로 판단합니다. 낮은 해상도는 단독으로 결과를 폐기하지 않고, 가격 anchor 대비 정상 메뉴-가격 쌍 비율(`pair_coverage`)까지 낮을 때만 재촬영을 강제합니다. 흐림, 밝기, 대비, 빛 반사, 기울기는 `scan_quality.image_quality`와 `scan_quality.retake_suggestions`에 기록합니다.
+
+후속 파트가 채우는 필드:
+
+- `menu_name_en`
+- `description_en`
+- `risk_level`
+- `menu_analyses.image_url`
+- `scan_session.risky_menu_count`
+
+`is_spicy`는 OCR 텍스트에 잡힌 메뉴명/설명/맵기 표기/고추 아이콘 문자 기준으로 `true` 또는 `false`를 자동 설정합니다.
+
+## 프론트/백엔드 연결 방향
+
+권장 흐름:
+
+1. 프론트가 카메라 촬영 또는 이미지 업로드로 메뉴판 이미지를 백엔드에 보냅니다.
+2. 백엔드는 이미지를 서버나 외부 저장소에 저장합니다.
+3. 백엔드는 저장된 이미지 경로로 `ai_ocr/main.py`를 호출합니다.
+4. OCR 결과 JSON을 읽어 `scan_sessions`, `menu_images`, `menu_analyses`에 저장합니다.
+5. 후속 분석 파트가 저장된 메뉴 분석 데이터를 기준으로 번역/위험도/매움 여부를 업데이트합니다.
+
+초기에는 파일 기반 연결이 가장 단순합니다. 나중에는 `ai_ocr/result_builder.py`가 만드는 JSON 구조를 유지하면서 백엔드 API 응답으로 바로 넘기도록 바꾸면 됩니다.
+
+## 입력 이미지 권장 기준
+
+- 메뉴판이 이미지 대부분을 차지하게 촬영합니다.
+- 글자가 흐리지 않게 초점을 맞춥니다.
+- 빛 반사, 그림자, 가림이 메뉴명과 가격을 덮지 않게 합니다.
+- 한 이미지에 여러 메뉴판이나 포스터가 섞이지 않게 합니다.
+- JPG, PNG, WEBP 이미지를 권장합니다.
+- 가능하면 1280px 이상 해상도를 사용합니다.
