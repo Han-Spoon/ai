@@ -17,10 +17,10 @@
 | [`app.py`](app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
 | [`ai_ocr/`](ai_ocr/README.md) | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) |
 | [`ai_ruleengine/`](ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
-| [`ai_result/`](ai_result/README.md) | ⑧ XAI/설명 에이전트. 최종 판정과 근거 메시지 생성 |
-| [`ai_web_search_agent/`](ai_web_search_agent/README.md) | ⑥ 웹서치 에이전트. DB 미등록 메뉴의 재료 후보 수집 |
+| [`ai_result/`](ai_result/README.md) | ⑧ Decision Policy / XAI Agent. 최종 판정과 근거 메시지 생성 |
+| [`ai_web_search_agent/`](ai_web_search_agent/README.md) | ⑥ Web Search Agent. DB 미등록 메뉴의 재료 후보 수집 |
 | [`crawling/`](crawling/README.md) | 메뉴·재료 데이터 수집 및 전처리 |
-| [`docs/`](docs/README.md) | 에이전트 ①~⑧ 스펙, DB 스키마, 아키텍처 문서 |
+| [`docs/`](docs/README.md) | 제출 PPT 기준 문서, 아키텍처, DB 스키마, 에이전트 스펙. 인덱스는 `docs/README.md` |
 
 ## 개발 명령어
 
@@ -68,7 +68,8 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
 | `prior_source` | prior를 어느 단계에서 가져왔는지 (`store` / `cluster` / `global` / `uninformative`) |
-| 에이전트 ①~⑧ | ① Supervisor ② 정규화 ③ Exact 피드백 ④ DB/온톨로지 ⑤ Bayesian ⑥ 웹서치 ⑦ DB 업데이트 ⑧ XAI |
+| Agent / Tool | **기준 문서(PPT) 표기**를 따른다. Supervisor Agent(번호 없음) · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent · ⑨ Curation Tool |
+| Agent vs Tool | **Agent는 판단하고 Tool은 수행한다.** Agent = LLM 추론이 필요한 판단 노드, Tool = 정해진 절차를 수행하는 실행 노드 |
 
 ## 커밋 규칙
 
@@ -88,12 +89,16 @@ docs: add API specification draft
 ## 브랜치 규칙
 
 > **팀 결정 대기 중.** 컨벤션 문서는 작업 브랜치를 `dev`에서 분기한다고 정하고 있으나, 실제로는 최근 작업이 모두 `main` 기준으로 진행되고 있습니다. 어느 쪽으로 통일할지 정해지면 이 절을 채웁니다. 그때까지 Claude는 브랜치 생성 전 사용자에게 분기 기준을 확인합니다.
+>
+> 참고: `.github/workflows/deploy-prod.yml`이 `main` push에서 돌기 때문에 **`main` 머지가 곧 운영 배포**입니다 (단, `**.md`·`docs/**`·`images/**` 변경은 제외). 코드 PR을 머지할 때는 배포가 함께 나간다는 점을 염두에 두세요.
 
 ## 이슈 / PR 규칙
 
 - 이슈 제목: `[TYPE] 설명` — `[FEAT]` `[FIX]` `[HOTFIX]` `[CHORE]` `[DOCS]` `[REFACTOR]`
 - PR 제목: `[TYPE] 설명 (#이슈번호)`
-- PR 본문에 `Closes #이슈번호` 또는 `Resolves #이슈번호` 필수
+- PR 본문에 이슈 연결 필수
+  - 이슈를 **완전히 끝내는** PR → `Closes #이슈번호` / `Resolves #이슈번호`
+  - 이슈의 **일부만 다루는** PR → `Part of #이슈번호` (closing keyword 금지). 상위 이슈가 조기에 닫히는 것을 막는다
 - 이슈 하나 = 작업 하나
 - 템플릿은 `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` 사용
 
