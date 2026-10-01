@@ -1,6 +1,6 @@
 # 제출 PPT 기준 문서 (AI 파트)
 
-출처: `한스푼.pdf` — **이미 제출이 완료된 발표 자료**. 총 11페이지 중 AI 관련 5개 페이지(6~10쪽).
+출처: `한스푼.pdf` — **이미 제출이 완료된 발표 자료**. 총 11페이지 중 AI 관련 4개 페이지(7~10쪽).
 PPT에 적힌 표현을 그대로 옮겼습니다. 오탈자·띄어쓰기도 원문 그대로 두었습니다.
 
 ## ⚠️ 이 문서의 지위 — 기준(Single Source of Truth)
@@ -11,71 +11,6 @@ PPT에 적힌 표현을 그대로 옮겼습니다. 오탈자·띄어쓰기도 �
 2. **이 문서와 다르게 적힌 내용은 틀린 것입니다.** 다른 문서·코드가 이 내용과 충돌하면 이 문서가 우선합니다. 고쳐야 할 쪽은 이 문서가 아니라 상대 쪽입니다.
 3. **이 문서는 수정 대상이 아닙니다.** 제출본을 그대로 옮긴 기록이므로, 설계가 바뀌어도 여기를 고치지 않습니다. 변경이 필요하면 별도 문서에 "제출본 대비 변경"으로 남기고 사유를 기록하세요.
 4. 원문의 오탈자(`Restauant`, `Recogniton`, `Presignd` 등)도 제출본 그대로입니다. 임의로 교정하지 마세요.
-
----
-
-## 6쪽 — System Architecture
-
-**보안, 트래픽, 운영을 함께 고려한 AWS 기반 시스템 아키텍처**
-
-### 1 응답 먼저, 분석은 뒤에
-
-요청 스레드와 분석 스레드를 나누고 진행 상태를 DB에 둬, 긴 작업이 연결과 커넥션을 붙잡지 않는다.
-
-★ CloudFront, ECS, EC2, RDS
-
-### 2 한 서버 안에서 직접 호출
-
-백엔드와 AI를 한 서버에 묶어 네트워크를 거치지 않고 호출하게 만들었다. 따라서 AI의 외부 노출이 되지 않아 보안성이 뛰어나다.
-
-★ Security Group, ECS, Systems Manager
-
-### 3 Presignd URL
-
-Presigned URL을 사용하여 서버를 거치지 않고 클라이언트가 직접 AWS S3 스토리지에 이미지를 안전하게 업로드 가능하게 한다.
-
-★ S3, VPC, IAM Role
-
-### 4 동시 배포 충돌 방지
-
-두 저장소가 같은 태스크 정의를 갱신해도 서로를 덮어쓰지 않도록 AWS 조건부 쓰기로 잠금을 걸어 순서를 강제한다
-
-★ ECS Task, Backend Container, AI Container, Docker
-
-### 5 SSM으로 시크릿 관리
-
-시크릿 6종을 SSM Parameter Store 내에 SecureString으로 두고 시작 시점에 주입해, 저장소와 이미지에 평문을 남기지 않는다.
-
-★ GitHub Actions, ECR, CloudWatch Logs
-
-### 6 운영 자동화
-
-GitHub Actions로 컨테이너 이미지를 빌드 및 배포하고, ECR과 CloudWatch를 활용해 이미지 관리와 운영 로그 확인이 가능하도록 구성함
-
-★ GitHub Actions, ECR, CloudWatch Logs
-
-### 아키텍처 구성도
-
-- Users → **Vercel** (`api.han-spoon.site`)
-- → **CloudFront + ACM 인증서** (`/menus/ *`)
-- **AWS Cloud** / **ap-northeast-2**
-  - api origin, EIP:8080, http-only
-  - **Virtual private cloud (VPC)**
-    - **Public subnet (AZ-a)**
-      - **ECS Cluster** — Task Definition, Service
-      - **EC2 t4g.small** — ECS Agent, docker, **ECS Task**
-        - **backend container** —POST call→ **ai container**
-    - **Private subnet (AZ-a)** — 5432
-      - **RDS PostgreSQL 16** (db.t4g.micreo, Single-AZ, gp3 20GB)
-  - **S3 Gatewaay Endpoint**
-  - **Internet Gateway**
-  - **S3** (hanspoon-prod-images-*)
-  - **ECR**
-  - **DynamoDB**
-  - **SSM Parameter Store**
-  - **CloudWatch Logs**
-- **GitHub** → **Github Actions** → 이미지 push / Task 갱신
-- 외부 모델 — **OpenAI (gpt-4o-mini)**, **CLOVA OCR (General V2)**
 
 ---
 

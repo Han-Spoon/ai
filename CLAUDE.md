@@ -109,7 +109,7 @@ docs: add API specification draft
 
 | 문서 | 내용 |
 |---|---|
-| `docs/ppt-baseline.md` | **제출 PPT 기준 문서(6~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
+| `docs/ppt-baseline.md` | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
 | `docs/catoin-multi-agent-architecture.md` | 전체 흐름도, 케이스별 시나리오, 에이전트별 역할 |
 | `docs/catoin-db-schema.md` | DB 스키마 v3, 백엔드 전달용 제약사항 |
 | `docs/agent-1-supervisor.md` ~ `agent-8-xai.md` | 에이전트별 입출력 스펙과 처리 로직 |
