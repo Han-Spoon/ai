@@ -40,6 +40,6 @@ CI(`.github/workflows/ci.yml`)가 위 두 가지를 실행합니다. `main`에 �
 
 ## 협업 규칙
 
-작업 규칙은 [`CLAUDE.md`](CLAUDE.md)에 모여 있습니다 — 커밋 형식, 이슈·PR 규칙, 변경 금지 결정, 용어집. 팀 전원의 Claude가 이 파일을 읽고 동작합니다.
+작업 규칙은 [`AGENTS.md`](AGENTS.md)에 모여 있습니다 — 커밋 형식, 이슈·PR 규칙, 변경 금지 결정, 용어집. Claude Code·Codex 둘 다 이 규칙을 읽고 동작합니다 (Claude Code는 [`CLAUDE.md`](CLAUDE.md)를 통해 가져옵니다).
 
 이슈 템플릿은 [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/), PR 템플릿은 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)를 사용합니다.
