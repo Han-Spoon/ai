@@ -101,18 +101,12 @@ docs: add API specification draft
 
 ### 머지
 
-PR은 **CI(`AI CI` 워크플로의 `test` 잡)가 통과하면 자동으로 머지된다.** 리뷰 승인은 요구하지 않는다.
+**사람이 직접 머지한다.** 자동 머지는 쓰지 않는다.
 
-`.github/workflows/auto-merge.yml`이 PR이 열릴 때 auto-merge를 켜두기 때문에, CI가 녹색이 되는 시점에 GitHub가 알아서 머지한다. 버튼을 누를 필요가 없다.
-
-- **충돌이 있으면 자동 머지가 멈춘다.** GitHub이 알아서 보류하므로 따로 설정할 것은 없다
-- **draft PR은 제외된다.** 아직 머지되면 안 되는 PR은 draft로 올리거나, PR 페이지에서 auto-merge를 끈다
-- 리뷰를 꼭 받고 싶은 PR은 draft로 두거나 auto-merge를 끄고 리뷰어를 지정한다
+- CI(`AI CI` 워크플로의 `test` 잡)가 통과해야 머지 버튼이 열린다. 빨간불이면 머지할 수 없다
 - 머지 방식은 merge commit (기존 히스토리와 동일)
 
-> 참고: `.github/workflows/deploy-prod.yml`이 `main` push에서 돌기 때문에 **`main` 머지가 곧 배포**입니다 (단, `**.md`·`docs/**`·`images/**` 변경은 제외). 현재는 실사용자가 없는 프로젝트 단계라 배포 승인 게이트를 따로 두지 않았습니다. 실제 사용자를 받기 전에 다시 판단하세요.
->
-> 테스트 통과는 "깨지지 않았다"는 신호일 뿐 "의도한 동작이 맞다"는 보장이 아닙니다. 특히 FN(false negative)에 영향을 주는 판정 로직은 CI가 녹색이어도 틀릴 수 있으니, 해당 변경에는 테스트를 함께 추가하세요 (#91).
+> 참고: `.github/workflows/deploy-prod.yml`이 `main` push에서 돌기 때문에 **`main` 머지가 곧 배포**입니다 (단, `**.md`·`docs/**`·`images/**` 변경은 제외).
 
 ## 이슈 / PR 규칙
 
