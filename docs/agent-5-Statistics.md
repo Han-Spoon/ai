@@ -1,4 +1,4 @@
-# ⑤ 확률(Bayesian) 에이전트
+# ⑤ Bayesian Tool
 
 담당: 윤지 / 상태: v3 (확정 — 공식 확정으로 구현 착수 가능) / 상위 문서: `catoin-multi-agent-architecture.md`
 
@@ -10,7 +10,7 @@
 
 | 하지 않음 | 담당 |
 |---|---|
-| DANGER / CAUTION / SAFE 판정 | ⑧ XAI |
+| DANGER / CAUTION / SAFE 판정 | ⑧ Decision Policy / XAI Agent |
 | threshold(F2 컷오프) 결정 | §6 미확정 |
 | 사용자 알레르기 태그 매칭 | ⑧ |
 | 재료 확장 | ④ |
@@ -62,7 +62,7 @@ Beta(1,1)이 사전분포이므로 관측 0건이면 `α=1, β=1` → `posterior
 | `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `source`, `depth`, `k_count`, `n_total`, **`anomaly_locked`**(④가 ③/Supervisor로부터 받아 그대로 보존한 값) 포함 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
 
-**이 에이전트에 오는 재료 / 오지 않는 재료**
+**⑤에 오는 재료 / 오지 않는 재료**
 
 | 구분 | ⑤에 오는가 | 이유 |
 |---|---|---|
@@ -250,7 +250,7 @@ return BayesianResult(probabilities=results)
 | `confidence: low` | → ⑧이 사장님 질문 생성 우선순위 상향 |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
-**⑤가 하지 않는 것**: DB 쓰기, 판정, 타 에이전트 호출. 특히 **`ingredient_risk_scores` 직접 UPDATE 금지** — α/β 재계산은 ⑦ 반영 이후 애플리케이션 로직이 수행한다.
+**⑤가 하지 않는 것**: DB 쓰기, 판정, 타 Agent·Tool 호출. 특히 **`ingredient_risk_scores` 직접 UPDATE 금지** — α/β 재계산은 ⑦ 반영 이후 애플리케이션 로직이 수행한다.
 
 ---
 
@@ -266,7 +266,7 @@ return BayesianResult(probabilities=results)
 | **2-c) 피드백 전부 (anomaly 포함)** | anomaly 재료만 계산 + `anomaly_locked: true` |
 | **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. `inherited` prior 보정 적용 |
 | **3-b) 신규 변형** | `variant_suggested` 포함 → scale 0.5 (mean 보존) |
-| **4) DB에 없는 unknown 메뉴** | ⑥ 웹서치 결과로 계산. `prior_source`는 보통 `cluster` / `global` |
+| **4) DB에 없는 unknown 메뉴** | ⑥ Web Search Agent 결과로 계산. `prior_source`는 보통 `cluster` / `global` |
 | **5) 웹서치도 실패 (엣지)** | 호출되지 않거나 `uninformative` 반환. **SAFE로 떨어뜨리지 않음** |
 
 ### 5-2. 예외 처리
@@ -311,7 +311,7 @@ return BayesianResult(probabilities=results)
 - [ ] **`variant_suggested` scale 0.5의 적정성** — 초기값으로 0.5 채택. F2 튜닝 시 재조정
 - [ ] **`inherited_confirmations` prior 보정 강도** — 상속 정보를 α₀/β₀에 얼마나 반영할지 (구체 계수)
 - [ ] **클러스터 축 확장 여부** — 현재 `menu_category` 기준으로 확정. 업종/지역 축을 추가할지는 미정
-- [ ] **F2 최적화 threshold를 누가 계산하는가** — Supervisor 내부 규칙 vs ⑧ XAI 내부. 원본 §4 미해결
+- [ ] **F2 최적화 threshold를 누가 계산하는가** — Supervisor 내부 규칙 vs ⑧ Decision Policy / XAI Agent 내부. 원본 §4 미해결
 - [ ] **`confidence` 등급 기준** — `low`/`medium`/`high` 경계를 무엇으로 나눌지 (prior_source, source, n_total 조합)
 
 ## 8. 확정된 결정 (변경 금지)

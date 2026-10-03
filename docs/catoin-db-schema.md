@@ -60,10 +60,10 @@ erDiagram
 | `base_menu_id` | FK → menus, nullable | 이름 변형 메뉴가 참조하는 원본 메뉴. `NULL`이면 독립 메뉴(변형 아님) |
 | `category` | varchar | 메뉴 카테고리 |
 | `ambiguity_flags` | text[] | `has_unclear_broth` 등 |
-| `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(웹서치 에이전트가 자동 생성) \| `variant_generated`(변형 태깅 과정에서 자동 생성) |
+| `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(⑥ Web Search Agent가 자동 생성) \| `variant_generated`(변형 태깅 과정에서 자동 생성) |
 | `needs_review` | boolean | `web_search_generated`/`variant_generated`로 들어온 메뉴는 기본 `true` |
 
-> **웹서치 에이전트 플로우**: DB에 없는 메뉴 발견 시 AI가 저장 명령을 반환하고, 백엔드가 `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
+> **⑥ Web Search Agent 플로우**: DB에 없는 메뉴 발견 시 AI가 저장 명령을 반환하고, 백엔드가 `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
 
 > **변형 메뉴 플로우**: 메뉴명이 기존 메뉴와 longest-match 되고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행을 `source: variant_generated`로 생성 → 그 변형 메뉴의 `menu_id`로 `recipe_ingredients`(변형 재료, `evidence_type: variant`)와 `ingredient_evidence_log`를 채움. 이렇게 분리해야 변형 메뉴("차돌된장찌개")에서 나온 증거가 원본 메뉴("된장찌개")의 확률과 섞이지 않음.
 
@@ -75,7 +75,7 @@ erDiagram
 | `tag` | varchar | `is_pork`, `is_shrimp` 등 |
 | `taxonomy_category` | varchar | 발효장류 / 소스 / 육수 / 양념 / 고명견과 / 유지류 / 기타 |
 
-**교차오염 카테고리 제외 (agent-4 확정)**: 조리 과정의 교차오염(공유 기름·도마·불판 등)은 가게 단위로 관측 불가능해 확률 모델 범위에서 제외 — 해당 위험은 XAI(⑧)의 사장님 질문 생성 경로로 위임. 기존 교차오염 소속 재료는 실제 성격에 맞는 카테고리로 재배치하거나(예: 소스/양념/유지류) `기타`로 분류. 31개 재료의 상세 재배치 매핑표는 `agent-4-DBontology.md` §8에서 작업 중(미완성).
+**교차오염 카테고리 제외 (agent-4 확정)**: 조리 과정의 교차오염(공유 기름·도마·불판 등)은 가게 단위로 관측 불가능해 확률 모델 범위에서 제외 — 해당 위험은 ⑧ Decision Policy / XAI Agent의 사장님 질문 생성 경로로 위임. 기존 교차오염 소속 재료는 실제 성격에 맞는 카테고리로 재배치하거나(예: 소스/양념/유지류) `기타`로 분류. 31개 재료의 상세 재배치 매핑표는 `agent-4-DBontology.md` §8에서 작업 중(미완성).
 
 ### `recipe_ingredients` (구 menu_recipe_ingredients)
 베이스 레시피 — 메뉴당 재료 목록, store 무관
@@ -120,7 +120,7 @@ PK: `(menu_id, ingredient_id)`
 PK: `(store_id, menu_id)`
 
 ### `ingredient_risk_scores` (구 store_menu_ingredient_priors)
-**"이 가게, 이 메뉴, 이 재료가 들어있을 확률이 지금 얼마냐"** — 현재 스냅샷, Bayesian 에이전트가 읽는 테이블
+**"이 가게, 이 메뉴, 이 재료가 들어있을 확률이 지금 얼마냐"** — 현재 스냅샷, ⑤ Bayesian Tool이 읽는 테이블
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `store_id` | FK → stores, NOT NULL | |
@@ -173,7 +173,7 @@ PK: `(store_id, menu_id)`
 **예외 — `flagged_anomaly: true` + `present: false`**: "재료 없음" 확정 답변이 base rate와 극단적으로 어긋나는 경우엔 확정값을 무조건 신뢰하지 않는다. 이때는 `ingredient_risk_scores` 확률도 함께 조회해서, 확률이 낮지 않으면 확정값(없음) 대신 CAUTION 이상으로 유지한다. `present: true`인 이상 답변(예: 원래 안 들어가는 재료를 있다고 확인)은 이미 안전한 방향(위험 인정)이라 이 예외 대상이 아님 — FN-minimization 원칙상 "없다"는 이상 답변으로 실제 위험을 놓치는 경우만 막으면 됨.
 
 ### `owner_verification_requests` (구 owner_questions)
-**"사장님에게 검증을 요청한 건"** — XAI 에이전트가 생성한 질문과 답변 로그
+**"사장님에게 검증을 요청한 건"** — ⑧ Decision Policy / XAI Agent가 생성한 질문과 답변 로그
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `id` | PK | |
@@ -226,7 +226,7 @@ PK: `(store_id, menu_id)`
 원칙: 이 캐시 데이터는 "실제 식당 레시피"로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음 (`ai_web_search_agent` 기존 원칙 유지).
 
 ### `menu_ingredient_cache`
-④(DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트)가 매번 재귀 확장을 다시 계산하지 않도록, 자신이 만든 확장 결과를 저장해두는 **파생 캐시**.
+④ DB / Ontology Tool이 매번 재귀 확장을 다시 계산하지 않도록, 자신이 만든 확장 결과를 저장해두는 **파생 캐시**.
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `store_id` | FK → stores | |
@@ -246,7 +246,7 @@ PK: `(store_id, menu_id)`
 
 1. `ingredient_risk_scores`, `ingredient_confirmations`, `ingredient_evidence_log` 세 테이블 전부 `store_id NOT NULL` DB 레벨 강제
 2. **`ingredient_risk_scores`는 직접 UPDATE 금지** — 항상 `ingredient_evidence_log` INSERT → 재계산 순서
-3. 웹서치 에이전트가 새 메뉴 발견 시 `menus` INSERT(`source: web_search_generated`)가 반드시 먼저 실행
+3. ⑥ Web Search Agent가 새 메뉴 발견 시 `menus` INSERT(`source: web_search_generated`)가 반드시 먼저 실행
 4. `owner_verification_requests.resolved_confirmation_id`는 사장님 답변이 실제로 확정 테이블에 반영된 시점에 채움
 5. 이름 변형 메뉴(remain 토큰 매칭)는 원본 메뉴 row를 재사용하지 말고 `base_menu_id`로 연결된 새 `menus` INSERT(`source: variant_generated`)가 먼저 실행 — 원본 메뉴와 변형 메뉴의 증거/확률이 섞이지 않게 하기 위함
 6. 3·5번의 웹서치/변형 태깅 기반 INSERT는 **AI가 실시간으로 자동 실행하지 않음** — 사용자에게 결과를 보여주는 흐름과는 분리된 관리자 페이지에서, 사람이 컨펌한 시점에만 실행됨 (사장님 답변 기반 `ingredient_confirmations`는 예외로 즉시 반영)

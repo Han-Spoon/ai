@@ -1,4 +1,4 @@
-# ① Supervisor 에이전트 스펙
+# ⓪ Supervisor Agent 스펙
 
 담당: 박다은
 상태: 초안 (미확정 항목은 §8 참조)
@@ -13,13 +13,13 @@ Supervisor는 사용자 스캔 요청의 **유일한 진입점**이며, OCR 이�
 핵심 책임은 두 가지다.
 
 1. **백엔드가 확정한 `store_id` 검증과 스코프 강제**
-2. **하위 에이전트 호출 순서 결정과 결과 취합**
+2. **하위 Agent·Tool 호출 순서 결정과 결과 취합**
 
-모든 하위 에이전트는 Supervisor의 호출을 받아서만 동작하고, 결과도 Supervisor에게만 반환한다. 에이전트 간 직접 호출은 금지한다.
+모든 하위 Agent·Tool은 Supervisor의 호출을 받아서만 동작하고, 결과도 Supervisor에게만 반환한다. Agent·Tool 간 직접 호출은 금지한다.
 
 | 하지 않음 | 담당 |
 |---|---|
-| OCR 자체 수행 | OCR 모듈/서비스 |
+| OCR 자체 수행 | ① OCR Tool |
 | 메뉴명 문자열 정제 | ② |
 | 확정 재료 조회 | ③ |
 | 재료 확장/변형 태깅 | ④ |
@@ -82,33 +82,33 @@ JSON의 `store_id`는 문자열이 아니라 정수다. DB `BIGINT` ↔ Java `Lo
 flowchart TD
     IN["백엔드 분석 요청"] --> PROF["user_profile 조회"]
     IN --> STORE{"store_id가 양의 정수?"}
-    STORE -->|No| ERR["StoreIdRequiredError\n하위 에이전트 호출 금지"]
-    STORE -->|Yes| NORM["② 메뉴명 정규화 배치 호출"]
+    STORE -->|No| ERR["StoreIdRequiredError\n하위 Agent·Tool 호출 금지"]
+    STORE -->|Yes| NORM["② Menu Normalization Agent<br/>배치 호출"]
     PROF --> NORM
 
     NORM --> LOOP["메뉴별 처리 루프"]
     LOOP --> MID{"menu_id 후보 있음?"}
-    MID -->|Yes| EXACT["③ Exact 피드백 조회"]
-    MID -->|No| ONTO_UNKNOWN["④ DB/온톨로지 조회<br/>unknown/longest-match"]
+    MID -->|Yes| EXACT["③ Exact Feedback Tool 조회"]
+    MID -->|No| ONTO_UNKNOWN["④ DB / Ontology Tool<br/>unknown/longest-match"]
     EXACT --> COMP{"completeness: complete<br/>AND anomaly 없음?"}
-    COMP -->|Yes| XAI1["⑧ XAI<br/>confirmed_results만 전달"]
-    COMP -->|No| ONTO["④ DB/온톨로지 조회"]
+    COMP -->|Yes| XAI1["⑧ Decision Policy / XAI Agent<br/>confirmed_results만 전달"]
+    COMP -->|No| ONTO["④ DB / Ontology Tool 조회"]
 
     ONTO --> DBOK{"exists_in_db?"}
     ONTO_UNKNOWN --> DBOK
     DBOK -->|Yes| BASE{"base_menu_id 있음?"}
     BASE -->|Yes| INHERIT["③ base_menu_id로 inherited 재호출"]
-    BASE -->|No| BAYES["⑤ Bayesian"]
+    BASE -->|No| BAYES["⑤ Bayesian Tool"]
     INHERIT --> BAYES
-    BAYES --> XAI2["⑧ XAI"]
+    BAYES --> XAI2["⑧ Decision Policy / XAI Agent"]
 
-    DBOK -->|No| WEB["⑥ 웹서치"]
+    DBOK -->|No| WEB["⑥ Web Search Agent"]
     WEB --> FOUND{"found?"}
-    FOUND -->|Yes| BAYES2["⑤ Bayesian<br/>웹서치 후보 기반"]
-    BAYES2 --> XAI3["⑧ XAI"]
-    FOUND -->|No| XAI4["⑧ XAI<br/>no_information: true"]
+    FOUND -->|Yes| BAYES2["⑤ Bayesian Tool<br/>웹서치 후보 기반"]
+    BAYES2 --> XAI3["⑧ Decision Policy / XAI Agent"]
+    FOUND -->|No| XAI4["⑧ Decision Policy / XAI Agent<br/>no_information: true"]
 
-    ONTO -.soft evidence.-> DBUP1["⑦ 관리자 검토 항목 생성"]
+    ONTO -.soft evidence.-> DBUP1["⑦ DB Update Tool<br/>관리자 검토 항목 생성"]
     WEB -.soft evidence.-> DBUP1
     XAI1 --> OUT["메뉴별 결과 취합"]
     XAI2 --> OUT
@@ -164,9 +164,9 @@ flowchart TD
 
 ---
 
-## 4. 하위 에이전트 호출 계약
+## 4. 하위 Agent·Tool 호출 계약
 
-### 4-1. ② 메뉴명 정규화
+### 4-1. ② Menu Normalization Agent
 
 | 전달 | 반환 |
 |---|---|
@@ -174,31 +174,31 @@ flowchart TD
 
 Supervisor는 ②가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매핑을 유지한다. 최종 응답에서 사용자가 본 메뉴명과 내부 매칭 결과를 연결해야 하기 때문이다.
 
-### 4-2. ③ Exact 피드백
+### 4-2. ③ Exact Feedback Tool
 
 첫 번째 호출은 대상 `menu_id`가 안정적으로 식별된 경우에만 `scope_hint="exact"`로 전달한다. `menu_id`가 없으면 ③을 호출하지 않는다.
 
 두 번째 호출은 ④가 `base_menu_id`를 반환한 경우에만 `scope_hint="inherited"`로 호출한다. inherited 결과는 override가 아니라 ⑤ prior 보정용이다.
 
-### 4-3. ④ DB/온톨로지
+### 4-3. ④ DB / Ontology Tool
 
 ③의 출력 중 `status != unknown` AND `override_eligible: true`인 재료만 `confirmed_ingredients`로 전달한다.
 
 `override_eligible: false`인 anomaly 재료는 누락하면 안 된다. Supervisor는 이 재료를 ⑤ 계산 대상에 남겨 `anomaly_locked`가 ⑧까지 전달되게 해야 한다.
 
-### 4-4. ⑤ Bayesian
+### 4-4. ⑤ Bayesian Tool
 
 ⑤에는 확정 override 대상이 아닌 재료만 전달한다. ⑤의 결과는 절대 최종 판정이 아니며, ⑧이 사용자 프로필과 threshold를 적용해 해석한다.
 
-### 4-5. ⑥ 웹서치
+### 4-5. ⑥ Web Search Agent
 
 ④가 `exists_in_db: false`를 반환한 경우에만 호출한다. ⑥ 결과는 실시간 판정에는 사용할 수 있지만 DB에 자동 반영하지 않는다.
 
-### 4-6. ⑦ DB 업데이트 요청
+### 4-6. ⑦ DB Update Tool
 
 soft evidence(웹서치, 런타임 변형 태깅)는 관리자 검토 항목 생성 명령까지만 만든다. hard evidence(사장님 답변)는 `ingredient_confirmations` 반영 명령을 만든다. 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다.
 
-### 4-7. ⑧ XAI
+### 4-7. ⑧ Decision Policy / XAI Agent
 
 Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달한다.
 
@@ -237,7 +237,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 | 상황 | 처리 |
 |---|---|
 | `store_id` 누락·null·문자열·0 이하 | `StoreIdRequiredError`, ③④⑤⑥⑦⑧ 호출 금지 |
-| ② 정규화 실패 | 원본 메뉴명을 보존하고 ④ longest-match/unknown 경로로 넘김 |
+| ② Menu Normalization Agent 실패 | 원본 메뉴명을 보존하고 ④ longest-match/unknown 경로로 넘김 |
 | ③ 조회 에러 | 해당 메뉴는 ④⑤⑧ heavy path로 보내되 로그 남김 |
 | ④ cycle/error | 확장 실패 재료는 `confidence: low`로 ⑤ 또는 ⑧에 전달 |
 | ⑥ timeout/error | `found: false`, `no_information: true` |
@@ -265,4 +265,4 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 - [x] 가게 검색·선택·기존 공공데이터 매칭은 백엔드 책임, Supervisor는 확정된 `store_id`만 입력받음
 - [ ] 메뉴판 1장 기준 ③④⑤⑧ 호출의 실제 배치 API 형태
 - [ ] 일부 메뉴 에러 발생 시 사용자 응답에서 메뉴별 오류를 어떤 문구로 보여줄지
-- [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ XAI가 들고 있을지
+- [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ Decision Policy / XAI Agent가 들고 있을지

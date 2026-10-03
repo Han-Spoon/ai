@@ -22,7 +22,7 @@
 처음 보신다면 이 둘부터 읽으시면 됩니다.
 
 - [제출 PPT 기준 문서](docs/ppt-baseline.md) — 모든 문서의 기준. 여기와 다르면 틀린 것입니다
-- [멀티 에이전트 아키텍처](docs/catoin-multi-agent-architecture.md) — 전체 흐름도와 에이전트별 역할
+- [멀티 에이전트 아키텍처](docs/catoin-multi-agent-architecture.md) — 전체 흐름도와 Agent·Tool별 역할
 
 ## 개발
 

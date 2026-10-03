@@ -1,4 +1,4 @@
-# ③ Exact 피드백 에이전트 (재료 단위 확인 조회)
+# ③ Exact Feedback Tool (재료 단위 확인 조회)
 
 담당: 윤지 / 상태: v3 (확정) / 상위 문서: `catoin-multi-agent-architecture.md`
 
@@ -14,8 +14,8 @@
 | 하지 않음 | 담당 |
 |---|---|
 | 재료 확장 / 변형 판정 | ④ |
-| 전부·일부 판단 후 라우팅 | ① Supervisor |
-| 사용자 알레르기 태그 매칭 | ⑧ XAI |
+| 전부·일부 판단 후 라우팅 | ⓪ Supervisor Agent |
+| 사용자 알레르기 태그 매칭 | ⑧ Decision Policy / XAI Agent |
 | 확률 계산 | ⑤ |
 | DB 쓰기 | ⑦ |
 
@@ -187,7 +187,7 @@ return ExactResult(
 
 ## 3. Supervisor와의 계약 (Contract)
 
-**호출 시점**: ② 정규화 직후, ④보다 **먼저**. 가벼운 경로 조기 종료를 위해.
+**호출 시점**: ② Menu Normalization Agent 직후, ④보다 **먼저**. 가벼운 경로 조기 종료를 위해.
 
 ### 3-1. 호출 횟수: 최대 2회 — ③은 자신이 몇 번째 호출인지 모른다
 
@@ -216,7 +216,7 @@ return ExactResult(
 | `override_eligible: false` 포함 | 해당 재료를 override에서 제외하고 **⑤ 계산 대상에 포함** |
 | `confirmation_scope: inherited` | **override 금지.** ⑤에 `inherited_confirmations`로 전달 |
 
-**③이 직접 호출하지 않는 것**: 어떤 에이전트도 호출하지 않는다. 조회 후 반환하고 종료.
+**③이 직접 호출하지 않는 것**: 어떤 Agent·Tool도 호출하지 않는다. 조회 후 반환하고 종료.
 
 ---
 
