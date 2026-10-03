@@ -88,9 +88,31 @@ docs: add API specification draft
 
 ## 브랜치 규칙
 
-> **팀 결정 대기 중.** 컨벤션 문서는 작업 브랜치를 `dev`에서 분기한다고 정하고 있으나, 실제로는 최근 작업이 모두 `main` 기준으로 진행되고 있습니다. 어느 쪽으로 통일할지 정해지면 이 절을 채웁니다. 그때까지 Claude는 브랜치 생성 전 사용자에게 분기 기준을 확인합니다.
+**작업 브랜치는 `main`에서 분기한다.** `dev`는 사용하지 않는다 (10/2 회의 결정).
+
+```
+{type}/{설명}            docs/claude-md-sync
+{type}/#{이슈번호}-{설명}   feat/#56-menu-normalization
+```
+
+- type은 커밋 규칙과 동일: `feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore` / `hotfix`
+- 소문자, 단어는 하이픈으로 연결
+- **`main` 직접 푸시 금지.** 모든 변경은 PR로 들어온다
+
+### 머지
+
+PR은 **CI(`AI CI` 워크플로의 `test` 잡)가 통과하면 자동으로 머지된다.** 리뷰 승인은 요구하지 않는다.
+
+`.github/workflows/auto-merge.yml`이 PR이 열릴 때 auto-merge를 켜두기 때문에, CI가 녹색이 되는 시점에 GitHub가 알아서 머지한다. 버튼을 누를 필요가 없다.
+
+- **충돌이 있으면 자동 머지가 멈춘다.** GitHub이 알아서 보류하므로 따로 설정할 것은 없다
+- **draft PR은 제외된다.** 아직 머지되면 안 되는 PR은 draft로 올리거나, PR 페이지에서 auto-merge를 끈다
+- 리뷰를 꼭 받고 싶은 PR은 draft로 두거나 auto-merge를 끄고 리뷰어를 지정한다
+- 머지 방식은 merge commit (기존 히스토리와 동일)
+
+> 참고: `.github/workflows/deploy-prod.yml`이 `main` push에서 돌기 때문에 **`main` 머지가 곧 배포**입니다 (단, `**.md`·`docs/**`·`images/**` 변경은 제외). 현재는 실사용자가 없는 프로젝트 단계라 배포 승인 게이트를 따로 두지 않았습니다. 실제 사용자를 받기 전에 다시 판단하세요.
 >
-> 참고: `.github/workflows/deploy-prod.yml`이 `main` push에서 돌기 때문에 **`main` 머지가 곧 운영 배포**입니다 (단, `**.md`·`docs/**`·`images/**` 변경은 제외). 코드 PR을 머지할 때는 배포가 함께 나간다는 점을 염두에 두세요.
+> 테스트 통과는 "깨지지 않았다"는 신호일 뿐 "의도한 동작이 맞다"는 보장이 아닙니다. 특히 FN(false negative)에 영향을 주는 판정 로직은 CI가 녹색이어도 틀릴 수 있으니, 해당 변경에는 테스트를 함께 추가하세요 (#91).
 
 ## 이슈 / PR 규칙
 
