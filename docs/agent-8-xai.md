@@ -1,4 +1,4 @@
-# ⑧ XAI/설명 에이전트 스펙
+# ⑧ Decision Policy / XAI Agent 스펙
 
 담당: 정유진
 상태: 초안 (미확정 항목은 §8 참조)
@@ -13,7 +13,7 @@
 1. **판정**: 확정값(hard evidence)과 확률(soft evidence)을 사용자 개인의 알레르기·식이 제약과 대조해 DANGER/CAUTION/SAFE를 결정
 2. **설명**: 판정 근거를 사람이 이해할 수 있는 문장으로 바꾸고, 정보가 부족한 재료에 대해 사장님에게 물어볼 질문을 만듦
 
-판정 로직과 설명 로직을 분리하지 않고 XAI 하나에 묶은 이유는 반대로 **"둘 다 사용자 프로필과 재료 데이터를 같은 순간에 대조해야" 자연스럽기 때문**이다. 대신 이 에이전트를 확률 계산(⑤)이나 하드 오버라이드 조회(③)로부터는 분리해둬서, 판정 기준(threshold)이나 문구·언어가 바뀔 때 이 문서/이 에이전트만 고치면 되게 했다.
+판정 로직과 설명 로직을 분리하지 않고 ⑧ 하나에 묶은 이유는 반대로 **"둘 다 사용자 프로필과 재료 데이터를 같은 순간에 대조해야" 자연스럽기 때문**이다. 대신 ⑧을 확률 계산(⑤)이나 하드 오버라이드 조회(③)로부터는 분리해둬서, 판정 기준(threshold)이나 문구·언어가 바뀔 때 이 문서/⑧만 고치면 되게 했다.
 
 ---
 
@@ -23,8 +23,8 @@
 
 | 필드 | 타입 | 필수 | 출처 | 설명 |
 |---|---|---|---|---|
-| `confirmed_results` | `{ingredient_id: bool}` | 있으면 전달 | ③ Exact 피드백 | hard evidence. 없으면 빈 객체 |
-| `probability_results` | `{ingredient_id: {posterior_mean: float, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian | soft evidence. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
+| `confirmed_results` | `{ingredient_id: bool}` | 있으면 전달 | ③ Exact Feedback Tool | hard evidence. 없으면 빈 객체 |
+| `probability_results` | `{ingredient_id: {posterior_mean: float, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian Tool | soft evidence. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
 | `proposed_variant_ingredients` | `{ingredient_id: source}` | 있으면 전달 | ④ 변형 태깅 | **DB 미반영 제안**, source=`variant_suggested` 등 신뢰도 낮음 |
 | `no_information` | bool | 필수 | ④/⑥ | 메뉴/재료 정보 자체가 없을 때 true (엣지 케이스 4) |
 | `user_profile` | object | 필수 | `user_profiles` | `religion_type`, `is_vegetarian`, `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy` |

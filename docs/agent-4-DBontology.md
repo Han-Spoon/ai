@@ -1,4 +1,4 @@
-# ④ DB/온톨로지 조회 + 재귀 확장 + 변형 태깅 에이전트
+# ④ DB / Ontology Tool (조회 + 재귀 확장 + 변형 태깅)
 
 담당: 윤지 / 상태: v3 (확정) / 상위 문서: `catoin-multi-agent-architecture.md`
 
@@ -30,7 +30,7 @@ graph TB
 
 ## 1. 3축 구조
 
-이 에이전트가 다루는 데이터는 **선형 계층이 아니라 3개의 독립 축**이다.
+④가 다루는 데이터는 **선형 계층이 아니라 3개의 독립 축**이다.
 
 ```mermaid
 graph TB
@@ -98,7 +98,7 @@ graph TB
 
 > 본 모델은 **레시피 구성 기반 재료 추론**만을 범위로 한다.
 > 조리 과정의 교차오염(공유 기름·도마·불판) 및 제조 공정 오염(가공식품 설비 공유)은 **가게 단위로 관측 불가능**하므로 모델 범위에서 제외한다.
-> 해당 위험은 확률 모델이 아닌 **사장님 질문 생성 경로(⑧ XAI)** 로 위임한다.
+> 해당 위험은 확률 모델이 아닌 **사장님 질문 생성 경로(⑧ Decision Policy / XAI Agent)** 로 위임한다.
 
 **근거**: FN-minimization이 북극성 지표이지만, 관측 불가능한 변수를 확률 모델에 강제로 포함하면 근거 없는 추정치가 들어가 노이즈가 증가하고 판정 신뢰도(calibration)가 오히려 저하된다. 관측 불가능한 위험은 **확률로 추정하는 대신 직접 질의**하는 경로로 처리하는 것이 정확도와 설명가능성 모두에서 우위다.
 
@@ -111,7 +111,7 @@ graph TB
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `store_id` | integer | **필수** | 양수만 허용. null이면 즉시 에러. 전역 조회 금지 |
-| `normalized_menu_name` | string | 필수 | ② 정규화 출력. ④는 재정규화하지 않음 |
+| `normalized_menu_name` | string | 필수 | ② Menu Normalization Agent 출력. ④는 재정규화하지 않음 |
 | `unconfirmed_only` | bool | 필수 | 미확인 재료만 처리할지 |
 | `confirmed_ingredients` | string[] | 선택 | ③ 출력 중 `status != unknown` **AND** `override_eligible: true` 인 재료만 |
 
@@ -315,14 +315,14 @@ return OntologyResult(ingredients=nodes, variant_origin=variant_origin, ...)
 | 필드 | 보장 사항 |
 |---|---|
 | `store_id` | 가게 식별 완료된 값. **null 불가** |
-| `normalized_menu_name` | ② 정규화 완료값. ④는 재정규화하지 않음 |
+| `normalized_menu_name` | ② Menu Normalization Agent 완료값. ④는 재정규화하지 않음 |
 | `confirmed_ingredients` | ③ 출력 중 `status != unknown` AND `override_eligible: true` 인 재료만 |
 
 ### 6-2. ④ → Supervisor (돌려주는 것)
 
 | 필드 | Supervisor의 후속 판단 |
 |---|---|
-| `exists_in_db: false` | → ⑥ 웹서치 호출 |
+| `exists_in_db: false` | → ⑥ Web Search Agent 호출 |
 | `exists_in_db: true` | → ⑤ Bayesian 호출 |
 | `base_menu_id != null` | → **③을 2차 호출** (`scope_hint="inherited"`) |
 | `variant_origin: runtime_tagged` | → ⑤에 즉시 전달 **+** ⑦에 관리자 검토 자료 전달 |
@@ -330,7 +330,7 @@ return OntologyResult(ingredients=nodes, variant_origin=variant_origin, ...)
 | `ingredients[].source` | → ⑤가 prior 신뢰도(scale)를 차등 적용 |
 | `ingredients[].k_count / n_total` | → ⑤의 Beta-Binomial 관측값 |
 
-**④가 직접 호출하지 않는 것**: 어떤 에이전트도 직접 호출하지 않는다. 웹서치 여부, DB 반영, 판정은 모두 Supervisor가 결정한다.
+**④가 직접 호출하지 않는 것**: 어떤 Agent·Tool도 직접 호출하지 않는다. 웹서치 여부, DB 반영, 판정은 모두 Supervisor가 결정한다.
 
 ### 6-3. 케이스별 관여 범위
 
@@ -345,14 +345,14 @@ return OntologyResult(ingredients=nodes, variant_origin=variant_origin, ...)
 | **4) DB에 없는 unknown 메뉴** | 조회 실패 확인까지만 | `exists_in_db: false`. ⑥은 ④가 호출하지 않음 |
 | **5) 웹서치도 실패 (엣지)** | **관여 없음** | 4번에서 이미 종료 |
 
-### 6-4. 이 에이전트가 하지 않는 것
+### 6-4. ④가 하지 않는 것
 
 | 하지 않음 | 담당 |
 |---|---|
 | 도메인 DB 쓰기 (`menus` / `recipe_ingredients` / `ingredient_risk_scores` INSERT·UPDATE) | ⑦ (관리자 컨펌 후) |
 | 재료 존재 확률 계산 | ⑤ |
 | DANGER / CAUTION / SAFE 판정 | ⑧ |
-| 웹서치 호출 여부 결정 | ① Supervisor |
+| 웹서치 호출 여부 결정 | ⓪ Supervisor Agent |
 | 조리 중 교차오염 추정 | 모델 범위 외 (§3) |
 
 > **예외 — `menu_ingredient_cache` 쓰기는 ④가 수행한다.**
@@ -399,7 +399,7 @@ return OntologyResult(ingredients=nodes, variant_origin=variant_origin, ...)
 - [ ] **`max_depth` 상한값** — 재귀 깊이 제한을 둘지, 둔다면 몇 단계까지
 - [ ] **`menu_category` 전체 목록** — `menus.csv` 76개 항목의 카테고리 매핑 (다중 카테고리 확인 완료, 세부 목록 작성 대기)
 - [ ] **`menu_ingredient_cache` 무효화 시점** — 온톨로지/레시피 변경 시 전체 무효화인지 부분 무효화인지
-- [ ] **⑥ 웹서치 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. **⑥ 담당자 확인 필요**
+- [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. **⑥ 담당자 확인 필요**
 
 ## 9. 확정된 결정 (변경 금지)
 

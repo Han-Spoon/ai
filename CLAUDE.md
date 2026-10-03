@@ -20,7 +20,7 @@
 | [`ai_result/`](ai_result/README.md) | ⑧ Decision Policy / XAI Agent. 최종 판정과 근거 메시지 생성 |
 | [`ai_web_search_agent/`](ai_web_search_agent/README.md) | ⑥ Web Search Agent. DB 미등록 메뉴의 재료 후보 수집 |
 | [`crawling/`](crawling/README.md) | 메뉴·재료 데이터 수집 및 전처리 |
-| [`docs/`](docs/README.md) | 제출 PPT 기준 문서, 아키텍처, DB 스키마, 에이전트 스펙. 인덱스는 `docs/README.md` |
+| [`docs/`](docs/README.md) | 제출 PPT 기준 문서, 아키텍처, DB 스키마, Agent·Tool 스펙. 인덱스는 `docs/README.md` |
 
 ## 개발 명령어
 
@@ -54,10 +54,10 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - 알레르겐은 taxonomy가 아닌 별도 축(`allergen_tags`).
 
 ### DB 쓰기
-- **물리 DB 쓰기는 백엔드만 수행한다.** ⑦ DB 업데이트 에이전트는 저장할 명령과 근거를 반환할 뿐이고, 권한·FK·멱등성 검증과 트랜잭션은 백엔드 몫이다.
+- **물리 DB 쓰기는 백엔드만 수행한다.** ⑦ DB Update Tool은 저장할 명령과 근거를 반환할 뿐이고, 권한·FK·멱등성 검증과 트랜잭션은 백엔드 몫이다.
 - `ingredient_risk_scores`는 직접 UPDATE 금지. 항상 `ingredient_evidence_log` INSERT → 재계산 순서.
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다 (파생 캐시이므로 ⑦ 승인 대상 아님).
-- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. ① Supervisor는 확정된 `store_id`만 입력받는다.
+- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. ⓪ Supervisor Agent는 확정된 `store_id`만 입력받는다.
 
 ## 용어
 
@@ -68,7 +68,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
 | `prior_source` | prior를 어느 단계에서 가져왔는지 (`store` / `cluster` / `global` / `uninformative`) |
-| Agent / Tool | **기준 문서(PPT) 표기**를 따른다. Supervisor Agent(번호 없음) · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent · ⑨ Curation Tool |
+| Agent / Tool | **기준 문서(PPT) 표기**를 따른다. ⓪ Supervisor Agent · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent · ⑨ Curation Tool |
 | Agent vs Tool | **Agent는 판단하고 Tool은 수행한다.** Agent = LLM 추론이 필요한 판단 노드, Tool = 정해진 절차를 수행하는 실행 노드 |
 
 ## 커밋 규칙
@@ -115,10 +115,10 @@ docs: add API specification draft
 | 문서 | 내용 |
 |---|---|
 | [`docs/ppt-baseline.md`](docs/ppt-baseline.md) | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
-| [`docs/catoin-multi-agent-architecture.md`](docs/catoin-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, 에이전트별 역할 |
+| [`docs/catoin-multi-agent-architecture.md`](docs/catoin-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, Agent·Tool별 역할 |
 | [`docs/catoin-db-schema.md`](docs/catoin-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
-| [`docs/agent-1-supervisor.md`](docs/agent-1-supervisor.md) ~ [`agent-8-xai.md`](docs/agent-8-xai.md) | 에이전트별 입출력 스펙과 처리 로직 |
+| [`docs/agent-0-supervisor.md`](docs/agent-0-supervisor.md) ~ [`agent-8-xai.md`](docs/agent-8-xai.md) | Agent·Tool별 입출력 스펙과 처리 로직 |
 
 문서 전체 목록과 읽는 순서는 [`docs/README.md`](docs/README.md)에 있습니다.
 
-각 에이전트 문서 끝에 **"미확정 항목 (팀 확인 대기)"** 절이 있습니다. 구현 전 반드시 확인하세요.
+각 Agent·Tool 문서 끝에 **"미확정 항목 (팀 확인 대기)"** 절이 있습니다. 구현 전 반드시 확인하세요.
