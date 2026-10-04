@@ -1,6 +1,6 @@
 # ③ Exact Feedback Tool (재료 단위 확인 조회)
 
-담당: 윤지 / 상태: v3 (확정) / 상위 문서: `catoin-multi-agent-architecture.md`
+담당: 윤지 / 상태: v3 (확정) / 상위 문서: `caution-multi-agent-architecture.md`
 
 ---
 
