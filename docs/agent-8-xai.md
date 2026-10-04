@@ -2,7 +2,7 @@
 
 담당: 정유진
 상태: 초안 (미확정 항목은 §8 참조)
-상위 문서: `catoin-multi-agent-architecture.md`, `catoin-db-schema.md`
+상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ---
 

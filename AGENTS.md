@@ -13,7 +13,7 @@
 
 ## 프로젝트
 
-**Catoin** — 외국인 관광객이 한식당 메뉴판을 촬영하면 OCR → 재료 분석 → `DANGER` / `CAUTION` / `SAFE` 판정까지 수행하는 알레르기 안전 서비스.
+**Caution** — 외국인 관광객이 한식당 메뉴판을 촬영하면 OCR → 재료 분석 → `DANGER` / `CAUTION` / `SAFE` 판정까지 수행하는 알레르기 안전 서비스.
 
 - **북극성 지표: FN(false negative) 최소화, F2 score 기준**
 - 판단이 애매하면 항상 안전한 쪽(더 위험하다고 보는 쪽)으로 기운다. 놓친 알레르겐 1건이 오탐 10건보다 치명적이다.
@@ -149,8 +149,8 @@ docs: add API specification draft
 | 문서 | 내용 |
 |---|---|
 | [`docs/ppt-baseline.md`](docs/ppt-baseline.md) | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
-| [`docs/catoin-multi-agent-architecture.md`](docs/catoin-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, Agent·Tool별 역할 |
-| [`docs/catoin-db-schema.md`](docs/catoin-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
+| [`docs/caution-multi-agent-architecture.md`](docs/caution-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, Agent·Tool별 역할 |
+| [`docs/caution-db-schema.md`](docs/caution-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
 | [`docs/agent-0-supervisor.md`](docs/agent-0-supervisor.md) ~ [`agent-8-xai.md`](docs/agent-8-xai.md) | Agent·Tool별 입출력 스펙과 처리 로직 |
 
 문서 전체 목록과 읽는 순서는 [`docs/README.md`](docs/README.md)에 있습니다.

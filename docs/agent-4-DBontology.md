@@ -1,6 +1,6 @@
 # ④ DB / Ontology Tool (조회 + 재귀 확장 + 변형 태깅)
 
-담당: 윤지 / 상태: v3 (확정) / 상위 문서: `catoin-multi-agent-architecture.md`
+담당: 윤지 / 상태: v3 (확정) / 상위 문서: `caution-multi-agent-architecture.md`
 
 ---
 

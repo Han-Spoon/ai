@@ -1,4 +1,4 @@
-# Catoin 멀티 에이전트 아키텍처
+# Caution 멀티 에이전트 아키텍처
 
 목적: 외국인 관광객이 한식당 메뉴판을 찍으면, OCR → 재료 분석 → DANGER/CAUTION/SAFE 판정까지 자동으로 수행하는 안전 서비스.
 북극성 지표: **FN(false negative) 최소화**, F2 score 기준.
@@ -231,7 +231,7 @@ graph TB
 ### ③ Exact Feedback Tool (재료 단위로 재설계)
 - **역할 개요**: 확률로 추정하기 전에 "이미 사람이 확인해준 확실한 값이 있는지"부터 재료 단위로 체크하는 1차 관문. 여기서 확인되면 Bayesian 계산 자체가 불필요해 비용·속도 면에서 이득이고, 무엇보다 사람이 확인한 값이 확률 추정치보다 신뢰도가 높음.
 - **입력**: store_id, 메뉴명 (Supervisor로부터 전달받음)
-- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 확정으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`catoin-db-schema.md` 참고)
+- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 확정으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`caution-db-schema.md` 참고)
 - **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면(anomaly 예외 포함) 나머지 재료만 ⓪ Supervisor Agent가 다음 노드로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법(전부 확인 vs 전부 미확인) 금지 — 부분 확인을 지원해야 "새우젓만 사장님이 확인해줬고 나머지는 아직 모름" 같은 현실적인 상황을 표현할 수 있음.
 
