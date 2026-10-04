@@ -2,7 +2,7 @@
 
 담당: 정유진
 상태: 초안 (미확정 항목은 §5 참조)
-상위 문서: `catoin-multi-agent-architecture.md`, `catoin-db-schema.md`
+상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 짝 문서: [`agent-7-dbupdate.md`](agent-7-dbupdate.md) (⑦ DB Update Tool) — ⑥이 수집한 soft evidence를 실제 저장 명령으로 바꾸는 쪽
 
 ---
@@ -16,7 +16,7 @@
 | **soft evidence** | 웹서치 크롤링 결과, ④의 변형 태깅 제안 | ⑥ → ⑦ → 백엔드 | **관리자 컨펌 후에만** DB 반영 |
 | **hard evidence** | 사장님 답변 | ⑦ → 백엔드 | **즉시** 반영 |
 
-이 구분이 왜 필요한가: `catoin-db-schema.md` §6 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이므로 이 위험이 없어 즉시 반영한다.
+이 구분이 왜 필요한가: `caution-db-schema.md` §6 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이므로 이 위험이 없어 즉시 반영한다.
 
 **⑥은 이 계층에서 soft evidence를 만들어내는 쪽이고, 저장 권한은 전혀 없다.**
 
@@ -120,6 +120,6 @@ flowchart TD
 
 ## 5. 미확정 항목 (팀 확인 대기)
 
-- [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈). ⑦과 공통 항목
-- [ ] **메뉴판 1장당 여러 unknown 메뉴가 나올 때 ⑥ 호출 배치/캐싱 전략** (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈)
+- [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`caution-multi-agent-architecture.md` 5번 섹션과 동일 이슈). ⑦과 공통 항목
+- [ ] **메뉴판 1장당 여러 unknown 메뉴가 나올 때 ⑥ 호출 배치/캐싱 전략** (`caution-multi-agent-architecture.md` 5번 섹션과 동일 이슈)
 - [ ] **출처 신뢰도 가중치를 ⑥에서 어디까지 판단할지** — `docs/ppt-baseline.md` 9쪽 "5 출처 신뢰도 반영"(Dawid-Skene 응용, 출처별 weight 추적)이 ⑥의 출처 평가와 ⑤의 가중치 반영 중 어디에 들어가는지 미확정

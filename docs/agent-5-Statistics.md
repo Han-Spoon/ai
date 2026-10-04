@@ -1,6 +1,6 @@
 # ⑤ Bayesian Tool
 
-담당: 윤지 / 상태: v3 (확정 — 공식 확정으로 구현 착수 가능) / 상위 문서: `catoin-multi-agent-architecture.md`
+담당: 윤지 / 상태: v3 (확정 — 공식 확정으로 구현 착수 가능) / 상위 문서: `caution-multi-agent-architecture.md`
 
 ---
 

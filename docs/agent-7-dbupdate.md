@@ -2,7 +2,7 @@
 
 담당: 윤지
 상태: 초안 (미확정 항목은 §5 참조)
-상위 문서: `catoin-multi-agent-architecture.md`, `catoin-db-schema.md`
+상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 짝 문서: [`agent-6-websearch.md`](agent-6-websearch.md) (⑥ Web Search Agent) — ⑦이 받는 soft evidence를 수집하는 쪽
 
 ---
@@ -16,7 +16,7 @@
 | **soft evidence** | 웹서치 크롤링 결과, ④의 변형 태깅 제안 | ⑥ → ⑦ → 백엔드 | **관리자 컨펌 후에만** DB 반영 |
 | **hard evidence** | 사장님 답변 | ⑦ → 백엔드 | **즉시** 반영 |
 
-이 구분이 왜 필요한가: `catoin-db-schema.md` §6 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이므로 이 위험이 없어 즉시 반영한다.
+이 구분이 왜 필요한가: `caution-db-schema.md` §6 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이므로 이 위험이 없어 즉시 반영한다.
 
 **⑦은 이 계층을 저장 명령으로 번역하는 쪽이고, 물리 DB 쓰기 권한은 갖지 않는다.**
 
@@ -106,7 +106,7 @@ flowchart TD
     M3 --> M4["4. 애플리케이션 로직이<br/>ingredient_risk_scores α/β 재계산"]
 ```
 
-**순서가 고정인 이유**: `menus` → `recipe_ingredients` → `ingredient_evidence_log` 순서를 지키지 않으면 FK가 끊긴다 (`catoin-db-schema.md` §7-3, §7-5). `ingredient_risk_scores`는 이 로그 재계산 결과로만 갱신되고 **직접 UPDATE는 절대 금지**.
+**순서가 고정인 이유**: `menus` → `recipe_ingredients` → `ingredient_evidence_log` 순서를 지키지 않으면 FK가 끊긴다 (`caution-db-schema.md` §7-3, §7-5). `ingredient_risk_scores`는 이 로그 재계산 결과로만 갱신되고 **직접 UPDATE는 절대 금지**.
 
 **관리자 페이지에 뭐가 보이는가** (§5에서 UI 세부는 미확정이지만 최소 노출 데이터):
 - 웹서치 건: 메뉴명, 후보 URL별 추출 재료 목록, 크롤링 시각
@@ -137,7 +137,7 @@ flowchart TD
 
 - `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 같은 조합에 재답변이 오면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
 - **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
-- `flagged_anomaly=true`여도 **⑦은 저장만 함, "그대로 신뢰할지"는 ⑦의 책임이 아님** — `present: false`(없음 확정)이면서 anomaly인 값은 `catoin-multi-agent-architecture.md` ③ Exact Feedback Tool이 미확인으로 재분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정함 (`catoin-db-schema.md` 예외 조항 참고). 저장(⑦)과 신뢰 판단(③)의 책임을 분리한 것.
+- `flagged_anomaly=true`여도 **⑦은 저장만 함, "그대로 신뢰할지"는 ⑦의 책임이 아님** — `present: false`(없음 확정)이면서 anomaly인 값은 `caution-multi-agent-architecture.md` ③ Exact Feedback Tool이 미확인으로 재분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정함 (`caution-db-schema.md` 예외 조항 참고). 저장(⑦)과 신뢰 판단(③)의 책임을 분리한 것.
 - 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 3-4. ⓪ Supervisor Agent와의 계약
@@ -173,7 +173,7 @@ flowchart TD
 
 ### 3-7. 예외 — `menu_ingredient_cache`는 ⑦을 거치지 않음
 
-"DB 쓰기는 ⑦만 한다"는 원칙에 **딱 하나의 예외**가 있다: `menu_ingredient_cache`(`catoin-db-schema.md` §6 참고)는 ④가 직접 쓴다. 이 테이블은 ④가 이미 계산한 재귀 확장 결과를 저장만 하는 파생 캐시이지, 새로운 증거·사실이 아니기 때문에 관리자 컨펌 게이트가 필요 없다는 게 근거다. **다른 모든 테이블(`menus`/`recipe_ingredients`/`ingredient_evidence_log`/`ingredient_risk_scores`/`ingredient_confirmations`/`owner_verification_requests`)은 예외 없이 ⑦만 쓴다.**
+"DB 쓰기는 ⑦만 한다"는 원칙에 **딱 하나의 예외**가 있다: `menu_ingredient_cache`(`caution-db-schema.md` §6 참고)는 ④가 직접 쓴다. 이 테이블은 ④가 이미 계산한 재귀 확장 결과를 저장만 하는 파생 캐시이지, 새로운 증거·사실이 아니기 때문에 관리자 컨펌 게이트가 필요 없다는 게 근거다. **다른 모든 테이블(`menus`/`recipe_ingredients`/`ingredient_evidence_log`/`ingredient_risk_scores`/`ingredient_confirmations`/`owner_verification_requests`)은 예외 없이 ⑦만 쓴다.**
 
 ---
 
@@ -193,7 +193,7 @@ flowchart TD
 
 ## 5. 미확정 항목 (팀 확인 대기)
 
-- [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`catoin-multi-agent-architecture.md` 5번 섹션과 동일 이슈). ⑥과 공통 항목
+- [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`caution-multi-agent-architecture.md` 5번 섹션과 동일 이슈). ⑥과 공통 항목
 - [ ] **관리자 컨펌 SLA** — 검토 대기가 얼마나 길어질 수 있는지, 오래 방치된 review item을 어떻게 표시할지
 - [ ] **사장님 오조작(버튼 잘못 누름) 대비** — anomaly 플래그는 통계적으로 이상한 답변만 잡지, 그럴듯한 오조작은 못 걸러냄. 재확인 UI 등 필요
 - [ ] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 덮어쓰기만 할지, 변경 이력을 남길지
