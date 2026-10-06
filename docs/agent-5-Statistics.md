@@ -379,7 +379,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 낮은 `confidence` | → ⑧이 사장님 질문 생성 우선순위 상향 |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
-> ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. 현재 ⓪ §4-7의 ⑧ 입력 형식에는 `posterior_mean`과 `anomaly_locked`만 있어 이 신호가 빠진다. ⓪·⑧ 문서에 반영이 필요하다 (§8).
+> ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
 
 **⑤가 하지 않는 것**: DB 쓰기, 판정, 타 Agent·Tool 호출. 특히 **`ingredient_risk_scores` 직접 UPDATE 금지** — α/β 재계산은 ⑦이 만든 `ingredient_evidence_log` INSERT 명령을 백엔드가 저장한 뒤 애플리케이션 로직이 수행한다.
 
