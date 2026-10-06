@@ -26,11 +26,10 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 | [agent-6-websearch.md](agent-6-websearch.md) | ⑥ Web Search Agent | DB 미등록 메뉴의 외부 재료 근거 수집 (soft evidence) |
 | [agent-7-dbupdate.md](agent-7-dbupdate.md) | ⑦ DB Update Tool | 저장 명령 생성 · 관리자 컨펌 게이트 |
 | [agent-8-xai.md](agent-8-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
-| — | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
+| [agent-9-curation.md](agent-9-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
 
 > **스펙 문서가 아직 없는 노드**
 > - ① OCR Tool — 구현은 [`../ai_ocr/README.md`](../ai_ocr/README.md)에 있고, 별도 스펙 문서는 없습니다.
-> - ⑨ Curation Tool — 기준 문서에는 있으나 스펙 문서가 없습니다. (문서 #81 / 구현 #78)
 
 > **Agent vs Tool**: Agent는 판단하고(LLM 추론이 필요한 판단 노드), Tool은 수행합니다(정해진 절차를 수행하는 실행 노드). 기준은 [`ppt-baseline.md`](ppt-baseline.md) 7쪽 "Agent와 Tool의 Boundary".
 
