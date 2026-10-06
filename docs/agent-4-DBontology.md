@@ -197,7 +197,7 @@ graph TB
 
 - `k_count`: 해당 메뉴의 레시피 중 그 재료가 등장한 횟수
 - `n_total`: 해당 메뉴의 전체 레시피 수
-- 값이 없으면 `k_count=0, n_total=0`으로 반환 → ⑤가 `confidence: low` 처리
+- 값이 없으면 `k_count=0, n_total=0`으로 반환 → ⑤가 낮은 `confidence`로 처리
 - **`variant_suggested` 재료는 항상 `k_count=0, n_total=0`이다.** base 메뉴 레시피는 변형 재료(예: 차돌된장찌개의 소고기)를 관측한 데이터가 아니다. base 메뉴의 `n_total`을 그대로 쓰면 "57개 레시피 중 0번 등장"으로 계산돼 확률이 0에 가까워지고, 메뉴명에 드러난 재료가 SAFE 쪽으로 기우는 FN이 생긴다.
 
 ---
@@ -406,25 +406,21 @@ graph TB
 
 ---
 
-## 4. Taxonomy 카테고리 (개정)
+## 4. Taxonomy 카테고리
 
-`hidden_rules.py` 기존 7개 카테고리에서 **교차오염 카테고리를 제외**한다.
+재료에 붙이는 taxonomy 카테고리는 아래 7개다.
 
 | 카테고리 | 비고 |
 |---|---|
-| 발효/장류 | 유지 |
-| 소스 | 유지 |
-| 육수 | 유지 |
-| 양념 | 유지 |
-| 고명/견과 | 유지 |
-| 유지류 | 유지 |
-| 기타 | 신설 (재배치 잔여 재료 수용) |
-| ~~교차오염~~ | **제외** (§0-4) |
+| 발효/장류 | |
+| 소스 | |
+| 육수 | |
+| 양념 | |
+| 고명/견과 | |
+| 유지류 | |
+| 기타 | 어느 카테고리에도 맞지 않는 재료 |
 
-기존 교차오염 소속 31개 재료 처리:
-- 실제로 다른 카테고리(소스/양념/유지류 등)에 속하는 재료 → 해당 카테고리로 **이동**
-- 두부·밀가루 등 일반 재료 → 카테고리는 `기타`, 위험 정보는 `allergen_tags`로 이관
-- **재배치 상세 매핑표: 작성 대기 (§8)**
+2026-10-06 기준 재료 온톨로지 데이터(`ai_result/rules/hidden_rules_data.py`)에는 카테고리 값이 없다. 재료별 카테고리 값을 채우는 작업이 필요하다 (§8).
 
 ---
 
@@ -477,13 +473,13 @@ graph TB
 | 상황 | 처리 |
 |---|---|
 | `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
-| 순환 참조 (A→B→A) | `visited`로 차단, 경고 로그, 확장분까지 반환. `warnings`에 `cycle_detected`. Supervisor는 이를 보고 ⓪ §6대로 해당 재료를 `confidence: low`로 다룬다 |
+| 순환 참조 (A→B→A) | `visited`로 차단, 경고 로그, 확장분까지 반환. `warnings`에 `cycle_detected`. Supervisor는 이를 보고 ⓪ §6대로 해당 재료를 낮은 신뢰도로 다룬다 |
 | 재귀 깊이 과다 | `max_depth` 미확정(§8). 임시로 경고 로그 후 계속 확장. 상한이 정해지면 `warnings`에 `max_depth_reached` |
 | `base_menu_id`는 있으나 참조 메뉴가 없음 | 일반 메뉴로 처리 + 무결성 오류 로그. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
 | longest-match 성공, remain 매핑 실패 (`"우리집된장찌개"`) | base로 처리, remain 무시, `unmapped_token`에 기록 |
 | taxonomy 미등록 재료 | `기타` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
 | `recipe_ingredients` 빈 배열 | `exists_in_db: true`지만 재료 0개 → `warnings`에 `empty_recipe`. ⑧에서 CAUTION 이상 유지 |
-| `k_count` / `n_total` 부재 | `0, 0`으로 반환. ⑤가 `confidence: low` 처리 |
+| `k_count` / `n_total` 부재 | `0, 0`으로 반환. ⑤가 낮은 `confidence`로 처리 |
 
 오류는 ⓪ §6-1 공통 오류 모델(`code`, `node`, `item_id`, `retryable`, `fallback`)로 Supervisor에 반환한다.
 
@@ -519,19 +515,19 @@ graph TB
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] **교차오염 31개 재료 재배치 매핑표** — 어느 재료를 어느 카테고리로 이동할지
+- [ ] **재료별 taxonomy 카테고리 값 작성** — 현재 온톨로지 데이터에 카테고리 값이 없음 (§4)
 - [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형/지수/없음). ⑤ §8과 연동 결정
 - [ ] **`max_depth` 상한값** — 재귀 깊이 제한을 둘지, 둔다면 몇 단계까지
 - [ ] **`menu_category` 전체 목록** — `menus.csv` 76개 항목의 카테고리 매핑 (다중 카테고리 확인 완료, 세부 목록 작성 대기)
 - [ ] **`menu_ingredient_cache` 무효화 시점** — 온톨로지/레시피 변경 시 전체 무효화인지 부분 무효화인지
-- [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. **⑥ 담당자 확인 필요** (#171, #122)
+- [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. 레시피 수 계산 방식은 단체 논의 #201 (#171, #122)
 - [ ] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는 안. ② §8 "`residual_tokens`로 통일하는 안을 ④ 담당자와 승인" 항목과 같은 결정
 - [ ] **`allergen_tags` / `dietary_tags` 분류 목록** — `is_*` 태그 중 어느 것을 알레르겐, 어느 것을 식이 제약으로 둘지. ⑧ 담당자와 함께 확정
 - [ ] **재료 공통 식별자** — 출력의 `name`을 `ingredient_id` + `canonical_name`으로 바꿀지. ⓪ §4 공통 계약(#103)과 함께 확정
 - [ ] **`variant_suggested` 재료의 `k_count=0, n_total=0` 규칙** — §1-5에 FN 방지 근거로 적었다. ⑤ 담당 확인 필요
 - [ ] **`recursive_expand.py` 위치** — 이 문서와 스키마 문서가 cycle detection 구현으로 가리키는 파일이 저장소에서 확인되지 않음. 기존 코드 위치를 찾거나 새로 구현할지 결정
 - [ ] **스키마 문서 보완 요청 (외부 의존)** — `caution-db-schema.md` `menus` 표에 `remain_token` 컬럼 추가. AGENTS.md 확정 사항과 맞추기 위함
-- [ ] **확인된 복합 재료의 하위 재료 처리** — §2-1 표는 기존 "확인 재료 재확장 금지" 규칙을 FN 방지를 위해 바꾼 것이다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다. 팀 확인 필요
+- [x] **확인된 복합 재료의 하위 재료 처리** — §2-1 표대로 간다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다 (2026-10-06, #181)
 - [ ] **`confirmed_ingredients` 형태 (외부 의존)** — 재료명 배열에서 `{name, status}` 배열로 바뀌었다. ⓪ §4-3에서 같은 형태로 전달해야 함
 - [ ] **`warnings` 전달 (외부 의존)** — ⓪ §4-7 ⑧ 입력 형식에 `warnings`를 넣는 안. ⓪·⑧ 담당자 확인 필요
 - [ ] **캐시 내용 정의 (외부 의존)** — `caution-db-schema.md` §6은 캐시에 "④ 출력의 `ingredients[]`(`anomaly_locked` 포함)"를 저장한다고 적는다. ③이 분모로 쓰려면 확인 재료를 빼기 전 전체 확장 목록이어야 하고, `anomaly_locked`는 요청 단위 값이라 제외해야 한다 (§2-1). 스키마 문서 수정 필요
@@ -540,11 +536,11 @@ graph TB
 
 ## 9. 구현 계획 (GitHub Backlog / Iteration)
 
-아래 항목은 GitHub Issue 등록 시 각각 하나의 Sub-issue로 만든다. 문서 작업은 #70, 구현 작업은 #58에 연결한다. 2026-10-06 기준 아직 등록되지 않은 초안이다.
+아래 항목은 2026-10-06에 GitHub 이슈로 등록했다. 제목 옆 번호가 이슈 번호이고, 문서 작업은 #70, 구현 작업은 #58의 하위 이슈다. **진행 상황과 결정 내용은 이슈에서 관리한다.** 아래 본문은 등록 당시 초안이다.
 
 ### Iteration 1 — 문서와 계약 확정 (10/13까지)
 
-#### `[DOCS] ④ DB / Ontology - 입출력 계약과 위험 속성 어휘 확정`
+#### `[DOCS] ④ DB / Ontology - 입출력 계약과 위험 속성 어휘 확정` (#181)
 
 **작업 내용**
 
@@ -578,7 +574,7 @@ graph TB
 - 상위 이슈 #70, 공통 계약 #103
 - `docs/ppt-baseline.md` 7쪽, `docs/agent-0-supervisor.md` §1-3
 
-#### `[DOCS] ④ DB / Ontology - 온톨로지 데이터 범위 확정`
+#### `[DOCS] ④ DB / Ontology - 온톨로지 데이터 범위 확정` (#182)
 
 **작업 내용**
 
@@ -586,11 +582,11 @@ graph TB
 
 **배경**
 
-교차오염 재료 재배치, 재귀 깊이 제한, 캐시 무효화 시점이 정해지지 않으면 같은 메뉴가 실행마다 다른 재료 목록을 낼 수 있다.
+재료 카테고리, 재귀 깊이 제한, 캐시 무효화 시점이 정해지지 않으면 같은 메뉴가 실행마다 다른 재료 목록을 낼 수 있다.
 
 **세부 작업**
 
-- [ ] 교차오염 31개 재료 재배치 매핑표 작성
+- [ ] 재료별 taxonomy 카테고리 값 작성
 - [ ] `menu_category` 76개 매핑 목록 작성
 - [ ] `max_depth` 상한과 depth 감쇠 방식 결정 (⑤와 함께)
 - [ ] `menu_ingredient_cache` 무효화 시점 결정
@@ -612,7 +608,7 @@ graph TB
 
 ### Iteration 2 — 핵심 구현
 
-#### `[FEAT] ④ DB / Ontology - 입출력 모델과 메뉴 조회·변형 판별 구현`
+#### `[FEAT] ④ DB / Ontology - 입출력 모델과 메뉴 조회·변형 판별 구현` (#183)
 
 **작업 내용**
 
@@ -645,7 +641,7 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 - 상위 이슈 #58
 - `ai_ruleengine/menu_matcher.py`
 
-#### `[FEAT] ④ DB / Ontology - 재귀 확장과 위험 속성 태깅 구현`
+#### `[FEAT] ④ DB / Ontology - 재귀 확장과 위험 속성 태깅 구현` (#184)
 
 **작업 내용**
 
@@ -681,7 +677,7 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 
 ### Iteration 3 — 연동
 
-#### `[FEAT] ④ DB / Ontology - 관측치 제공·캐시 명령과 Supervisor 연결`
+#### `[FEAT] ④ DB / Ontology - 관측치 제공·캐시 명령과 Supervisor 연결` (#185)
 
 **작업 내용**
 
@@ -714,7 +710,7 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 
 ### Iteration 4 — QA
 
-#### `[CHORE] ④ DB / Ontology - 시나리오 QA 및 회귀 검증`
+#### `[CHORE] ④ DB / Ontology - 시나리오 QA 및 회귀 검증` (#186)
 
 **작업 내용**
 

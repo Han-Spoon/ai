@@ -329,7 +329,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 {
   "confirmed_results": {},
   "probability_results": {
-    "<ingredient_id>": {"posterior_mean": 0.0, "anomaly_locked": false}
+    "<ingredient_id>": {"posterior_mean": 0.0, "confidence": 0.0, "prior_source": "store | cluster | global | uninformative", "anomaly_locked": false}
   },
   "proposed_variant_ingredients": {},
   "no_information": false,
@@ -386,7 +386,7 @@ Supervisor는 ③/⑤/⑥ 결과와 사용자 프로필을 취합해서 전달�
 | `store_id` 누락·null·문자열·0 이하 | `StoreIdRequiredError`, ③④⑤⑥⑦⑧ 호출 금지 |
 | ② Menu Normalization Agent 실패 | 원본 메뉴명을 보존하고 ④ longest-match/unknown 경로로 넘김 |
 | ③ 조회 에러 | 해당 메뉴는 ④⑤⑧ heavy path로 보내되 로그 남김 |
-| ④ cycle/error | 확장 실패 재료는 `confidence: low`로 ⑤ 또는 ⑧에 전달 |
+| ④ cycle/error | 확장 실패 재료는 낮은 `confidence`(0~1 숫자, ⑤ §1-2)로 ⑤ 또는 ⑧에 전달 |
 | ⑥ timeout/error | `found: false`, `no_information: true` |
 | ⑨ timeout/error | 추천 빈 배열, 기존 판정 결과는 정상 반환 |
 | 일부 메뉴만 실패 | 실패 메뉴는 CAUTION 이상, 나머지 메뉴는 정상 결과 반환 |

@@ -24,7 +24,7 @@
 | 필드 | 타입 | 필수 | 출처 | 설명 |
 |---|---|---|---|---|
 | `confirmed_results` | `{ingredient_id: bool}` | 있으면 전달 | ③ Exact Feedback Tool | hard evidence. 없으면 빈 객체 |
-| `probability_results` | `{ingredient_id: {posterior_mean: float, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian Tool | soft evidence. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
+| `probability_results` | `{ingredient_id: {posterior_mean: float, confidence: float(0~1), prior_source: str, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian Tool | soft evidence. 입력 `confidence`는 ⑤가 계산한 0~1 숫자이고, 아래 출력의 `confidence`(confirmed/estimated/unknown)와는 별개다. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
 | `proposed_variant_ingredients` | `{ingredient_id: source}` | 있으면 전달 | ④ 변형 태깅 | **DB 미반영 제안**, source=`variant_suggested` 등 신뢰도 낮음 |
 | `no_information` | bool | 필수 | ④/⑥ | 메뉴/재료 정보 자체가 없을 때 true (엣지 케이스 4) |
 | `user_profile` | object | 필수 | `user_profiles` | `religion_type`, `is_vegetarian`, `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy` |
