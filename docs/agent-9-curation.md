@@ -33,7 +33,7 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
 
 - `risk_level: safe`인 메뉴만 추천 후보로 사용한다.
 - `danger`, `caution`, `unknown`, `partial_failed` 항목을 안전 메뉴처럼 추천하지 않는다.
-- 추천 점수와 관계없이 ⑧의 `risk_level`, `confidence`, 근거, 위험 재료를 변경하지 않는다.
+- 추천 점수와 관계없이 ⑧의 `risk_level`, `evidence_basis`, 근거, 위험 재료를 변경하지 않는다.
 - 추천할 안전 후보가 없으면 빈 배열을 반환한다. 후보를 채우기 위해 CAUTION을 SAFE로 낮추지 않는다.
 - ⑨이 실패하거나 timeout이 발생해도 기존 안전 판정 응답은 그대로 반환한다.
 
@@ -54,7 +54,7 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `context` | object | 필수 | `schema_version`, `trace_id`, `scan_session_id`, 양의 정수 `store_id` |
-| `decision_results` | CurationDecisionItem[] | 필수 | ⑧이 반환한 메뉴별 최종 판정. `item_id`, `menu_id`, 메뉴명, `risk_level`, `confidence`, 근거 포함 |
+| `decision_results` | CurationDecisionItem[] | 필수 | ⑧이 반환한 메뉴별 최종 판정. `item_id`, `menu_id`, 메뉴명, `risk_level`, `evidence_basis`, 근거 포함 |
 | `user_profile` | object | 필수 | 추천 필터링에 필요한 최소 식단 프로필. 원본 사용자 식별자는 전달하지 않음 |
 | `locale` | string | 선택 | 콘텐츠 표시 언어. 기본값과 지원 언어 범위는 §8에서 확정 |
 | `limit` | integer | 선택 | 최대 추천 개수. 허용 범위와 기본값은 §8에서 확정 |
@@ -73,7 +73,7 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
       "menu_id": "menu-001",
       "normalized_menu_name": "비빔밥",
       "risk_level": "safe",
-      "confidence": "confirmed",
+      "evidence_basis": "confirmed",
       "hits": [],
       "evidence_refs": ["evidence-001"]
     },
@@ -82,7 +82,7 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
       "menu_id": "menu-002",
       "normalized_menu_name": "김치찌개",
       "risk_level": "caution",
-      "confidence": "estimated",
+      "evidence_basis": "estimated",
       "hits": ["is_pork"],
       "evidence_refs": ["evidence-002"]
     }
@@ -174,7 +174,7 @@ flowchart TD
 추천 점수는 SAFE 후보 사이의 노출 순서만 결정한다. 다음 항목은 점수에 관계없이 추천 대상이 될 수 없다.
 
 - `risk_level`이 `danger` 또는 `caution`인 메뉴
-- 정보 부족으로 `confidence: unknown`인 메뉴
+- 정보 부족으로 `evidence_basis: unknown`인 메뉴
 - 일부 처리 실패로 안전 판정이 완결되지 않은 메뉴
 - 사용자 식단 프로필과 충돌하는 콘텐츠
 - 검증된 인덱스에서 출처를 찾을 수 없는 문화 콘텐츠

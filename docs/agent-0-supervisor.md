@@ -74,7 +74,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 | ⑧ Decision/XAI Agent | 위험 판정은 정책 함수, 다국어 설명만 구조화 LLM 가능 | 제한적으로 사용 | LLM이 SAFE/DANGER를 임의 결정하면 안 됨 |
 | ⑨ Curation Tool | 검증 인덱스 검색·점수 정렬 | 기본적으로 사용하지 않음 | 승인된 데이터와 정렬식만 사용 |
 
-⑧에서 가장 중요한 경계는 **판정과 문장 생성을 분리**하는 것이다. `risk_level`, `matched_tags`, `confidence`는 Python 정책 함수가 만들고, LangChain은 이 확정 결과를 자연어 문장으로 표현할 때만 사용할 수 있다. LLM이 반환한 문장이 판정 JSON을 다시 덮어쓸 수 없다.
+⑧에서 가장 중요한 경계는 **판정과 문장 생성을 분리**하는 것이다. `risk_level`, `matched_tags`, `evidence_basis`는 Python 정책 함수가 만들고, LangChain은 이 확정 결과를 자연어 문장으로 표현할 때만 사용할 수 있다. LLM이 반환한 문장이 판정 JSON을 다시 덮어쓸 수 없다.
 
 #### 0-2-3. 구현 시 고정할 원칙
 
@@ -277,7 +277,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
       "route": "exact_only",
       "information_status": "complete",
       "risk_level": "danger",
-      "confidence": "confirmed",
+      "evidence_basis": "confirmed",
       "risk_ingredients": [
         {
           "ingredient": {
@@ -320,7 +320,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
       "route": "exact_only",
       "information_status": "complete",
       "risk_level": "safe",
-      "confidence": "confirmed",
+      "evidence_basis": "confirmed",
       "risk_ingredients": [],
       "matched_tags": [],
       "evidence_refs": ["evidence-010"],
@@ -1065,10 +1065,10 @@ def build_normalization_chain(settings):
 
 ⑧에서는 다음 순서를 지킨다.
 
-1. Python 정책 함수가 hard evidence, 확률, 태그, 사용자 프로필로 `risk_level`, `confidence`, `matched_tags`, `risk_ingredients`를 확정한다.
+1. Python 정책 함수가 hard evidence, 확률, 태그, 사용자 프로필로 `risk_level`, `evidence_basis`, `matched_tags`, `risk_ingredients`를 확정한다.
 2. 확정된 판정 JSON을 변경 불가능한 입력으로 message chain에 전달한다.
 3. message chain은 6개 언어 문장만 반환한다.
-4. 구조화 출력 실패 시 LLM을 다시 판정에 사용하지 않고 `risk_level + confidence`별 고정 템플릿을 사용한다.
+4. 구조화 출력 실패 시 LLM을 다시 판정에 사용하지 않고 `risk_level + evidence_basis`별 고정 템플릿을 사용한다.
 
 Supervisor 구현에서는 `create_agent()`나 ReAct loop를 사용하지 않는다. 이 프로젝트의 ②·⑥·⑧은 도구를 자율 선택하는 범용 Agent가 아니라, 입력과 출력이 고정된 **한 번의 구조화 chain**이기 때문이다.
 
@@ -2035,7 +2035,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
     "normalized_menu_name": "김치찌개"
   },
   "risk_level": "danger",
-  "confidence": "confirmed",
+  "evidence_basis": "confirmed",
   "information_status": "complete",
   "risk_ingredients": [
     {
@@ -2067,7 +2067,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 }
 ```
 
-`risk_level`은 `danger | caution | safe`, 출력 `confidence`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
+`risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
 
 `constraint_tags`는 해당 재료가 가진 전체 제한 태그, `matched_tags`는 그중 현재 `user_profile`과 실제로 충돌한 태그다. 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 충돌한 태그를 중복 제거한 목록이다. ⑧은 이름 문자열로 위험을 추측하지 않고 이 태그들로 판정한다.
 
@@ -2121,7 +2121,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
       "menu_id": "menu-002",
       "normalized_menu_name": "비빔밥",
       "risk_level": "safe",
-      "confidence": "confirmed",
+      "evidence_basis": "confirmed",
       "information_status": "complete",
       "risk_ingredients": [],
       "matched_tags": [],
