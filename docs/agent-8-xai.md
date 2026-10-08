@@ -24,7 +24,7 @@
 | 필드 | 타입 | 필수 | 출처 | 설명 |
 |---|---|---|---|---|
 | `confirmed_results` | `{ingredient_id: bool}` | 있으면 전달 | ③ Exact Feedback Tool | hard evidence. 없으면 빈 객체 |
-| `probability_results` | `{ingredient_id: {posterior_mean: float, confidence: float(0~1), prior_source: str, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian Tool | soft evidence. 입력 `confidence`는 ⑤가 계산한 0~1 숫자이고, 아래 출력의 `confidence`(confirmed/estimated/unknown)와는 별개다. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
+| `probability_results` | `{ingredient_id: {posterior_mean: float, confidence: float(0~1), prior_source: str, anomaly_locked: bool}}` | 있으면 전달 | ⑤ Bayesian Tool | soft evidence. 입력 `confidence`는 ⑤가 계산한 0~1 숫자이고, 아래 출력의 `evidence_basis`(confirmed/estimated/unknown)와는 별개다. `anomaly_locked: true`면 확률값과 무관하게 CAUTION 이상 강제(아래 처리 로직 참고) |
 | `proposed_variant_ingredients` | `{ingredient_id: source}` | 있으면 전달 | ④ 변형 태깅 | **DB 미반영 제안**, source=`variant_suggested` 등 신뢰도 낮음 |
 | `no_information` | bool | 필수 | ④/⑥ | 메뉴/재료 정보 자체가 없을 때 true (엣지 케이스 4) |
 | `user_profile` | object | 필수 | `user_profiles` | `religion_type`, `is_vegetarian`, `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy` |
@@ -35,7 +35,7 @@
 {
   "risk_level": "danger" | "caution" | "safe",
   "hits": ["is_pork"],
-  "confidence": "confirmed" | "estimated" | "unknown",
+  "evidence_basis": "confirmed" | "estimated" | "unknown",
   "message": {
     "ko": "돼지고기 성분이 포함되어 있어요.",
     "en": "This menu contains pork.",
@@ -59,7 +59,9 @@
 }
 ```
 
-`confidence` 필드가 핵심이다 — 같은 `risk_level: danger`라도 **확정값 기반인지 확률 추정 기반인지**를 사용자에게 다른 톤으로 전달해야 한다 (§4 참고).
+`evidence_basis` 필드가 핵심이다 — 같은 `risk_level: danger`라도 **확정값 기반인지 확률 추정 기반인지**를 사용자에게 다른 톤으로 전달해야 한다 (§4 참고).
+
+> 이름: 원래 `confidence`였으나 ⑤가 계산하는 0~1 숫자 `confidence`(재료별 근거 충분도)와 이름이 겹쳐 `evidence_basis`(판정 근거 종류)로 바꿨다 (2026-10-08). 값은 그대로 `confirmed | estimated | unknown`이다.
 
 ---
 
@@ -69,11 +71,11 @@
 flowchart TD
     IN["입력 수신"] --> P1["Step 1: user_profile → forbidden_tags 매핑\n(religion/vegetarian/alcohol/allergy/spicy)"]
     P1 --> P2{confirmed_results에\nforbidden_tags 교집합?}
-    P2 -->|Yes| DANGER["risk_level: danger\nconfidence: confirmed\n즉시 확정"]
+    P2 -->|Yes| DANGER["risk_level: danger\nevidence_basis: confirmed\n즉시 확정"]
     P2 -->|No| P3{no_information?}
-    P3 -->|Yes| CAUTION1["risk_level: caution 이상 강제\nconfidence: unknown\n(FN-minimization)"]
+    P3 -->|Yes| CAUTION1["risk_level: caution 이상 강제\nevidence_basis: unknown\n(FN-minimization)"]
     P3 -->|No| P3B{"anomaly_locked: true인\n재료 존재?"}
-    P3B -->|Yes| CAUTION2["risk_level: caution 이상 강제\nconfidence: estimated\n확률값 무시"]
+    P3B -->|Yes| CAUTION2["risk_level: caution 이상 강제\nevidence_basis: estimated\n확률값 무시"]
     P3B -->|No| P4["probability_results에 threshold 적용"]
     CAUTION2 --> P4
     P4 --> P5{proposed_variant_ingredients\n존재?}
@@ -93,12 +95,12 @@ flowchart TD
 ### 2-1. Step별 설명
 
 1. **forbidden_tags 매핑**: `religion_type`(halal→is_pork/is_alcohol 등), `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy`를 하나의 금지 태그 집합으로 변환.
-2. **hard evidence 우선 체크**: `confirmed_results`에 forbidden_tags와 겹치는 재료가 있으면 다른 계산 없이 즉시 `danger` + `confidence: confirmed`.
+2. **hard evidence 우선 체크**: `confirmed_results`에 forbidden_tags와 겹치는 재료가 있으면 다른 계산 없이 즉시 `danger` + `evidence_basis: confirmed`.
 3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙).
-3-1. **anomaly_locked 강제**: `probability_results[ingredient_id].anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `confidence: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
+3-1. **anomaly_locked 강제**: `probability_results[ingredient_id].anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `evidence_basis: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
 4. **확률 기반 판정**: (anomaly_locked가 아닌 재료에 한해) `probability_results`에 판정 임계값(§3, 미확정)을 적용해 caution/safe 결정.
 5. **변형 제안 반영**: `proposed_variant_ingredients`가 있으면 확정 재료와 **절대 같은 신뢰도로 취급하지 않는다** — 최소 caution 처리하고, 문구도 추정형으로만 생성 (danger 확정 근거로 쓰지 않음).
-6. **메시지 생성**: `confidence`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
+6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
 7. **사장님 질문 생성**: 확정도 안 되고 확률도 애매한 재료 중 사용자 태그와 관련 있는 것 하나를 골라 `owner_card` 생성.
 
 ---
@@ -116,7 +118,7 @@ flowchart TD
 
 **확정형 vs 추정형 톤 구분이 핵심 설계 포인트다**:
 
-| confidence | 문구 톤 | 예시 (ko) |
+| evidence_basis | 문구 톤 | 예시 (ko) |
 |---|---|---|
 | `confirmed` | 단정형 | "돼지고기 성분이 포함되어 있어요." |
 | `estimated` | 추정형, 확률 뉘앙스 포함 | "돼지고기가 들어있을 가능성이 있어요." |
@@ -145,7 +147,7 @@ flowchart TD
 | 상황 | 처리 |
 |---|---|
 | `confirmed_results`와 `probability_results`가 동시에 같은 재료를 다르게 판정 | `confirmed_results`(hard evidence)가 항상 우선 |
-| `proposed_variant_ingredients`만 있고 나머지는 다 없음 | caution으로 처리하되 `confidence: estimated`, danger로 격상 금지 |
+| `proposed_variant_ingredients`만 있고 나머지는 다 없음 | caution으로 처리하되 `evidence_basis: estimated`, danger로 격상 금지 |
 | 사용자 태그와 무관한 재료만 애매함 | `owner_card` 생성 안 함 — 관련 없는 질문으로 사장님 피로도 유발 방지 |
 
 ---
@@ -154,10 +156,10 @@ flowchart TD
 
 | # | 입력 | 기대 출력 | 검증 포인트 |
 |---|---|---|---|
-| 1 | 할랄 사용자 + confirmed: `{is_pork: true}` | `danger`, `confidence: confirmed` | 확정형 문구 사용 |
+| 1 | 할랄 사용자 + confirmed: `{is_pork: true}` | `danger`, `evidence_basis: confirmed` | 확정형 문구 사용 |
 | 2 | 비건 사용자 + probability: `{is_milk: 0.3}` (threshold 미만) | `safe` 또는 `caution` (threshold에 따라) | 추정형 문구, danger로 확정 짓지 않음 |
 | 3 | `no_information: true` | `caution` 이상 강제 | FN-minimization 원칙 위반 없을 것 |
-| 4 | `proposed_variant_ingredients`만 있음(차돌된장찌개, 소고기 제안) + 채식 사용자 | `caution`, `confidence: estimated` | `danger`로 절대 확정 짓지 않을 것 |
+| 4 | `proposed_variant_ingredients`만 있음(차돌된장찌개, 소고기 제안) + 채식 사용자 | `caution`, `evidence_basis: estimated` | `danger`로 절대 확정 짓지 않을 것 |
 | 5 | 알레르기 태그와 무관한 애매 재료만 존재 | `owner_card: null` | 불필요한 사장님 질문 생성 안 할 것 |
 | 6 | `confirmed_results`와 `probability_results`가 상반 | `confirmed_results` 값이 이김 | hard evidence 우선순위 확인 |
 
