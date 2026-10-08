@@ -14,7 +14,8 @@
 | 내용 | 적는 곳 |
 |---|---|
 | 프레임워크, 공통 계약, 공통 오류, 로깅, 테스트 배치, 디렉터리 구조 | **이 문서** |
-| 특정 노드의 입출력 필드, 처리 로직, 그 노드만의 예외, 테스트 케이스 | 해당 `agent-N-*.md` |
+| ①~⑨와 Supervisor 사이의 canonical 요청·응답 JSON | [`agent-0-supervisor.md`](agent-0-supervisor.md) §1·§4 |
+| 특정 노드의 내부 처리 로직, 도메인 규칙, 그 노드만의 예외·테스트 | 해당 `agent-N-*.md` |
 | 전체 흐름도, 라우팅, 케이스별 시나리오 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) |
 | 테이블·컬럼·제약 | [`caution-db-schema.md`](caution-db-schema.md) |
 | 커밋·브랜치·이슈·PR 규칙, 용어집, 금지 사항 | [`../AGENTS.md`](../AGENTS.md) |
@@ -49,7 +50,7 @@
 
 ### 현재 알려진 내용
 
-[`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2의 **제안**이며 **아직 팀 승인 전**입니다 (이슈 #76과 함께 결정).
+[`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2와 §2-4~§2-17에 **승인 후 바로 구현할 상세 설계**가 작성되어 있습니다. 프레임워크 채택과 정확한 버전 pin은 아직 팀 승인 전입니다(이슈 #76).
 
 - Supervisor는 LangChain 생태계 + LangGraph `StateGraph`로 구현한다.
 - 라우팅은 LLM에 맡기지 않고 명시적 conditional edge로 구현한다.
@@ -58,6 +59,8 @@
 - 각 node는 공용 state를 읽고 자신이 담당하는 필드만 갱신한다.
 - `store_id`처럼 실행 중 바뀌면 안 되는 값은 run-scoped context로 분리한다.
 - 초기 버전은 요청 단위 휘발성 state를 쓴다. 영속 checkpoint는 보존 기간·재실행 요구가 확정된 뒤 도입한다.
+- graph와 client는 FastAPI lifespan에서 한 번 만들고 요청마다 `ainvoke()`한다.
+- Scan Graph와 메뉴별 Item Graph를 나누고 `Send`와 reducer로 fan-out/collect한다.
 
 현재 [`../requirements.txt`](../requirements.txt)에는 langchain·langgraph가 **없습니다.** 승인 전까지 의존성을 추가하지 않습니다.
 
@@ -65,11 +68,11 @@
 
 - [ ] 승인 결과와 결정 근거 (승인되면 이 절을 "확정"으로 승격)
 - [ ] langchain / langgraph 버전 고정값과 Python 3.11 호환 확인 결과
-- [ ] 모든 노드가 공통으로 쓰는 LLM / HTTP 클라이언트를 어디서 생성할지
-- [ ] 동기/비동기 선택 — FastAPI async 경계와 LLM 호출 blocking 처리
+- [x] LLM / HTTP 클라이언트 생성 위치 — FastAPI lifespan에서 생성 후 adapter에 주입
+- [x] 동기/비동기 선택 — FastAPI에서 compiled graph의 `ainvoke()` 사용
 - [ ] 승인되지 않을 경우의 대안 (직접 오케스트레이션) 비교
 
-> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2와 §9가 소유합니다. 여기 적지 않습니다.
+> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2와 §2-4~§2-17이 소유합니다. 이 문서에는 중복 작성하지 않습니다.
 
 ---
 
@@ -77,7 +80,7 @@
 
 ### 현재 알려진 내용
 
-모든 Agent·Tool 호출에 포함하는 공통 문맥 ([`agent-0-supervisor.md`](agent-0-supervisor.md) §1-3):
+모든 Agent·Tool 호출에 포함하는 공통 문맥 ([`agent-0-supervisor.md`](agent-0-supervisor.md) §1-2):
 
 ```json
 {
@@ -85,24 +88,31 @@
   "trace_id": "0199...",
   "scan_session_id": "scan-123",
   "store_id": 123456,
+  "call_scope": "item",
   "item_id": "scan-123:0"
 }
 ```
 
 - 모든 외부 경계는 Pydantic 모델로 검증한다.
-- `item_id`는 ① OCR Tool 출력 순서로 생성하고 최종 응답까지 바꾸지 않는다. 메뉴판 단위 호출은 생략 가능, 메뉴 단위 호출은 필수.
+- `item_id`는 ① OCR Tool 출력 순서로 생성하고 최종 응답까지 바꾸지 않는다. `call_scope: item`이면 필수이고 `scan | out_of_band`이면 null을 허용한다.
 - 하위 노드는 `store_id` / `scan_session_id` / `item_id`를 **수정하지 않고 그대로 반환**한다.
 - `store_id`는 정수(DB `BIGINT` ↔ Java `Long` ↔ Python `int`)이며 AI가 새로 발급하거나 변경하지 않는다.
 - 재료 식별자는 `ingredient_id` + `canonical_name`을 함께 쓴다. 웹 신규 후보만 `ingredient_id: null`을 허용한다.
+- 재료 제한 속성은 `constraint_tags`의 `is_*` 표준 어휘로 전달하며 ③·④·⑤·⑥·⑧ 사이에서 삭제하거나 이름을 바꾸지 않는다.
+- 각 `evidence_refs`는 Supervisor state의 evidence registry에 등록된 `EvidenceRef.evidence_id`만 가리킨다. 런타임 근거도 null ID를 쓰지 않는다.
 - `schema_version`은 breaking change면 major, 신규 선택 필드는 minor.
 - `status`는 3값 `present` / `absent` / `unknown`. 2값 축약 금지 ([`../AGENTS.md`](../AGENTS.md) 변경 금지 항목).
 
+Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서는 그 계약을 코드로 구현하는 공통 방식을 관리한다.
+
 ### 여기에 적을 것
 
-- [ ] ①~⑨ 요청·응답 Pydantic 모델 전체 표 — 지금 문서별로 `ingredient`, `ingredient_id`, `name`이 혼용되므로 통일 결과를 여기 고정
+- [x] ①~⑨ 요청·응답 canonical JSON — Supervisor 문서 §4로 확정
+- [ ] Supervisor 문서 §1·§4를 그대로 구현하는 Pydantic 모델 작성
 - [ ] 공통 모델이 사는 모듈 경로와 누가 import하는지
-- [ ] evidence / provenance 공통 구조 — hard evidence(사장님·사용자 확정)와 soft evidence(웹서치 등 미검증)를 끝까지 구분해 전달하는 필드
-- [ ] 3-State가 ③→④→⑤→⑧까지 유지되는지 검증하는 방법
+- [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
+- [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
+- [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
 - [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`agent-0-supervisor.md`](agent-0-supervisor.md) §4-7 소유
 - [ ] 모델 변경 절차 — `schema_version`을 올리는 기준과 리뷰 담당
 
@@ -181,7 +191,7 @@
 
 ```json
 {
-  "code": "WEB_SEARCH_TIMEOUT",
+  "code": "web_search_timeout",
   "node": "web_search",
   "item_id": "scan-123:0",
   "message": "웹 검색 시간이 초과되었습니다.",
@@ -285,7 +295,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 - [ ] LangChain 생태계 + LangGraph `StateGraph` 사용 최종 승인 (#76)
 - [ ] 공통 Pydantic 모델이 사는 모듈 경로와 소유자
-- [ ] 재료 식별자 `ingredient_id` + `canonical_name` 통일 적용 시점
+- [ ] 재료 식별자 `IngredientRef` 계약을 기존 구현에 적용하는 전환 순서
 - [ ] 오류 `code` 체계와 전체 목록
 - [ ] 로그 마스킹 정책 구체화
 - [ ] 테스트 배치 규칙 (패키지 내부 vs 루트 `tests/`)
@@ -296,7 +306,6 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 | 다른 곳에 등록된 항목 | 소유 문서 |
 |---|---|
-| 3-State를 ⑧ 입력까지 유지하는 계약 | [`agent-0-supervisor.md`](agent-0-supervisor.md) §8 |
 | DANGER / CAUTION / SAFE threshold 보유 주체 | [`agent-8-xai.md`](agent-8-xai.md) §3, [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) §4 |
 | `/v1/analyze` 추가와 기존 API 호환 기간 | [`agent-0-supervisor.md`](agent-0-supervisor.md) §8 |
 | 배치 API 형태와 동시성 제한, checkpoint 사용 여부 | [`agent-0-supervisor.md`](agent-0-supervisor.md) §8 |
@@ -310,7 +319,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 | [`ppt-baseline.md`](ppt-baseline.md) | 충돌 시 최우선. 수정 금지 |
 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) | 흐름·라우팅. 이 문서는 그 흐름을 코드로 옮기는 방법만 다룬다 |
 | [`caution-db-schema.md`](caution-db-schema.md) | 테이블·제약. DB 쓰기 경계는 [§6](#6-결정론적-tool-구현-규칙) |
-| [`agent-0-supervisor.md`](agent-0-supervisor.md) | 프레임워크 제안(§0-2), 공통 문맥(§1-3), 공통 오류(§6-1)의 원 출처 |
+| [`agent-0-supervisor.md`](agent-0-supervisor.md) | 프레임워크 제안(§0-2), canonical 입출력 계약(§1·§4), 공통 오류(§6-1)의 원 출처 |
 | [`agent-2-normalization.md`](agent-2-normalization.md) | `9. 구현 계획` 절 형식의 참고 사례 |
 | [`../AGENTS.md`](../AGENTS.md) | 커밋·브랜치·이슈·PR 규칙, 금지 사항, 용어집 |
 | [`README.md`](README.md) | 문서 인덱스와 읽는 순서 |
