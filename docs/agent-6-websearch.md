@@ -29,7 +29,7 @@ graph LR
     ONTO["④ DB / Ontology Tool<br/>(메뉴 없음 확인)"] --> WEB["⑥ Web Search Agent<br/>수집만, 저장 안 함"]
     WEB -->|"크롤링 결과"| SUP1{{⓪ Supervisor Agent}}
     SUP1 -->|"즉시 사용"| BAYES["⑤ Bayesian Tool"]
-    SUP1 -->|"검토 자료 전달"| DBUP["⑦ DB Update Tool<br/>저장 명령 생성"]
+    SUP1 -->|"검토 자료·캐시 원본 전달"| DBUP["⑦ DB Update Tool<br/>저장 명령 생성"]
 
     OWNER["사장님 답변"] --> SUP2{{⓪ Supervisor Agent}}
     SUP2 -->|"즉시 반영 요청"| DBUP
@@ -40,8 +40,10 @@ graph LR
     API --> DB[(DB)]
 ```
 
-- **⑥ Web Search Agent**: DB에 없는 메뉴를 크롤링으로 조사만 함. **DB에 아무것도 쓰지 않는다.** 크롤링 원본과 캐시 저장 요청을 함께 반환한다.
-- **⑦ DB Update Tool**: 증거 종류에 따라 관리자 검토 명령과 즉시 반영 명령을 구분해 만든다. 상세는 [`agent-7-dbupdate.md`](agent-7-dbupdate.md).
+- **⑥ Web Search Agent**: DB에 없는 메뉴를 크롤링으로 조사만 함. **DB에 아무것도 쓰지 않고, 저장 명령도 만들지 않는다.** 크롤링 결과(`candidates`)만 반환한다.
+- **⑦ DB Update Tool**: 증거 종류에 따라 관리자 검토 명령과 즉시 반영 명령을 구분해 만든다. 웹서치 원본을 `web_search_cache`에 남기는 저장 명령도 ⑦이 만든다. 상세는 [`agent-7-dbupdate.md`](agent-7-dbupdate.md).
+
+> 저장 명령을 ⑦ 한 곳에서만 만드는 이유: 한 기능을 두 Agent·Tool이 나눠 맡지 않는다 (2026-10-06 회의). ⑥이 캐시 저장 명령을 직접 만들면 "저장 명령 생성"이 ⑥과 ⑦ 두 곳에 걸친다.
 
 > ⑥이 Agent이고 ⑦이 Tool인 이유: ⑥은 검색 여부·쿼리·출처 신뢰도를 **판단**해야 하므로 LLM 추론 노드이고, ⑦은 증거 종류에 따라 정해진 저장 명령을 **수행**하는 실행 노드다 (`docs/ppt-baseline.md` 7쪽 "Agent는 판단하고 Tool은 수행한다").
 
@@ -84,14 +86,14 @@ graph LR
 flowchart TD
     S[⓪ Supervisor Agent 호출] --> Q[웹 크롤링 실행]
     Q --> R{결과 있음?}
-    R -->|Yes| C["크롤링 원본 + 캐시 저장 명령 생성<br/>(menu_id는 아직 null)"]
+    R -->|Yes| C["검색 결과에서 재료 추출<br/>(저장 명령은 만들지 않음)"]
     R -->|No/에러/타임아웃| F["found: false 반환"]
     C --> OUT["candidates를 ⓪ Supervisor Agent에 반환"]
 ```
 
 1. `menu_name`으로 웹 검색 실행 (실패/타임아웃 시 바로 `found: false`)
-2. 검색 결과마다 `web_search_cache` 저장 명령 생성 — `menu_id`는 아직 존재하지 않으므로 `null`. 백엔드는 멱등 키를 검증해 즉시 저장한다(원본 로그이지 risk-affecting 데이터가 아니므로 관리자 게이트 대상이 아님).
-3. 캐시된 `extracted_ingredients`를 그대로 ⓪ Supervisor Agent에 반환.
+2. 검색 결과마다 `source_url`, `extracted_ingredients`, `fetched_at`을 정리한다. **저장 명령은 만들지 않는다.**
+3. `candidates`를 ⓪ Supervisor Agent에 반환한다. ⓪이 이 결과를 ⑦에 넘기면 ⑦이 `web_search_cache` 저장 명령을 만든다. 이때 `menu_id`는 아직 없으므로 `null`이고, 원본 로그이지 위험도에 영향을 주는 데이터가 아니므로 관리자 검토 없이 즉시 저장한다.
 
 **fallback**: 웹서치도 실패하면 "정보 없음"(`NO_INFORMATION`) 상태로 CAUTION 이상 처리 — SAFE로 떨어뜨리지 않는다 (FN-minimization 원칙, `docs/ppt-baseline.md` 8쪽 "4 정보 부족→보수적 판정").
 
@@ -99,6 +101,7 @@ flowchart TD
 
 | 하지 않음 | 담당 |
 |---|---|
+| `web_search_cache` 저장 명령 생성 | ⑦ DB Update Tool (관리자 검토 없이 즉시 저장) |
 | `menus`/`recipe_ingredients` INSERT | ⑦ DB Update Tool (관리자 컨펌 후) |
 | 여러 후보 중 어느 걸 믿을지 병합/선택 | ⑦ 또는 관리자 (§5 미확정) |
 | 확률 계산 | ⑤ Bayesian Tool |
@@ -111,7 +114,7 @@ flowchart TD
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | 웹서치 성공 (마라탕) | 캐시 저장 명령 반환, 백엔드가 `web_search_cache`에 즉시 저장 | `menus`/`recipe_ingredients`는 미반영일 것 |
+| 1 | 웹서치 성공 (마라탕) | `found: true` + `candidates` 반환 | ⑥ 출력에 저장 명령이 없을 것. `menus`/`recipe_ingredients`는 미반영일 것 |
 | 2 | 웹서치 실패/타임아웃 | `found: false` 반환, 캐시에 아무것도 안 남음 | ⑧이 "완전 정보 없음" 경로로 감 |
 
 > 관리자 컨펌 이후 단계(승인/반려, FK 순서)의 테스트 케이스는 [`agent-7-dbupdate.md`](agent-7-dbupdate.md) §4에 있다.
@@ -122,4 +125,5 @@ flowchart TD
 
 - [ ] **10개 후보의 병합/선택 규칙** — 관리자가 10개를 하나씩 다 보고 고르는지, 자동으로 합치는 로직(예: 다수결로 겹치는 재료만 채택)이 필요한지. 후보 수가 많아진 만큼 관리자 리뷰 부담을 어떻게 줄일지도 함께 결정 필요 (`caution-multi-agent-architecture.md` 5번 섹션과 동일 이슈). ⑦과 공통 항목
 - [ ] **메뉴판 1장당 여러 unknown 메뉴가 나올 때 ⑥ 호출 배치/캐싱 전략** (`caution-multi-agent-architecture.md` 5번 섹션과 동일 이슈)
+- [ ] **⑦·④ 문서와의 정합 (외부 의존)** — `web_search_cache` 저장 명령을 ⑦이 만들도록 ⑥ 쪽을 고쳤다. ⑦ 문서(§4, §8)에는 아직 "주체 미확정"으로 남아 있어 ⑦ 담당자 반영이 필요하다. ④가 `menu_ingredient_cache` 저장 명령을 직접 만드는 AGENTS.md 확정 예외와 기준이 달라지므로, 캐시 저장도 ⑦로 모을지 회의에서 함께 정한다 (확정 항목 변경은 이슈로)
 - [ ] **출처 신뢰도 가중치를 ⑥에서 어디까지 판단할지** — `docs/ppt-baseline.md` 9쪽 "5 출처 신뢰도 반영"(Dawid-Skene 응용, 출처별 weight 추적)이 ⑥의 출처 평가와 ⑤의 가중치 반영 중 어디에 들어가는지 미확정
