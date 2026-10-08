@@ -1,6 +1,6 @@
 # ③ Exact Feedback Tool (재료 단위 확인 조회)
 
-담당: 윤지 / 상태: v3 (확정) / 상위 문서: `caution-multi-agent-architecture.md`
+담당: 정유진 / 상태: v3 (확정) / 상위 문서: `caution-multi-agent-architecture.md`
 
 ---
 
@@ -54,6 +54,7 @@
       "override_eligible": true,
       "conflict": false,
       "superseded": false,
+      "expired": false,
       "confirmed_at": "2026-09-01T00:00:00Z"
     }
   ]
@@ -92,9 +93,23 @@
 |---|---|---|
 | `flagged_anomaly: false` AND `scope: exact` | `true` | override 적용, ⑤ 스킵 가능 |
 | `flagged_anomaly: true` | **`false`** | **override 거부 → 해당 재료를 ⑤로 전달**, ⑧에서 CAUTION 이상 강제 유지 |
+| `expired: true` (§1-7) | **`false`** | override 거부 → 해당 재료를 ⑤로 전달 |
 | `scope: inherited` | `false` | 항상 prior 보정용 |
 
 > ⚠️ **anomaly 재료를 "무시"하면 안 된다.** 재료 자체가 리스트에서 사라지면 확률 계산도 안 되고 판정에서도 빠져 **FN이 발생한다.** 반드시 ⑤로 넘겨 확률을 계산하게 하고, 결과를 CAUTION 이상으로 유지한다.
+
+### 1-7. 확인값 유효기간 — 3개월 (결정, 2026-10-06 회의)
+
+사장님 확인값은 **확인 시점(`confirmed_at`)부터 3개월 동안만** 확정 정보로 쓴다. 메뉴 레시피는 바뀔 수 있으므로 오래된 확인값으로 계속 override하면 FN이 생길 수 있다.
+
+| 조건 | `expired` | 처리 |
+|---|---|---|
+| `confirmed_at`이 3개월 이내 | `false` | 기존 규칙대로 (§1-6) |
+| `confirmed_at`이 3개월 경과 | `true` | `override_eligible: false`. 확정 정보로 쓰지 않는다 |
+
+- **만료 레코드도 드롭하지 않는다.** `expired: true`로 표기해 반환한다. 재료가 리스트에서 사라지면 FN이 생긴다 (§1-6과 같은 이유).
+- 만료 판정은 ③이 조회 시점에 `confirmed_at`만 보고 한다. DB 레코드를 지우거나 바꾸지 않는다 (DB 쓰기는 ③ 범위 밖).
+- 만료된 재료는 사장님에게 다시 확인받을 대상이다. 재질문 경로는 §6 미확정.
 
 ---
 
@@ -109,12 +124,13 @@ flowchart TD
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
     N -->|있음| DD["중복 제거<br/>(confirmed_at 최신)"]
     DD --> CF["충돌 해소<br/>(owner 우선, conflict 표기)"]
-    CF --> A{flagged_anomaly?}
+    CF --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
+    EX --> A{"flagged_anomaly 또는 expired?"}
     A -->|Yes| MARK["override_eligible: false<br/>드롭 금지, 플래그와 함께 반환"]
     A -->|No| OK["override_eligible: true"]
     MARK --> C[캐시 대조]
     OK --> C
-    C --> CP{"캐시 존재 AND 전 재료 확인<br/>AND anomaly 0건?"}
+    C --> CP{"캐시 존재 AND 전 재료 확인<br/>AND anomaly·만료 0건?"}
     CP -->|Yes| COMP["completeness: complete"]
     CP -->|No| UNK["completeness: unknown"]
     COMP --> OUT[Supervisor에 반환]
@@ -139,12 +155,12 @@ def check_completeness(
     store_id: int,
     menu_id: str,
 ) -> Literal["complete", "unknown"]:
-    """menu_ingredient_cache가 있고, 전 재료가 확인됐고, anomaly가 0건일 때만 complete.
+    """menu_ingredient_cache가 있고, 전 재료가 확인됐고, anomaly·만료가 0건일 때만 complete.
     캐시가 없으면 항상 unknown (④ 호출 유도)."""
 
 
 def resolve_override_eligibility(c: Confirmation, scope: str) -> bool:
-    """anomaly이거나 inherited 스코프면 False.
+    """anomaly이거나, 만료(expired)됐거나, inherited 스코프면 False.
     False인 재료는 드롭하지 않고 ⑤로 전달한다."""
 ```
 
@@ -162,6 +178,9 @@ confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 �
 confirmations = dedupe_latest(confirmations)         # 중복 시 confirmed_at 최신 채택
 confirmations = resolve_conflict(confirmations)      # owner 우선 + conflict 표기
 
+for c in confirmations:                              # §1-7. 드롭하지 않고 표기만
+    c.expired = c.confirmed_at < now() - months(3)
+
 for c in confirmations:
     c.override_eligible = resolve_override_eligibility(c, scope_hint)
 
@@ -170,7 +189,7 @@ completeness = (
     "complete"
     if cached
        and all(c.status != "unknown" for c in cover(cached, confirmations))
-       and all(not c.flagged_anomaly for c in confirmations)
+       and all(not c.flagged_anomaly and not c.expired for c in confirmations)
     else "unknown"
 )
 
@@ -242,6 +261,7 @@ return ExactResult(
 | `menu_id`가 DB에 없음 | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
 | 동일 재료 중복 레코드 | `confirmed_at` 최신 1건 채택, 나머지 `superseded: true` |
+| 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
 | `owner` vs `user_hard` 상충 | `owner` 우선. `conflict: true`로 표기해 ⑧에 전달 |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
 | 2차 호출인데 `base_menu_id`가 null | Supervisor가 호출하지 않음. 도달 시 빈 배열 반환 |
@@ -264,13 +284,16 @@ return ExactResult(
 | 9 | `owner: absent` + `user_hard: present` | owner 채택 + `conflict: true` | 충돌 은폐하지 않을 것 |
 | 10 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
 | 11 | 동일 재료 레코드 3건 | 최신 1건 + `superseded: true` 2건 | 중복 집계되지 않을 것 |
+| 12 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
+| 13 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
 
 ---
 
 ## 6. 미확정 항목 (팀 확인 대기)
 
 - [ ] **`user_hard` 신뢰 가중** — 사장님(`owner`)과 동일 가중을 줄지, 계층적 신뢰 가중(Dawid & Skene 계열)을 학습할지
-- [ ] **확인 정보 유효기간** — 6개월 전 확인을 현재도 유효로 볼지. 레시피 변경 가능성. 대회 범위상 과할 수 있으나 명시 시 설계 깊이로 평가 가능
+- [x] **확인 정보 유효기간** — 3개월로 결정 (2026-10-06 회의, §1-7)
+- [ ] **만료 후 처리 세부** — "3개월"을 날짜 기준으로 셀지 90일로 셀지, 만료된 재료를 사장님에게 다시 물어보는 경로(⑧ 사장님 카드 우선순위 등)
 - [ ] **`menu_ingredient_cache` 스키마** — 생성 결정됨. 컬럼 정의 및 무효화(invalidation) 시점 확정 필요 (④ 재확장 시 갱신, 온톨로지 변경 시 전체 무효화)
 - [ ] **anomaly 판정 기준** — `flagged_anomaly`를 무엇으로 판정할지. 현재는 "base rate와 극단적으로 어긋남"으로만 기술됨. 임계값 정의 필요
 
@@ -280,3 +303,4 @@ return ExactResult(
 - **상속 범위**: `base_menu_id` 단일 메뉴만. 형제 변형 제외
 - **`status` 3값**: `present` / `absent` / `unknown`
 - **`menu_ingredient_cache`**: 생성하기로 확정
+- **확인값 유효기간 3개월**: 만료되면 override 거부, 드롭 금지 (2026-10-06 회의)
