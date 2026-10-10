@@ -482,7 +482,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 **참고**
 
 - 상위 이슈 #71, ⑧ 컷오프 #173·#139
-- `docs/agent-0-supervisor.md` §4-7
+- `docs/0-agent-supervisor.md` §4-7
 
 #### `[DOCS] ⑤ Bayesian - PPT 9쪽 결합 모델·출처 신뢰도 반영 범위 결정` (#188)
 

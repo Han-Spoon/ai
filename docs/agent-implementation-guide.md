@@ -14,7 +14,7 @@
 | 내용 | 적는 곳 |
 |---|---|
 | 프레임워크, 공통 계약, 공통 오류, 로깅, 테스트 배치, 디렉터리 구조 | **이 문서** |
-| ①~⑨와 Supervisor 사이의 canonical 요청·응답 JSON | [`agent-0-supervisor.md`](agent-0-supervisor.md) §1·§4 |
+| ①~⑨와 Supervisor 사이의 canonical 요청·응답 JSON | [`0-agent-supervisor.md`](0-agent-supervisor.md) §1·§4 |
 | 특정 노드의 내부 처리 로직, 도메인 규칙, 그 노드만의 예외·테스트 | 해당 `agent-N-*.md` |
 | 전체 흐름도, 라우팅, 케이스별 시나리오 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) |
 | 테이블·컬럼·제약 | [`caution-db-schema.md`](caution-db-schema.md) |
@@ -27,7 +27,7 @@
 
 ⓪도 노드 하나이므로 "전체에 관한 것"과 "⓪이 하는 일"이 섞이기 쉽습니다. 기준은 **"⓪ 말고 다른 노드도 이걸 알아야 하는가"** 입니다.
 
-| 이 문서 | [`agent-0-supervisor.md`](agent-0-supervisor.md) |
+| 이 문서 | [`0-agent-supervisor.md`](0-agent-supervisor.md) |
 |---|---|
 | 모든 노드가 받고 그대로 돌려주는 필드 | graph·state·node 시그니처, state 필드 소유 |
 | 모든 노드가 같은 모양으로 뱉는 오류 스키마 | 그 오류를 받아 재시도·우회·부분 응답을 만드는 정책 |
@@ -50,7 +50,7 @@
 
 ### 현재 알려진 내용
 
-[`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2와 §2-4~§2-17에 **승인 후 바로 구현할 상세 설계**가 작성되어 있습니다. 프레임워크 채택과 정확한 버전 pin은 아직 팀 승인 전입니다(이슈 #76).
+[`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-17에 **승인 후 바로 구현할 상세 설계**가 작성되어 있습니다. 프레임워크 채택과 정확한 버전 pin은 아직 팀 승인 전입니다(이슈 #76).
 
 - Supervisor는 LangChain 생태계 + LangGraph `StateGraph`로 구현한다.
 - 라우팅은 LLM에 맡기지 않고 명시적 conditional edge로 구현한다.
@@ -72,7 +72,7 @@
 - [x] 동기/비동기 선택 — FastAPI에서 compiled graph의 `ainvoke()` 사용
 - [ ] 승인되지 않을 경우의 대안 (직접 오케스트레이션) 비교
 
-> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`agent-0-supervisor.md`](agent-0-supervisor.md) §0-2와 §2-4~§2-17이 소유합니다. 이 문서에는 중복 작성하지 않습니다.
+> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-17이 소유합니다. 이 문서에는 중복 작성하지 않습니다.
 
 ---
 
@@ -80,7 +80,7 @@
 
 ### 현재 알려진 내용
 
-모든 Agent·Tool 호출에 포함하는 공통 문맥 ([`agent-0-supervisor.md`](agent-0-supervisor.md) §1-2):
+모든 Agent·Tool 호출에 포함하는 공통 문맥 ([`0-agent-supervisor.md`](0-agent-supervisor.md) §1-2):
 
 ```json
 {
@@ -113,7 +113,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
-- [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`agent-0-supervisor.md`](agent-0-supervisor.md) §4-7 소유
+- [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4-7 소유
 - [ ] 모델 변경 절차 — `schema_version`을 올리는 기준과 리뷰 담당
 
 ---
@@ -137,7 +137,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 - [ ] ⓪~⑨ ↔ 디렉터리 대응 표 (지금 없는 노드를 어디에 만들지)
 - [ ] 기존 패키지를 쪼갤지 유지할지 — 쪼갠다면 전환 순서
-- [ ] 노드 간 직접 import를 막는 코드 규약 — 호출 경계 자체는 [`agent-0-supervisor.md`](agent-0-supervisor.md) §4가 정하고, 여기서는 그걸 어떻게 강제할지만 정한다 (패키지 분리, lint 규칙 등)
+- [ ] 노드 간 직접 import를 막는 코드 규약 — 호출 경계 자체는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4가 정하고, 여기서는 그걸 어떻게 강제할지만 정한다 (패키지 분리, lint 규칙 등)
 - [ ] 새 노드를 추가할 때 만들어야 하는 파일 목록 (`__init__.py`, models, adapter, tests, README)
 
 ---
@@ -183,11 +183,11 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 ## 7. 오류 스키마와 로깅
 
-모든 노드가 **같은 모양의 오류를 뱉는 것**까지가 이 절의 범위입니다. 그 오류를 받아서 재시도할지, 부분 실패를 어떻게 합칠지는 Supervisor 정책이므로 [`agent-0-supervisor.md`](agent-0-supervisor.md) §6이 소유합니다.
+모든 노드가 **같은 모양의 오류를 뱉는 것**까지가 이 절의 범위입니다. 그 오류를 받아서 재시도할지, 부분 실패를 어떻게 합칠지는 Supervisor 정책이므로 [`0-agent-supervisor.md`](0-agent-supervisor.md) §6이 소유합니다.
 
 ### 현재 알려진 내용
 
-공통 오류 모델 ([`agent-0-supervisor.md`](agent-0-supervisor.md) §6-1):
+공통 오류 모델 ([`0-agent-supervisor.md`](0-agent-supervisor.md) §6-1):
 
 ```json
 {
@@ -204,7 +204,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - `trace_id`, `item_id`, node, route, latency를 구조화 로그로 남긴다.
 - 사용자 프로필과 원문 메뉴는 로그에 그대로 남기지 않고 마스킹·요약 정책을 적용한다.
 
-재시도 대상 제한, 부분 실패 시 CAUTION 유지, 사용자에게 보여줄 오류 문구는 [`agent-0-supervisor.md`](agent-0-supervisor.md) §6·§8에 있습니다.
+재시도 대상 제한, 부분 실패 시 CAUTION 유지, 사용자에게 보여줄 오류 문구는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §6·§8에 있습니다.
 
 ### 여기에 적을 것
 
@@ -306,9 +306,9 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 | 다른 곳에 등록된 항목 | 소유 문서 |
 |---|---|
-| DANGER / CAUTION / SAFE threshold 보유 주체 | [`agent-8-xai.md`](agent-8-xai.md) §3, [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) §4 |
-| `/v1/analyze` 추가와 기존 API 호환 기간 | [`agent-0-supervisor.md`](agent-0-supervisor.md) §8 |
-| 배치 API 형태와 동시성 제한, checkpoint 사용 여부 | [`agent-0-supervisor.md`](agent-0-supervisor.md) §8 |
+| DANGER / CAUTION / SAFE threshold 보유 주체 | [`8-tool-xai.md`](8-tool-xai.md) §3, [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) §4 |
+| `/v1/analyze` 추가와 기존 API 호환 기간 | [`0-agent-supervisor.md`](0-agent-supervisor.md) §8 |
+| 배치 API 형태와 동시성 제한, checkpoint 사용 여부 | [`0-agent-supervisor.md`](0-agent-supervisor.md) §8 |
 
 ---
 
@@ -319,7 +319,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 | [`ppt-baseline.md`](ppt-baseline.md) | 충돌 시 최우선. 수정 금지 |
 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) | 흐름·라우팅. 이 문서는 그 흐름을 코드로 옮기는 방법만 다룬다 |
 | [`caution-db-schema.md`](caution-db-schema.md) | 테이블·제약. DB 쓰기 경계는 [§6](#6-결정론적-tool-구현-규칙) |
-| [`agent-0-supervisor.md`](agent-0-supervisor.md) | 프레임워크 제안(§0-2), canonical 입출력 계약(§1·§4), 공통 오류(§6-1)의 원 출처 |
-| [`agent-2-normalization.md`](agent-2-normalization.md) | `9. 구현 계획` 절 형식의 참고 사례 |
+| [`0-agent-supervisor.md`](0-agent-supervisor.md) | 프레임워크 제안(§0-2), canonical 입출력 계약(§1·§4), 공통 오류(§6-1)의 원 출처 |
+| [`2-agent-normalization.md`](2-agent-normalization.md) | `9. 구현 계획` 절 형식의 참고 사례 |
 | [`../AGENTS.md`](../AGENTS.md) | 커밋·브랜치·이슈·PR 규칙, 금지 사항, 용어집 |
 | [`README.md`](README.md) | 문서 인덱스와 읽는 순서 |

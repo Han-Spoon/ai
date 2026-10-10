@@ -151,7 +151,7 @@ docs: add API specification draft
 | [`docs/ppt-baseline.md`](docs/ppt-baseline.md) | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
 | [`docs/caution-multi-agent-architecture.md`](docs/caution-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, Agent·Tool별 역할 |
 | [`docs/caution-db-schema.md`](docs/caution-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
-| [`docs/agent-0-supervisor.md`](docs/agent-0-supervisor.md) ~ [`agent-9-curation.md`](docs/agent-9-curation.md) | Agent·Tool별 입출력 스펙과 처리 로직 |
+| `docs/{번호}-agent-*`, `docs/{번호}-tool-*` | Agent·Tool별 입출력 스펙과 처리 로직. 번호순 정렬 후 역할을 파일명에 표시 |
 
 문서 전체 목록과 읽는 순서는 [`docs/README.md`](docs/README.md)에 있습니다.
 
