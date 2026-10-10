@@ -8,3 +8,4 @@ outputs/
 # 합친 크롤링 중간 산출물 (crawling/merge_corpora.py로 재생성)
 crawling/merged_recipes_raw.csv
 crawling/merged_normalized.csv
+.DS_Store
