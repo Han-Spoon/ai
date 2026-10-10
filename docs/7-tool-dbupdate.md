@@ -3,7 +3,7 @@
 담당: 윤지
 상태: 초안 (미확정 항목은 §8 참조)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
-짝 문서: [`agent-6-websearch.md`](agent-6-websearch.md) (⑥ Web Search Agent) — ⑦이 받는 soft evidence를 수집하는 쪽
+짝 문서: [`6-agent-websearch.md`](6-agent-websearch.md) (⑥ Web Search Agent) — ⑦이 받는 soft evidence를 수집하는 쪽
 
 ---
 
@@ -79,7 +79,7 @@ graph LR
     API --> DB[(DB)]
 ```
 
-- **⑥ Web Search Agent**: DB에 없는 메뉴를 크롤링으로 조사만 함. 상세는 [`agent-6-websearch.md`](agent-6-websearch.md).
+- **⑥ Web Search Agent**: DB에 없는 메뉴를 크롤링으로 조사만 함. 상세는 [`6-agent-websearch.md`](6-agent-websearch.md).
 - **⑦ DB Update Tool**: 증거 종류에 따라 관리자 검토 명령과 답변 반영 명령을 구분해 만든다. 웹 경로에서는 Supervisor가 ⑦ 명령을 만든 뒤 ⑤를 호출한다 (⓪ §2).
 
 ---
@@ -346,7 +346,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 11 | 웹 검색이 "있음", 사장님 확정 "있음" | 웹 검색 비교 +1, 맞춤 +1 | `update_source_reliability` 명령만 만들고 DB에 직접 쓰지 않을 것 |
 | 12 | 이상 답변 표시가 붙은 확정값 | 신뢰도 비교에 쓰지 않음 | 출처 신뢰도가 바뀌지 않을 것 |
 
-> 웹서치 수집 단계(성공/타임아웃)의 테스트 케이스는 [`agent-6-websearch.md`](agent-6-websearch.md) §4에 있다.
+> 웹서치 수집 단계(성공/타임아웃)의 테스트 케이스는 [`6-agent-websearch.md`](6-agent-websearch.md) §4에 있다.
 
 ---
 

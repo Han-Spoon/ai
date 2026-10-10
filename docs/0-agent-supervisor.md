@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (입출력 계약 확정, 정책 미확정 항목은 §8 참조)
+상태: AI 내부 구현 기준안 (①~⑨ 노드 계약 확정, 외부 2-phase API·KnowledgeBundle 계약은 §8에서 협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ---
@@ -93,6 +93,13 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 ### 0-3. 입출력 계약의 기준 문서
 
 **①~⑨ Agent·Tool과 Supervisor 사이의 wire JSON은 이 문서 §1·§4를 단일 기준으로 사용한다.** 개별 Agent·Tool 문서는 각 노드의 내부 처리 로직과 도메인 규칙을 설명하지만, 필드명·타입·필수 여부가 이 문서와 다르면 이 문서에 맞춰 수정한다.
+
+JSON 계약은 **공통 envelope + 노드별 payload**의 2층 구조로 유지한다.
+
+- 공통 envelope: 모든 노드가 동일하게 쓰는 `context`, `warnings`, `errors`
+- 노드별 payload: OCR의 `scan_quality`, ⑤의 확률값, ⑧의 판정처럼 해당 노드에만 필요한 필드
+
+모든 노드의 JSON을 완전히 같은 모양으로 만들면 필요 없는 필드와 `null`이 늘고, 어떤 노드가 어떤 값을 책임지는지 불명확해진다. 반대로 공통 필드까지 문서마다 따로 정의하면 이름과 타입이 쉽게 어긋난다. 따라서 공통 모델은 §1-2에서 한 번만 정의하고, 각 번호의 완전한 요청·응답은 §4에서 번호별로 구분한다. 개별 Agent·Tool 문서에는 내부 로직과 함께 자기 번호의 완성된 예시를 보여줄 수 있지만, 계약의 정본은 중복 정의하지 않고 이 문서 §4를 가리킨다.
 
 - 모든 노드는 §1-2의 `context`, `warnings`, `errors` 형식을 공통으로 사용한다.
 - 내부 구현의 클래스명이나 DB 컬럼명이 달라도 경계에서는 이 문서의 JSON으로 변환한다.
@@ -202,6 +209,8 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 
 ### 1-3. Supervisor 입력 — `AnalyzeRequest`
 
+> 아래 `AnalyzeRequest`와 §1-4 `AnalyzeResponse`는 기존 단일 진입점 기준의 임시 외부 계약이다. Prepare/Judge 경로와 KnowledgeBundle의 최종 필드는 백엔드 합의 후 교체한다. §4의 ①~⑨ 내부 노드 계약은 이 협의와 별개로 유지한다.
+
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `schema_version` | string | 필수 | API 계약 버전 |
@@ -241,7 +250,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 }
 ```
 
-기존 `/v1/ocr`, `/v1/ruleengine`, `/v1/result`는 전환 기간의 호환 API로 유지하고, Supervisor 단일 진입점은 `/v1/analyze`로 추가하는 안을 우선 검토한다.
+기존 `/v1/ocr`, `/v1/ruleengine`, `/v1/result`의 호환 기간과 Supervisor 외부 진입점을 `/v1/analyze/prepare`, `/v1/analyze/judge`로 나눌지는 백엔드와 협의한다. AI 내부 구현은 외부 경로명과 무관하게 Prepare Graph와 Judge Graph를 분리한다.
 
 - `image.source`는 `camera | upload`다. `storage_key`와 `image_url` 중 하나 이상은 null이 아니어야 한다. `version_id`와 `expected_etag`는 저장소가 제공하지 않으면 `null`이다.
 - `user_profile.religion_type`은 `halal | kosher | hindu | null`, `vegetarian_type`은 `vegan | lacto | ovo | lacto_ovo | pesco | null`이다. `allergies`는 ④가 반환하는 `is_*` 표준 태그 배열이며 중복을 허용하지 않는다.
@@ -391,14 +400,21 @@ JSON의 `store_id`는 문자열이 아니라 정수다. DB `BIGINT` ↔ Java `Lo
 
 ```mermaid
 flowchart TD
-    IN["백엔드 분석 요청"] --> STORE{"공통 계약과 store_id가 유효한가?"}
-    STORE -->|No| ERR["StoreIdRequiredError\n하위 Agent·Tool 호출 금지"]
-    STORE -->|Yes| OCR["① OCR Tool<br/>메뉴명·가격·설명 구조화"]
-    OCR --> QUALITY{"scan_quality.status<br/>needs_retake?"}
-    QUALITY -->|Yes| RETAKE["재촬영 응답<br/>②~⑨ 호출 금지"]
-    QUALITY -->|No| NORM["② Menu Normalization Agent<br/>배치 호출"]
+    subgraph P["Prepare Graph — AI 내부 확정"]
+        IN["Prepare 입력"] --> STORE{"공통 문맥과 store_id가 유효한가?"}
+        STORE -->|No| ERR["입력 오류<br/>①~⑨ 호출 금지"]
+        STORE -->|Yes| OCR["① OCR Tool<br/>메뉴명·가격·설명 구조화"]
+        OCR --> QUALITY{"needs_retake?"}
+        QUALITY -->|Yes| RETAKE["재촬영 결과<br/>②~⑨ 호출 금지"]
+        QUALITY -->|No| CLEAN["②-A 메뉴명 정제<br/>DB 식별자 확정 금지"]
+        CLEAN --> PREPARED["prepared_items 반환"]
+    end
 
-    NORM --> LOOP["메뉴별 처리 루프"]
+    PREPARED -. "백엔드 후보 조회·KnowledgeBundle 구성\n계약은 팀 합의 필요" .-> JUDGE_IN
+
+    subgraph J["Judge Graph — AI 내부 확정"]
+    JUDGE_IN["Judge 입력 검증<br/>prepared_items + 지식 데이터"] --> MATCH["②-B 후보 해석·최종 선택"]
+    MATCH --> LOOP["메뉴별 Item Graph fan-out"]
     LOOP --> MID{"menu_id 후보 있음?"}
     MID -->|Yes| EXACT["③ Exact Feedback Tool 조회"]
     MID -->|No| ONTO_UNKNOWN["④ DB / Ontology Tool<br/>unknown/longest-match"]
@@ -428,35 +444,43 @@ flowchart TD
     XAI3 --> OUT
     XAI4 --> OUT
     OUT --> CUR["⑨ Curation Tool<br/>안전 후보 추천"]
-    CUR --> USER["사용자에게 최종 응답"]
+    CUR --> USER["Judge 결과 반환"]
+    end
 ```
+
+위 그림에서 확정하는 것은 **AI 내부 실행 경계와 순서**다. HTTP 경로명, Prepare/Judge 외부 요청·응답 필드, KnowledgeBundle 스키마, 후보 개수는 백엔드와 합의할 항목이다. `②-A`와 `②-B`는 별도 Agent 두 개가 아니라 같은 Normalization 책임을 두 operation으로 나눈 이름이다.
 
 ### 2-1. 기본 순서
 
-1. 요청의 schema와 백엔드가 확정한 `store_id`가 양의 정수인지 검증한다.
-2. 백엔드가 전달한 사용자 프로필과 이미지 참조를 state에 보존한다.
-3. ①을 호출해 메뉴명·가격·설명을 구조화하고 항목마다 안정적인 `item_id`를 부여한다.
-4. `scan_quality.status: needs_retake`면 ②~⑨를 호출하지 않고 `items: []`, `recommendations: []`, 재촬영 안내를 반환한다. `low_confidence`면 각 item에 `forces_caution: true` warning을 넣고 계속한다.
-5. OCR 메뉴 항목을 ②에 **배치로** 전달한다.
-6. 정규화 결과의 후보를 기준으로 `menu_id`가 안정적으로 잡히는지 확인한다.
-7. `menu_id`가 있으면 ③을 먼저 호출한다.
-8. ③이 `completeness: complete`이고 anomaly가 없으면 ④⑤를 스킵하고 ⑧로 직행한다.
-9. 일부/전부 미확인이라면 ④를 호출한다.
-10. `menu_id`가 없으면 ③을 호출하지 않고 ④의 unknown/longest-match 경로로 보낸다.
-11. ④가 exact DB 메뉴를 찾았거나 `base_menu_id`를 찾으면 ⑤를 호출한다. 변형 메뉴이고 `base_menu_id`가 있으면 ③을 inherited scope로 한 번 더 호출한 뒤 ⑤에 prior 보정용으로 전달한다.
-12. ④가 exact 메뉴와 base 메뉴를 모두 못 찾으면 ⑥을 호출한다.
-13. ⑥이 근거를 찾으면 실시간 계산에는 사용하되 ⑦이 관리자 검토 명령을 만들고, ⑤→⑧ 순으로 진행한다.
-14. ⑥도 실패하면 ⑤를 호출하지 않고 ⑧에 `no_information: true`를 전달한다.
-15. ⑧ 결과를 메뉴판 단위로 취합한 뒤 ⑨를 호출한다. ⑨는 판정 결과를 변경할 수 없다.
-16. 판정, 근거, 위험 재료, 확인 질문, 추천, 저장 명령, 오류를 최종 응답으로 반환한다.
+**Prepare Graph**
+
+1. 요청 schema와 백엔드가 확정한 `store_id`를 검증한다.
+2. 이미지 참조와 실행 문맥을 state에 보존하고 ①을 호출한다.
+3. ① 결과에 안정적인 `item_id = {scan_session_id}:{source_index}`를 한 번만 부여한다.
+4. `scan_quality.status: needs_retake`면 ②~⑨를 호출하지 않고 재촬영 결과로 종료한다.
+5. `low_confidence`면 원문과 경고를 보존하고 진행하되 이후 SAFE 제한 신호가 사라지지 않게 한다.
+6. ②-A는 OCR 노이즈, 띄어쓰기, 인원·크기 옵션, 다국어 표기를 정리해 `normalized_menu_name`을 만든다. 이 단계에서는 DB 후보가 없으므로 `menu_id`를 확정하지 않는다.
+7. `prepared_items`를 OCR 순서대로 반환한다. 이를 저장하는 위치와 외부 JSON은 백엔드 합의 대상이다.
+
+**Judge Graph**
+
+1. Prepare 결과와 백엔드가 제공한 지식 데이터의 식별자·무결성을 검증한다. 구체적인 hash와 revision 필드는 합의 전까지 가정하지 않는다.
+2. ②-B가 허용된 메뉴 후보 안에서 최종 후보를 선택한다. 후보 밖 `menu_id`는 만들 수 없다.
+3. 메뉴마다 Item Graph를 fan-out한다. `menu_id`가 있으면 ③, 없으면 ④ unknown 경로에서 시작한다.
+4. ③이 `completeness: complete`이고 anomaly가 없으면 ④⑤를 건너뛰고 ⑧로 간다. 일부·미확인·anomaly가 있으면 ④로 간다.
+5. ④가 exact DB 메뉴 또는 `base_menu_id`를 찾으면 필요할 때 ③ inherited를 거쳐 ⑤로 간다. 둘 다 찾지 못하면 ⑥으로 간다.
+6. ⑥이 근거를 찾으면 ⑦이 관리자 검토 명령을 만들고 ⑤→⑧로 간다. 실패하면 ⑧에 `no_information: true`를 전달한다.
+7. 각 Item Graph의 오류는 해당 메뉴를 `partial_failed` 또는 `failed`로 만들고 SAFE를 금지한다. 다른 메뉴의 실행은 취소하지 않는다.
+8. 결과를 `source_index`로 정렬하고 근거·경고·저장 명령을 중복 제거한 뒤 ⑨를 호출한다. ⑨는 판정을 변경할 수 없다.
+9. 판정, 근거, 위험 재료, 확인 질문, 추천, 저장 명령, 오류를 Judge 결과로 반환한다.
 
 ### 2-2. 배치 처리 원칙
 
-②는 메뉴판 1장 단위로 배치 호출한다. ③④⑤⑧은 메뉴별 호출을 기본으로 하되, 구현에서 같은 타입의 호출을 배치로 최적화할 수 있다.
+①과 ②-A는 Prepare Graph에서 메뉴판 1장 단위로 실행한다. ②-B는 Judge Graph 진입 시 후보가 포함된 메뉴 목록을 배치로 해석한다. ③④⑤⑧은 메뉴별 호출을 기본으로 하되, 구현에서 같은 타입의 호출을 배치로 최적화할 수 있다.
 
 웹서치(⑥)는 DB에 없는 메뉴에만 호출한다. OCR 결과 전체에 대해 무조건 웹서치를 돌리지 않는다.
 
-LangGraph 구현에서는 메뉴 항목을 fan-out해 독립 처리한 뒤 `item_id`와 OCR 순서로 collect한다. 병렬 처리는 같은 메뉴의 상태를 공유하지 않으며, 한 항목의 실패가 다른 항목을 취소하지 않게 한다.
+LangGraph 구현에서는 Judge Graph가 메뉴 항목을 fan-out해 독립 처리한 뒤 `item_id`와 OCR 순서로 collect한다. 병렬 처리는 같은 메뉴의 상태를 공유하지 않으며, 한 항목의 실패가 다른 항목을 취소하지 않게 한다.
 
 ### 2-3. StateGraph 상태 모델
 
@@ -471,7 +495,7 @@ LangGraph 구현에서는 메뉴 항목을 fan-out해 독립 처리한 뒤 `item
 }
 ```
 
-Scan Graph의 누적 state는 다음 모양이다.
+Prepare Graph의 누적 state는 다음 모양이다.
 
 ```json
 {
@@ -484,11 +508,24 @@ Scan Graph의 누적 state는 다음 모양이다.
   },
   "user_profile": {},
   "locale": "ko",
+  "ocr_response": null,
+  "prepared_items": [],
+  "warnings": [],
+  "errors": []
+}
+```
+
+Judge Graph의 누적 state는 다음 모양이다. `knowledge`의 실제 필드와 이름은 백엔드 합의 전이므로 이 절에서 확정하지 않는다.
+
+```json
+{
+  "prepared_items": [],
+  "knowledge": {},
+  "locale": "ko",
   "curation_options": {
     "limit": 5
   },
-  "ocr_response": null,
-  "normalization_response": null,
+  "candidate_selection_response": null,
   "item_updates": [],
   "ordered_items": [],
   "evidence": {},
@@ -499,7 +536,8 @@ Scan Graph의 누적 state는 다음 모양이다.
 }
 ```
 
-- `image`, `locale`, `curation_options`는 요청에서 최종 응답까지 보존한다.
+- Prepare Graph는 `image`, OCR 원문, `source_index`, `item_id`, 품질 경고를 보존한다.
+- Judge Graph는 전달받은 `prepared_items`를 다시 OCR하거나 이름을 임의로 바꾸지 않는다.
 - `ocr_response.scan_quality`는 재촬영 여부와 사용자 안내에 사용한다.
 - `item_updates`는 병렬 Item Graph가 reducer로 append하는 channel이다.
 - `ordered_items`는 collect 후 `source_index` 순서로 정렬된 최종 메뉴 배열이다.
@@ -507,15 +545,17 @@ Scan Graph의 누적 state는 다음 모양이다.
 - 각 node는 자신의 결과 필드만 갱신하며 이전 근거를 삭제하거나 재해석하지 않는다.
 - `status`와 `route`는 각 `ItemResult` 안에서 §1-4의 enum을 사용한다.
 
-### 2-4. Graph를 두 층으로 나누는 방법
+### 2-4. Graph를 세 단위로 나누는 방법
 
-메뉴판 전체와 메뉴 하나의 처리를 한 graph에 모두 넣으면 state와 분기선이 지나치게 복잡해진다. 구현은 다음 두 층으로 나눈다.
+OCR·재촬영 경계와 DB 지식이 필요한 판정 경계를 분리하기 위해 다음 세 단위로 나눈다.
 
 ```text
-Scan Graph — 메뉴판 1장 전체
-  입력 검증 → ① OCR → 품질 분기 → ② 정규화
-             → 메뉴별 Item Graph 병렬 실행
-             → 결과 취합 → ⑨ 큐레이션 → 최종 응답
+Prepare Graph — 이미지에서 판정 준비 자료 생성
+  입력 검증 → ① OCR → 품질 분기 → ②-A 메뉴명 정제 → prepared_items
+
+Judge Graph — 준비 자료와 지식 데이터로 전체 판정
+  입력 검증 → ②-B 후보 선택 → 메뉴별 Item Graph 병렬 실행
+            → 결과 취합 → ⑨ 큐레이션 → 최종 응답
 
 Item Graph — 메뉴 하나
   ③ Exact → ④ Ontology → ⑤ Bayesian / ⑥ Web Search
@@ -523,10 +563,11 @@ Item Graph — 메뉴 하나
            → 필요 시 ⑦ 사장님 질문 저장 명령
 ```
 
-- **Scan Graph**는 이미지·사용자 프로필·OCR 순서·최종 추천을 소유한다.
+- **Prepare Graph**는 이미지·OCR 품질·OCR 순서·메뉴명 정제 결과를 소유한다.
+- **Judge Graph**는 사용자 프로필·지식 데이터·메뉴별 실행·근거 취합·최종 추천을 소유한다.
 - **Item Graph**는 반드시 메뉴 하나만 처리한다. 다른 메뉴 state를 읽거나 수정하지 않는다.
 - Item Graph의 최종 출력은 하나의 `ItemResult`다.
-- Scan Graph는 여러 `ItemResult`를 reducer로 모은 뒤 `source_index` 순으로 정렬한다.
+- Judge Graph는 여러 `ItemResult`를 reducer로 모은 뒤 `source_index` 순으로 정렬한다.
 - Item Graph 안에서 Agent·Tool을 직접 서로 호출하지 않는다. 각 node가 adapter를 호출하고 다음 node는 state에 저장된 결과를 읽는다.
 
 이렇게 나누면 메뉴 10개가 있어도 같은 Item Graph를 10번 병렬 실행할 수 있고, 한 메뉴가 실패해도 나머지 9개 결과를 유지할 수 있다.
@@ -538,17 +579,18 @@ Item Graph — 메뉴 하나
 ```text
 ai_supervisor/
 ├── __init__.py
-├── service.py             # AnalyzeRequest → graph.ainvoke → AnalyzeResponse
-├── graph.py               # Scan Graph 조립·compile
+├── service.py             # Prepare/Judge 내부 실행 진입점
+├── prepare_graph.py       # Prepare Graph 조립·compile
+├── judge_graph.py         # Judge Graph 조립·compile
 ├── item_graph.py          # Item Graph 조립·compile
-├── state.py               # RunContext, SupervisorState, ItemState, reducer
+├── state.py               # RunContext, PrepareState, JudgeState, ItemState, reducer
 ├── routers.py             # 부작용 없는 조건 분기 함수
-├── nodes.py               # Scan Graph node
+├── nodes.py               # Prepare/Judge Graph node
 ├── item_nodes.py          # Item Graph node
 ├── adapters.py            # ①~⑨ adapter Protocol과 의존성 컨테이너
 ├── contracts/
 │   ├── common.py          # NodeContext, IngredientRef, EvidenceRef, warning/error
-│   ├── supervisor.py      # AnalyzeRequest / AnalyzeResponse
+│   ├── supervisor.py      # 외부 계약은 백엔드 합의 후 확정
 │   └── nodes.py           # §4의 ①~⑨ Request / Response Pydantic 모델
 └── chains/
     ├── normalization.py   # ②의 제한적 구조화 LLM chain
@@ -560,7 +602,8 @@ tests/
 │   ├── test_contracts.py
 │   ├── test_routers.py
 │   ├── test_item_graph.py
-│   ├── test_scan_graph.py
+│   ├── test_prepare_graph.py
+│   ├── test_judge_graph.py
 │   └── fakes.py           # 실제 DB·OCR·검색·LLM을 호출하지 않는 fake adapter
 ```
 
@@ -583,8 +626,11 @@ from dataclasses import dataclass
 from typing import Annotated
 from typing_extensions import TypedDict
 
-from ai_supervisor.contracts.supervisor import AnalyzeRequest, AnalyzeResponse
-from ai_supervisor.contracts.nodes import OcrResponse, NormalizationResponse
+from ai_supervisor.contracts.nodes import (
+    CandidateSelectionResponse,
+    NameCleaningResponse,
+    OcrResponse,
+)
 
 
 @dataclass(frozen=True)
@@ -597,24 +643,47 @@ class RunContext:
     store_id: int
 
 
-class SupervisorInput(TypedDict):
+class PrepareGraphInput(TypedDict):
     image: ImageRef
-    user_profile: UserProfile
     locale: str
-    curation_options: CurationOptions
 
 
-class SupervisorOutput(TypedDict):
-    response: AnalyzeResponse
+class PrepareGraphOutput(TypedDict):
+    prepared_items: list[PreparedItem]
+    scan_quality: ScanQuality
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
 
 
-class SupervisorState(TypedDict, total=False):
+class PrepareState(TypedDict, total=False):
     image: ImageRef
-    user_profile: UserProfile
     locale: str
-    curation_options: CurationOptions
     ocr_response: OcrResponse
-    normalization_response: NormalizationResponse
+    prepared_items: list[PreparedItem]
+    scan_quality: ScanQuality
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
+
+
+class JudgeGraphInput(TypedDict):
+    prepared_items: list[PreparedItem]
+    knowledge: KnowledgeInput  # 외부 wire schema는 백엔드 합의 후 확정
+    user_profile: UserProfile
+    locale: str
+    curation_options: CurationOptions
+
+
+class JudgeGraphOutput(TypedDict):
+    result: JudgeResult
+
+
+class JudgeState(TypedDict, total=False):
+    prepared_items: list[PreparedItem]
+    knowledge: KnowledgeInput
+    user_profile: UserProfile
+    locale: str
+    curation_options: CurationOptions
+    candidate_selection_response: CandidateSelectionResponse
     item_updates: Annotated[list[ItemResult], operator.add]
     ordered_items: list[ItemResult]
     evidence: dict[str, EvidenceRef]
@@ -622,7 +691,7 @@ class SupervisorState(TypedDict, total=False):
     warnings: list[NodeWarning]
     errors: list[NodeError]
     recommendations: list[Recommendation]
-    response: AnalyzeResponse
+    result: JudgeResult
 
 
 class ItemTask(TypedDict):
@@ -650,7 +719,7 @@ class ItemState(TypedDict, total=False):
     item_result: ItemResult
 ```
 
-API의 `AnalyzeRequest`를 graph에 그대로 넣지 않고, ID 네 개는 `RunContext`로 옮기고 나머지 image/profile/locale/curation만 `SupervisorInput`에 넣는다. 따라서 `RunContext`가 `schema_version`, `trace_id`, `scan_session_id`, `store_id`의 유일한 정본이다. 각 node는 다음 helper로 §1의 `NodeContext`를 만든다.
+외부 API 모델을 graph에 그대로 넣지 않고, ID 네 개는 `RunContext`로 옮긴다. Prepare와 Judge가 별도 HTTP 호출이 되더라도 같은 `trace_id`, `scan_session_id`, `store_id`를 사용해야 한다. `RunContext`가 `schema_version`, `trace_id`, `scan_session_id`, `store_id`의 유일한 정본이며 각 node는 다음 helper로 §1의 `NodeContext`를 만든다.
 
 ```python
 def make_node_context(
@@ -685,7 +754,12 @@ class OcrAdapter(Protocol):
 
 
 class NormalizationAdapter(Protocol):
-    async def run(self, request: NormalizationRequest) -> NormalizationResponse: ...
+    async def clean(self, request: NameCleaningRequest) -> NameCleaningResponse: ...
+
+    async def select(
+        self,
+        request: CandidateSelectionRequest,
+    ) -> CandidateSelectionResponse: ...
 
 
 # 같은 방식으로 Exact, Ontology, Bayesian, WebSearch,
@@ -725,7 +799,7 @@ from langgraph.runtime import Runtime
 
 
 async def ocr_node(
-    state: SupervisorState,
+    state: PrepareState,
     runtime: Runtime[RunContext],
 ) -> dict:
     request = OcrRequest(
@@ -762,12 +836,12 @@ from typing import Literal
 
 
 def route_after_ocr(
-    state: SupervisorState,
-) -> Literal["normalize", "finalize_retake"]:
+    state: PrepareState,
+) -> Literal["clean_names", "finalize_retake"]:
     status = state["ocr_response"].scan_quality.status
     if status == "needs_retake":
         return "finalize_retake"
-    return "normalize"
+    return "clean_names"
 
 
 def route_after_exact(
@@ -798,7 +872,7 @@ def route_after_ontology(
 
 
 def route_to_curation(
-    state: SupervisorState,
+    state: JudgeState,
 ) -> Literal["curation", "finalize"]:
     has_safe_candidate = any(
         item.risk_level == "safe" and item.information_status == "complete"
@@ -817,8 +891,8 @@ Router에서 LLM을 호출하거나 자연어를 파싱하지 않는다. 분기 
 from langgraph.types import Send
 
 
-def fan_out_items(state: SupervisorState) -> str | list[Send]:
-    items = state["normalization_response"].items
+def fan_out_items(state: JudgeState) -> str | list[Send]:
+    items = state["candidate_selection_response"].items
     if not items:
         return "collect_items"
 
@@ -846,7 +920,7 @@ async def analyze_item_node(
 `item_updates`에는 `operator.add` reducer를 붙인다. reducer는 병렬 완료 순서대로 값을 모을 수 있으므로 `collect_items`에서 반드시 정렬한다.
 
 ```python
-async def collect_items_node(state: SupervisorState) -> dict:
+async def collect_items_node(state: JudgeState) -> dict:
     ordered = sorted(state.get("item_updates", []), key=lambda x: x.source_index)
     evidence = deduplicate_evidence(ordered)
     commands = deduplicate_commands(ordered)
@@ -965,7 +1039,7 @@ def build_item_graph(deps: SupervisorDeps):
 
 `variant_review → exact_inherited`는 runtime 변형에 `base_menu_id`가 있다는 §4-3 계약을 전제로 한다. invariant가 깨져 `base_menu_id`가 null이면 억지로 ③을 호출하지 말고 `information_status: partial` error를 만든 뒤 `bayesian` 또는 보수적 ⑧ 경로로 보내는 방어 코드를 node에 둔다.
 
-### 2-12. Scan Graph 조립 코드 골격
+### 2-12. Prepare/Judge Graph 조립 코드 골격
 
 아래 코드는 구현자가 시작할 최소 골격이다. node 본문은 위 규칙과 §4 계약에 맞춰 채운다.
 
@@ -973,19 +1047,47 @@ def build_item_graph(deps: SupervisorDeps):
 from langgraph.graph import END, START, StateGraph
 
 
-def build_supervisor_graph(deps: SupervisorDeps):
-    item_graph = build_item_graph(deps)
-
+def build_prepare_graph(deps: SupervisorDeps):
     builder = StateGraph(
-        SupervisorState,
+        PrepareState,
         context_schema=RunContext,
-        input_schema=SupervisorInput,
-        output_schema=SupervisorOutput,
+        input_schema=PrepareGraphInput,
+        output_schema=PrepareGraphOutput,
     )
 
     builder.add_node("ocr", make_ocr_node(deps))
     builder.add_node("finalize_retake", finalize_retake_node)
-    builder.add_node("normalize", make_normalize_node(deps))
+    builder.add_node("clean_names", make_name_cleaning_node(deps))
+    builder.add_node("finalize_prepared", finalize_prepared_node)
+
+    builder.add_edge(START, "ocr")
+    builder.add_conditional_edges(
+        "ocr",
+        route_after_ocr,
+        {
+            "clean_names": "clean_names",
+            "finalize_retake": "finalize_retake",
+        },
+    )
+    builder.add_edge("clean_names", "finalize_prepared")
+    builder.add_edge("finalize_retake", END)
+    builder.add_edge("finalize_prepared", END)
+
+    return builder.compile(checkpointer=False, name="caution_prepare")
+
+
+def build_judge_graph(deps: SupervisorDeps):
+    item_graph = build_item_graph(deps)
+
+    builder = StateGraph(
+        JudgeState,
+        context_schema=RunContext,
+        input_schema=JudgeGraphInput,
+        output_schema=JudgeGraphOutput,
+    )
+
+    builder.add_node("validate_knowledge", validate_knowledge_node)
+    builder.add_node("select_candidates", make_candidate_selection_node(deps))
     builder.add_node(
         "analyze_item",
         make_analyze_item_node(item_graph),
@@ -995,18 +1097,10 @@ def build_supervisor_graph(deps: SupervisorDeps):
     builder.add_node("curation", make_curation_node(deps))
     builder.add_node("finalize", finalize_node)
 
-    builder.add_edge(START, "ocr")
+    builder.add_edge(START, "validate_knowledge")
+    builder.add_edge("validate_knowledge", "select_candidates")
     builder.add_conditional_edges(
-        "ocr",
-        route_after_ocr,
-        {
-            "normalize": "normalize",
-            "finalize_retake": "finalize_retake",
-        },
-    )
-    builder.add_edge("finalize_retake", END)
-    builder.add_conditional_edges(
-        "normalize",
+        "select_candidates",
         fan_out_items,
         ["analyze_item", "collect_items"],
     )
@@ -1019,10 +1113,10 @@ def build_supervisor_graph(deps: SupervisorDeps):
     builder.add_edge("curation", "finalize")
     builder.add_edge("finalize", END)
 
-    return builder.compile(checkpointer=False, name="caution_supervisor")
+    return builder.compile(checkpointer=False, name="caution_judge")
 ```
 
-정확한 LangGraph pin에서 `compile(checkpointer=False)` 지원 형태가 다르면 checkpointer 인자를 생략한다. 초기 구현의 요구사항은 **영속 checkpoint를 사용하지 않는 것**이다.
+`validate_knowledge`는 번들 내부 데이터를 조회하거나 수정하는 node가 아니라, 백엔드와 합의할 식별자·상태·무결성 조건을 검사하는 입구다. 정확한 LangGraph pin에서 `compile(checkpointer=False)` 지원 형태가 다르면 checkpointer 인자를 생략한다. 초기 구현의 요구사항은 **영속 checkpoint를 사용하지 않는 것**이다.
 
 ### 2-13. LangChain chain 구현 방식
 
@@ -1059,7 +1153,7 @@ def build_normalization_chain(settings):
     return prompt | structured_model
 ```
 
-②에서는 LLM에 전체 메뉴 DB를 주지 않고 규칙 기반으로 만든 후보만 준다. 반환된 `selected_menu_id`가 후보 목록에 없으면 폐기한다. confidence가 threshold보다 낮으면 `normalized`로 확정하지 않고 `ambiguous` 또는 `unmatched`로 보존한다.
+②-A는 규칙·사전을 우선 사용해 메뉴명과 옵션을 정제하고, 문맥 해석이 필요할 때만 별도 구조화 출력을 사용한다. ②-B에서는 LLM에 전체 메뉴 DB를 주지 않고 백엔드가 제공한 후보만 준다. 반환된 `selected_menu_id`가 후보 목록에 없으면 폐기한다. confidence가 threshold보다 낮으면 `normalized`로 확정하지 않고 `ambiguous` 또는 `unmatched`로 보존한다.
 
 ⑥에서는 chain이 검색어와 추출 후보를 만들 수 있지만, URL 접근·timeout·허용 도메인·출처 수 계산은 provider와 Python 코드가 담당한다. LLM이 만든 출처 URL을 실제 검색 결과와 대조하지 못하면 폐기한다.
 
@@ -1072,45 +1166,40 @@ def build_normalization_chain(settings):
 
 Supervisor 구현에서는 `create_agent()`나 ReAct loop를 사용하지 않는다. 이 프로젝트의 ②·⑥·⑧은 도구를 자율 선택하는 범용 Agent가 아니라, 입력과 출력이 고정된 **한 번의 구조화 chain**이기 때문이다.
 
-### 2-14. FastAPI 연결
+### 2-14. 서비스 연결 경계
 
-FastAPI endpoint는 graph 구조를 알 필요가 없고 `SupervisorService`만 호출한다.
+FastAPI endpoint는 graph 구조를 알 필요가 없고 `SupervisorService`만 호출한다. AI 내부에서는 `prepare()`와 `judge()`를 분리하지만, 실제 HTTP 경로와 외부 Pydantic 모델 이름은 백엔드 합의 후 확정한다.
 
 ```python
 class SupervisorService:
-    def __init__(self, graph):
-        self._graph = graph
+    def __init__(self, prepare_graph, judge_graph):
+        self._prepare_graph = prepare_graph
+        self._judge_graph = judge_graph
 
-    async def analyze(self, request: AnalyzeRequest) -> AnalyzeResponse:
-        trace_id = request.trace_id or create_uuid7()
-        run_context = RunContext(
-            schema_version=request.schema_version,
-            trace_id=str(trace_id),
-            scan_session_id=request.scan_session_id,
-            store_id=request.store_id,
-        )
-        result = await self._graph.ainvoke(
-            {
-                "image": request.image,
-                "user_profile": request.user_profile,
-                "locale": request.locale,
-                "curation_options": request.curation,
-            },
+    async def prepare(
+        self,
+        graph_input: PrepareGraphInput,
+        run_context: RunContext,
+    ) -> PrepareGraphOutput:
+        return await self._prepare_graph.ainvoke(
+            graph_input,
             context=run_context,
         )
-        return AnalyzeResponse.model_validate(result["response"])
+
+    async def judge(
+        self,
+        graph_input: JudgeGraphInput,
+        run_context: RunContext,
+    ) -> JudgeGraphOutput:
+        return await self._judge_graph.ainvoke(
+            graph_input,
+            context=run_context,
+        )
 ```
 
-```python
-@app.post("/v1/analyze", response_model=AnalyzeResponse)
-async def analyze_menu(
-    request: AnalyzeRequest,
-    service: SupervisorService = Depends(get_supervisor_service),
-) -> AnalyzeResponse:
-    return await service.analyze(request)
-```
+HTTP adapter는 요청에서 `RunContext`를 만들고 위 메서드에 전달한다. Prepare와 Judge 사이에 AI 프로세스의 in-memory state를 공유하지 않는다. Judge에 필요한 값은 백엔드가 저장한 Prepare 결과와 지식 데이터를 다시 전달해야 하므로 LangGraph checkpoint를 phase 연결 수단으로 사용하지 않는다.
 
-graph와 실제 adapter client는 FastAPI lifespan에서 한 번 만든다. 요청마다 graph를 compile하거나 LLM/HTTP client를 새로 만들지 않는다.
+두 graph와 실제 adapter client는 FastAPI lifespan에서 한 번 만든다. 요청마다 graph를 compile하거나 LLM/HTTP client를 새로 만들지 않는다.
 
 ### 2-15. Timeout·retry·fallback 구현 위치
 
@@ -1130,14 +1219,16 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 
 ### 2-16. 이 설계대로 구현됐는지 확인하는 기준
 
-- `build_supervisor_graph(fake_deps)`가 외부 서비스 없이 compile된다.
-- `graph.get_graph()`에서 Scan Graph의 node와 edge를 확인할 수 있다.
+- `build_prepare_graph(fake_deps)`와 `build_judge_graph(fake_deps)`가 외부 서비스 없이 compile된다.
+- 각 `graph.get_graph()`에서 Prepare/Judge Graph의 node와 edge를 확인할 수 있다.
 - router 단위 테스트가 모든 반환 node 이름을 검증한다.
 - 메뉴 3개를 서로 다른 지연시간으로 처리해도 최종 `items`가 `source_index` 순서다.
 - 한 Item Graph가 timeout이어도 다른 Item Graph 결과가 사라지지 않는다.
 - ②·⑥·⑧ LLM이 schema 밖 필드를 반환하면 Pydantic validation으로 거부된다.
 - LLM을 전부 실패시키는 fake를 넣어도 SAFE 쪽으로 fallback하지 않는다.
 - node 전후의 `store_id`, `trace_id`, `scan_session_id`가 동일하다.
+- Prepare가 끝난 뒤 process memory를 비워도 저장된 `prepared_items`로 Judge를 다시 실행할 수 있다.
+- `prepared_items`의 `item_id`·`source_index`가 Judge 최종 결과까지 유지된다.
 - `evidence_refs`가 evidence registry에 없는 ID를 가리키면 finalize가 응답을 만들지 않는다.
 - 같은 ⑦ operation을 두 번 생성해도 `idempotency_key`가 같다.
 
@@ -1266,7 +1357,9 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 
 ### 4-1. ② Menu Normalization Agent
 
-#### 요청 — `NormalizationRequest`
+2-phase 내부 실행에서는 ②의 책임을 두 단계로 분리한다. Prepare의 ②-A는 문자열만 정리하고, Judge의 ②-B는 백엔드가 조회한 허용 후보 안에서 최종 후보를 선택한다.
+
+#### Prepare 요청 — `NameCleaningRequest`
 
 ```json
 {
@@ -1281,8 +1374,11 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
   "items": [
     {
       "item_id": "scan-123:0",
+      "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
       "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
       "ocr_confidence": 0.93,
       "locale_hint": "ko",
       "risk_tag_observations": []
@@ -1293,7 +1389,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 }
 ```
 
-#### 응답 — `NormalizationResponse`
+#### Prepare 응답 — `NameCleaningResponse`
 
 ```json
 {
@@ -1308,9 +1404,89 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
   "items": [
     {
       "item_id": "scan-123:0",
+      "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
       "normalized_menu_name": "김치찌개",
       "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
+      "options": ["2인"],
+      "residual_tokens": [],
+      "risk_tag_observations": []
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
+```
+
+#### Judge 요청 — `CandidateSelectionRequest`
+
+```json
+{
+  "context": {
+    "schema_version": "1.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
+  "items": [
+    {
+      "item_id": "scan-123:0",
+      "source_index": 0,
+      "raw_menu_name": "■ 김치 찌개 2인",
+      "normalized_menu_name": "김치찌개",
+      "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
+      "options": ["2인"],
+      "residual_tokens": [],
+      "risk_tag_observations": [],
+      "candidate_status": "ok",
+      "match_candidates": [
+        {
+          "menu_id": "menu-001",
+          "canonical_name": "김치찌개",
+          "score": 0.97,
+          "match_type": "canonical"
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
+```
+
+#### Judge 응답 — `CandidateSelectionResponse`
+
+```json
+{
+  "context": {
+    "schema_version": "1.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
+  "items": [
+    {
+      "item_id": "scan-123:0",
+      "source_index": 0,
+      "raw_menu_name": "■ 김치 찌개 2인",
+      "normalized_menu_name": "김치찌개",
+      "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
       "options": ["2인"],
       "residual_tokens": [],
       "risk_tag_observations": [],
@@ -1336,11 +1512,13 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 }
 ```
 
-`normalization_status`는 `normalized | ambiguous | unmatched | invalid`다. `normalized`일 때만 `selected_candidate`를 채운다. 나머지는 `null`이며 후보는 `match_candidates`에 보존한다.
+`candidate_status`는 `ok | not_found | unavailable`이다. `unavailable`은 후보가 없다는 뜻이 아니라 조회하지 못했다는 뜻이므로 해당 메뉴의 SAFE 판정을 금지한다. `not_found`면 후보 없이 unknown 경로로 진행한다.
+
+`normalization_status`는 `normalized | ambiguous | unmatched | invalid`다. `normalized`일 때만 `selected_candidate`를 채운다. 나머지는 `null`이며 후보는 `match_candidates`에 보존한다. ②-B는 입력에 없는 `menu_id`를 새로 만들거나 선택할 수 없다.
 
 `match_type`은 `canonical | spacing | synonym | ocr_correction | fuzzy | llm_context | unmatched`, `score`는 0~1이다. `match_candidates`는 score 내림차순이며 동점이면 `menu_id` 오름차순으로 정렬한다.
 
-Supervisor는 ②가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매핑을 유지한다. 최종 응답에서 사용자가 본 메뉴명과 내부 매칭 결과를 연결해야 하기 때문이다. ②는 `risk_tag_observations`를 해석하거나 수정하지 않고 입력 그대로 반환한다.
+Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매핑을 Judge와 최종 응답까지 유지한다. 최종 응답에서 사용자가 본 메뉴명과 내부 매칭 결과를 연결해야 하기 때문이다. ②-A와 ②-B는 `risk_tag_observations`를 해석하거나 수정하지 않고 입력 그대로 반환한다. `CandidateSelectionRequest`는 AI 내부 최소 입력 view이며, 백엔드 KnowledgeBundle에서 이 모양으로 변환할 위치와 후보 개수 `k`는 합의가 필요하다.
 
 ### 4-2. ③ Exact Feedback Tool
 
@@ -2241,7 +2419,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | 양의 정수 `store_id` + 이미지 | ①→② 배치 호출 후 메뉴별 라우팅 | 모든 하위 호출과 응답에 같은 `store_id` 포함 |
+| 1 | 양의 정수 `store_id` + 이미지 | Prepare ①→②-A, Judge ②-B→메뉴별 라우팅 | 모든 하위 호출과 응답에 같은 `store_id` 포함 |
 | 2 | `store_id` 누락/문자열/0 이하 | 즉시 검증 실패 | 모든 하위 호출 없음 |
 | 3 | Exact complete 메뉴 | ④⑤ 스킵, ⑧ 직행 | confirmed 기반 판정 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
@@ -2261,11 +2439,18 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 - [x] 가게 검색·선택·기존 공공데이터 매칭은 백엔드 책임, Supervisor는 확정된 `store_id`만 입력받음
 - [ ] LangChain 생태계 + LangGraph `StateGraph` 사용 최종 승인 (#76과 함께 결정)
-- [ ] 신규 `/v1/analyze` 추가 및 기존 3개 API 호환 기간
+- [x] AI 내부 실행은 Prepare Graph와 Judge Graph로 분리하고 Judge 안에서 메뉴별 Item Graph fan-out
+- [x] Prepare는 ① OCR→재촬영 분기→②-A 이름 정제, Judge는 ②-B 후보 선택→③~⑨ 판정
+- [x] 초기 graph는 영속 checkpoint 없이 실행하고 phase 사이 상태는 process memory에 의존하지 않음
+- [ ] 외부 진입점을 `/v1/analyze/prepare`, `/v1/analyze/judge`로 나눌지와 기존 3개 API 호환 기간 — 백엔드 합의
+- [ ] Prepare/Judge 요청·응답, KnowledgeBundle 전체 JSON과 schema version — 백엔드 합의
+- [ ] 후보 조회 책임, 후보 개수 `k`, `not_found | unavailable | bundle_miss` 의미 — 백엔드 합의
+- [ ] Prepare/Judge 연결 식별자·hash·revision의 생성 및 검증 주체 — 백엔드 합의
+- [ ] ⑨ Curation 데이터의 번들 포함 여부와 조회 주체 — 백엔드 합의
+- [ ] phase별 timeout, Prepare 결과 보존 기간, Judge 재시도·멱등성 — 백엔드 합의
 - [ ] 메뉴판 1장 기준 ③④⑤⑧ 호출의 실제 배치 API 형태와 동시성 제한
 - [ ] 일부 메뉴 에러 발생 시 사용자 응답에서 메뉴별 오류를 어떤 문구로 보여줄지
 - [ ] DANGER/CAUTION/SAFE threshold를 Supervisor가 들고 있을지, ⑧ Decision Policy / XAI Agent가 들고 있을지
-- [ ] LangGraph checkpoint 사용 여부와 state 보존 기간
 - [x] 공통 재료 식별자, `constraint_tags`, EvidenceRef registry, warning/error, ⑧ 입력의 3-State 계약 — §1·§4로 확정
 
 ---
@@ -2292,7 +2477,8 @@ PPT의 Hub & Spoke 흐름을 LangGraph 상태 그래프로 확정하고 Supervis
 - [x] ①~⑨ node와 conditional edge 확정
 - [x] LLM Agent와 결정론적 Tool 경계 확정
 - [x] fan-out/collect와 ⑦ 명령 흐름 확정
-- [ ] `/v1/analyze` 및 기존 API 전환 방식 확정
+- [x] Prepare/Judge 내부 graph 책임과 ②-A/②-B 경계 정의
+- [ ] Prepare/Judge 외부 API·KnowledgeBundle·기존 API 전환 방식 백엔드 합의
 
 **관련 서비스**
 
@@ -2342,11 +2528,11 @@ Supervisor와 ①~⑨ 사이의 공통 문맥, 메뉴·재료 식별자, 입출�
 
 ### Iteration 2 — Supervisor 골격 구현
 
-#### `[FEAT] Supervisor StateGraph 기반 구조와 단일 진입점 구현`
+#### `[FEAT] Supervisor Prepare/Judge StateGraph 골격 구현`
 
 **작업 내용**
 
-확정된 계약을 기반으로 Supervisor 기본 그래프, 입력 검증, ①·② adapter와 `/v1/analyze`를 구현한다.
+확정된 AI 내부 계약을 기반으로 Prepare/Judge Graph, 입력 검증, ①·② adapter를 구현하고 합의된 외부 API에 연결한다.
 
 **배경**
 
@@ -2355,10 +2541,10 @@ Supervisor와 ①~⑨ 사이의 공통 문맥, 메뉴·재료 식별자, 입출�
 **세부 작업**
 
 - [ ] LangChain/LangGraph 버전 검토·고정
-- [ ] graph/state/models/adapters 구조 생성
+- [ ] prepare_graph/judge_graph/item_graph/state/models/adapters 구조 생성
 - [ ] 공통 Pydantic 모델과 입력 검증 구현
-- [ ] ①·② adapter, item state 초기화 구현
-- [ ] `/v1/analyze`와 기존 API 호환 처리
+- [ ] ①·②-A/②-B adapter, item state 초기화 구현
+- [ ] 합의된 Prepare/Judge endpoint와 기존 API 호환 처리
 - [ ] 정상·잘못된 store_id·빈 OCR 결과 테스트
 
 **관련 서비스**

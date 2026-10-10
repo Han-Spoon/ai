@@ -17,16 +17,16 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 
 | 문서 | Agent / Tool | 역할 |
 |---|---|---|
-| [agent-0-supervisor.md](agent-0-supervisor.md) | ⓪ Supervisor Agent | `store_id` 검증 + 전체 오케스트레이션 |
+| [0-agent-supervisor.md](0-agent-supervisor.md) | ⓪ Supervisor Agent | `store_id` 검증 + 전체 오케스트레이션 |
 | — | ① OCR Tool | 메뉴판 이미지에서 메뉴명·가격·설명 텍스트를 구조화하여 추출 |
-| [agent-2-normalization.md](agent-2-normalization.md) | ② Menu Normalization Agent | OCR 오탈자·표기 변형·다국어 메뉴명을 표준명으로 해석 |
-| [agent-3-exact.md](agent-3-exact.md) | ③ Exact Feedback Tool | 재료 단위 확정 근거(Hard Evidence) 조회 |
-| [agent-4-DBontology.md](agent-4-DBontology.md) | ④ DB / Ontology Tool | 온톨로지 조회 + 재귀 확장 + 변형 태깅 |
-| [agent-5-Statistics.md](agent-5-Statistics.md) | ⑤ Bayesian Tool | 가게별 α/β 기반 재료 포함 확률 계산 |
-| [agent-6-websearch.md](agent-6-websearch.md) | ⑥ Web Search Agent | DB 미등록 메뉴의 외부 재료 근거 수집 (soft evidence) |
-| [agent-7-dbupdate.md](agent-7-dbupdate.md) | ⑦ DB Update Tool | 저장 명령 생성 · 관리자 컨펌 게이트 |
-| [agent-8-xai.md](agent-8-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
-| [agent-9-curation.md](agent-9-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
+| [2-agent-normalization.md](2-agent-normalization.md) | ② Menu Normalization Agent | OCR 오탈자·표기 변형·다국어 메뉴명을 표준명으로 해석 |
+| [3-tool-exact.md](3-tool-exact.md) | ③ Exact Feedback Tool | 재료 단위 확정 근거(Hard Evidence) 조회 |
+| [4-tool-DBontology.md](4-tool-DBontology.md) | ④ DB / Ontology Tool | 온톨로지 조회 + 재귀 확장 + 변형 태깅 |
+| [5-tool-Statistics.md](5-tool-Statistics.md) | ⑤ Bayesian Tool | 가게별 α/β 기반 재료 포함 확률 계산 |
+| [6-agent-websearch.md](6-agent-websearch.md) | ⑥ Web Search Agent | DB 미등록 메뉴의 외부 재료 근거 수집 (soft evidence) |
+| [7-tool-dbupdate.md](7-tool-dbupdate.md) | ⑦ DB Update Tool | 저장 명령 생성 · 관리자 컨펌 게이트 |
+| [8-tool-xai.md](8-tool-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
+| [9-agent-curation.md](9-agent-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
 
 > **스펙 문서가 아직 없는 노드**
 > - ① OCR Tool — 구현은 [`../ai_ocr/README.md`](../ai_ocr/README.md)에 있고, 별도 스펙 문서는 없습니다.
