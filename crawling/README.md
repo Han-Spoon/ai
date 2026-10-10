@@ -32,3 +32,24 @@ menu_query, recipe_title, recipe_url, ingredient_name
 ```bash
 python crawling/wtable_crawler.py --exact-title-only
 ```
+
+## 사이트별 결과와 합친 결과
+
+세 사이트(semie, wtable, 10000recipe)를 같은 `normalize_ingredients.py`로 정규화한 결과를 사이트별로 둡니다. 백엔드 적재(`menu_recipe_corpora.corpus` 단위)는 사이트별 `<사이트>_prior.csv`를 사용합니다.
+
+| 사이트 | 원본 | 정규화 결과 | prior |
+|---|---|---|---|
+| 세미 (semie) | `semie_recipes_raw.csv` | `semie_normalized.csv` | `semie_prior.csv` |
+| 우리의식탁 (wtable) | `wtable_recipes_raw.csv` | `wtable_normalized.csv` | `wtable_prior.csv` |
+| 만개의레시피 (10000recipe) | `10000recipe_recipes_raw.csv` | `10000recipe_normalized.csv` | `10000recipe_prior.csv` |
+
+`10000recipe_recipes_raw.csv`는 크롤러 출력이 아니라, 이전에 정규화된 파일(`recipe_ingredients_all76_60_normalized.csv`)의 `ingredient_raw`를 원문으로 되돌려 만든 파일입니다.
+
+세 사이트를 합친 prior(`merged_prior.csv`)는 실험·분석용입니다. 다음처럼 다시 만들 수 있으며, 중간 파일(`merged_recipes_raw.csv`, `merged_normalized.csv`)은 용량이 커서 저장소에 올리지 않습니다.
+
+```bash
+python crawling/merge_corpora.py
+python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-prefix merged
+```
+
+정규화 규칙을 바꾸면 사이트별 결과와 합친 결과를 모두 다시 만들어야 합니다.
