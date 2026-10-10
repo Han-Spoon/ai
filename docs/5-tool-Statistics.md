@@ -55,7 +55,7 @@
 | `context` | object | **필수** | ⓪ §1-3 공통 호출 문맥. `schema_version`, `trace_id`, `scan_session_id`, `store_id`, `item_id`. `store_id`는 prior 스코프이며 양의 정수만 허용, 없으면 에러 |
 | `menu_id` | integer \| null | 필수 | 가게 증거(`ingredient_risk_scores`) 조회용. DB에 없는 메뉴는 `null` |
 | `menu_category_id` | integer \| null | 필수 | 클러스터 fallback용 (④ 출력, `menus.category_id`). `null`이면 `cluster` 단계를 건너뛴다 |
-| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
+| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5. 하위 재료는 상위 재료 관측값을 물려받으며 `observation_basis: inherited`), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
 
 ```json
