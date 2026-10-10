@@ -127,8 +127,11 @@ graph LR
       "constraint_tags": ["is_beef"],
       "source": "web_search",
       "depth": 0,
-      "k_count": 4,
-      "n_total": 6,
+      "observations": [
+        {"corpus": "10000recipe", "k_count": 3, "n_total": 5},
+        {"corpus": "wtable", "k_count": 1, "n_total": 3},
+        {"corpus": "web_search", "k_count": 0, "n_total": 2}
+      ],
       "anomaly_locked": false,
       "evidence_refs": ["web:https://example.com/recipe/mala-tang"]
     }
@@ -146,8 +149,10 @@ graph LR
 | `sources[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 웹서치는 항상 `evidence_class: soft`(미검증), `source_type: web_search`, `verification_status: pending_review`(관리자 검토 대기) |
 | `sources[].reliability_weight` | 출처 신뢰도(0~1). **⑥은 계산하지 않고 `null`로 보낸다** (#194) |
 | `ingredients[]` | **재료별 집계.** 같은 재료를 표준 이름으로 묶어 출처 수를 센 결과. ⑤ 확률 계산의 입력이 된다 |
-| `ingredients[].k_count` | 그 재료가 나온 출처 수 (복사본 포함, §2-3) |
-| `ingredients[].n_total` | 유효한 출처 수 (복사본 포함, §2-3). 한 메뉴의 모든 재료가 같은 값을 가진다 |
+| `ingredients[].observations[]` | **사이트별 개수.** 출처 사이트(`corpus`)마다 "그 사이트의 레시피 `n_total`개 중 `k_count`개에 이 재료가 있었다"를 따로 담는다. ⑤가 사이트별 신뢰도를 곱해 확률을 계산한다 (⑤ §1-1·§3-3, ④ §1-5와 같은 형식) |
+| `observations[].corpus` | 출처 사이트. 우선 검색 사이트는 크롤링 코퍼스와 같은 이름(`10000recipe` / `wtable` / `semie`), 그 밖의 일반 웹 출처는 모두 `web_search`로 묶는다 |
+| `observations[].k_count` | 그 사이트 레시피 중 이 재료가 나온 수 (복사본 포함, §2-3) |
+| `observations[].n_total` | 그 사이트의 유효 레시피 수 (복사본 포함, §2-3). 같은 사이트면 모든 재료가 같은 값을 가진다. 이 재료가 한 번도 안 나온 사이트도 `k_count: 0`으로 넣는다 |
 | `ingredients[].source` | 항상 `web_search` |
 | `ingredients[].depth` | 재료를 펼친 깊이. 웹에서 뽑은 재료는 펼치기 전이라 `0` |
 | `ingredients[].constraint_tags` | ⑥은 항상 `[]`로 보낸다. 표준 재료 매핑과 태그는 ④가 붙인다 (결정, 2026-10-10, ④ §2-7) |
@@ -164,7 +169,7 @@ graph LR
 |---|---|
 | 최대 출처 수 | **10개** (`max_sources`) |
 | 최소 출처 수 | **10개 (복사본 포함)**. 10개 미만이면 결과는 반환하되 `insufficient_sources` warning(`forces_caution: true`)을 붙인다 (2026-10-10 회의) |
-| 중복 | **허용한다 (결정, 2026-10-10 회의).** 재료 구성이 같은 복사본도 각각 1개로 센다. `k_count`·`n_total`은 복사본을 포함한 개수 |
+| 중복 | **허용한다 (결정, 2026-10-10 회의).** 재료 구성이 같은 복사본도 각각 1개로 센다. `observations`의 `k_count`·`n_total`은 복사본을 포함한 개수 |
 
 **근거 1 — 팀 크롤링 데이터 시뮬레이션** (`crawling/wtable_normalized.csv`, 2026-10-08)
 
@@ -323,7 +328,7 @@ flowchart TD
     R -->|Yes| RJ["레시피 글인지 판별 (LLM)<br/>후기·광고·쇼핑몰 글 제외"]
     RJ --> C["재료 뽑기 (규칙 + LLM 합집합)<br/>LLM 결과는 본문 대조로 검증"]
     C --> D["복사본 표시<br/>(개수에 포함)"]
-    D --> AGG["재료별 집계<br/>k_count / n_total"]
+    D --> AGG["재료별·사이트별 집계<br/>observations (k_count / n_total)"]
     AGG --> MIN{"유효 출처 10개 이상?<br/>(복사본 포함)"}
     MIN -->|No| W["insufficient_sources warning<br/>(forces_caution: true)"]
     MIN -->|Yes| OUT
@@ -337,7 +342,7 @@ flowchart TD
 2-1. **(규칙 + LLM)** 레시피 글에서 재료를 뽑는다. 규칙(재료 사전)과 LLM이 각각 뽑고, **둘 중 한쪽이라도 찾은 재료는 모두 남긴다** (§3-0).
 2-2. 출처마다 `source_url`, `title`, `fetched_at`, 재료 목록을 정리하고 `evidence`를 붙인다. **저장 명령은 만들지 않는다.**
 3. 재료 구성이 같은 레시피는 복사본으로 보고 1개만 남긴다 (§2-3).
-4. 같은 재료를 표준 이름으로 묶어 `k_count`(나온 출처 수)와 `n_total`(유효 출처 수)을 센다.
+4. 같은 재료를 표준 이름으로 묶고, **출처 사이트별로** `k_count`(그 사이트에서 나온 레시피 수)와 `n_total`(그 사이트의 유효 레시피 수)을 세어 `observations`에 담는다. 우선 사이트 밖의 출처는 `web_search` 하나로 묶는다.
 5. 유효 출처가 10개 미만(복사본 포함)이면 `insufficient_sources` warning을 붙인다. 결과는 버리지 않고 반환한다.
 6. `sources`와 `ingredients`를 ⓪ Supervisor Agent에 반환한다. 저장은 ⑥의 일이 아니다.
 
@@ -409,8 +414,8 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 |---|---|---|---|
 | 1 | 웹서치 성공 (마라탕) | `found: true` + `sources` + `ingredients` 반환 | ⑥ 출력에 저장 명령이 없을 것. `menus`/`recipe_ingredients`는 미반영일 것 |
 | 2 | 웹서치 실패/타임아웃 | `found: false`, `sources: []`, `ingredients: []`, `errors`에 `web_search_timeout` | ⑧이 "완전 정보 없음" 경로로 감 |
-| 3 | 출처 6개 중 4개에 소고기 | 소고기 `k_count: 4`, `n_total: 6` | 재료별 개수가 맞을 것 |
-| 4 | 출처 10개 중 3개가 재료 구성이 같은 복사본 | `n_total: 10`, 최소 개수 충족 | 복사본도 개수에 넣을 것 |
+| 3 | 만개의레시피 5개 중 3개, 우리의식탁 3개 중 1개, 일반 웹 2개 중 0개에 소고기 | 소고기 `observations`: `10000recipe` 3/5, `wtable` 1/3, `web_search` 0/2 | 사이트별 개수가 맞고, 안 나온 사이트도 `k_count: 0`으로 들어갈 것 |
+| 4 | 출처 10개 중 3개가 재료 구성이 같은 복사본 | 사이트별 `n_total` 합이 10, 최소 개수 충족 | 복사본도 개수에 넣을 것 |
 | 5 | 유효 출처 8개 (복사본 포함) | 결과 반환 + `insufficient_sources` warning(`forces_caution: true`) | 결과를 버리지 않고, SAFE를 막는 신호를 보낼 것 |
 | 6 | 정상 결과 | 모든 `sources[].reliability_weight`가 `null` | ⑥이 출처 신뢰도를 계산하지 않을 것 |
 | 7 | 검색 결과에 맛집 후기 글 섞임 | 후기 글은 유효 출처에서 제외 | LLM 레시피 판별이 동작할 것 |
@@ -440,4 +445,6 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 - [ ] **웹 캐시 세부** — 캐시를 며칠까지 재사용할지, 캐시 확인 주체(⑥ / 백엔드가 2-phase 번들로 전달), 백그라운드 추가 수집을 시작하는 기준(같은 메뉴가 몇 번 나오면), 20개를 누가 세서 관리자 승격 검토로 넘길지
 - [x] **출처 신뢰도 가중치를 ⑥에서 어디까지 판단할지** — ⑥은 계산하지 않고 `reliability_weight: null`로 보낸다 (2026-10-06, #194)
 - [x] **재료 태그(`constraint_tags`)를 누가 붙일지** — ④가 모두 붙인다. 웹 재료를 표준 재료로 매핑하는 일도 ④가 한다 (2026-10-10, ④ §2-7). PPT 7쪽이 위험 속성 매핑을 ④의 역할로 정의한 것과 같다
-- [ ] **⓪ 문서 반영 요청 (외부 의존)** — ⓪ §4-5 예시는 `reliability_weight: 0.5`를 ⑥이 채우는 것처럼 되어 있고, 같은 값이 `sources[]`와 `evidence`에 두 번 들어간다. `null` 허용과 한 곳으로 합치기를 ⓪ 담당자에게 요청. `insufficient_sources` warning, `n_total`이 중복 제거 후 개수라는 점도 ⓪에 반영 요청
+- [x] **⑤로 넘기는 개수 형식** — ⑤·④와 같은 사이트별 `observations`로 보낸다. 일반 웹 출처는 `corpus: web_search` 하나로 묶는다 (§2-2)
+- [ ] **⑤ 문서 맞추기 (외부 의존)** — ⑤ §1-1 입력 표의 "⑥ 출력은 필드 정합 미확정"과 테스트 14번("⑥ 후보는 개수 없음 → 무정보") 정리, `web_search` 코퍼스 신뢰도와 반영 비율(#201) 결정 — ⑤ 담당자 요청
+- [ ] **⓪ 문서 반영 요청 (외부 의존)** — ⓪ §4-5 예시는 `reliability_weight: 0.5`를 ⑥이 채우는 것처럼 되어 있고, 같은 값이 `sources[]`와 `evidence`에 두 번 들어간다. `null` 허용과 한 곳으로 합치기를 ⓪ 담당자에게 요청. `insufficient_sources` warning, ⑥ `ingredients[]`의 `k_count`·`n_total`을 사이트별 `observations`로 바꾸는 점도 ⓪에 반영 요청
