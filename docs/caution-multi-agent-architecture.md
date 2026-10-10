@@ -247,7 +247,7 @@ graph TB
 ### ⑤ Bayesian Tool
 - **역할 개요**: ③ Exact Feedback Tool로 확인되지 않은 재료에 대해 "이 가게 이 메뉴에 얼마나 있을 것 같은지"를 가게별 과거 데이터로 추정하는 확률 엔진. 확정값이 아니라 추정치이기 때문에, 이 결과는 항상 ⑧이 임계값과 함께 해석해서 DANGER/CAUTION/SAFE로 변환한다.
 - **입력**: store_id, 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
-- **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **agent-5-Statistics.md 확정 공식**(doc2 갱신 완료). store_id 스코프 prior를 `store → cluster(menu_category) → global → uninformative` 순으로 fallback해서 사용하고, 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
+- **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **5-tool-Statistics.md 확정 공식**(doc2 갱신 완료). store_id 스코프 prior를 `store → cluster(menu_category) → global → uninformative` 순으로 fallback해서 사용하고, 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
 - **출력**: 재료별 존재 확률 (posterior mean) → **Supervisor에게 반환**
 - **주의**: 전역 prior는 최후의 수단(`uninformative`). ③에서 override 거부된 anomaly 재료는 `anomaly_locked: true`로 표시되어, 확률 값과 무관하게 ⑧이 CAUTION 이상을 강제하도록 함.
 
@@ -279,7 +279,7 @@ graph TB
 - **입력**: ⑧의 판정 결과(메뉴별 risk_level·근거) + 사용자 식단 프로필
 - **처리**: 안전 후보 랭킹, 큐레이션/RAG 인덱스 검색
 - **출력**: 추천 메뉴 정렬 결과 + 한식 문화 콘텐츠 → ⓪ Supervisor Agent에게 반환
-- **스펙 문서**: [`agent-9-curation.md`](agent-9-curation.md). PPT에서 확정되지 않은 후보 범위·랭킹 정책·인덱스 운영 방식은 해당 문서 §8에서 팀 확인 대기로 관리.
+- **스펙 문서**: [`9-agent-curation.md`](9-agent-curation.md). PPT에서 확정되지 않은 후보 범위·랭킹 정책·인덱스 운영 방식은 해당 문서 §8에서 팀 확인 대기로 관리.
 
 ---
 
@@ -291,4 +291,4 @@ graph TB
 - 사장님 피드백의 신뢰도 가중치를 일반 사용자 피드백과 다르게 줄 것인지 (McCoy & Prelec 2024 hierarchical trust-weight 적용 여부)
 - 웹서치 크롤링 결과와 기존 DB 값이 충돌할 때 병합 규칙
 - 메뉴판 1장당 수십 개 아이템이 나올 때 무거운 경로(웹서치, 확률모델) 호출을 얼마나 배치/캐싱할지
-- `ingredient_confirmations` UNIQUE `(store_id, menu_id, ingredient_id)` 제약과 `agent-3-exact.md`의 "동일 재료 중복 레코드 존재" 가정이 서로 충돌 — DB가 애초에 중복을 막는데 agent-3은 중복을 걷어내는 dedupe/conflict 로직을 전제로 설계됨. 둘 중 하나를 고쳐야 함
+- `ingredient_confirmations` UNIQUE `(store_id, menu_id, ingredient_id)` 제약과 `3-tool-exact.md`의 "동일 재료 중복 레코드 존재" 가정이 서로 충돌 — DB가 애초에 중복을 막는데 3-tool은 중복을 걷어내는 dedupe/conflict 로직을 전제로 설계됨. 둘 중 하나를 고쳐야 함

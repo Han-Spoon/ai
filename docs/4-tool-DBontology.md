@@ -572,7 +572,7 @@ graph TB
 **참고**
 
 - 상위 이슈 #70, 공통 계약 #103
-- `docs/ppt-baseline.md` 7쪽, `docs/agent-0-supervisor.md` §1-3
+- `docs/ppt-baseline.md` 7쪽, `docs/0-agent-supervisor.md` §1-3
 
 #### `[DOCS] ④ DB / Ontology - 온톨로지 데이터 범위 확정` (#182)
 
