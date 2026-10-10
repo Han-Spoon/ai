@@ -150,7 +150,7 @@ graph LR
 | `ingredients[].n_total` | 유효한 출처 수 (중복 제거 후, §2-3). 한 메뉴의 모든 재료가 같은 값을 가진다 |
 | `ingredients[].source` | 항상 `web_search` |
 | `ingredients[].depth` | 재료를 펼친 깊이. 웹에서 뽑은 재료는 펼치기 전이라 `0` |
-| `ingredients[].constraint_tags` | 재료가 걸리는 제한 태그 (예: 소고기 → `is_beef`). **누가 붙일지 미확정** (§5) |
+| `ingredients[].constraint_tags` | ⑥은 항상 `[]`로 보낸다. 표준 재료 매핑과 태그는 ④가 붙인다 (결정, 2026-10-10, ④ §2-7) |
 | `ingredients[].anomaly_locked` | 항상 `false` (사장님 답변이 아니므로 anomaly 대상 아님) |
 | `ingredients[].evidence_refs` | 그 재료가 나온 출처의 `evidence_id` 목록 |
 | `warnings` / `errors` | 입력 신호를 보존하고 ⑥의 신호를 덧붙임 (§3-2) |
@@ -359,7 +359,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 **재료 뽑기 — 규칙 + LLM 합집합**
 - **합집합을 쓰는 이유:** 둘 다 찾은 재료만 남기면 한쪽이 놓친 재료가 사라져 FN이 생긴다.
 - **LLM이 실패·시간 초과해도** 규칙 결과는 남는다. 재료가 통째로 사라지지 않는다.
-- **LLM만 찾은 재료**는 본문에 그 단어가 있어야 남기고, 표준 재료로 매핑되지 않으면 `unmapped_constraint_tags` warning(`forces_caution: true`)을 붙인다. 태그 없이 넘어가면 ⑧이 SAFE를 낼 수 있기 때문이다.
+- **LLM만 찾은 재료**는 본문에 그 단어가 있어야 남긴다. 표준 재료 매핑은 ④가 하며, 매핑되지 않으면 ④가 `unmapped_constraint_tags` warning(`forces_caution: true`)을 붙인다 (④ §2-7). 태그 없이 넘어가면 ⑧이 SAFE를 낼 수 있기 때문이다.
 
 ### 3-1. ⑥이 하지 않는 것
 
@@ -383,7 +383,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 | 재료를 하나도 뽑지 못한 출처 | 유효 출처로 세지 않는다 |
 | LLM 호출 실패·시간 초과 | 규칙(재료 사전)으로 뽑은 결과만 반환하고 `warnings`에 `web_llm_extraction_failed`(`forces_caution: true`)를 붙인다. 레시피 판별을 못 했으므로 모든 글을 후보로 둔다 |
 | LLM이 뽑은 재료가 본문에 없음 | 버린다 (지어낸 재료 방지) |
-| LLM만 찾은 재료가 표준 재료로 매핑되지 않음 | 재료는 남기고 `unmapped_constraint_tags` warning(`forces_caution: true`)을 붙인다 |
+| LLM만 찾은 재료가 표준 재료로 매핑되지 않음 | 재료는 남긴다. 매핑은 ④가 하며, 실패하면 ④가 `unmapped_constraint_tags` warning(`forces_caution: true`)을 붙인다 |
 
 오류 형식 예시 (⓪ §1-2 `NodeError`):
 
@@ -436,5 +436,5 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 - [x] **⑥ 시간 제한** — 메뉴 하나당 7초 (검색 API 3초, LLM 3초). 넘기면 모은 만큼 반환 (§2-5). 2-phase 판정 단계 전체 타임아웃은 ⓪·백엔드와 함께 정한다
 - [ ] **웹 캐시 세부** — 캐시를 며칠까지 재사용할지, 캐시 확인 주체(⑥ / 백엔드가 2-phase 번들로 전달), 백그라운드 추가 수집을 시작하는 기준(같은 메뉴가 몇 번 나오면), 20개를 누가 세서 관리자 승격 검토로 넘길지
 - [x] **출처 신뢰도 가중치를 ⑥에서 어디까지 판단할지** — ⑥은 계산하지 않고 `reliability_weight: null`로 보낸다 (2026-10-06, #194)
-- [ ] **재료 태그(`constraint_tags`)를 누가 붙일지** — ⓪ §4-5는 ⑥이 붙인다고 적었지만, PPT 7쪽은 위험 속성 매핑을 ④의 역할로 정의한다. 태그 붙이기가 ③·④·⑥에 흩어지지 않게 ④로 모을지 회의에서 정한다. 웹 재료를 표준 재료로 매핑하는 일도 함께 정한다
+- [x] **재료 태그(`constraint_tags`)를 누가 붙일지** — ④가 모두 붙인다. 웹 재료를 표준 재료로 매핑하는 일도 ④가 한다 (2026-10-10, ④ §2-7). PPT 7쪽이 위험 속성 매핑을 ④의 역할로 정의한 것과 같다
 - [ ] **⓪ 문서 반영 요청 (외부 의존)** — ⓪ §4-5 예시는 `reliability_weight: 0.5`를 ⑥이 채우는 것처럼 되어 있고, 같은 값이 `sources[]`와 `evidence`에 두 번 들어간다. `null` 허용과 한 곳으로 합치기를 ⓪ 담당자에게 요청. `insufficient_sources` warning, `n_total`이 중복 제거 후 개수라는 점도 ⓪에 반영 요청

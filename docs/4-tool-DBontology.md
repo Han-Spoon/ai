@@ -16,6 +16,8 @@
 2. **재료 계층 확장** — 숨은 하위 재료를 재귀적으로 펼치기
 3. **위험 속성 매핑 + 변형 태깅** — 재료마다 알레르기·식이 태그를 붙이고, 메뉴명의 변형 토큰(예: "차돌")을 재료로 제안
 
+> **재료 태그는 ④만 관리한다** (결정, 2026-10-10). 태그 사전, 재료별 태그 조회, 웹 재료의 표준 재료 매핑을 모두 ④가 맡는다. ③·⑥은 태그를 붙이지 않고 `constraint_tags: []`로 보내며, Supervisor가 ④의 `lookup_tags` / `map_ingredients`로 채운다 (§2-7). 태그를 붙이는 곳이 여러 군데면 어휘나 기준이 갈라져 알레르겐을 놓친다.
+
 | 하지 않음 | 담당 |
 |---|---|
 | 메뉴명 문자열 정제 | ② |
@@ -28,7 +30,7 @@
 | 조리 중 교차오염 추정 | 모델 범위 외 (§0-4) |
 
 > **예외 — `menu_ingredient_cache` 쓰기는 ④가 수행한다.** (AGENTS.md 확정)
-> 이 테이블은 ④의 확장 결과를 그대로 저장한 **파생 캐시**이며 도메인 데이터가 아니다. 언제든 재계산 가능하고 관리자 컨펌 대상이 아니므로 ⑦의 승인 흐름을 타지 않는다. "④가 수행한다"는 ⑦을 거치지 않고 ④가 저장 명령을 직접 만든다는 뜻이며, 물리 DB 쓰기와 트랜잭션은 AGENTS.md "물리 DB 쓰기는 백엔드만 수행한다"에 따라 백엔드 영속화 계층이 맡는다. 단, 온톨로지(`hidden_rules.py`)나 `recipe_ingredients`가 변경되면 해당 캐시는 무효화되어야 한다 (무효화 시점 정의는 §8).
+> 이 테이블은 ④의 확장 결과를 그대로 저장한 **파생 캐시**이며 도메인 데이터가 아니다. 언제든 재계산 가능하고 관리자 컨펌 대상이 아니므로 ⑦의 승인 흐름을 타지 않는다. "④가 수행한다"는 ⑦을 거치지 않고 ④가 저장 명령을 직접 만든다는 뜻이며, 물리 DB 쓰기와 트랜잭션은 AGENTS.md "물리 DB 쓰기는 백엔드만 수행한다"에 따라 백엔드 영속화 계층이 맡는다. 온톨로지나 레시피가 바뀌면 `menus.knowledge_revision`이 올라가고, 리비전이 다른 캐시는 쓰지 않는다 (§2-1).
 
 ### 0-1. 설계 원칙
 
@@ -36,7 +38,7 @@
 - **재료를 버리지 않는다.** 미등록 재료, 매핑 실패 토큰, anomaly 재료 모두 결과에 남긴다. 재료 누락은 곧 FN이다.
 - **변형 판별은 DB 컬럼이 먼저다.** 문자열 파싱은 DB에 메뉴가 없을 때만 한다.
 - **관측 불가능한 위험은 추정하지 않는다.** 교차오염은 확률 모델 범위 밖이며 사장님 질문 경로로 넘긴다.
-- **위험 태그는 하나의 어휘를 쓴다.** `ingredients.tag`와 ⑧이 쓰는 `is_*` 값을 그대로 쓴다.
+- **위험 태그는 하나의 어휘를 쓴다.** `ingredient_tags.tag_code`와 ⑧이 쓰는 `is_*` 값을 그대로 쓴다.
 - **판단·호출하지 않는다.** ④는 조회 결과를 반환할 뿐, 다음 노드를 직접 부르거나 판정하지 않는다.
 - **외부 경계는 Pydantic 모델로 검증한다** (⓪ §1-3).
 
@@ -370,7 +372,61 @@ return OntologyResult(context=context, ingredients=nodes, variant_origin=variant
                       warnings=collect_warnings(...), ...)
 ```
 
-### 2-6. DB 조회 쿼리
+### 2-6. 태그 사전과 단독 관리 원칙
+
+- 태그 사전 원본: `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS` (22종 `is_*`, 키워드 부분일치, 긴 키워드 우선). DB의 `ingredient_tags`는 이 사전으로 만든다 (#223).
+- 사전을 바꾸면 DB 시드의 `ingredient_tags`도 다시 만들어야 한다. 사전과 DB가 다르면 룰엔진 판정과 ⑧ 판정이 갈린다.
+- 다른 노드는 태그를 만들거나 고치지 않는다. ⑤·⑧은 받은 `constraint_tags`를 그대로 쓴다.
+
+### 2-7. 태그 조회와 재료 매핑 (다른 경로용 진입점)
+
+메뉴 전체 확장(`query_ontology`) 말고도, 태그가 필요한 다른 경로를 위해 ④가 두 가지 진입점을 제공한다.
+
+| 진입점 | 언제 부르나 | 입력 | 출력 |
+|---|---|---|---|
+| `lookup_tags` | ③만 거치는 경로 (사장님 확정값이 모두 있어 ④⑤를 건너뛸 때) | `ingredient_id` 목록 | 재료별 `constraint_tags` |
+| `map_ingredients` | ⑥ 웹 재료 후보를 ⑤로 보내기 전 | 재료명 목록 | 재료별 `ingredient_id`, `canonical_name`, `constraint_tags` |
+
+```python
+def lookup_tags(context: RequestContext, ingredient_ids: list[int]) -> TagLookupResult:
+    """ingredient_tags에서 태그 조회. 태그 행이 없는 재료는 정상([])이다.
+    재료 마스터(ingredients)에 없는 ID나 조회 오류만 빈 배열로 끝내지 않고
+    constraint_tags_lookup_failed warning(forces_caution=True)을 붙인다."""
+
+
+def map_ingredients(context: RequestContext, names: list[str]) -> MappingResult:
+    """재료명 → crawling/normalize_ingredients.py와 같은 규칙으로 표준 재료명 → ingredient_id → 태그.
+    매핑 실패 재료는 버리지 않고 ingredient_id: null로 남기며
+    unmapped_constraint_tags warning(forces_caution=True)을 붙인다."""
+```
+
+```sql
+-- lookup_tags
+SELECT ingredient_id, array_agg(tag_code) AS constraint_tags
+FROM ingredient_tags
+WHERE ingredient_id = ANY(:ingredient_ids)
+GROUP BY ingredient_id;
+
+-- map_ingredients (정규화한 이름 → 재료 → 태그)
+SELECT i.id, i.name_ko,
+       COALESCE(array_agg(t.tag_code) FILTER (WHERE t.tag_code IS NOT NULL), '{}') AS constraint_tags
+FROM ingredients i
+LEFT JOIN ingredient_tags t ON t.ingredient_id = i.id
+WHERE i.name_normalized = ANY(:normalized_names)
+GROUP BY i.id, i.name_ko
+UNION ALL
+SELECT i.id, i.name_ko,
+       COALESCE(array_agg(t.tag_code) FILTER (WHERE t.tag_code IS NOT NULL), '{}')
+FROM ingredient_aliases a
+JOIN ingredients i ON i.id = a.ingredient_id
+LEFT JOIN ingredient_tags t ON t.ingredient_id = i.id
+WHERE a.alias_normalized = ANY(:normalized_names)
+GROUP BY i.id, i.name_ko;
+```
+
+- 태그가 비어 있는 재료(`[]`)는 "걸리는 제한 없음"과 "조회 실패"를 구분해야 한다. 재료 마스터에 있는데 태그 행이 없는 건 정상(예: 양파)이고, 재료 자체를 못 찾은 건 실패다. 실패만 warning을 붙인다.
+
+### 2-8. DB 조회 쿼리
 
 백엔드 ERD(V7~V10) 기준 PostgreSQL 예시다. `:menu_id`처럼 `:`가 붙은 값은 파라미터다. ④는 읽기만 하며, 캐시 쓰기만 예외다 (§0).
 
@@ -495,7 +551,7 @@ graph TB
 
 - **depth를 고정하지 않는다.** 김치찌개 → 김치 → 액젓 → 새우처럼 깊이가 가변이다.
 - 각 노드에 `depth` 값을 기록한다. depth 0(직접 재료)과 depth 3(3단계 하위)을 동일 확률로 취급하면 안 되기 때문 (⑤ 감쇠, §8).
-- 순환 참조 탐지(cycle detection)는 재귀 조회에서 지나온 경로를 들고 다니며 이미 지난 재료를 다시 방문하지 않는 방식이다 (§2-6 쿼리). 데이터 원본은 `ai_result/rules/hidden_rules_data.py`이며 DB 시드에서 `ingredient_compositions`로 옮겼다 (#223).
+- 순환 참조 탐지(cycle detection)는 재귀 조회에서 지나온 경로를 들고 다니며 이미 지난 재료를 다시 방문하지 않는 방식이다 (§2-8 쿼리). 데이터 원본은 `ai_result/rules/hidden_rules_data.py`이며 DB 시드에서 `ingredient_compositions`로 옮겼다 (#223).
 
 ### 3-3. 축 3 — 재료 taxonomy + 위험 속성 (독립 축)
 
@@ -634,7 +690,7 @@ graph TB
 - [ ] **`allergen_tags` / `dietary_tags` 분류 목록** — `is_*` 태그 중 어느 것을 알레르겐, 어느 것을 식이 제약으로 둘지. ⑧ 담당자와 함께 확정
 - [x] **재료 공통 식별자** — 출력은 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 - [x] **`variant_suggested` 재료의 관측값 규칙** — `observations: []` (2026-10-10, §1-5, ⑤ 담당 확인)
-- [x] **cycle detection 구현** — 별도 파일 대신 재귀 조회에서 경로를 들고 다니며 차단한다 (§2-6)
+- [x] **cycle detection 구현** — 별도 파일 대신 재귀 조회에서 경로를 들고 다니며 차단한다 (§2-8)
 - [x] **`menus.remain_token` 컬럼** — 백엔드 ERD V7에 반영됨. `caution-db-schema.md`는 v4 갱신 때 맞춘다 (#47)
 - [x] **확인된 복합 재료의 하위 재료 처리** — §2-1 표대로 간다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다 (2026-10-06, #181)
 - [ ] **`confirmed_ingredients` 형태 (외부 의존)** — 재료명 배열에서 `{name, status}` 배열로 바뀌었다. ⓪ §4-3에서 같은 형태로 전달해야 함
