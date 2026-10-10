@@ -307,7 +307,7 @@ def recursive_expand(
     ingredient: str,
     depth: int = 0,
     visited: set[str] | None = None,         # cycle detection
-    max_depth: int | None = None,            # 미확정 §8
+    max_depth: int = 5,                      # 결정 §8. 넘으면 멈추고 max_depth_reached 경고
 ) -> list[IngredientNode]:
     """part-of 관계 재귀 확장. visited로 순환 차단."""
 
@@ -423,7 +423,7 @@ WITH RECURSIVE tree AS (
   JOIN tree t ON c.parent_ingredient_id = t.ingredient_id
   WHERE c.relation_type = 'part_of'
     AND c.child_ingredient_id <> ALL(t.path)          -- 순환 차단
-    AND t.depth < :max_depth                          -- 상한 미확정 (§8)
+    AND t.depth < :max_depth                          -- 5 (§8). 닿은 노드는 max_depth_reached 경고
 )
 SELECT t.ingredient_id, i.name_ko, i.taxonomy_category, t.parent_id, t.depth, t.ambiguity_flag,
        COALESCE(array_agg(DISTINCT nt.tag_code) FILTER (WHERE nt.tag_code IS NOT NULL), '{}') AS node_tags,
@@ -576,7 +576,7 @@ graph TB
 |---|---|
 | `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
 | 순환 참조 (A→B→A) | `visited`로 차단, 경고 로그, 확장분까지 반환. `warnings`에 `cycle_detected`. Supervisor는 이를 보고 ⓪ §6대로 해당 재료를 낮은 신뢰도로 다룬다 |
-| 재귀 깊이 과다 | `max_depth` 미확정(§8). 임시로 경고 로그 후 계속 확장. 상한이 정해지면 `warnings`에 `max_depth_reached` |
+| 재귀 깊이 과다 | `max_depth` = 5에서 확장을 멈추고 `warnings`에 `max_depth_reached`를 붙인다. ⑧은 이 경고가 있으면 CAUTION 이상을 유지한다. 그 아래 재료를 몰라서 SAFE로 새는 것을 막기 위함 |
 | `base_menu_id`는 있으나 참조 메뉴가 없음 | 일반 메뉴로 처리 + 무결성 오류 로그. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
 | longest-match 성공, remain 매핑 실패 (`"우리집된장찌개"`) | base로 처리, remain 무시, `unmapped_token`에 기록 |
 | taxonomy 미등록 재료 | `기타` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
@@ -623,12 +623,12 @@ graph TB
 
 - [ ] **재료별 taxonomy 카테고리 값 작성** — 현재 온톨로지 데이터에 카테고리 값이 없음 (§4)
 - [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형/지수/없음). ⑤ §8과 연동 결정
-- [ ] **`max_depth` 상한값** — 재귀 깊이 제한을 둘지, 둔다면 몇 단계까지
+- [x] **`max_depth` 상한값** — 5단계 (2026-10-10). 현재 숨은 재료 데이터의 최대 깊이는 2라 여유를 둔 값이다. 닿으면 확장을 멈추고 `max_depth_reached` 경고를 붙여 CAUTION 이상을 유지한다. 깊이 4 이상 경로가 생기면 다시 본다
 - [x] **`menu_category` 전체 목록** — `ai_ruleengine/data/menus.csv`의 25개 분류를 `menu_categories`로 시드했다 (2026-10-10, #223)
 - [x] **`menu_ingredient_cache` 무효화 시점** — `menus.knowledge_revision`과 캐시의 `menu_revision`이 다르면 무효 (2026-10-10, 백엔드 ERD V10)
 - [x] **시작 재료 범위** — 큐레이션 레시피와 크롤링 코퍼스 재료의 합집합 (2026-10-10, §2-1)
 - [x] **관측값 형식** — 출처별 `observations` 목록 (2026-10-10, §1-5)
-- [ ] **분류 관계(is-a) 저장 위치** — #49는 분류를 `ingredients.taxonomy_category` 컬럼으로 두기로 했는데, 백엔드 ERD는 `ingredient_compositions.relation_type`에 `is_a`도 허용한다. 하나로 정해야 재귀 확장에서 분류 관계가 재료로 섞이지 않는다
+- [x] **분류 관계(is-a) 저장 위치** — `ingredients.taxonomy_category` 컬럼에 둔다 (2026-10-10, #49와 같은 결정). `ingredient_compositions`는 구성 관계(`part_of`)만 담는다. 분류를 구성 간선에 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료처럼 펼친다. 백엔드에 `relation_type`을 `part_of`로 한정해 달라고 요청한다
 - [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. 레시피 수 계산 방식은 단체 논의 #201 (#171, #122)
 - [ ] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는 안. ② §8 "`residual_tokens`로 통일하는 안을 ④ 담당자와 승인" 항목과 같은 결정
 - [ ] **`allergen_tags` / `dietary_tags` 분류 목록** — `is_*` 태그 중 어느 것을 알레르겐, 어느 것을 식이 제약으로 둘지. ⑧ 담당자와 함께 확정
@@ -697,7 +697,8 @@ graph TB
 
 - [ ] 재료별 taxonomy 카테고리 값 작성
 - [ ] `menu_category` 76개 매핑 목록 작성
-- [ ] `max_depth` 상한과 depth 감쇠 방식 결정 (⑤와 함께)
+- [x] `max_depth` 상한 결정 (5)
+- [ ] depth 감쇠 방식 결정 (⑤와 함께)
 - [ ] `menu_ingredient_cache` 무효화 시점 결정
 - [ ] `recursive_expand.py` 위치 확인 또는 신규 구현 결정
 
