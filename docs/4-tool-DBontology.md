@@ -134,24 +134,29 @@ graph TB
     "store_id": 123456,
     "item_id": "scan-123:0"
   },
-  "menu_id": "str | null",
-  "base_menu_id": "str | null",
-  "remain_token": "str | null",
-  "menu_category": "찌개 | 볶음 | 구이 | ...",
+  "menu_id": 101,
+  "base_menu_id": null,
+  "remain_token": null,
+  "menu_category_id": 19,
+  "menu_category": "찌개",
   "exists_in_db": true,
   "is_variant": true,
   "variant_origin": "db_registered",
   "ingredients": [
     {
-      "name": "액젓",
+      "ingredient_id": 212,
+      "canonical_name": "멸치액젓",
       "taxonomy_category": "발효/장류",
       "allergen_tags": ["is_fish"],
       "dietary_tags": [],
       "depth": 1,
-      "parent": "김치",
+      "parent_ingredient_id": 87,
       "source": "expanded",
-      "k_count": 41,
-      "n_total": 57,
+      "curated": false,
+      "observations": [
+        {"corpus": "10000recipe", "k_count": 41, "n_total": 57},
+        {"corpus": "wtable", "k_count": 12, "n_total": 30}
+      ],
       "anomaly_locked": false
     }
   ],
@@ -162,6 +167,9 @@ graph TB
 ```
 
 - `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
+- 메뉴·재료 ID는 DB와 같은 정수(BIGINT)다 (백엔드 ERD V7, 2026-10-10). 재료는 `ingredient_id`와 `canonical_name`(`ingredients.name_ko`)을 함께 보낸다.
+- `curated`는 그 재료가 큐레이션 레시피(`recipe_ingredients`)에 있는지다. ⑤가 출처 `curated` 근거로 쓴다 (⑤ §3-3).
+- `observations`는 출처(크롤링 사이트)별 관측값이다 (§1-5).
 - `warnings`는 판정에 영향을 주는 데이터 이상을 담는다. 값: `empty_recipe`(레시피 재료 0개), `cycle_detected`(순환 참조 차단), `max_depth_reached`, `broken_base_menu`(참조 메뉴 없음). ⑧이 CAUTION 이상을 유지하려면 이 신호가 ⑧까지 가야 한다 (§8).
 - `variant_suggestion`은 `variant_origin: runtime_tagged`일 때만 채운다. 형태는 ⑦ DB Update Tool의 "변형 태깅 제안" 입력(⑦ §1-1)과 같다.
 
@@ -187,18 +195,20 @@ graph TB
 
 | 값 | 의미 | ⑤에서의 취급 |
 |---|---|---|
-| `recipe` | `recipe_ingredients`에 명시된 직접 재료 (**DB 등록 변형 재료 포함**) | 확정 prior, scale 1.0 |
+| `recipe` | 메뉴의 직접 재료(depth 0). 큐레이션 레시피(`recipe_ingredients`) 또는 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료 (**DB 등록 변형 재료 포함**). 어느 쪽에서 왔는지는 `curated`로 구분 | 확정 prior, scale 1.0 |
 | `expanded` | 재귀 확장으로 도출된 하위 재료 | depth 감쇠 적용 (§8) |
 | `variant_suggested` | 런타임 태깅 제안 (DB 미반영) | **scale 0.5** |
 
 ### 1-5. `k_count` / `n_total` 제공 책임
 
-⑤의 Beta-Binomial 계산(`α = k_count + 1`, `β = (n_total − k_count) + 1`)에 필요한 관측값은 **④가 재료별로 함께 반환한다.**
+⑤의 Beta-Binomial 계산(`α = k_count + 1`, `β = (n_total − k_count) + 1`)에 필요한 관측값은 **④가 재료별로 함께 반환한다.** 크롤링 데이터는 사이트(코퍼스)별로 따로 저장되므로(`menu_recipe_corpora`, `menu_ingredient_priors`), 관측값도 **출처별 목록 `observations`** 로 보낸다 (결정, 2026-10-10). ⑤가 출처마다 신뢰도를 곱해야 하기 때문이다 (⑤ §3-3).
 
-- `k_count`: 해당 메뉴의 레시피 중 그 재료가 등장한 횟수
-- `n_total`: 해당 메뉴의 전체 레시피 수
-- 값이 없으면 `k_count=0, n_total=0`으로 반환 → ⑤가 낮은 `confidence`로 처리
-- **`variant_suggested` 재료는 항상 `k_count=0, n_total=0`이다.** base 메뉴 레시피는 변형 재료(예: 차돌된장찌개의 소고기)를 관측한 데이터가 아니다. base 메뉴의 `n_total`을 그대로 쓰면 "57개 레시피 중 0번 등장"으로 계산돼 확률이 0에 가까워지고, 메뉴명에 드러난 재료가 SAFE 쪽으로 기우는 FN이 생긴다.
+- `corpus`: 크롤링 사이트 (`semie` / `wtable` / `10000recipe`)
+- `k_count`: 그 사이트의 해당 메뉴 레시피 중 그 재료가 등장한 횟수
+- `n_total`: 그 사이트의 해당 메뉴 전체 레시피 수
+- **메뉴가 있는 사이트에서 재료가 한 번도 안 나왔으면 `k_count=0`, `n_total=그 사이트 레시피 수`로 채운다.** `menu_ingredient_priors`에는 k가 1 이상인 행만 있으므로, 행이 없다는 건 "n개 중 0개"라는 관측이다.
+- 메뉴가 어느 사이트에도 없으면 `observations: []` → ⑤가 낮은 `confidence`로 처리
+- **`variant_suggested` 재료는 항상 `observations: []`이다.** base 메뉴 레시피는 변형 재료(예: 차돌된장찌개의 소고기)를 관측한 데이터가 아니다. base 메뉴의 `n_total`을 그대로 쓰면 "57개 레시피 중 0번 등장"으로 계산돼 확률이 0에 가까워지고, 메뉴명에 드러난 재료가 SAFE 쪽으로 기우는 FN이 생긴다.
 
 ---
 
@@ -233,11 +243,12 @@ flowchart TD
 ### 2-1. 기본 조회 + 재귀 확장
 
 1. `context.store_id` 검증 → 없으면 즉시 에러 (전역 prior 오염 방지)
-2. `menus` / `recipe_ingredients` 조회. 입력에 `menu_id`가 있으면 그 행을 쓰고, 없을 때만 `normalized_menu_name`으로 찾는다 (`menus`는 store 무관 전역 테이블)
-3. `recursive_expand.py` 로직으로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
-4. 전 노드에 `depth`, `parent`, `k_count`, `n_total` 기록
-5. 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만든다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
-6. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
+2. `menus` 조회. 입력에 `menu_id`가 있으면 그 행을 쓰고, 없을 때만 `normalized_menu_name` → `menu_aliases` 순서로 찾는다 (`menus`는 store 무관 전역 테이블)
+3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
+4. `ingredient_compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
+5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록
+6. 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만든다. 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
+7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
 | 확인 상태 | 그 재료 자체 | 그 재료의 하위 재료 |
 |---|---|---|
@@ -252,7 +263,7 @@ flowchart TD
 
 - `menus` 테이블에 `base_menu_id`, `remain_token`이 **컬럼으로 이미 존재한다.**
   (예: `name_ko="차돌된장찌개"`, `base_menu_id`→된장찌개, `remain_token="차돌"`)
-- 이 두 컬럼은 AGENTS.md "변형 판별은 DB 컬럼(`base_menu_id` / `remain_token`) 우선"으로 확정된 사항이다. 현재 `caution-db-schema.md`의 `menus` 표에는 `remain_token`이 빠져 있어 스키마 문서 보완이 필요하다 (§8).
+- 이 두 컬럼은 AGENTS.md "변형 판별은 DB 컬럼(`base_menu_id` / `remain_token`) 우선"으로 확정된 사항이다. 백엔드 ERD(V7)의 `menus`에 두 컬럼이 모두 있다.
 - **문자열 파싱을 수행하지 않는다.** 컬럼을 그대로 읽는다.
 - 이 변형의 재료는 관리자 컨펌을 거쳤으므로 `source: recipe` — **신뢰도 하향 대상이 아니다.**
 
@@ -268,6 +279,8 @@ flowchart TD
 
 - 확장된 **전 노드**에 taxonomy 카테고리 매핑 (depth 무관)
 - 위험 속성 재료에 `allergen_tags` / `dietary_tags` 부착 (`is_*` 어휘, §3-3)
+- 재료의 태그 = **노드 태그**(`ingredient_tags`) ∪ **경로 태그**(`ingredient_composition_tags`). 경로 태그는 그 상위 → 하위 경로에서만 성립하는 위험이다. 예) 김치 → 액젓 경로의 `is_shellfish`
+- 태그 어휘는 22종이다. 식약처 알레르기 19종(`is_egg` … `is_sulfite`)에 `is_fish`, `is_duck`, `is_alcohol`을 더한다. 원본 키워드 사전은 `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS`이고, DB 시드의 `ingredient_tags`도 이 사전으로 만든다 (#223)
 
 ### 2-4. 함수 시그니처
 
@@ -333,7 +346,7 @@ else:                                          # (B) 신규 변형 추정
     menu, extra    = v.base_menu, v.suggested_ingredients   # extra: k_count=0, n_total=0
     variant_origin = "runtime_tagged"          # source = variant_suggested
 
-seeds = db.get_recipe_ingredients(menu.id)
+seeds = db.get_recipe_ingredients(menu.id) | db.get_corpus_ingredients(menu.id)   # 합집합 (§2-1)
 
 full = []
 for s in seeds + extra:
@@ -355,6 +368,94 @@ for n in nodes:
 
 return OntologyResult(context=context, ingredients=nodes, variant_origin=variant_origin,
                       warnings=collect_warnings(...), ...)
+```
+
+### 2-6. DB 조회 쿼리
+
+백엔드 ERD(V7~V10) 기준 PostgreSQL 예시다. `:menu_id`처럼 `:`가 붙은 값은 파라미터다. ④는 읽기만 하며, 캐시 쓰기만 예외다 (§0).
+
+**메뉴 찾기**
+
+```sql
+-- menu_id가 있으면
+SELECT id, name_ko, category_id, base_menu_id, remain_token, ambiguity_flags, knowledge_revision
+FROM menus WHERE id = :menu_id;
+
+-- 없으면 이름 → 별칭 순서
+SELECT m.id, m.name_ko, m.category_id, m.base_menu_id, m.remain_token, m.ambiguity_flags, m.knowledge_revision
+FROM menus m WHERE m.name_normalized = normalize_food_name(:menu_name)
+UNION ALL
+SELECT m.id, m.name_ko, m.category_id, m.base_menu_id, m.remain_token, m.ambiguity_flags, m.knowledge_revision
+FROM menu_aliases a JOIN menus m ON m.id = a.menu_id
+WHERE a.alias_normalized = normalize_food_name(:menu_name)
+LIMIT 1;
+```
+
+**캐시 확인** (리비전이 같을 때만 유효)
+
+```sql
+SELECT c.ingredients_snapshot
+FROM menu_ingredient_cache c JOIN menus m ON m.id = c.menu_id
+WHERE c.store_id = :store_id AND c.menu_id = :menu_id
+  AND c.menu_revision = m.knowledge_revision;
+```
+
+**시작 재료** (큐레이션 ∪ 크롤링)
+
+```sql
+SELECT ingredient_id, true AS curated FROM recipe_ingredients WHERE menu_id = :menu_id
+UNION
+SELECT DISTINCT ingredient_id, false FROM menu_ingredient_priors WHERE menu_id = :menu_id;
+-- 같은 재료가 두 쪽에 다 있으면 curated = true로 합친다
+```
+
+**재귀 확장과 태그** (순환 차단, 깊이 제한)
+
+```sql
+WITH RECURSIVE tree AS (
+  SELECT s.ingredient_id, NULL::bigint AS parent_id, 0 AS depth,
+         ARRAY[s.ingredient_id] AS path, NULL::varchar AS ambiguity_flag
+  FROM unnest(:seed_ids::bigint[]) AS s(ingredient_id)
+  UNION ALL
+  SELECT c.child_ingredient_id, c.parent_ingredient_id, t.depth + 1,
+         t.path || c.child_ingredient_id, c.ambiguity_flag
+  FROM ingredient_compositions c
+  JOIN tree t ON c.parent_ingredient_id = t.ingredient_id
+  WHERE c.relation_type = 'part_of'
+    AND c.child_ingredient_id <> ALL(t.path)          -- 순환 차단
+    AND t.depth < :max_depth                          -- 상한 미확정 (§8)
+)
+SELECT t.ingredient_id, i.name_ko, i.taxonomy_category, t.parent_id, t.depth, t.ambiguity_flag,
+       COALESCE(array_agg(DISTINCT nt.tag_code) FILTER (WHERE nt.tag_code IS NOT NULL), '{}') AS node_tags,
+       COALESCE(array_agg(DISTINCT pt.tag_code) FILTER (WHERE pt.tag_code IS NOT NULL), '{}') AS path_tags
+FROM tree t
+JOIN ingredients i ON i.id = t.ingredient_id
+LEFT JOIN ingredient_tags nt ON nt.ingredient_id = t.ingredient_id
+LEFT JOIN ingredient_composition_tags pt
+       ON pt.parent_ingredient_id = t.parent_id AND pt.child_ingredient_id = t.ingredient_id
+GROUP BY t.ingredient_id, i.name_ko, i.taxonomy_category, t.parent_id, t.depth, t.ambiguity_flag;
+```
+
+**출처별 관측값** (§1-5)
+
+```sql
+SELECT c.corpus, ids.ingredient_id, c.n_total, COALESCE(p.k_count, 0) AS k_count
+FROM menu_recipe_corpora c
+CROSS JOIN unnest(:ingredient_ids::bigint[]) AS ids(ingredient_id)
+LEFT JOIN menu_ingredient_priors p
+       ON p.menu_id = c.menu_id AND p.corpus = c.corpus AND p.ingredient_id = ids.ingredient_id
+WHERE c.menu_id = :menu_id;
+```
+
+**캐시 저장 명령** (④가 만들고 백엔드가 실행)
+
+```sql
+INSERT INTO menu_ingredient_cache (store_id, menu_id, menu_revision, ingredients_snapshot)
+VALUES (:store_id, :menu_id, :menu_revision, :snapshot)
+ON CONFLICT (store_id, menu_id)
+DO UPDATE SET menu_revision = EXCLUDED.menu_revision,
+              ingredients_snapshot = EXCLUDED.ingredients_snapshot,
+              computed_at = now(), updated_at = now();
 ```
 
 ---
@@ -394,14 +495,14 @@ graph TB
 
 - **depth를 고정하지 않는다.** 김치찌개 → 김치 → 액젓 → 새우처럼 깊이가 가변이다.
 - 각 노드에 `depth` 값을 기록한다. depth 0(직접 재료)과 depth 3(3단계 하위)을 동일 확률로 취급하면 안 되기 때문 (⑤ 감쇠, §8).
-- 순환 참조 탐지(cycle detection)는 `recursive_expand.py` 로직을 쓴다. 2026-10-06 기준 이 저장소에서는 해당 파일이 확인되지 않아 위치 확인이 필요하다 (§8).
+- 순환 참조 탐지(cycle detection)는 재귀 조회에서 지나온 경로를 들고 다니며 이미 지난 재료를 다시 방문하지 않는 방식이다 (§2-6 쿼리). 데이터 원본은 `ai_result/rules/hidden_rules_data.py`이며 DB 시드에서 `ingredient_compositions`로 옮겼다 (#223).
 
 ### 3-3. 축 3 — 재료 taxonomy + 위험 속성 (독립 축)
 
 - taxonomy 카테고리는 **재귀의 모든 노드에 붙는다.** depth 0이든 depth 3이든 전부 카테고리를 가진다. 축 2와 독립이기 때문.
 - **알레르겐은 taxonomy 카테고리가 아니라 별개 축이다.** 밀가루/새우/땅콩은 재료(ingredient)이지 카테고리가 아니다. taxonomy에 끼워넣으면 분류 체계가 무너진다 → `allergen_tags` 배열로 분리.
 - **식이 제약 속성도 같은 방식으로 붙인다.** PPT 7쪽은 ④가 "알레르기·식이 제약 지식"을 연결한다고 정의한다. 돼지고기·소고기·주류처럼 알레르기는 아니지만 종교·채식 제약에 걸리는 속성은 `dietary_tags` 배열에 담는다.
-- **태그 값은 `is_*` 어휘 하나로 통일한다.** `ingredients.tag`(`caution-db-schema.md`), 재료 온톨로지 데이터(`ai_result/rules/hidden_rules_data.py`), ⑧의 `forbidden_tags`가 모두 `is_pork`, `is_fish` 같은 값을 쓴다. ④가 다른 이름(예: "어패류")을 쓰면 ⑧에서 대조가 실패해 FN이 된다.
+- **태그 값은 `is_*` 어휘 하나로 통일한다.** `ingredient_tags.tag_code`(백엔드 ERD V7), 재료 온톨로지 데이터(`ai_result/rules/hidden_rules_data.py`), ⑧의 `forbidden_tags`가 모두 `is_pork`, `is_fish` 같은 값을 쓴다. ④가 다른 이름(예: "어패류")을 쓰면 ⑧에서 대조가 실패해 FN이 된다.
 - `allergen_tags`와 `dietary_tags`로 어느 태그를 나눌지의 상세 목록은 미확정이다 (§8). ⑧은 두 배열의 합집합을 사용자 금지 태그와 대조한다.
 
 ---
@@ -448,7 +549,8 @@ graph TB
 | `variant_origin: runtime_tagged` | → ⑤에 즉시 전달 **+** `variant_suggestion`을 ⑦에 관리자 검토 자료로 전달 |
 | `variant_origin: db_registered` | → ⑤에만 전달. ⑦ 검토 불필요 (이미 컨펌됨) |
 | `ingredients[].source` | → ⑤가 prior 신뢰도(scale)를 차등 적용 |
-| `ingredients[].k_count / n_total` | → ⑤의 Beta-Binomial 관측값 |
+| `ingredients[].observations` | → ⑤의 Beta-Binomial 관측값 (출처별) |
+| `ingredients[].curated` | → ⑤가 출처 `curated` 근거로 사용 |
 | `warnings` | → ⑧까지 전달해 CAUTION 이상 유지 판단에 사용 (§1-2) |
 
 **④가 직접 호출하지 않는 것**: 어떤 Agent·Tool도 직접 호출하지 않는다. 웹서치 여부, DB 반영, 판정은 모두 Supervisor가 결정한다.
@@ -479,7 +581,7 @@ graph TB
 | longest-match 성공, remain 매핑 실패 (`"우리집된장찌개"`) | base로 처리, remain 무시, `unmapped_token`에 기록 |
 | taxonomy 미등록 재료 | `기타` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
 | `recipe_ingredients` 빈 배열 | `exists_in_db: true`지만 재료 0개 → `warnings`에 `empty_recipe`. ⑧에서 CAUTION 이상 유지 |
-| `k_count` / `n_total` 부재 | `0, 0`으로 반환. ⑤가 낮은 `confidence`로 처리 |
+| 메뉴가 어느 크롤링 사이트에도 없음 | `observations: []`. ⑤가 낮은 `confidence`로 처리 |
 
 오류는 ⓪ §6-1 공통 오류 모델(`code`, `node`, `item_id`, `retryable`, `fallback`)로 Supervisor에 반환한다.
 
@@ -503,9 +605,13 @@ graph TB
 | 9 | `우리집된장찌개` | base 처리 + remain 매핑 실패 | `unmapped_token` 기록, 에러 없을 것 |
 | 10 | taxonomy 미등록 재료 | `기타` 부여 | 재료 드롭되지 않을 것 |
 | 11 | `base_menu_id` 참조 깨짐 | 일반 메뉴 처리 + 로그 | 크래시 없을 것 |
-| 12 | 갈비구이-마늘 | `k_count=53, n_total=57` 반환 | ⑤가 α=54, β=5 산출 가능할 것 |
+| 12 | 갈비구이-마늘 | `observations`에 사이트별 `k_count`, `n_total` 반환 | ⑤가 사이트별로 α, β를 산출할 수 있을 것 |
+| 12-b | 사이트에 메뉴는 있는데 재료가 안 나옴 | 그 사이트 `k_count=0`, `n_total=레시피 수` | 행이 없다고 관측값을 빠뜨리지 않을 것 |
+| 12-c | 큐레이션 목록엔 없고 크롤링에만 나온 재료 | 시작 재료에 포함, `curated: false` | 합집합에서 빠지지 않을 것 |
 | 13 | 돼지고기 포함 메뉴 | `dietary_tags`에 `is_pork` | ⑧ `forbidden_tags`와 같은 어휘일 것 |
-| 14 | `트러플된장찌개`의 변형 재료 | `k_count=0, n_total=0` | base 메뉴 레시피 수로 계산되지 않을 것 |
+| 14 | `트러플된장찌개`의 변형 재료 | `observations: []` | base 메뉴 레시피 수로 계산되지 않을 것 |
+| 19 | 김치 → 액젓 경로 | 액젓에 경로 태그 `is_shellfish` 포함 | 노드 태그만 보고 경로 태그를 빠뜨리지 않을 것 |
+| 20 | 메뉴 레시피 변경 후 호출 | 리비전이 다른 캐시는 쓰지 않음 | 옛 캐시로 재료가 빠지지 않을 것 |
 | 15 | `menu_id` 입력 + 다른 이름 | `menu_id` 행 사용 | ③과 ④가 같은 메뉴를 볼 것 |
 | 16 | `anomaly_locked_ingredients=["돼지고기"]` | 해당 노드 `anomaly_locked: true` | 값이 ④에서 끊기지 않을 것 |
 | 17 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
@@ -518,15 +624,18 @@ graph TB
 - [ ] **재료별 taxonomy 카테고리 값 작성** — 현재 온톨로지 데이터에 카테고리 값이 없음 (§4)
 - [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형/지수/없음). ⑤ §8과 연동 결정
 - [ ] **`max_depth` 상한값** — 재귀 깊이 제한을 둘지, 둔다면 몇 단계까지
-- [ ] **`menu_category` 전체 목록** — `menus.csv` 76개 항목의 카테고리 매핑 (다중 카테고리 확인 완료, 세부 목록 작성 대기)
-- [ ] **`menu_ingredient_cache` 무효화 시점** — 온톨로지/레시피 변경 시 전체 무효화인지 부분 무효화인지
+- [x] **`menu_category` 전체 목록** — `ai_ruleengine/data/menus.csv`의 25개 분류를 `menu_categories`로 시드했다 (2026-10-10, #223)
+- [x] **`menu_ingredient_cache` 무효화 시점** — `menus.knowledge_revision`과 캐시의 `menu_revision`이 다르면 무효 (2026-10-10, 백엔드 ERD V10)
+- [x] **시작 재료 범위** — 큐레이션 레시피와 크롤링 코퍼스 재료의 합집합 (2026-10-10, §2-1)
+- [x] **관측값 형식** — 출처별 `observations` 목록 (2026-10-10, §1-5)
+- [ ] **분류 관계(is-a) 저장 위치** — #49는 분류를 `ingredients.taxonomy_category` 컬럼으로 두기로 했는데, 백엔드 ERD는 `ingredient_compositions.relation_type`에 `is_a`도 허용한다. 하나로 정해야 재귀 확장에서 분류 관계가 재료로 섞이지 않는다
 - [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. 레시피 수 계산 방식은 단체 논의 #201 (#171, #122)
 - [ ] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는 안. ② §8 "`residual_tokens`로 통일하는 안을 ④ 담당자와 승인" 항목과 같은 결정
 - [ ] **`allergen_tags` / `dietary_tags` 분류 목록** — `is_*` 태그 중 어느 것을 알레르겐, 어느 것을 식이 제약으로 둘지. ⑧ 담당자와 함께 확정
-- [ ] **재료 공통 식별자** — 출력의 `name`을 `ingredient_id` + `canonical_name`으로 바꿀지. ⓪ §4 공통 계약(#103)과 함께 확정
-- [ ] **`variant_suggested` 재료의 `k_count=0, n_total=0` 규칙** — §1-5에 FN 방지 근거로 적었다. ⑤ 담당 확인 필요
-- [ ] **`recursive_expand.py` 위치** — 이 문서와 스키마 문서가 cycle detection 구현으로 가리키는 파일이 저장소에서 확인되지 않음. 기존 코드 위치를 찾거나 새로 구현할지 결정
-- [ ] **스키마 문서 보완 요청 (외부 의존)** — `caution-db-schema.md` `menus` 표에 `remain_token` 컬럼 추가. AGENTS.md 확정 사항과 맞추기 위함
+- [x] **재료 공통 식별자** — 출력은 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
+- [x] **`variant_suggested` 재료의 관측값 규칙** — `observations: []` (2026-10-10, §1-5, ⑤ 담당 확인)
+- [x] **cycle detection 구현** — 별도 파일 대신 재귀 조회에서 경로를 들고 다니며 차단한다 (§2-6)
+- [x] **`menus.remain_token` 컬럼** — 백엔드 ERD V7에 반영됨. `caution-db-schema.md`는 v4 갱신 때 맞춘다 (#47)
 - [x] **확인된 복합 재료의 하위 재료 처리** — §2-1 표대로 간다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다 (2026-10-06, #181)
 - [ ] **`confirmed_ingredients` 형태 (외부 의존)** — 재료명 배열에서 `{name, status}` 배열로 바뀌었다. ⓪ §4-3에서 같은 형태로 전달해야 함
 - [ ] **`warnings` 전달 (외부 의존)** — ⓪ §4-7 ⑧ 입력 형식에 `warnings`를 넣는 안. ⓪·⑧ 담당자 확인 필요

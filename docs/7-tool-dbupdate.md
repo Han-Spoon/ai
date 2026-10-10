@@ -23,7 +23,6 @@
 | 물리 DB 쓰기와 트랜잭션 | 백엔드 영속화 계층 |
 | `ingredient_risk_scores` 직접 UPDATE | 누구도 하지 않음. `ingredient_evidence_log` INSERT 후 애플리케이션 로직이 재계산 |
 | `menu_ingredient_cache` 저장 명령 | ④ (§4) |
-| `web_search_cache` 저장 명령 | ⑥이 만든다고 ⑥ §3에 적혀 있음 (§4) |
 
 ### 0-1. 설계 원칙
 
@@ -127,6 +126,9 @@ graph LR
 | ⑧ 질문 생성 요청 | `create_owner_verification_request` |
 | 사장님 답변 | `record_owner_answer` (이력 기록 + 같은 답 2번 연속이면 확정값 upsert, §2-3) |
 | 사장님 확정값이 생기거나 바뀜 | `update_source_reliability` (출처별 맞춘 수·비교 수 갱신, §3-1) |
+| ⑥ 웹서치 결과 원본 | `save_web_search_cache` (관리자 게이트 없이 원본 기록, §4) |
+
+- 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`(`action` + `idempotency_key`가 PK)에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2). 위 6종이 `ai_command_receipts.action`의 허용값이다.
 
 ```json
 {
@@ -141,10 +143,10 @@ graph LR
   "idempotency_key": "str",
   "payload": {
     "store_id": 123456,
-    "menu_id": "str",
-    "ingredient_id": "str",
+    "menu_id": 101,
+    "ingredient_id": 212,
     "present": false,
-    "question_id": "str",
+    "question_id": "uuid",
     "flagged_anomaly": false,
     "provenance": {
       "source_type": "owner_feedback",
@@ -158,6 +160,7 @@ graph LR
 ```
 
 - `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
+- 메뉴·재료 ID는 DB와 같은 정수(BIGINT)다. 질문 ID(`owner_verification_requests.id`)는 UUID다 (백엔드 ERD V10).
 - 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다 (⓪ §1-2).
 
 ---
@@ -174,9 +177,11 @@ flowchart TD
     WAIT -->|반려| DROP["반영 안 함, 로그만 남김<br/>verification_status: rejected"]
     WAIT -->|승인| M1["1. menus INSERT<br/>(source: web_search_generated 또는 variant_generated)<br/>verification_status: approved"]
     M1 --> M2["2. recipe_ingredients INSERT<br/>(evidence_type: explicit 또는 variant)"]
-    M2 --> M3["3. ingredient_evidence_log INSERT<br/>(source_type: web_search 또는 ocr_variant_tag,<br/>evidence_ref_table/id로 web_search_cache 또는<br/>변형 태깅 근거 연결)"]
+    M2 --> M3["3. ingredient_evidence_log INSERT<br/>(source_type: web_search 또는 ocr_variant_tag,<br/>delta_alpha = 출처 신뢰도 × 1, delta_beta = 0,<br/>review_item_id로 검토 항목 연결)"]
     M3 --> M4["4. 애플리케이션 로직이<br/>ingredient_risk_scores α/β 재계산"]
 ```
+
+**soft 증거의 δ 값 (결정, 2026-10-10):** 승인된 웹·변형 근거는 "이 재료가 있다"는 근거 1건이다. ⑦은 기록할 때 그 출처의 현재 신뢰도를 곱해 `delta_alpha = 신뢰도 × 1`, `delta_beta = 0`으로 넣는다. `ingredient_risk_scores`에는 출처별로 나뉘지 않은 합계만 남으므로, 신뢰도는 기록 시점에 곱해야 한다 (⑤ §3-3). 후보 목록에 없다고 β를 더하지 않는 이유는 큐레이션 레시피와 같다. 목록에 없다고 안 들어간다는 뜻이 아니다.
 
 **순서가 고정인 이유**: `menus` → `recipe_ingredients` → `ingredient_evidence_log` 순서를 지키지 않으면 FK가 끊긴다 (`caution-db-schema.md` §7-3, §7-5). `ingredient_risk_scores`는 이 로그 재계산 결과로만 갱신되고 **직접 UPDATE는 절대 금지**.
 
@@ -214,7 +219,7 @@ flowchart TD
 - **확정 조건 (결정, 2026-10-06, #193)**: 같은 재료에 **같은 답이 2번 연속** 들어와야 확정값이 생긴다. 이미 확정값이 있을 때도 **다른 답이 2번 연속** 들어와야 바뀐다. PPT 8쪽 5의 "최소 n회 이상"에서 n=2다. 한 번 잘못 누른 답(오조작)은 2번 연속 조건에 걸러진다.
 - 확정값이 아직 없는 동안 ③은 해당 재료를 미확인으로 본다. 그동안 ⑤의 확률 계산과 ⑧의 CAUTION 판정이 유지되어 SAFE로 새지 않는다.
 - 확정값이 있는데 다른 답이 1번만 들어오면 **기존 확정값을 그대로 쓴다.** 다른 답이 2번 연속 들어왔을 때 바꾼다 (결정, 2026-10-06, #193).
-- **재확인 기간**: PPT 8쪽 6은 "n개월마다 재확인"이라고 적었다. 확정된 재료는 바로 판정에 쓰여 사장님께 다시 물어볼 기회가 생기지 않으므로 주기가 필요하다. 기간과 재확인 계기는 단체 논의로 정한다 (#202).
+- **확정값 유효기간 (결정, AGENTS.md):** 사장님 확정값은 확정 시각(`ingredient_confirmations.confirmed_at`)부터 **3개월** 동안만 확정 정보로 쓴다. 3개월이 지나면 ③이 override하지 않고, 그 재료는 ⑤ 확률 계산으로 간다. 확정값을 지우지는 않으며 ⑤가 prior 보정에 쓴다 (⑤ §1-1). 만료된 재료는 ⑧이 다시 질문을 만들 수 있다. 재확인을 앞당기는 다른 계기(메뉴 구성 변경 등)는 #202에서 정한다.
 - `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 확정 조건(같은 답 2번 연속)을 만족하면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
 - **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
@@ -229,13 +234,13 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
 
 | 필드 | 값 | 의미 |
 |---|---|---|
-| `source_type` | `web_search` \| `ocr_variant_tag` \| `owner_feedback` \| `user_feedback` | 출처. `ingredient_evidence_log.source_type`과 같은 값 |
+| `source_type` | `web_search` \| `ocr_variant_tag` \| `owner_feedback` | 출처. `ingredient_evidence_log.source_type`과 같은 값. 손님 피드백(`user_feedback`)은 쓸지 정해야 한다 (§8) |
 | `evidence_ref_table` / `evidence_ref_id` | `web_search_cache` / `menu_analyses` / `owner_verification_requests` | 원본 근거 행 |
 | `verification_status` | `pending_review` → `approved` \| `rejected` (soft), `owner_confirmed` (hard) | 검증 상태 |
 | `reliability_weight` | float, 0~1 | 이 근거를 낸 출처의 현재 신뢰도. 가장 믿을 만하면 1. 계산은 §3-1, 사용은 ⑤ §2-3. 아직 비교 기록이 없는 출처는 0.5 |
 
 - ④ `runtime_tagged` 변형 제안은 `source_type: ocr_variant_tag`로 기록한다.
-- `verification_status`와 `reliability_weight`를 담을 컬럼이 `caution-db-schema.md`에 아직 없다. 스키마 문서 보완이 필요하다 (§8).
+- 저장 위치 (백엔드 ERD V9·V10 기준): `verification_status`는 `knowledge_review_items.status`(`pending` / `approved` / `rejected`)와 `ingredient_confirmations.source`(`owner_confirmed`)에 있다. `reliability_weight`는 증거 행에 따로 두지 않고 `delta_alpha`에 곱해 넣으며, 출처별 누적값은 `source_reliability`에 둔다 (§3-1).
 
 ### 3-1. 출처 신뢰도 계산 (결정, 2026-10-06, #194)
 
@@ -257,8 +262,9 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
 - **정답:** 사장님 확정값이다. 같은 답이 2번 연속 들어와 확정된 값만 쓰고, 이상 답변 표시(`flagged_anomaly`)가 붙은 확정값은 쓰지 않는다.
 - **출처의 주장:** 같은 가게·메뉴·재료에 대해 그 출처가 앞서 남긴 정보다 (`ingredient_evidence_log`).
   - 웹 검색(`web_search`): 후보 재료 목록에 그 재료가 있으면 "있음" 주장이다. 목록에 없다고 "없음"으로 보지는 않는다.
-  - 사용자 피드백(`user_feedback`): 사용자가 답한 "있음/없음"이다.
-  - 레시피 크롤링 데이터(`recipe_crawl`): 레시피상 확률이 0.5 이상이면 "있음", 미만이면 "없음" 주장이다.
+  - 크롤링 코퍼스(`corpus:semie` / `corpus:wtable` / `corpus:10000recipe`): 사이트마다 따로 센다. 그 사이트 레시피상 확률(`(k+1)/(n+2)`)이 0.5 이상이면 "있음", 미만이면 "없음" 주장이다.
+  - 큐레이션 레시피(`curated`): 목록에 있으면 "있음" 주장이다. 목록에 없다고 "없음"으로 보지는 않는다.
+  - 손님 피드백은 출처로 쓸지 정해야 한다 (§8). 쓰기로 하면 손님이 답한 "있음/없음"을 주장으로 본다.
 - **맞춤:** 출처의 주장과 사장님 확정값이 같으면 맞춘 것이다.
 - 같은 출처의 같은 가게·메뉴·재료 주장은 한 번만 센다.
 
@@ -266,8 +272,19 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
 
 1. 사장님 답변으로 확정값이 새로 생기거나 바뀌면(§2-3), ⑦은 그 재료에 대해 출처별 과거 주장을 확정값과 비교한다.
 2. 출처별 "비교한 수 +1, 맞췄으면 맞춘 수 +1" 증가분을 `update_source_reliability` 명령으로 만든다.
-3. 백엔드가 출처별 누적값을 저장하고 신뢰도를 다시 계산한다. ⑦은 DB에 직접 쓰지 않는다.
+3. 백엔드가 출처별 누적값을 `source_reliability`에 저장하고 신뢰도를 다시 계산한다. ⑦은 DB에 직접 쓰지 않는다.
 4. ⑤는 계산할 때마다 최신 신뢰도를 읽어 쓴다.
+
+**저장 테이블 `source_reliability` (백엔드에 생성 요청, 2026-10-10)**
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `source_type` | VARCHAR, PK | 출처. `corpus:10000recipe`, `curated`, `web_search`, `ocr_variant_tag` 등 |
+| `agree_count` | INTEGER, 기본 0 | 사장님 확정값과 맞은 수 |
+| `compared_count` | INTEGER, 기본 0 | 비교한 수 (`agree_count` 이하) |
+| `reliability` | NUMERIC, GENERATED | `(agree_count + 1) / (compared_count + 2)` |
+| `last_evidence_id` | BIGINT, FK → `ingredient_evidence_log.id`, NULL 허용 | 마지막으로 반영한 증거 |
+| `updated_at` | TIMESTAMPTZ | 갱신 시각 |
 
 **가게를 넘는 범위**
 
@@ -276,6 +293,91 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
 **PPT 9쪽 숫자와의 관계**
 
 PPT 표는 1.000에서 시작해 1을 넘을 수 있는 다른 눈금이다 (web_crawl 1.946, partner_api 0.000). 이 문서는 가장 높은 값을 1로 두는 0~1 눈금을 쓴다. PPT 결과를 이 눈금으로 옮기면 web_crawl은 1에 가깝고 partner_api는 0에 가깝다. 계속 맞추는 출처는 오르고 계속 틀리는 출처는 0으로 떨어진다는 성질은 같다. PPT는 정답 없이 출처끼리 비교하는 EM 방식이었지만, 여기서는 사장님 확정값을 정답으로 쓸 수 있어 단순 비율로 계산한다.
+
+### 3-2. 저장 명령별 SQL (백엔드가 실행)
+
+⑦은 아래 SQL을 실행하지 않는다. 명령(`action` + `payload`)만 만들고, 백엔드가 같은 트랜잭션 안에서 실행한다. 백엔드 ERD(V9·V10) 기준 PostgreSQL 예시다.
+
+**공통 — 멱등 영수증**
+
+```sql
+INSERT INTO ai_command_receipts (action, idempotency_key, store_id, request_hash, result)
+VALUES (:action, :idempotency_key, :store_id, :request_hash, :result)
+ON CONFLICT (action, idempotency_key) DO NOTHING
+RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아래를 실행하지 않음
+```
+
+**`create_owner_verification_request`**
+
+```sql
+INSERT INTO owner_verification_requests (id, store_id, scan_session_id, menu_id, ingredient_id, question_text, status)
+VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :question_text, 'pending')
+ON CONFLICT DO NOTHING;
+```
+
+**`record_owner_answer`** — 이력 기록, 같은 답 2번 연속이면 확정 (§2-3)
+
+```sql
+UPDATE owner_verification_requests
+SET status = 'answered', answer = :answer, answered_at = now()
+WHERE id = :question_id AND status = 'pending';
+
+INSERT INTO ingredient_evidence_log (store_id, menu_id, ingredient_id, source_type, delta_alpha, delta_beta, owner_verification_request_id)
+VALUES (:store_id, :menu_id, :ingredient_id, 'owner_feedback', 0, 0, :question_id);
+
+-- 최근 답변 2개 (unknown 제외). 두 값이 같을 때만 아래 upsert
+SELECT answer FROM owner_verification_requests
+WHERE store_id = :store_id AND menu_id = :menu_id AND ingredient_id = :ingredient_id
+  AND status = 'answered' AND answer IN ('present', 'absent')
+ORDER BY answered_at DESC LIMIT 2;
+
+INSERT INTO ingredient_confirmations (store_id, menu_id, ingredient_id, present, source, flagged_anomaly, confirmed_at)
+VALUES (:store_id, :menu_id, :ingredient_id, :present, 'owner_confirmed', :flagged_anomaly, now())
+ON CONFLICT (store_id, menu_id, ingredient_id)
+DO UPDATE SET present = EXCLUDED.present, flagged_anomaly = EXCLUDED.flagged_anomaly,
+              confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
+RETURNING id;   -- → owner_verification_requests.resolved_confirmation_id에 기록
+```
+
+**`create_review_item` 승인 후 soft 증거 반영** — 로그 INSERT 후 재계산 (직접 UPDATE 금지)
+
+```sql
+INSERT INTO ingredient_evidence_log (store_id, menu_id, ingredient_id, source_type, delta_alpha, delta_beta, review_item_id)
+VALUES (:store_id, :menu_id, :ingredient_id, :source_type, :reliability * 1, 0, :review_item_id);
+
+INSERT INTO ingredient_risk_scores (store_id, menu_id, ingredient_id, delta_alpha_sum, delta_beta_sum, evidence_count, last_evidence_id)
+SELECT store_id, menu_id, ingredient_id, SUM(delta_alpha), SUM(delta_beta), COUNT(*), MAX(id)
+FROM ingredient_evidence_log
+WHERE store_id = :store_id AND menu_id = :menu_id AND ingredient_id = :ingredient_id
+  AND source_type <> 'owner_feedback'                 -- 사장님 답변 이력(δ=0)은 확률에 안 씀
+GROUP BY store_id, menu_id, ingredient_id
+ON CONFLICT (store_id, menu_id, ingredient_id)
+DO UPDATE SET delta_alpha_sum = EXCLUDED.delta_alpha_sum, delta_beta_sum = EXCLUDED.delta_beta_sum,
+              evidence_count = EXCLUDED.evidence_count, last_evidence_id = EXCLUDED.last_evidence_id,
+              updated_at = now();
+```
+
+**`update_source_reliability`**
+
+```sql
+INSERT INTO source_reliability (source_type, agree_count, compared_count, last_evidence_id, updated_at)
+VALUES (:source_type, :agree, 1, :evidence_id, now())          -- :agree = 맞으면 1, 틀리면 0
+ON CONFLICT (source_type)
+DO UPDATE SET agree_count      = source_reliability.agree_count + EXCLUDED.agree_count,
+              compared_count   = source_reliability.compared_count + 1,
+              last_evidence_id = EXCLUDED.last_evidence_id,
+              updated_at       = now();
+```
+
+**`save_web_search_cache`**
+
+```sql
+INSERT INTO web_search_cache (normalized_menu_name, original_menu_name, search_status, payload, searched_at, expires_at)
+VALUES (normalize_food_name(:menu_name), :menu_name, :search_status, :payload, :searched_at, :expires_at)
+ON CONFLICT (normalized_menu_name)
+DO UPDATE SET search_status = EXCLUDED.search_status, payload = EXCLUDED.payload,
+              searched_at = EXCLUDED.searched_at, expires_at = EXCLUDED.expires_at, updated_at = now();
+```
 
 ---
 
@@ -286,7 +388,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - **물리 DB 쓰기는 백엔드만 수행한다.** ⑦을 포함한 AI 노드는 DB 자격 증명을 갖지 않는다.
 - **저장 명령은 ⑦만 만든다.** `menus`/`recipe_ingredients`/`ingredient_evidence_log`/`ingredient_confirmations`/`owner_verification_requests`가 대상이다. `ingredient_risk_scores`는 명령 대상도 아니며 재계산으로만 갱신된다.
 - **AGENTS.md가 정한 예외는 `menu_ingredient_cache` 하나다** (`caution-db-schema.md` §6). ④가 ⑦을 거치지 않고 저장 명령을 직접 만든다. ④가 이미 계산한 재귀 확장 결과를 저장만 하는 파생 캐시이지, 새로운 증거·사실이 아니기 때문에 관리자 컨펌 게이트가 필요 없다는 게 근거다. 이 경우에도 물리 쓰기는 백엔드가 한다 (④ §0).
-- **`web_search_cache`는 정리가 필요하다.** ⑥ §3은 ⑥이 검색 결과마다 `web_search_cache` 저장 명령을 직접 만들고 백엔드가 관리자 게이트 없이 즉시 저장한다고 적는다. 근거는 "원본 로그이지 확률에 영향을 주는 데이터가 아니다"이다. 이는 AGENTS.md 예외 목록(④ 캐시 하나)에 없는 두 번째 예외다. ⑦의 검토 명령은 `evidence_ref_table: web_search_cache`로 이 행을 가리키므로 검토 전에 캐시 행이 먼저 있어야 한다. 예외로 인정할지, ⑦이 이 명령도 만들지 정해야 한다 (§8).
+- **`web_search_cache` 저장 명령은 ⑦이 만든다 (결정, #208).** ⑥은 검색만 하고, 원본 기록 명령 `save_web_search_cache`는 ⑦이 만든다. 원본 로그라 관리자 게이트 없이 바로 저장한다. 아래는 정리 전 기록이다.
+- *(정리 전)* **`web_search_cache`는 정리가 필요하다.** ⑥ §3은 ⑥이 검색 결과마다 `web_search_cache` 저장 명령을 직접 만들고 백엔드가 관리자 게이트 없이 즉시 저장한다고 적는다. 근거는 "원본 로그이지 확률에 영향을 주는 데이터가 아니다"이다. 이는 AGENTS.md 예외 목록(④ 캐시 하나)에 없는 두 번째 예외다. ⑦의 검토 명령은 `evidence_ref_table: web_search_cache`로 이 행을 가리키므로 검토 전에 캐시 행이 먼저 있어야 한다. 예외로 인정할지, ⑦이 이 명령도 만들지 정해야 한다 (§8).
 
 ---
 
@@ -358,15 +461,17 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 확정 테이블은 최신 1행만 두고, 이력은 `ingredient_evidence_log`에 매 답변마다 남긴다. `caution-db-schema.md` §3과 본문 §2-3에 이미 정해진 내용이라 정리함
 - [x] **사장님 확인 최소 건수 n** — n=2, 같은 답 2번 연속 (2026-10-06, #193, §2-3)
 - [x] **모순 답변 대기 중 처리** — 다른 답이 2번 연속 올 때까지 기존 확정값 유지 (2026-10-06, #193)
-- [ ] **재확인 기간** — PPT 8쪽 6 "n개월마다 재확인"의 n과 재확인 계기. 단체 논의 #202. ③ §6 "확인 정보 유효기간"(#168)과 같은 결정
+- [x] **확정값 유효기간** — 3개월. 만료되면 override하지 않고 지우지도 않음 (AGENTS.md, §2-3). 재확인을 앞당기는 계기는 #202에서 계속 논의
 - [x] **anomaly 판정 기준** — 레시피 확률 0.9 이상 + "없음"이면 표시, "있음"은 대상 아님 (2026-10-06, #193, §2-3). ③ §6(#168)에도 같은 결정 전달 필요
 - [ ] **사용자 피드백 트리거** — `user_reported` / `user_hard` 확인값을 ⑦이 어떤 명령으로 받을지, hard와 soft 중 어디로 볼지 (③ §6 `user_hard` 신뢰 가중)
 - [x] **`reliability_weight` 계산 위치** — ⑦이 사장님 확정값과 비교해 계산 명령을 만들고, ⑤가 사용한다. 0~1 범위 (2026-10-06, §3-1, #194). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
 - [ ] **출처 신뢰도 세부** — 시작값 0.5가 적절한지, "있음"과 "없음" 정확도를 따로 볼지("없음"을 틀리는 쪽이 더 위험), 최소 몇 건 비교 후 쓸지
 - [ ] **사장님 답변의 공통 문맥** — 스캔 흐름 밖에서 오는 답변에 `item_id: null`을 허용할지, ⓪ §1-3 규칙과 함께 확정
-- [ ] **`web_search_cache` 저장 명령 주체** — ⑥이 직접 만드는 현재 방식을 AGENTS.md 예외로 추가할지, ⑦이 만들지 (§4, ⑥ §3)
+- [x] **`web_search_cache` 저장 명령 주체** — ⑦이 `save_web_search_cache`로 만든다 (#208, §4)
+- [x] **soft 증거의 신뢰도 반영 위치** — ⑦이 기록할 때 `delta_alpha = 신뢰도 × 1`, `delta_beta = 0` (2026-10-10, §2-1)
+- [x] **멱등성** — `ai_command_receipts`, 허용 action 6종 (2026-10-10, §1-2, §3-2)
 - [ ] **사장님 질문 저장 언어** — ⑧의 6개 언어 질문 중 무엇을 `question_text`에 저장할지 (⑧ 담당자, 스키마 문서와 함께)
-- [ ] **스키마 문서 보완 요청 (외부 의존)** — `verification_status`, `reliability_weight`를 저장할 컬럼과, 출처별 맞춘 수·비교한 수를 담을 저장소를 `caution-db-schema.md`에 추가. `recipe_crawl` 출처 값도 필요
+- [ ] **스키마 보완 요청 (외부 의존)** — 백엔드에 `source_reliability` 테이블 생성과 `ai_command_receipts.action` 6종 확장을 요청함 (2026-10-10). 반영되면 `caution-db-schema.md` v4에 맞춤 (#47)
 - [ ] **⑥ §0 동기화 (외부 의존)** — ⑥ 문서의 §0 표가 이 문서 §0-3과 같아야 함. hard evidence 반영 시점 문구
 
 ---

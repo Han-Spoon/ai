@@ -51,8 +51,9 @@
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `context` | object | **필수** | ⓪ §1-3 공통 호출 문맥. `schema_version`, `trace_id`, `scan_session_id`, `store_id`, `item_id`. `store_id`는 prior 스코프이며 양의 정수만 허용, 없으면 에러 |
-| `menu_category` | string \| null | 필수 | 클러스터 fallback용 (④ 출력). DB에 없는 메뉴는 `null`이며, 이때는 `cluster` 단계를 건너뛴다 |
-| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `source`, `depth`, `k_count`, `n_total`, **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
+| `menu_id` | integer \| null | 필수 | 가게 증거(`ingredient_risk_scores`) 조회용. DB에 없는 메뉴는 `null` |
+| `menu_category_id` | integer \| null | 필수 | 클러스터 fallback용 (④ 출력, `menus.category_id`). `null`이면 `cluster` 단계를 건너뛴다 |
+| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
 
 ```json
@@ -64,9 +65,14 @@
     "store_id": 123456,
     "item_id": "scan-123:0"
   },
-  "menu_category": "찌개",
+  "menu_id": 101,
+  "menu_category_id": 19,
   "ingredients": [
-    {"name": "새우", "source": "expanded", "depth": 2, "k_count": 33, "n_total": 57, "anomaly_locked": false}
+    {
+      "ingredient_id": 155, "canonical_name": "새우", "source": "expanded", "depth": 2, "curated": false,
+      "observations": [{"corpus": "10000recipe", "k_count": 33, "n_total": 57}],
+      "anomaly_locked": false
+    }
   ],
   "inherited_confirmations": []
 }
@@ -79,6 +85,7 @@
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
 | `scope: exact` + `override_eligible: false` (anomaly) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. 결과는 CAUTION 이상 유지 |
 | `scope: inherited` | ✅ 온다 | `inherited_confirmations`로 prior 보정에만 사용 |
+| 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 확률 계산 대상이며 그 답은 `inherited`와 같은 방식으로 prior 보정에만 쓴다 |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
 ### 1-2. 출력 (Supervisor에게 반환)
@@ -94,7 +101,8 @@
   },
   "probabilities": [
     {
-      "ingredient": "새우",
+      "ingredient_id": 155,
+      "canonical_name": "새우",
       "posterior_mean": 0.62,
       "alpha_post": 3.0,
       "beta_post": 1.8,
@@ -117,9 +125,9 @@
 
 | 값 | 의미 | 조건 |
 |---|---|---|
-| `store` | 해당 가게 고유 prior | `ingredient_risk_scores`에 store_id 매칭 레코드 존재 |
-| `cluster` | 동일 `menu_category` 클러스터 prior | store prior 없음. `menus.csv`가 다중 카테고리이므로 이 fallback은 **유효함** |
-| `global` | 전역 prior | **최후의 수단.** 낮은 `confidence` 강제 |
+| `store` | 해당 가게 고유 prior | `ingredient_risk_scores`에 (`store_id`, `menu_id`, `ingredient_id`) 레코드 존재 |
+| `cluster` | 동일 메뉴 분류(`menus.category_id`) 클러스터 prior | store prior 없음. 구현은 #200으로 연기 (§8) |
+| `global` | 전역 prior. 크롤링 코퍼스 관측값(`menu_recipe_corpora`, `menu_ingredient_priors`, ④가 `observations`로 전달)과 큐레이션 레시피 | **최후의 수단.** 낮은 `confidence` 강제 |
 | `uninformative` | 근거 전무 (`n_total=0` 포함) | ⑧에서 CAUTION 이상 강제 유지 |
 
 ### 1-4. `anomaly_locked`
@@ -140,7 +148,7 @@ flowchart TD
 
     L --> P{store prior 존재?}
     P -->|Yes| SP["prior_source: store"]
-    P -->|No| CL{"menu_category 있고<br/>클러스터 prior 존재?"}
+    P -->|No| CL{"menu_category_id 있고<br/>클러스터 prior 존재?"}
     CL -->|Yes| CP["prior_source: cluster"]
     CL -->|No| G{"전역 prior 존재?"}
     G -->|Yes| GP["prior_source: global<br/>confidence 낮음"]
@@ -198,7 +206,8 @@ A0, B0 = 1.0, 1.0                                      # Beta(1,1) 라플라스 
 
 def estimate_probabilities(
     context: RequestContext,                           # 필수. context.store_id 양수
-    menu_category: str | None,
+    menu_id: int | None,
+    menu_category_id: int | None,
     ingredients: list[IngredientNode],
     inherited_confirmations: list[Confirmation] | None = None,
 ) -> BayesianResult:
@@ -206,10 +215,10 @@ def estimate_probabilities(
 
 
 def resolve_prior(
-    store_id: int, ingredient: str, menu_category: str | None,
+    store_id: int, menu_id: int | None, ingredient_id: int, menu_category_id: int | None,
 ) -> tuple[float, float, PriorSource]:
     """store → cluster → global → uninformative 순 fallback.
-    menu_category가 None이면 cluster를 건너뛴다.
+    menu_category_id가 None이면 cluster를 건너뛴다.
     전역 prior는 최후의 수단이며 confidence를 낮게 강등."""
 
 
@@ -239,16 +248,25 @@ if store_id is None or store_id <= 0:
 
 results = []
 for ing in ingredients:
-    evidence, prior_src = collect_evidence(store_id, ing, menu_category)
-    # evidence: [(출처, k, n), ...]
-    #   - 레시피 크롤링: ④가 넘긴 k_count / n_total (필드 부재·k > n → 0, 0)
-    #   - 이 가게의 증거(사용자 피드백, 승인된 웹 레시피 등). 없으면 cluster → global 순으로 대신
-    #   - 아무 근거도 없으면 빈 목록 → prior_src = uninformative
-    rel = source_reliability()        # 출처별 신뢰도 0~1, ⑦ §3-1이 계산한 최신값
+    rel = source_reliability()        # 출처별 신뢰도 0~1, ⑦ §3-1이 계산해 source_reliability에 저장한 값
 
-    alpha = 1 + sum(rel[s] * k       for s, k, n in evidence)
-    beta  = 1 + sum(rel[s] * (n - k) for s, k, n in evidence)
-    # 출처가 레시피 하나이고 신뢰도 1이면 확정 공식 α=k+1, β=(n−k)+1과 같다.
+    # 1) 크롤링 코퍼스: ④가 넘긴 출처별 observations (k > n이면 integrity_error, §6)
+    alpha = 1 + sum(rel[f"corpus:{o.corpus}"] * o.k_count             for o in ing.observations)
+    beta  = 1 + sum(rel[f"corpus:{o.corpus}"] * (o.n_total - o.k_count) for o in ing.observations)
+    # 출처가 코퍼스 하나이고 신뢰도 1이면 확정 공식 α=k+1, β=(n−k)+1과 같다.
+
+    # 2) 큐레이션 레시피: 목록에 있으면 α에만 더한다 (§3-3)
+    if ing.curated:
+        alpha += rel["curated"]
+
+    # 3) 이 가게의 증거: ingredient_risk_scores. ⑦이 기록할 때 이미 신뢰도를 곱했으므로 그대로 더한다
+    store = store_evidence(store_id, menu_id, ing.ingredient_id)
+    if store:
+        alpha += store.alpha - 1
+        beta  += store.beta - 1
+
+    prior_src = decide_prior_source(store, ing.observations, ing.curated, menu_category_id)
+    # store → cluster(#200 연기) → global → uninformative
 
     if inherited_confirmations:
         alpha, beta = adjust_with_inherited(alpha, beta, ing.name, inherited_confirmations)
@@ -266,6 +284,29 @@ for ing in ingredients:
     ))
 
 return BayesianResult(context=context, probabilities=results)
+```
+
+### 2-4. DB 조회 쿼리
+
+백엔드 ERD(V7~V10) 기준 PostgreSQL 예시다. ⑤는 읽기만 한다. 크롤링 코퍼스 관측값은 ④가 `observations`로 넘기므로 ⑤가 따로 조회하지 않는다.
+
+```sql
+-- 가게 증거 (prior_source: store)
+SELECT ingredient_id, alpha, beta, evidence_count
+FROM ingredient_risk_scores
+WHERE store_id = :store_id AND menu_id = :menu_id
+  AND ingredient_id = ANY(:ingredient_ids);
+
+-- 출처 신뢰도 (전체 공통 하나)
+SELECT source_type, reliability FROM source_reliability;
+
+-- 클러스터 prior (같은 분류 메뉴 합산) — #200 연기, 지금은 쓰지 않음
+SELECT p.ingredient_id, SUM(p.k_count) AS k, SUM(c.n_total) AS n
+FROM menus m
+JOIN menu_recipe_corpora c    ON c.menu_id = m.id
+JOIN menu_ingredient_priors p ON p.menu_id = c.menu_id AND p.corpus = c.corpus
+WHERE m.category_id = :menu_category_id AND p.ingredient_id = ANY(:ingredient_ids)
+GROUP BY p.ingredient_id;
 ```
 
 ---
@@ -335,7 +376,9 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 β = 1 + Σ 신뢰도(출처) × (n(출처) − k(출처))
 ```
 
-- 출처별 `k`(그 재료가 있다고 한 수)와 `n`(전체 수)에 그 출처의 신뢰도를 곱해 더한다. 출처에는 레시피 크롤링 데이터(④가 넘긴 `k_count`/`n_total`), 관리자가 승인한 웹 레시피, **이 가게의** 사용자 피드백 등이 있다.
+- 출처별 `k`(그 재료가 있다고 한 수)와 `n`(전체 수)에 그 출처의 신뢰도를 곱해 더한다. 출처는 크롤링 사이트별 코퍼스(`corpus:semie` / `corpus:wtable` / `corpus:10000recipe`, ④가 넘긴 `observations`), 큐레이션 레시피(`curated`), 관리자가 승인한 웹 레시피(`web_search`)다.
+- **신뢰도를 곱하는 위치 (결정, 2026-10-10):** 크롤링 코퍼스와 큐레이션은 ⑤가 계산할 때 곱한다. 가게 증거(`ingredient_risk_scores`)는 출처별로 나뉘지 않고 합친 값만 저장되므로, **⑦이 증거를 기록할 때 신뢰도를 미리 곱해 `delta_alpha`에 넣는다** (⑦ §3-1). ⑤는 가게 증거를 그대로 더한다.
+- 손님 피드백(`scan_records.feedback`)을 출처로 쓸지는 정해야 할 것이다 (§8). 백엔드 ERD는 지금 증거로 쓰지 않는다.
 - **큐레이션 레시피(`recipe_ingredients`) 반영 (결정, 2026-10-10, #187):** 큐레이션 레시피는 횟수 없이 "이 메뉴에 들어간다"는 목록만 있다. 그래서 목록에 있는 재료는 출처 `curated`의 근거 1건으로 보고 **α에만** `신뢰도(curated) × 1`을 더한다. 목록에 없다고 β를 더하지 않는다. 큐레이션에 안 적혔다고 그 재료가 안 들어간다는 뜻은 아니므로, β를 더하면 확률이 SAFE 쪽으로 기운다. `curated` 신뢰도도 다른 출처처럼 사장님 확정값과 비교해 ⑦ §3-1이 계산한다.
 - 출처가 레시피 데이터 하나이고 신뢰도가 1이면 확정 공식 `α = k_count + 1`, `β = (n_total − k_count) + 1`과 같다.
 - 신뢰도가 낮은 출처는 근거가 작게 반영된다. 그만큼 확률이 0.5(모름) 쪽으로 가고 `confidence`가 낮아진다. 확률을 0 쪽으로 끌어내리지 않으므로 SAFE로 기울지 않는다.
@@ -353,8 +396,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** |
 | **2-c) 피드백 전부 (anomaly 포함)** | anomaly 재료만 계산 + `anomaly_locked: true` |
 | **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. `inherited` prior 보정 적용 |
-| **3-b) 신규 변형** | `variant_suggested` 재료는 `k=0, n=0`(④ §1-5) → mean 0.5, 낮은 `confidence`, scale 0.5 (mean 보존) |
-| **4) DB에 없는 unknown 메뉴** | Supervisor가 ⑥ 결과로 ⑦ 검토 명령을 만든 뒤 ⑤를 호출한다(⓪ §2). 웹 근거는 관리자 검토 전이라 미검증 상태다. `menu_category`가 없으므로 `prior_source`는 `global` 또는 `uninformative` |
+| **3-b) 신규 변형** | `variant_suggested` 재료는 `observations: []`(④ §1-5) → mean 0.5, 낮은 `confidence`, scale 0.5 (mean 보존) |
+| **4) DB에 없는 unknown 메뉴** | Supervisor가 ⑥ 결과로 ⑦ 검토 명령을 만든 뒤 ⑤를 호출한다(⓪ §2). 웹 근거는 관리자 검토 전이라 미검증 상태다. `menu_category_id`가 없으므로 `prior_source`는 `global` 또는 `uninformative` |
 | **5) 웹서치도 실패 (엣지)** | 호출되지 않거나 `uninformative` 반환. **SAFE로 떨어뜨리지 않음** |
 
 ---
@@ -368,7 +411,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 필드 | 보장 사항 |
 |---|---|
 | `context` | 유효한 공통 호출 문맥. `store_id`는 가게 식별 완료값, null 불가 |
-| `ingredients` | ④ 출력은 `source` / `depth` / `k_count` / `n_total`이 채워져 있음. ⑥ 출력은 필드 정합이 미확정이며(④ §8, #171), 빠진 필드는 §6 규칙으로 처리 |
+| `ingredients` | ④ 출력은 `ingredient_id` / `source` / `depth` / `curated` / `observations`가 채워져 있음. ⑥ 출력은 필드 정합이 미확정이며(④ §8, #171), 빠진 필드는 §6 규칙으로 처리 |
 | `inherited_confirmations` | ③ 2차 호출(`scope: inherited`) 결과만. override 대상 `exact`는 오지 않음 |
 
 ### 5-2. ⑤ → Supervisor (돌려주는 것)
@@ -394,8 +437,9 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | store prior 없음 | cluster → global 순 fallback. `prior_source` 반드시 표기 |
 | 전역 prior도 없음 | `uninformative` + 낮은 `confidence`. **SAFE 방향 기본값 금지** |
 | `n_total = 0` | Beta(1,1)로 `mean = 0.5`, 낮은 `confidence`, `uninformative` 표기 |
-| `k_count > n_total` | 데이터 무결성 오류. 로그 + 해당 재료 `uninformative` 처리, `warnings`에 `integrity_error` |
-| `k_count` / `n_total` 필드 부재 | `0, 0`으로 간주 → 위와 동일 처리 |
+| `observations` 안에 `k_count > n_total` | 데이터 무결성 오류. 로그 + 그 출처 관측값은 버리고, 남은 근거가 없으면 `uninformative`. `warnings`에 `integrity_error` |
+| `observations` 필드 부재 또는 `[]` | 크롤링 근거 없음. 큐레이션·가게 증거도 없으면 `uninformative` |
+| `source_reliability`에 그 출처가 없음 | 처음 보는 출처는 신뢰도 0.5(`(0+1)/(0+2)`)로 쓴다 |
 | `inherited`와 store prior 상충 | store prior 우선, `inherited`는 가중 보정에만 사용 |
 | 재료 리스트 빈 배열 | 빈 결과 + `warnings`에 `empty_ingredients`. ⑧에서 CAUTION 이상 유지 |
 | `anomaly_locked` 재료의 확률이 낮게 나옴 | **확률과 무관하게 플래그 유지.** ⑧이 CAUTION 이상 강제 |
@@ -423,10 +467,15 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 12 | `k_count > n_total` | `uninformative` + 오류 로그 | 음수 β 발생하지 않을 것 |
 | 13 | 동일 입력 2회 실행 | 동일 결과 | 재현성 (부작용 없을 것) |
 | 14 | ⑥ 후보 (`k_count`/`n_total` 없음) | `uninformative` + 낮은 `confidence` | SAFE 쪽 기본값으로 가지 않을 것 |
-| 15 | `menu_category: null` | `cluster` 건너뜀 | 다른 카테고리 prior가 섞이지 않을 것 |
+| 15 | `menu_category_id: null` | `cluster` 건너뜀 | 다른 카테고리 prior가 섞이지 않을 것 |
 | 16 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
 | 17 | 레시피 출처 하나, 신뢰도 1, `k=53, n=57` | `α=54, β=5` | 확정 공식과 같은 결과일 것 |
 | 18 | 같은 근거, 출처 신뢰도 0.2 | mean이 0.5 쪽으로 이동, `confidence` 낮아짐 | 확률이 0 쪽으로 내려가지 않을 것 |
+| 19 | 큐레이션 목록에 있는 재료 (`curated: true`) | α만 `신뢰도(curated)`만큼 증가 | β가 늘지 않을 것 |
+| 20 | 큐레이션 목록에 없는 재료 | 큐레이션 근거 없음 | "목록에 없음"을 없다는 근거로 쓰지 않을 것 |
+| 21 | 사이트 2곳에 관측값 | 사이트별 신뢰도를 곱해 합산 | 한 사이트 값만 쓰지 않을 것 |
+| 22 | 가게 증거 있음 | `ingredient_risk_scores`의 α−1, β−1을 그대로 더함 | 신뢰도를 두 번 곱하지 않을 것 |
+| 23 | 3개월 지난 사장님 확정값 | ⑤로 넘어와 확률 계산, 확정 답은 prior 보정에만 사용 | 만료값으로 override하지 않을 것 |
 
 ---
 
@@ -440,10 +489,12 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [ ] **`confidence` 계산식** — 0~1 숫자로 쓰기로 결정 (2026-10-06, #187). 남은 것: 무엇으로 계산할지(근거 양, 분포 폭, prior 단계 등)와 "낮음"으로 볼 기준값
 - [x] **prior와 관측치의 결합 방식** — 출처별 `k`·`n`에 출처 신뢰도(0~1)를 곱해 더한다 (2026-10-06, #187, §3-3). 같은 레시피 데이터가 두 번 세어지지 않게 가게 증거에는 그 가게에서 새로 생긴 증거만 담는다
 - [ ] **PPT 9쪽 결합 모델 반영** — 자카드 보정·Chow-Liu + TAN 결합 모델(§3-2)을 런타임 ⑤에 넣을지, 시점과 형태. 실험 코드 위치 확인 포함
+- [x] **신뢰도를 곱하는 위치** — 코퍼스·큐레이션은 ⑤가 계산할 때, 가게 증거는 ⑦이 기록할 때 곱한다 (2026-10-10, §3-3)
+- [ ] **손님 피드백을 출처로 쓸지** — 백엔드 ERD는 `scan_records.feedback`을 증거로 쓰지 않는다. 쓴다면 `ingredient_evidence_log.source_type`에 `user_feedback` 추가가 필요하다. 추천은 지금은 쓰지 않는 것
 - [x] **출처 신뢰도(Dawid-Skene) 반영 위치** — ⑦이 계산하고 ⑤가 근거 가중치로 사용 (2026-10-06, ⑦ §3-1). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
 - [ ] **`web_search` 출처의 scale** — ⑥ 후보를 `source: web_search`로 받을 때 적용할 scale. 레시피 수 계산 방식과 함께 단체 논의 #201
 - [ ] **⑧ 전달 필드 (외부 의존)** — `prior_source`, `confidence`, `warnings`를 ⓪ §4-7 ⑧ 입력 형식에 추가하는 안. ⓪·⑧ 담당자 확인 필요
-- [ ] **재료 공통 식별자** — 출력의 `ingredient`(재료명)를 `ingredient_id` + `canonical_name`으로 바꿀지. ⑧은 `ingredient_id`를 키로 받는다 (⑧ §1). ⓪ §4 공통 계약(#103), ④ §8과 함께 확정
+- [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 
 ---
 
@@ -531,7 +582,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 **세부 작업**
 
 - [ ] 입력·출력 모델과 `context.store_id` 검증 구현
-- [ ] prior fallback 4단계와 `menu_category: null` 처리 구현
+- [ ] prior fallback 4단계와 `menu_category_id: null` 처리 구현
 - [ ] 전역·무정보 prior에서 낮은 `confidence` 부여 구현
 - [ ] prior 조회를 저장소 인터페이스와 테스트용 가짜 저장소로 분리
 
