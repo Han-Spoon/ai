@@ -53,3 +53,18 @@ python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-p
 ```
 
 정규화 규칙을 바꾸면 사이트별 결과와 합친 결과를 모두 다시 만들어야 합니다.
+
+## DB 시드 재생성
+
+정규화 규칙(`normalize_ingredients.py`)이나 태그 사전(`ai_ruleengine/constants.py`)을 바꾸면 DB 시드도 다시 만들어 백엔드에 적재해야 합니다. 그대로 두면 룰엔진과 DB의 태그·재료 이름이 달라집니다 (④ §2-6).
+
+| DB 테이블 | 원천 |
+|---|---|
+| `menu_categories`, `menus`, `recipe_ingredients` | `ai_ruleengine/data/menus.csv` (큐레이션 레시피) |
+| `ingredients` | 사이트별 prior의 표준 재료 + 큐레이션 레시피 재료 + 숨은 재료 구조의 재료 |
+| `ingredient_tags` | `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS` (22종 `is_*`) |
+| `ingredient_compositions`, `ingredient_composition_tags` | `ai_result/rules/hidden_rules_data.py` (구성 관계 `part_of`만) |
+| `menu_recipe_corpora`, `menu_ingredient_priors` | `<사이트>_prior.csv` (사이트별 `n_total`, `k_count`) |
+| `knowledge_import_batches` | 원천별 1행, `source_version`은 시드를 만든 커밋 SHA |
+
+적재 순서는 외래키 때문에 위 표의 위에서 아래 순서입니다(`menu_categories` → `menus` → `ingredients` → 태그·레시피·구성 → 배치 → 코퍼스 → 관측값). 적재 뒤에는 영향받은 메뉴의 `knowledge_revision`을 올려 ④ 캐시를 무효화합니다.
