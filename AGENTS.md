@@ -57,7 +57,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - 확정 정보 상속 범위는 `base_menu_id` 단일 메뉴까지. **형제 변형 제외.**
 
 ### 온톨로지
-- **교차오염은 모델 범위 외.** 관측 불가능하므로 사장님 질문 경로로 위임한다.
+- **교차오염은 다루지 않는다**
 - 변형 판별은 DB 컬럼(`base_menu_id` / `remain_token`) 우선. 파싱은 DB 부재 시에만.
 - 알레르겐은 taxonomy가 아닌 별도 축(`allergen_tags`).
 
@@ -71,7 +71,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 
 | 용어 | 뜻 |
 |---|---|
-| hard evidence | 사장님·사용자가 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override |
+| hard evidence | 사장님이 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override, 사장님 확인값은 3개월 동안만 확정 정보로 쓴다. 만료되면 override하지 않고 드롭하지 않는다 |
 | soft evidence | 웹서치 등 미검증 정보. 관리자 컨펌 게이트를 거쳐야 DB 반영 |
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
@@ -151,7 +151,7 @@ docs: add API specification draft
 | [`docs/ppt-baseline.md`](docs/ppt-baseline.md) | **제출 PPT 기준 문서(AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선한다 |
 | [`docs/caution-multi-agent-architecture.md`](docs/caution-multi-agent-architecture.md) | 전체 흐름도, 케이스별 시나리오, Agent·Tool별 역할 |
 | [`docs/caution-db-schema.md`](docs/caution-db-schema.md) | DB 스키마 v3, 백엔드 전달용 제약사항 |
-| [`docs/agent-0-supervisor.md`](docs/agent-0-supervisor.md) ~ [`agent-8-xai.md`](docs/agent-8-xai.md) | Agent·Tool별 입출력 스펙과 처리 로직 |
+| [`docs/agent-0-supervisor.md`](docs/agent-0-supervisor.md) ~ [`agent-9-curation.md`](docs/agent-9-curation.md) | Agent·Tool별 입출력 스펙과 처리 로직 |
 
 문서 전체 목록과 읽는 순서는 [`docs/README.md`](docs/README.md)에 있습니다.
 

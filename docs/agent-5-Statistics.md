@@ -22,7 +22,7 @@
 
 - **가게 스코프 prior만 쓴다.** `store_id`로 분리된 prior를 먼저 쓰고, 전역 prior는 최후의 수단이다.
 - **불확실은 낮은 확률이 아니다.** 근거가 약하면 확률 평균을 낮추지 않고 분포를 넓힌다 (§2-1). 평균을 낮추면 SAFE 쪽으로 기우는 FN이 생긴다.
-- **근거가 없으면 무정보로 표시한다.** 관측 0건은 0.5와 `confidence: low`로 내보내며, SAFE 쪽 기본값을 쓰지 않는다.
+- **근거가 없으면 무정보로 표시한다.** 관측 0건은 0.5와 낮은 `confidence`로 내보내며, SAFE 쪽 기본값을 쓰지 않는다.
 - **판정하지 않는다.** ⑤의 출력은 확률 수치이고 해석은 ⑧이 한다.
 - **받은 플래그를 바꾸지 않는다.** `anomaly_locked`는 그대로 옮긴다.
 - **부작용이 없다.** 같은 입력에는 같은 결과를 내고, DB에 쓰지 않는다.
@@ -101,7 +101,7 @@
       "prior_source": "store",
       "source": "expanded",
       "depth": 2,
-      "confidence": "medium",
+      "confidence": 0.55,
       "anomaly_locked": false
     }
   ],
@@ -110,6 +110,7 @@
 ```
 
 - `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
+- `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과, 어느 값 아래를 "낮음"으로 볼지(이하 "낮은 `confidence`")는 미확정이다 (§8).
 - `warnings`는 판정에 영향을 주는 데이터 이상을 담는다. 값: `empty_ingredients`(재료 0개), `integrity_error`(`k_count > n_total`). ⑧이 CAUTION 이상을 유지하려면 이 신호가 ⑧까지 가야 한다 (§8).
 
 ### 1-3. `prior_source` — fallback 단계 (내림차순 우선)
@@ -118,7 +119,7 @@
 |---|---|---|
 | `store` | 해당 가게 고유 prior | `ingredient_risk_scores`에 store_id 매칭 레코드 존재 |
 | `cluster` | 동일 `menu_category` 클러스터 prior | store prior 없음. `menus.csv`가 다중 카테고리이므로 이 fallback은 **유효함** |
-| `global` | 전역 prior | **최후의 수단.** `confidence: low` 강제 |
+| `global` | 전역 prior | **최후의 수단.** 낮은 `confidence` 강제 |
 | `uninformative` | 근거 전무 (`n_total=0` 포함) | ⑧에서 CAUTION 이상 강제 유지 |
 
 ### 1-4. `anomaly_locked`
@@ -142,8 +143,8 @@ flowchart TD
     P -->|No| CL{"menu_category 있고<br/>클러스터 prior 존재?"}
     CL -->|Yes| CP["prior_source: cluster"]
     CL -->|No| G{"전역 prior 존재?"}
-    G -->|Yes| GP["prior_source: global<br/>confidence: low"]
-    G -->|No| UP["prior_source: uninformative<br/>Beta(1,1), confidence: low"]
+    G -->|Yes| GP["prior_source: global<br/>confidence 낮음"]
+    G -->|No| UP["prior_source: uninformative<br/>Beta(1,1), confidence 낮음"]
 
     SP --> INH["inherited_confirmations로<br/>prior 보정 (override 아님)"]
     CP --> INH
@@ -209,7 +210,7 @@ def resolve_prior(
 ) -> tuple[float, float, PriorSource]:
     """store → cluster → global → uninformative 순 fallback.
     menu_category가 None이면 cluster를 건너뛴다.
-    전역 prior는 최후의 수단이며 confidence를 low로 강등."""
+    전역 prior는 최후의 수단이며 confidence를 낮게 강등."""
 
 
 def apply_source_scale(
@@ -238,17 +239,21 @@ if store_id is None or store_id <= 0:
 
 results = []
 for ing in ingredients:
-    a0, b0, prior_src = resolve_prior(store_id, ing.name, menu_category)
-    # prior_src가 uninformative면 a0=b0=1 → 아래 식은 확정 공식 α=k+1, β=(n−k)+1과 같다.
-    # store/cluster/global prior와 ④ 관측치(k, n)를 어떻게 결합할지는 미확정 (§8).
+    evidence, prior_src = collect_evidence(store_id, ing, menu_category)
+    # evidence: [(출처, k, n), ...]
+    #   - 레시피 크롤링: ④가 넘긴 k_count / n_total (필드 부재·k > n → 0, 0)
+    #   - 이 가게의 증거(사용자 피드백, 승인된 웹 레시피 등). 없으면 cluster → global 순으로 대신
+    #   - 아무 근거도 없으면 빈 목록 → prior_src = uninformative
+    rel = source_reliability()        # 출처별 신뢰도 0~1, ⑦ §3-1이 계산한 최신값
+
+    alpha = 1 + sum(rel[s] * k       for s, k, n in evidence)
+    beta  = 1 + sum(rel[s] * (n - k) for s, k, n in evidence)
+    # 출처가 레시피 하나이고 신뢰도 1이면 확정 공식 α=k+1, β=(n−k)+1과 같다.
 
     if inherited_confirmations:
-        a0, b0 = adjust_with_inherited(a0, b0, ing.name, inherited_confirmations)
+        alpha, beta = adjust_with_inherited(alpha, beta, ing.name, inherited_confirmations)
         # prior 보정만. status를 확정값으로 쓰지 않는다.
 
-    k, n = valid_counts(ing)          # 필드 부재 → 0, 0 / k > n → 0, 0 + uninformative
-    alpha = k + a0
-    beta  = (n - k) + b0
     alpha, beta = apply_source_scale(alpha, beta, ing.source, ing.depth)   # 최종 α·β 동일 비율
 
     results.append(Probability(
@@ -256,7 +261,7 @@ for ing in ingredients:
         alpha_post     = alpha,
         beta_post      = beta,
         prior_source   = prior_src,
-        confidence     = grade(prior_src, ing.source, ing.depth, ing.n_total),
+        confidence     = confidence_score(prior_src, ing.source, ing.depth, alpha, beta),   # 0~1, 계산식 미확정 §8
         anomaly_locked = ing.anomaly_locked,
     ))
 
@@ -292,7 +297,7 @@ posterior_mean = alpha / (alpha + beta)
 Beta(1,1)이 사전분포이므로 관측 0건이면 `α=1, β=1` → `posterior_mean = 0.5`.
 
 - 0 나눗셈은 발생하지 않는다.
-- 다만 **0.5는 SAFE도 DANGER도 아닌 완전 무정보 상태**이므로 `confidence: low`를 부여하고, ⑧에서 CAUTION 이상을 유지하도록 신호를 보낸다.
+- 다만 **0.5는 SAFE도 DANGER도 아닌 완전 무정보 상태**이므로 낮은 `confidence`를 부여하고, ⑧에서 CAUTION 이상을 유지하도록 신호를 보낸다.
 
 ### 3-2. PPT 9쪽 모델 고도화와의 관계
 
@@ -319,8 +324,22 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | web_crawl (실제 크롤링 코퍼스) | 1.000 | 1.946 |
 | partner_api (데모·의도적 부정확) | 1.000 | 0.000 |
 
+- **이 문서의 방식 (결정, 2026-10-06, #187·#194):** 출처 신뢰도는 0~1 숫자이고, 가장 믿을 만한 출처가 1이다. 사장님 확정값과 비교해 맞추면 오르고 틀리면 내린다. 계산은 ⑦ §3-1이 맡고, ⑤는 그 값을 근거 가중치로 쓴다 (§2-3).
+- PPT 표는 1을 넘을 수 있는 다른 눈금이다. 이 문서 눈금으로 옮기면 web_crawl은 1에 가깝고 partner_api는 0에 가깝다 (⑦ §3-1).
 - 학습 데이터는 `ingredient_evidence_log`(출처별 이벤트 로그)다 (`caution-db-schema.md` §3).
-- 출처 weight를 ⑥이 판단할지 ⑤가 반영할지는 **미확정**이다 (⑥ §5, #125, #171). ⑤ 쪽에서는 반영 위치를 §2 처리 로직의 "근거 결합" 단계로 예약해 둔다.
+
+**⑤에서 쓰는 식**
+
+```
+α = 1 + Σ 신뢰도(출처) × k(출처)
+β = 1 + Σ 신뢰도(출처) × (n(출처) − k(출처))
+```
+
+- 출처별 `k`(그 재료가 있다고 한 수)와 `n`(전체 수)에 그 출처의 신뢰도를 곱해 더한다. 출처에는 레시피 크롤링 데이터(④가 넘긴 `k_count`/`n_total`), 관리자가 승인한 웹 레시피, **이 가게의** 사용자 피드백 등이 있다.
+- 출처가 레시피 데이터 하나이고 신뢰도가 1이면 확정 공식 `α = k_count + 1`, `β = (n_total − k_count) + 1`과 같다.
+- 신뢰도가 낮은 출처는 근거가 작게 반영된다. 그만큼 확률이 0.5(모름) 쪽으로 가고 `confidence`가 낮아진다. 확률을 0 쪽으로 끌어내리지 않으므로 SAFE로 기울지 않는다.
+- 사장님 확정값은 이 식에 들어가지 않는다. 확률 계산 없이 override로 쓰인다 (③).
+- 근거 강도별 scale(변형 재료 0.5 등)은 이 식으로 구한 최종 α·β에 동일 비율로 적용한다 (§2-1, 확정).
 
 ---
 
@@ -333,7 +352,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** |
 | **2-c) 피드백 전부 (anomaly 포함)** | anomaly 재료만 계산 + `anomaly_locked: true` |
 | **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. `inherited` prior 보정 적용 |
-| **3-b) 신규 변형** | `variant_suggested` 재료는 `k=0, n=0`(④ §1-5) → mean 0.5, `confidence: low`, scale 0.5 (mean 보존) |
+| **3-b) 신규 변형** | `variant_suggested` 재료는 `k=0, n=0`(④ §1-5) → mean 0.5, 낮은 `confidence`, scale 0.5 (mean 보존) |
 | **4) DB에 없는 unknown 메뉴** | Supervisor가 ⑥ 결과로 ⑦ 검토 명령을 만든 뒤 ⑤를 호출한다(⓪ §2). 웹 근거는 관리자 검토 전이라 미검증 상태다. `menu_category`가 없으므로 `prior_source`는 `global` 또는 `uninformative` |
 | **5) 웹서치도 실패 (엣지)** | 호출되지 않거나 `uninformative` 반환. **SAFE로 떨어뜨리지 않음** |
 
@@ -357,10 +376,10 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
-| `confidence: low` | → ⑧이 사장님 질문 생성 우선순위 상향 |
+| 낮은 `confidence` | → ⑧이 사장님 질문 생성 우선순위 상향 |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
-> ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. 현재 ⓪ §4-7의 ⑧ 입력 형식에는 `posterior_mean`과 `anomaly_locked`만 있어 이 신호가 빠진다. ⓪·⑧ 문서에 반영이 필요하다 (§8).
+> ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
 
 **⑤가 하지 않는 것**: DB 쓰기, 판정, 타 Agent·Tool 호출. 특히 **`ingredient_risk_scores` 직접 UPDATE 금지** — α/β 재계산은 ⑦이 만든 `ingredient_evidence_log` INSERT 명령을 백엔드가 저장한 뒤 애플리케이션 로직이 수행한다.
 
@@ -372,8 +391,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | `context.store_id` 누락/0 이하 | `StoreIdRequiredError`. **전역 prior fallback 금지** |
 | store prior 없음 | cluster → global 순 fallback. `prior_source` 반드시 표기 |
-| 전역 prior도 없음 | `uninformative` + `confidence: low`. **SAFE 방향 기본값 금지** |
-| `n_total = 0` | Beta(1,1)로 `mean = 0.5`, `confidence: low`, `uninformative` 표기 |
+| 전역 prior도 없음 | `uninformative` + 낮은 `confidence`. **SAFE 방향 기본값 금지** |
+| `n_total = 0` | Beta(1,1)로 `mean = 0.5`, 낮은 `confidence`, `uninformative` 표기 |
 | `k_count > n_total` | 데이터 무결성 오류. 로그 + 해당 재료 `uninformative` 처리, `warnings`에 `integrity_error` |
 | `k_count` / `n_total` 필드 부재 | `0, 0`으로 간주 → 위와 동일 처리 |
 | `inherited`와 store prior 상충 | store prior 우선, `inherited`는 가중 보정에만 사용 |
@@ -399,27 +418,29 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 8 | `inherited` 확인 정보 포함 | prior 보정만 수행 | **override로 처리되지 않을 것** |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
 | 10 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
-| 11 | `n_total = 0` | mean 0.5 + `confidence: low` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
+| 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
 | 12 | `k_count > n_total` | `uninformative` + 오류 로그 | 음수 β 발생하지 않을 것 |
 | 13 | 동일 입력 2회 실행 | 동일 결과 | 재현성 (부작용 없을 것) |
-| 14 | ⑥ 후보 (`k_count`/`n_total` 없음) | `uninformative` + `confidence: low` | SAFE 쪽 기본값으로 가지 않을 것 |
+| 14 | ⑥ 후보 (`k_count`/`n_total` 없음) | `uninformative` + 낮은 `confidence` | SAFE 쪽 기본값으로 가지 않을 것 |
 | 15 | `menu_category: null` | `cluster` 건너뜀 | 다른 카테고리 prior가 섞이지 않을 것 |
 | 16 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
+| 17 | 레시피 출처 하나, 신뢰도 1, `k=53, n=57` | `α=54, β=5` | 확정 공식과 같은 결과일 것 |
+| 18 | 같은 근거, 출처 신뢰도 0.2 | mean이 0.5 쪽으로 이동, `confidence` 낮아짐 | 확률이 0 쪽으로 내려가지 않을 것 |
 
 ---
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
 - [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형 / 지수 / 없음). ④ §8과 연동 결정
-- [ ] **`variant_suggested` scale 0.5의 적정성** — 초기값으로 0.5 채택. F2 튜닝 시 재조정
+- [x] **`variant_suggested` scale 0.5의 적정성** — 0.5 유지 (2026-10-06, #187). F2 튜닝 시 재조정은 QA #192
 - [ ] **`inherited_confirmations` prior 보정 강도** — 상속 정보를 α₀/β₀에 얼마나 반영할지 (구체 계수)
-- [ ] **클러스터 축 확장 여부** — 현재 `menu_category` 기준으로 확정. 업종/지역 축을 추가할지는 미정
+- [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
 - [ ] **F2 최적화 threshold를 누가 계산하는가** — Supervisor 내부 규칙 vs ⑧ Decision Policy / XAI Agent 내부. 아키텍처 문서 §4 미해결 (#173, #139)
-- [ ] **`confidence` 등급 기준** — `low`/`medium`/`high` 경계를 무엇으로 나눌지 (prior_source, source, n_total 조합)
-- [ ] **prior와 관측치의 결합 방식** — store/cluster/global prior(α₀, β₀)에 ④의 메뉴 레시피 관측치(k, n)를 더하면 같은 레시피 데이터가 두 번 세어질 수 있다. prior 단계가 관측치 출처를 고르는 방식인지, 둘을 더하는 계층 방식인지 정해야 한다. uninformative일 때는 어느 방식이든 확정 공식과 같다
+- [ ] **`confidence` 계산식** — 0~1 숫자로 쓰기로 결정 (2026-10-06, #187). 남은 것: 무엇으로 계산할지(근거 양, 분포 폭, prior 단계 등)와 "낮음"으로 볼 기준값
+- [x] **prior와 관측치의 결합 방식** — 출처별 `k`·`n`에 출처 신뢰도(0~1)를 곱해 더한다 (2026-10-06, #187, §3-3). 같은 레시피 데이터가 두 번 세어지지 않게 가게 증거에는 그 가게에서 새로 생긴 증거만 담는다
 - [ ] **PPT 9쪽 결합 모델 반영** — 자카드 보정·Chow-Liu + TAN 결합 모델(§3-2)을 런타임 ⑤에 넣을지, 시점과 형태. 실험 코드 위치 확인 포함
-- [ ] **출처 신뢰도(Dawid-Skene) 반영 위치** — ⑤ 가중치 반영인지 ⑥ 출처 평가인지 (⑥ §5, #125, #171)
-- [ ] **`web_search` 출처의 scale** — ⑥ 후보를 `source: web_search`로 받을 때 적용할 scale (④ §8과 연동)
+- [x] **출처 신뢰도(Dawid-Skene) 반영 위치** — ⑦이 계산하고 ⑤가 근거 가중치로 사용 (2026-10-06, ⑦ §3-1). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
+- [ ] **`web_search` 출처의 scale** — ⑥ 후보를 `source: web_search`로 받을 때 적용할 scale. 레시피 수 계산 방식과 함께 단체 논의 #201
 - [ ] **⑧ 전달 필드 (외부 의존)** — `prior_source`, `confidence`, `warnings`를 ⓪ §4-7 ⑧ 입력 형식에 추가하는 안. ⓪·⑧ 담당자 확인 필요
 - [ ] **재료 공통 식별자** — 출력의 `ingredient`(재료명)를 `ingredient_id` + `canonical_name`으로 바꿀지. ⑧은 `ingredient_id`를 키로 받는다 (⑧ §1). ⓪ §4 공통 계약(#103), ④ §8과 함께 확정
 
@@ -427,15 +448,15 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 ## 9. 구현 계획 (GitHub Backlog / Iteration)
 
-아래 항목은 GitHub Issue 등록 시 각각 하나의 Sub-issue로 만든다. 문서 작업은 #71, 구현 작업은 #59에 연결한다. 2026-10-06 기준 아직 등록되지 않은 초안이다.
+아래 항목은 2026-10-06에 GitHub 이슈로 등록했다. 제목 옆 번호가 이슈 번호이고, 문서 작업은 #71, 구현 작업은 #59의 하위 이슈다. **진행 상황과 결정 내용은 이슈에서 관리한다.** 아래 본문은 등록 당시 초안이다.
 
 ### Iteration 1 — 문서와 계약 확정 (10/13까지)
 
-#### `[DOCS] ⑤ Bayesian - prior 결합 방식과 ⑧ 전달 신호 확정`
+#### `[DOCS] ⑤ Bayesian - prior 결합 방식과 ⑧ 전달 신호 확정` (#187)
 
 **작업 내용**
 
-prior와 레시피 관측치를 합치는 방식, confidence 등급 기준, ⑧까지 전달할 신호를 확정한다.
+prior와 레시피 관측치를 합치는 방식, confidence 계산식, ⑧까지 전달할 신호를 확정한다.
 
 **배경**
 
@@ -444,7 +465,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 **세부 작업**
 
 - [ ] prior와 관측치 결합 방식 결정
-- [ ] `confidence` low/medium/high 경계 결정
+- [ ] `confidence` 0~1 계산식과 "낮음" 기준값 결정
 - [ ] `inherited_confirmations` 보정 강도 결정
 - [ ] depth 감쇠 방식과 `web_search` scale 결정 (④와 함께)
 - [ ] `prior_source`·`confidence`를 ⑧ 입력에 넣는 안을 ⓪·⑧ 담당자와 확정
@@ -463,7 +484,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 - 상위 이슈 #71, ⑧ 컷오프 #173·#139
 - `docs/agent-0-supervisor.md` §4-7
 
-#### `[DOCS] ⑤ Bayesian - PPT 9쪽 결합 모델·출처 신뢰도 반영 범위 결정`
+#### `[DOCS] ⑤ Bayesian - PPT 9쪽 결합 모델·출처 신뢰도 반영 범위 결정` (#188)
 
 **작업 내용**
 
@@ -477,7 +498,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 - [ ] 실험 코드 위치 확인과 문서 기록
 - [ ] 결합 모델 런타임 도입 여부와 시점 결정
-- [ ] 출처 신뢰도 계산 위치(⑤ 또는 ⑥) 결정 (#125, #171)
+- [ ] 출처 신뢰도 계산 위치 결정 (#125, #171) — ⑦ 계산, ⑤ 사용으로 결정됨 (⑦ §3-1)
 - [ ] 결정 결과를 §3-2·§3-3에 반영
 
 **관련 서비스**
@@ -496,7 +517,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 ### Iteration 2 — 핵심 구현
 
-#### `[FEAT] ⑤ Bayesian - 입출력 모델과 prior fallback 구현`
+#### `[FEAT] ⑤ Bayesian - 입출력 모델과 prior fallback 구현` (#189)
 
 **작업 내용**
 
@@ -510,7 +531,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 - [ ] 입력·출력 모델과 `context.store_id` 검증 구현
 - [ ] prior fallback 4단계와 `menu_category: null` 처리 구현
-- [ ] 전역·무정보 prior에서 `confidence: low` 강등 구현
+- [ ] 전역·무정보 prior에서 낮은 `confidence` 부여 구현
 - [ ] prior 조회를 저장소 인터페이스와 테스트용 가짜 저장소로 분리
 
 **관련 서비스**
@@ -526,7 +547,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 - 상위 이슈 #59
 
-#### `[FEAT] ⑤ Bayesian - Beta-Binomial 갱신과 동일 비율 scale 구현`
+#### `[FEAT] ⑤ Bayesian - Beta-Binomial 갱신과 동일 비율 scale 구현` (#190)
 
 **작업 내용**
 
@@ -560,7 +581,7 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 
 ### Iteration 3 — 연동
 
-#### `[FEAT] ⑤ Bayesian - prior 데이터 연동과 Supervisor 연결`
+#### `[FEAT] ⑤ Bayesian - prior 데이터 연동과 Supervisor 연결` (#191)
 
 **작업 내용**
 
@@ -592,7 +613,7 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 
 ### Iteration 4 — QA
 
-#### `[CHORE] ⑤ Bayesian - 시나리오 QA 및 회귀 검증`
+#### `[CHORE] ⑤ Bayesian - 시나리오 QA 및 회귀 검증` (#192)
 
 **작업 내용**
 

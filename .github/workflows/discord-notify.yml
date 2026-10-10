@@ -1,0 +1,26 @@
+name: Discord notify
+
+# 이슈, PR, CI/CD 실패를 Discord로 알림. 실제 로직은 Han-Spoon/.github의 공용 workflow.
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, closed]
+  workflow_run:
+    workflows: ["AI CI", "Deploy (prod)"] # 각 workflow의 name과 일치해야 함
+    types: [completed]
+
+permissions:
+  actions: read # 실패 job/step 조회
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    # CI/CD는 실패한 경우에만 알림
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure'
+    uses: Han-Spoon/.github/.github/workflows/discord-notify.yml@main
+    with:
+      team: AI
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
