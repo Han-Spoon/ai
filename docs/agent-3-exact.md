@@ -52,7 +52,6 @@
       "evidence_type": "owner",
       "flagged_anomaly": false,
       "override_eligible": true,
-      "conflict": false,
       "superseded": false,
       "expired": false,
       "confirmed_at": "2026-09-01T00:00:00Z"
@@ -76,7 +75,8 @@
 | 값 | 성격 | 후속 처리 |
 |---|---|---|
 | `owner` | 사장님 확인 (hard evidence) | override 후보 |
-| `user_hard` | 과거 사용자 hard evidence | override 후보 (신뢰 가중 검토, §6) |
+
+> 확인 기록은 **사장님 답변만** 다룬다. 사용자(관광객)가 직접 알려준 재료 정보(`user_hard`)는 수집 경로가 없어 제외했다 (2026-10-09). 제출 PPT 8쪽의 "사용자 피드백 우선 반영"은 사용자 화면에 띄운 확인 질문을 통해 받은 **사장님 답변**으로 해석한다 (`ppt-baseline.md` 7쪽 ③ 정의 "확정 근거(Hard Evidence) 조회", 8쪽 "사장님 확인 정보 → 기록").
 
 ### 1-5. `confirmation_scope`
 
@@ -123,8 +123,7 @@ flowchart TD
     Q --> N{레코드 존재?}
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
     N -->|있음| DD["중복 제거<br/>(confirmed_at 최신)"]
-    DD --> CF["충돌 해소<br/>(owner 우선, conflict 표기)"]
-    CF --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
+    DD --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
     EX --> A{"flagged_anomaly 또는 expired?"}
     A -->|Yes| MARK["override_eligible: false<br/>드롭 금지, 플래그와 함께 반환"]
     A -->|No| OK["override_eligible: true"]
@@ -176,7 +175,6 @@ rows = db.query("ingredient_confirmations",
 
 confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 금지
 confirmations = dedupe_latest(confirmations)         # 중복 시 confirmed_at 최신 채택
-confirmations = resolve_conflict(confirmations)      # owner 우선 + conflict 표기
 
 for c in confirmations:                              # §1-7. 드롭하지 않고 표기만
     c.expired = c.confirmed_at < now() - months(3)
@@ -262,7 +260,6 @@ return ExactResult(
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
 | 동일 재료 중복 레코드 | `confirmed_at` 최신 1건 채택, 나머지 `superseded: true` |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
-| `owner` vs `user_hard` 상충 | `owner` 우선. `conflict: true`로 표기해 ⑧에 전달 |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
 | 2차 호출인데 `base_menu_id`가 null | Supervisor가 호출하지 않음. 도달 시 빈 배열 반환 |
 | 캐시와 실제 재료 목록 불일치 | 캐시 무효로 간주 → `unknown` 반환 (안전 방향) |
@@ -281,20 +278,18 @@ return ExactResult(
 | 6 | `store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
 | 8 | 전 재료 확인 + anomaly 1건 | `completeness: unknown` | anomaly가 `complete`를 막을 것 |
-| 9 | `owner: absent` + `user_hard: present` | owner 채택 + `conflict: true` | 충돌 은폐하지 않을 것 |
-| 10 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
-| 11 | 동일 재료 레코드 3건 | 최신 1건 + `superseded: true` 2건 | 중복 집계되지 않을 것 |
-| 12 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
-| 13 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
+| 9 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
+| 10 | 동일 재료 레코드 3건 | 최신 1건 + `superseded: true` 2건 | 중복 집계되지 않을 것 |
+| 11 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
+| 12 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
 
 ---
 
 ## 6. 미확정 항목 (팀 확인 대기)
 
-- [ ] **`user_hard` 신뢰 가중** — 사장님(`owner`)과 동일 가중을 줄지, 계층적 신뢰 가중(Dawid & Skene 계열)을 학습할지
 - [x] **확인 정보 유효기간** — 3개월로 결정 (2026-10-06 회의, §1-7)
 - [ ] **만료 후 처리 세부** — "3개월"을 날짜 기준으로 셀지 90일로 셀지, 만료된 재료를 사장님에게 다시 물어보는 경로(⑧ 사장님 카드 우선순위 등)
-- [ ] **`menu_ingredient_cache` 스키마** — 생성 결정됨. 컬럼 정의 및 무효화(invalidation) 시점 확정 필요 (④ 재확장 시 갱신, 온톨로지 변경 시 전체 무효화)
+- [ ] **`menu_ingredient_cache` 무효화 시점** — 테이블과 컬럼은 `caution-db-schema.md` §6에 이미 정의됨 (`store_id`, `menu_id`, `ingredients_snapshot`, `computed_at`, UNIQUE `(store_id, menu_id)`). 캐시 저장 명령은 ④가 만든다 (파생 캐시라 ⑦ 승인 대상 아님, AGENTS.md 확정). 남은 것: ④ 재확장 시 갱신, 온톨로지 변경 시 전체 무효화, 사장님 확인값이 새로 들어왔을 때 무효화할지 (#169)
 - [ ] **anomaly 판정 기준** — `flagged_anomaly`를 무엇으로 판정할지. 현재는 "base rate와 극단적으로 어긋남"으로만 기술됨. 임계값 정의 필요
 
 ## 7. 확정된 결정 (변경 금지)
