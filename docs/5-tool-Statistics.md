@@ -161,7 +161,7 @@ flowchart TD
     GP --> INH
     UP --> INH
     INH --> BB["Beta-Binomial 업데이트<br/>α=k+α₀, β=(n−k)+β₀"]
-    BB --> SRC["source별 scale<br/>최종 α·β 동일 비율<br/>recipe 1.0 / variant_suggested 0.5<br/>expanded depth 감쇠 (미확정 §8)"]
+    BB --> SRC["source별 scale<br/>최종 α·β 동일 비율<br/>recipe 1.0 / variant_suggested 0.5<br/>expanded 0.5^depth, 하한 0.125"]
     SRC --> LOCK{"anomaly_locked?"}
     LOCK -->|Yes| MARK["플래그 유지<br/>⑧에서 CAUTION 이상 강제"]
     LOCK -->|No| OUT[Supervisor에 반환]
@@ -173,7 +173,7 @@ flowchart TD
 | ④의 `source` | 근거 | scale |
 |---|---|---|
 | `recipe` | DB 명시 재료 (**DB 등록 변형 재료 포함**) | 1.0 |
-| `expanded` | 재귀 확장 도출 | depth 감쇠 (§8 미확정) |
+| `expanded` | 재귀 확장 도출 | `max(0.5^depth, 0.125)` (아래 depth 감쇠) |
 | `variant_suggested` | 런타임 태깅 제안, DB 미반영 | **0.5** |
 
 **α만 줄이면 안 되는 이유 (중요)**
@@ -199,6 +199,26 @@ k=2, n=10, prior Beta(1,1)
 ```
 
 > `variant_origin: db_registered`(④ DB 컬럼 등록 변형)는 관리자 컨펌을 거친 확정 데이터이므로 `source: recipe`이며 **scale 축소 대상이 아니다.** 축소는 `runtime_tagged`에서 나온 `variant_suggested`에만 적용한다.
+
+**depth 감쇠 — 확률은 그대로, 확신도만 낮춘다** (결정, 2026-10-10)
+
+```
+scale(depth) = max(0.5 ** depth, 0.125)
+```
+
+| depth | 예시 (김치찌개) | scale |
+|---|---|---|
+| 0 | 김치 | 1.0 |
+| 1 | 액젓 | 0.5 |
+| 2 | 새우 | 0.25 |
+| 3~5 | 그 아래 | 0.125 (하한) |
+
+- 감쇠도 위와 같은 **최종 α·β 동일 비율 축소**다. 깊을수록 확률을 곱해 깎는 방식(선형·지수로 mean을 낮추는 방식)은 쓰지 않는다. 숨은 재료 확률이 내려가 그대로 FN이 된다.
+- 깊을수록 "있을 수 있지만 덜 확실함"이 되어 분산이 커지고, ⑧에서 CAUTION·사장님 질문 쪽으로 간다.
+- 깊이 1의 0.5는 `variant_suggested`와 같은 값이다. 추정 변형 1개와 같은 수준의 근거로 본다.
+- 하한 0.125를 두는 이유: 깊이 5까지 계속 줄이면 분포가 거의 평평해져 모든 메뉴가 CAUTION으로 도배되고 경고가 의미를 잃는다.
+- **예외**: 하위 재료라도 `observation_basis: direct`(레시피에 직접 나온 수가 상위 재료보다 많음, ④ §1-5)면 scale 1.0이다. 직접 관측이므로 깊이 때문에 깎을 이유가 없다.
+- 0.5와 0.125는 초기값이다. F2 튜닝(QA #192)에서 다시 본다.
 
 ### 2-2. 함수 시그니처
 
@@ -228,9 +248,11 @@ def apply_source_scale(
     alpha: float, beta: float,                         # 관측치를 더한 최종 α·β
     source: Literal["recipe", "expanded", "variant_suggested"],   # web_search scale은 미확정 §8
     depth: int,
+    observation_basis: Literal["direct", "inherited", "none"] = "direct",
 ) -> tuple[float, float]:
     """최종 α·β를 동일 비율로 축소. mean 보존, 분산 증가.
-    recipe=1.0, variant_suggested=0.5, expanded=depth 감쇠(§8)."""
+    recipe=1.0, variant_suggested=0.5,
+    expanded=max(0.5 ** depth, 0.125) (observation_basis가 direct면 1.0)."""
 
 
 def beta_binomial_update(
@@ -274,7 +296,7 @@ for ing in ingredients:
         alpha, beta = adjust_with_inherited(alpha, beta, ing.name, inherited_confirmations)
         # prior 보정만. status를 확정값으로 쓰지 않는다.
 
-    alpha, beta = apply_source_scale(alpha, beta, ing.source, ing.depth)   # 최종 α·β 동일 비율
+    alpha, beta = apply_source_scale(alpha, beta, ing.source, ing.depth, ing.observation_basis)   # 최종 α·β 동일 비율
 
     results.append(Probability(
         posterior_mean = alpha / (alpha + beta),
@@ -461,7 +483,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 5 | `variant_suggested` 재료 | 최종 α·β 0.5배 | **posterior mean이 낮아지지 않을 것** (분산만 증가) |
 | 5-b | `k=2, n=10`, `source: variant_suggested` | mean 0.250 유지 | prior만 축소해 0.227이 되지 않을 것 |
 | 6 | `db_registered` 변형 재료 | scale 1.0 | 신규 변형과 같게 취급되지 않을 것 |
-| 7 | depth 0 vs depth 3 동일 재료 | 감쇠 정책대로 차등 | depth 무시되지 않을 것 |
+| 7 | depth 0 vs depth 3 동일 관측값 (`inherited`) | scale 1.0 vs 0.125, mean 같음 | depth가 무시되지 않고, mean이 내려가지 않을 것 |
+| 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
 | 8 | `inherited` 확인 정보 포함 | prior 보정만 수행 | **override로 처리되지 않을 것** |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
 | 10 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
@@ -483,7 +506,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형 / 지수 / 없음). ④ §8과 연동 결정
+- [x] **depth 감쇠 함수** — 최종 α·β에 `max(0.5^depth, 0.125)` 동일 비율 적용, mean 보존. `observation_basis: direct`는 1.0 (2026-10-10, §2-1). 값 조정은 QA #192
 - [x] **`variant_suggested` scale 0.5의 적정성** — 0.5 유지 (2026-10-06, #187). F2 튜닝 시 재조정은 QA #192
 - [ ] **`inherited_confirmations` prior 보정 강도** — 상속 정보를 α₀/β₀에 얼마나 반영할지 (구체 계수)
 - [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
@@ -521,7 +544,8 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 - [ ] prior와 관측치 결합 방식 결정
 - [ ] `confidence` 0~1 계산식과 "낮음" 기준값 결정
 - [ ] `inherited_confirmations` 보정 강도 결정
-- [ ] depth 감쇠 방식과 `web_search` scale 결정 (④와 함께)
+- [x] depth 감쇠 방식 결정 (§2-1)
+- [ ] `web_search` scale 결정
 - [ ] `prior_source`·`confidence`를 ⑧ 입력에 넣는 안을 ⓪·⑧ 담당자와 확정
 
 **관련 서비스**
