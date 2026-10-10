@@ -114,7 +114,7 @@ graph LR
 - ④의 `variant_origin: runtime_tagged` 결과는 ④ 출력의 `variant_suggestion`(`base_menu_id`, `remain_token`, `suggested_ingredients`)을 그대로 받는다. `db_registered` 변형은 이미 컨펌된 데이터라 ⑦ 대상이 아니다 (④ §5-2).
 - 사장님 답변은 스캔 흐름 밖에서 들어온다. `context.scan_session_id`는 원래 질문이 생긴 스캔(`owner_verification_requests.scan_session_id`)을 쓰고, `item_id`는 `null`이다. ⓪ 공통 문맥 규칙과 맞는지 확인이 필요하다 (§8).
 - ⑧ `owner_card.question`은 6개 언어 객체(`ko`, `en`, `ja`, `zh-Hans`, `zh-Hant`, `es`)다. 스키마의 `owner_verification_requests.question_text`는 text 한 칸이라, 어느 언어를 어떤 형태로 저장할지 정해야 한다 (§8).
-- 사용자 피드백(`ingredient_confirmations.source: user_reported`, ③의 `user_hard`)을 받는 트리거는 아직 없다. PPT 8쪽은 "사용자 피드백 우선 반영"을 적고 있어 트리거와 신뢰도 등급을 정해야 한다 (§8).
+- 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보(③의 `user_hard`)는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09). 손님이 소통 카드로 물어본 결과도 사장님 답변으로 들어온다.
 
 ### 1-2. 출력 (⓪ Supervisor Agent에게 반환)
 
@@ -234,7 +234,7 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
 
 | 필드 | 값 | 의미 |
 |---|---|---|
-| `source_type` | `web_search` \| `ocr_variant_tag` \| `owner_feedback` | 출처. `ingredient_evidence_log.source_type`과 같은 값. 손님 피드백(`user_feedback`)은 쓸지 정해야 한다 (§8) |
+| `source_type` | `web_search` \| `ocr_variant_tag` \| `owner_feedback` | 출처. `ingredient_evidence_log.source_type`과 같은 값. 관광객 피드백은 출처로 쓰지 않는다 (③ 결정) |
 | `evidence_ref_table` / `evidence_ref_id` | `web_search_cache` / `menu_analyses` / `owner_verification_requests` | 원본 근거 행 |
 | `verification_status` | `pending_review` → `approved` \| `rejected` (soft), `owner_confirmed` (hard) | 검증 상태 |
 | `reliability_weight` | float, 0~1 | 이 근거를 낸 출처의 현재 신뢰도. 가장 믿을 만하면 1. 계산은 §3-1, 사용은 ⑤ §2-3. 아직 비교 기록이 없는 출처는 0.5 |
@@ -264,7 +264,6 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의
   - 웹 검색(`web_search`): 후보 재료 목록에 그 재료가 있으면 "있음" 주장이다. 목록에 없다고 "없음"으로 보지는 않는다.
   - 크롤링 코퍼스(`corpus:semie` / `corpus:wtable` / `corpus:10000recipe`): 사이트마다 따로 센다. 그 사이트 레시피상 확률(`(k+1)/(n+2)`)이 0.5 이상이면 "있음", 미만이면 "없음" 주장이다.
   - 큐레이션 레시피(`curated`): 목록에 있으면 "있음" 주장이다. 목록에 없다고 "없음"으로 보지는 않는다.
-  - 손님 피드백은 출처로 쓸지 정해야 한다 (§8). 쓰기로 하면 손님이 답한 "있음/없음"을 주장으로 본다.
 - **맞춤:** 출처의 주장과 사장님 확정값이 같으면 맞춘 것이다.
 - 같은 출처의 같은 가게·메뉴·재료 주장은 한 번만 센다.
 
@@ -463,7 +462,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **모순 답변 대기 중 처리** — 다른 답이 2번 연속 올 때까지 기존 확정값 유지 (2026-10-06, #193)
 - [x] **확정값 유효기간** — 3개월. 만료되면 override하지 않고 지우지도 않음 (AGENTS.md, §2-3). 재확인을 앞당기는 계기는 #202에서 계속 논의
 - [x] **anomaly 판정 기준** — 레시피 확률 0.9 이상 + "없음"이면 표시, "있음"은 대상 아님 (2026-10-06, #193, §2-3). ③ §6(#168)에도 같은 결정 전달 필요
-- [ ] **사용자 피드백 트리거** — `user_reported` / `user_hard` 확인값을 ⑦이 어떤 명령으로 받을지, hard와 soft 중 어디로 볼지 (③ §6 `user_hard` 신뢰 가중)
+- [x] **사용자 피드백 트리거** — 두지 않는다. 확인 정보는 사장님 답변만 다룬다 (③ 결정, 2026-10-09)
 - [x] **`reliability_weight` 계산 위치** — ⑦이 사장님 확정값과 비교해 계산 명령을 만들고, ⑤가 사용한다. 0~1 범위 (2026-10-06, §3-1, #194). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
 - [ ] **출처 신뢰도 세부** — 시작값 0.5가 적절한지, "있음"과 "없음" 정확도를 따로 볼지("없음"을 틀리는 쪽이 더 위험), 최소 몇 건 비교 후 쓸지
 - [ ] **사장님 답변의 공통 문맥** — 스캔 흐름 밖에서 오는 답변에 `item_id: null`을 허용할지, ⓪ §1-3 규칙과 함께 확정
