@@ -9,7 +9,7 @@
 **③은 순수 조회기다. 판단하지 않는다.**
 
 - 하는 것: `store_id + menu_id`로 `ingredient_confirmations` 조회 → 재료 단위 확인 맵 반환
-- 하는 것: 확인된 재료마다 `ingredients.tag`를 함께 조회해 `constraint_tags`(재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)로 붙인다 (⓪ §4-2). ③만 거치고 ④를 건너뛰는 경로에서도 ⑧이 사용자 제한과 대조할 수 있게 하기 위함이다. DB에 있는 태그를 그대로 붙일 뿐 "이 사용자에게 위험한가"는 판단하지 않는다
+- 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④가 모두 관리한다** (결정, 2026-10-10, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고, ③만 거치는 경로에서는 Supervisor가 ④의 태그 조회(`lookup_tags`)를 불러 태그를 붙인다 (⓪ §2-11)
 - 설계 원칙: **메뉴 단위 이분법 금지.** 부분 확인을 반드시 지원한다.
 
 | 하지 않음 | 담당 |
@@ -112,14 +112,14 @@
 | `confirmation_scope` | 입력 `scope_hint` 값 그대로 (§1-5) |
 | `completeness` | `complete \| unknown` (§2). ⓪에는 `partial`도 있으나 기준이 정해지지 않음 (§6) |
 | `confirmations[].ingredient` | 재료 (⓪ §1-2 `IngredientRef`) |
-| `confirmations[].constraint_tags` | 재료가 걸리는 제한 태그. DB `ingredients.tag`를 그대로 붙임 (§0) |
+| `confirmations[].constraint_tags` | ③은 항상 `[]`로 보낸다. Supervisor가 ④ 태그 조회 결과로 채운다 (§0) |
 | `confirmations[].status` | `present \| absent \| unknown` (§1-3) |
 | `confirmations[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 사장님 답변은 `evidence_class: hard`, `source_type: owner_feedback`, `verification_status: owner_confirmed` (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` 값 |
 | `confirmations[].flagged_anomaly` | 통계적으로 이상한 답변 표시. ⑦이 저장할 때 붙인 값을 ③은 그대로 읽는다 (기준은 §1-6) |
 | `confirmations[].override_eligible` | 이 확인값으로 판정을 덮어써도 되는지 (§1-6) |
 | `confirmations[].superseded` | 같은 재료의 더 최신 기록이 있어 밀려난 기록인지. DB가 재료당 1건이면 필요 없어짐 (#167) |
 | `confirmations[].expired` | 확인 후 3개월이 지났는지 (§1-7). **⓪ §4-2에는 아직 없음 — ⓪ 담당자에게 추가 요청** |
-| `warnings` / `errors` | 입력 신호를 보존하고 ③의 신호를 덧붙임 (예: 태그 조회 실패 `constraint_tags_lookup_failed`) |
+| `warnings` / `errors` | 입력 신호를 보존하고 ③의 신호를 덧붙임 |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
 
@@ -189,7 +189,7 @@ flowchart TD
     V -->|있음| Q["ingredient_confirmations 조회<br/>WHERE store_id AND menu_id"]
     Q --> N{레코드 존재?}
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
-    N -->|있음| TG["재료 태그 조회<br/>(ingredients.tag → constraint_tags)"]
+    N -->|있음| TG["ingredient_id 정리<br/>(태그는 ④가 붙임)"]
     TG --> DD["중복 제거<br/>(confirmed_at 최신)"]
     DD --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
     EX --> A{"flagged_anomaly 또는 expired?"}
@@ -246,13 +246,8 @@ rows = db.query("ingredient_confirmations",
 
 confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 금지
 
-tags = db.get_ingredient_tags([c.ingredient_id for c in confirmations])
-for c in confirmations:                              # 판단 없이 DB 태그를 그대로 붙임
-    c.constraint_tags = tags.get(c.ingredient_id, [])
-    if c.ingredient_id not in tags:                  # 조회 실패는 빈 배열만 보내지 않음
-        warnings.append(NodeWarning(code="constraint_tags_lookup_failed",
-                                    node="exact", item_id=request.context.item_id,
-                                    forces_caution=True))
+for c in confirmations:
+    c.constraint_tags = []                           # 태그는 ④가 붙인다 (④ §2-7)
 
 confirmations = dedupe_latest(confirmations)         # 중복 시 confirmed_at 최신 채택
 
@@ -345,7 +340,6 @@ return ExactFeedbackResponse(
 | 동일 재료 중복 레코드 | `confirmed_at` 최신 1건 채택, 나머지 `superseded: true` |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
-| 재료 태그 조회 실패 | `constraint_tags: []`와 함께 warning(`constraint_tags_lookup_failed`)을 반환. 빈 배열만 보내면 "걸리는 제한 없음"으로 읽혀 SAFE가 될 수 있다 (⓪ §1-2) |
 | 2차 호출인데 `base_menu_id`가 null | Supervisor가 호출하지 않음. 도달 시 빈 배열 반환 |
 | 캐시와 실제 재료 목록 불일치 | 캐시 무효로 간주 → `unknown` 반환 (안전 방향) |
 
@@ -367,8 +361,7 @@ return ExactFeedbackResponse(
 | 10 | 동일 재료 레코드 3건 | 최신 1건 + `superseded: true` 2건 | 중복 집계되지 않을 것 |
 | 11 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
 | 12 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
-| 13 | 돼지고기 `status: present` 확인값 | `constraint_tags: ["is_pork"]` 포함 반환 | ④를 건너뛰어도 ⑧이 할랄 제한과 대조할 수 있을 것 |
-| 14 | 재료 태그 조회 실패 | `constraint_tags: []` + `constraint_tags_lookup_failed` warning | 빈 태그만 조용히 보내지 않을 것 |
+| 13 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
 | 15 | 김치찌개 `땅콩: present` + `flagged_anomaly: false` (레시피 확률 낮음) | `override_eligible: true` | "있음" 답변은 anomaly가 아니므로 override가 거부되지 않을 것 |
 
 ---

@@ -161,7 +161,7 @@ JSON 계약은 **공통 envelope + 노드별 payload**의 2층 구조로 유지�
 
 #### `constraint_tags`
 
-재료가 사용자 제한과 충돌하는지를 판정하기 위한 `is_*` 표준 태그 배열이다. 예: `is_pork`, `is_fish`, `is_beef`, `is_alcohol`, `is_spicy`. authoritative vocabulary는 `ingredients.tag`와 ④ 온톨로지 데이터이며 ③·④·⑤·⑥·⑧ 사이에서 이름을 바꾸지 않는다. 값이 없으면 `[]`이지만 표준 재료의 태그 조회 자체가 실패한 경우에는 빈 배열만 반환하지 않고 warning을 함께 보낸다.
+재료가 사용자 제한과 충돌하는지를 판정하기 위한 `is_*` 표준 태그 배열이다. 예: `is_pork`, `is_fish`, `is_beef`, `is_alcohol`. 어휘는 식약처 알레르기 19종에 `is_fish`, `is_duck`, `is_alcohol`을 더한 22종이며, 원본은 `ingredient_tags`와 `ai_ruleengine/constants.py`다. **태그는 ④만 붙인다** (결정, 2026-10-10, ④ §2-7). ③·⑥은 `[]`로 보내고, Supervisor가 ④ 태그 조회로 채운다. ⑤·⑧은 받은 값을 바꾸지 않는다. `is_spicy`는 재료 태그가 아니라 ① OCR이 메뉴 문구에서 찾는 메뉴 속성이다 (§4-0). 값이 없으면 `[]`이지만 표준 재료의 태그 조회 자체가 실패한 경우에는 빈 배열만 반환하지 않고 warning을 함께 보낸다.
 
 #### `EvidenceRef`
 
@@ -846,7 +846,7 @@ def route_after_ocr(
 
 def route_after_exact(
     state: ItemState,
-) -> Literal["decision", "ontology"]:
+) -> Literal["tag_lookup", "ontology"]:
     exact = state["exact_response"]
     has_anomaly = any(
         confirmation.flagged_anomaly
@@ -854,7 +854,7 @@ def route_after_exact(
         for confirmation in exact.confirmations
     )
     if exact.completeness == "complete" and not has_anomaly:
-        return "decision"
+        return "tag_lookup"                  # 태그는 ④가 붙인다 (④ §2-7)
     return "ontology"
 
 
@@ -943,7 +943,8 @@ async def collect_items_node(state: JudgeState) -> dict:
 |---|---|---|---|
 | `prepare_item` | `menu_id != null` | `exact` | item 상태 초기화 |
 | `prepare_item` | `menu_id == null` | `ontology` | item 상태 초기화 |
-| `exact` | complete + anomaly 없음 | `decision` | `ExactFeedbackResponse` |
+| `exact` | complete + anomaly 없음 | `tag_lookup` | `ExactFeedbackResponse` |
+| `tag_lookup` | 항상 | `decision` | ④ 태그 조회 결과로 `constraint_tags` 채움 |
 | `exact` | partial/unknown/anomaly | `ontology` | `ExactFeedbackResponse` |
 | `ontology` | runtime 변형 | `variant_review` | `OntologyResponse` |
 | `ontology` | `base_menu_id != null` | `exact_inherited` | `OntologyResponse` |
@@ -951,7 +952,8 @@ async def collect_items_node(state: JudgeState) -> dict:
 | `ontology` | exact/base 모두 없음 | `web_search` | `OntologyResponse` |
 | `variant_review` | 항상 | `exact_inherited` | ⑦ 검토 command |
 | `exact_inherited` | 항상 | `bayesian` | inherited confirmation |
-| `web_search` | `found: true` | `web_review` | `WebSearchResponse` |
+| `web_search` | `found: true` | `ingredient_mapping` | `WebSearchResponse` |
+| `ingredient_mapping` | 항상 | `web_review` | ④ 재료 매핑 결과 (`ingredient_id`, `constraint_tags`, 매핑 실패 warning) |
 | `web_search` | `found: false` | `decision_no_information` | `WebSearchResponse` |
 | `web_review` | 항상 | `bayesian` | ⑦ 검토 command |
 | `bayesian` | 항상 | `decision` | `BayesianResponse` |
@@ -977,8 +979,10 @@ def build_item_graph(deps: SupervisorDeps):
     builder.add_node("ontology", make_ontology_node(deps))
     builder.add_node("variant_review", make_variant_review_node(deps))
     builder.add_node("exact_inherited", make_exact_node(deps, scope="inherited"))
+    builder.add_node("tag_lookup", make_tag_lookup_node(deps))              # ④ lookup_tags
     builder.add_node("bayesian", make_bayesian_node(deps))
     builder.add_node("web_search", make_web_search_node(deps))
+    builder.add_node("ingredient_mapping", make_ingredient_mapping_node(deps))  # ④ map_ingredients
     builder.add_node("web_review", make_web_review_node(deps))
     builder.add_node("decision", make_decision_node(deps, no_information=False))
     builder.add_node(
@@ -997,8 +1001,9 @@ def build_item_graph(deps: SupervisorDeps):
     builder.add_conditional_edges(
         "exact",
         route_after_exact,
-        {"decision": "decision", "ontology": "ontology"},
+        {"tag_lookup": "tag_lookup", "ontology": "ontology"},
     )
+    builder.add_edge("tag_lookup", "decision")
     builder.add_conditional_edges(
         "ontology",
         route_after_ontology,
@@ -1015,10 +1020,11 @@ def build_item_graph(deps: SupervisorDeps):
         "web_search",
         route_after_web_search,
         {
-            "web_review": "web_review",
+            "ingredient_mapping": "ingredient_mapping",
             "decision_no_information": "decision_no_information",
         },
     )
+    builder.add_edge("ingredient_mapping", "web_review")
     builder.add_edge("web_review", "bayesian")
     builder.add_edge("bayesian", "decision")
     builder.add_conditional_edges(
@@ -1588,7 +1594,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 }
 ```
 
-`scope_hint`와 `confirmation_scope`는 `exact | inherited`, `completeness`는 `complete | partial | unknown`이다. `expired`는 사장님 확인값의 유효기간이 지났는지 여부다 (기준은 ③ 문서). `status`는 3-State를 유지한다. ③은 확정값 조회 시 표준 재료의 `ingredients.tag`도 함께 조회해 `constraint_tags`로 반환한다. 따라서 exact-only 경로도 ④ 없이 ⑧에서 사용자 제한과 대조할 수 있다.
+`scope_hint`와 `confirmation_scope`는 `exact | inherited`, `completeness`는 `complete | partial | unknown`이다. `expired`는 사장님 확인값의 유효기간이 지났는지 여부다 (기준은 ③ 문서). `status`는 3-State를 유지한다. ③은 `constraint_tags: []`로 반환한다. exact-only 경로에서는 Supervisor가 ⑧ 전에 ④ 태그 조회(`tag_lookup` node)를 불러 태그를 채운다 (§2-11, ④ §2-7).
 
 첫 번째 호출은 대상 `menu_id`가 안정적으로 식별된 경우에만 `scope_hint="exact"`로 전달한다. `menu_id`가 없으면 ③을 호출하지 않는다.
 
@@ -1748,7 +1754,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
         "ingredient_id": "ingredient-030",
         "canonical_name": "대두"
       },
-      "constraint_tags": ["is_soy"],
+      "constraint_tags": ["is_soybean"],
       "status": "present",
       "evidence_refs": ["evidence-030"]
     }
@@ -1880,7 +1886,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 }
 ```
 
-⑥이 동일 재료명을 표준명 기준으로 묶어 `k_count`(해당 재료가 나온 유효 출처 수)와 `n_total`(유효 출처 수)을 계산한다. 원본 출처별 결과와 `EvidenceRef`는 `sources`에 보존하고, 집계 재료의 `evidence_refs`가 해당 ID를 가리킨다. 표준 재료에 매핑되면 `constraint_tags`를 채우고, 매핑하지 못하면 빈 배열과 `unmapped_constraint_tags` warning을 반환해 ⑧이 SAFE를 막게 한다. `found: false`이면 `sources`와 `ingredients`는 모두 빈 배열이다.
+⑥이 동일 재료명을 표준명 기준으로 묶어 `k_count`(해당 재료가 나온 유효 출처 수)와 `n_total`(유효 출처 수)을 계산한다. 원본 출처별 결과와 `EvidenceRef`는 `sources`에 보존하고, 집계 재료의 `evidence_refs`가 해당 ID를 가리킨다. ⑥은 `constraint_tags: []`로 반환한다. Supervisor가 ④ 재료 매핑(`ingredient_mapping` node)을 불러 표준 재료와 태그를 채우고, 매핑하지 못한 재료에는 ④가 `unmapped_constraint_tags` warning을 붙여 ⑧이 SAFE를 막게 한다 (§2-11, ④ §2-7). `found: false`이면 `sources`와 `ingredients`는 모두 빈 배열이다.
 
 ⑥의 warning `code`에는 `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 제한 초과로 일부 결과만 반환), `web_llm_extraction_failed`(LLM 추출 실패로 규칙 결과만 반환)가 있다. 모두 `forces_caution: true`다. 기준값은 ⑥ 문서를 따른다.
 
@@ -2434,7 +2440,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 | 9 | 메뉴 3개 중 1개 timeout | 2개 정상 + 1개 보수적 부분 응답 | 전체 요청 실패 없음, 순서 유지 |
 | 10 | ⑨ Curation 실패 | 판정 결과 정상 반환 + 추천 빈 배열 | 판정 결과 변경 없음 |
 | 11 | OCR `needs_retake` | ②~⑨ 미호출 + 재촬영 응답 | 불량 OCR 텍스트로 SAFE 판정하지 않음 |
-| 12 | exact `present` 돼지고기 + halal 프로필 | `constraint_tags: [is_pork]` 대조 후 DANGER | ④를 건너뛰어도 제한 태그 손실 없음 |
+| 12 | exact `present` 돼지고기 + halal 프로필 | `tag_lookup`(④)이 `constraint_tags: [is_pork]`를 채운 뒤 DANGER | ③만 거치는 경로에서도 제한 태그 손실 없음 |
+| 12-b | ⑥ 웹 재료가 표준 재료로 매핑 안 됨 | ④ `unmapped_constraint_tags` warning, CAUTION 이상 | 태그 없이 SAFE로 새지 않음 |
 | 13 | ④ 재료가 ⑤를 통과 | `constraint_tags`·`anomaly_locked`·`evidence_refs` 동일 | ⑧ 입력까지 메타데이터 손실 없음 |
 
 ---
