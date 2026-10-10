@@ -1579,7 +1579,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       "flagged_anomaly": false,
       "override_eligible": true,
       "conflict": false,
-      "superseded": false
+      "superseded": false,
+      "expired": false
     }
   ],
   "warnings": [],
@@ -1587,7 +1588,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 }
 ```
 
-`scope_hint`와 `confirmation_scope`는 `exact | inherited`, `completeness`는 `complete | partial | unknown`이다. `status`는 3-State를 유지한다. ③은 확정값 조회 시 표준 재료의 `ingredients.tag`도 함께 조회해 `constraint_tags`로 반환한다. 따라서 exact-only 경로도 ④ 없이 ⑧에서 사용자 제한과 대조할 수 있다.
+`scope_hint`와 `confirmation_scope`는 `exact | inherited`, `completeness`는 `complete | partial | unknown`이다. `expired`는 사장님 확인값의 유효기간이 지났는지 여부다 (기준은 ③ 문서). `status`는 3-State를 유지한다. ③은 확정값 조회 시 표준 재료의 `ingredients.tag`도 함께 조회해 `constraint_tags`로 반환한다. 따라서 exact-only 경로도 ④ 없이 ⑧에서 사용자 제한과 대조할 수 있다.
 
 첫 번째 호출은 대상 `menu_id`가 안정적으로 식별된 경우에만 `scope_hint="exact"`로 전달한다. `menu_id`가 없으면 ③을 호출하지 않는다.
 
@@ -1880,6 +1881,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```
 
 ⑥이 동일 재료명을 표준명 기준으로 묶어 `k_count`(해당 재료가 나온 유효 출처 수)와 `n_total`(유효 출처 수)을 계산한다. 원본 출처별 결과와 `EvidenceRef`는 `sources`에 보존하고, 집계 재료의 `evidence_refs`가 해당 ID를 가리킨다. 표준 재료에 매핑되면 `constraint_tags`를 채우고, 매핑하지 못하면 빈 배열과 `unmapped_constraint_tags` warning을 반환해 ⑧이 SAFE를 막게 한다. `found: false`이면 `sources`와 `ingredients`는 모두 빈 배열이다.
+
+⑥의 warning `code`에는 `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 제한 초과로 일부 결과만 반환), `web_llm_extraction_failed`(LLM 추출 실패로 규칙 결과만 반환)가 있다. 모두 `forces_caution: true`다. 기준값은 ⑥ 문서를 따른다.
 
 ④가 `exists_in_db: false`이면서 `base_menu_id: null`을 반환한 경우에만 호출한다. ⑥ 결과는 실시간 ⑤ 계산에는 사용할 수 있지만 DB에 자동 반영하지 않는다.
 
@@ -2296,6 +2299,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   "decision_results": [
     {
       "item_id": "scan-123:1",
+      "source_index": 1,
       "menu_id": "menu-002",
       "normalized_menu_name": "비빔밥",
       "risk_level": "safe",
@@ -2321,7 +2325,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 }
 ```
 
-`decision_results[].evidence_refs`는 해당 ⑧ 결과의 최상위 `evidence_refs`를 그대로 전달한다. `risk_level: safe`이면서 `information_status: complete`인 항목만 추천 후보로 전달한다.
+`decision_results[].evidence_refs`는 해당 ⑧ 결과의 최상위 `evidence_refs`를 그대로 전달한다. `source_index`는 메뉴판에서의 메뉴 순서다. `risk_level: safe`이면서 `information_status: complete`인 항목만 추천 후보로 전달한다.
 
 #### 응답 — `CurationResponse`
 
