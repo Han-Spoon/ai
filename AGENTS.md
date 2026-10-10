@@ -71,7 +71,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 
 | 용어 | 뜻 |
 |---|---|
-| hard evidence | 사장님이 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override |
+| hard evidence | 사장님이 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override, 사장님 확인값은 3개월 동안만 확정 정보로 쓴다. 만료되면 override하지 않고 드롭하지 않는다 |
 | soft evidence | 웹서치 등 미검증 정보. 관리자 컨펌 게이트를 거쳐야 DB 반영 |
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
