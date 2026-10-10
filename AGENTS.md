@@ -57,7 +57,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - 확정 정보 상속 범위는 `base_menu_id` 단일 메뉴까지. **형제 변형 제외.**
 
 ### 온톨로지
-- **교차오염은 모델 범위 외.** 관측 불가능하므로 사장님 질문 경로로 위임한다.
+- **교차오염은 다루지 않는다**
 - 변형 판별은 DB 컬럼(`base_menu_id` / `remain_token`) 우선. 파싱은 DB 부재 시에만.
 - 알레르겐은 taxonomy가 아닌 별도 축(`allergen_tags`).
 
