@@ -202,7 +202,7 @@ graph TB
 | 값 | 의미 | ⑤에서의 취급 |
 |---|---|---|
 | `recipe` | 메뉴의 직접 재료(depth 0). 큐레이션 레시피(`recipe_ingredients`) 또는 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료 (**DB 등록 변형 재료 포함**). 어느 쪽에서 왔는지는 `curated`로 구분 | 확정 prior, scale 1.0 |
-| `expanded` | 재귀 확장으로 도출된 하위 재료 | depth 감쇠 적용 (§8) |
+| `expanded` | 재귀 확장으로 도출된 하위 재료 | depth 감쇠 `max(0.5^depth, 0.125)`, mean 보존 (⑤ §2-1) |
 | `variant_suggested` | 런타임 태깅 제안 (DB 미반영) | **scale 0.5** |
 
 ### 1-5. `k_count` / `n_total` 제공 책임
@@ -216,7 +216,7 @@ graph TB
 - **확장된 하위 재료(depth ≥ 1)는 k=0으로 채우지 않는다** (결정, 2026-10-10). 레시피 작성자는 숨은 재료를 적지 않는다. 김치찌개 레시피에 "새우"가 안 적혔다고 새우가 없는 게 아니라, 김치 안의 새우젓으로 들어 있는 것이다. k=0으로 채우면 숨은 재료 확률이 거의 0(예: 57개 중 0개 → 약 0.017)으로 나와, 변형 재료와 같은 FN이 생긴다.
   - 사이트마다 `k_count = max(그 재료를 직접 센 수, 상위 재료의 k_count)`, `n_total`은 그 사이트 레시피 수로 둔다. 상위 재료가 있으면 숨은 재료도 있을 수 있으므로 상위 재료보다 낮게 보지 않는다.
   - 직접 센 수가 상위보다 크면 `observation_basis: direct`, 아니면 `inherited`다.
-  - 깊이에 따른 감쇠는 ⑤가 `depth`로 적용한다 (⑤ §8, 미확정). ④는 관측값만 물려준다.
+  - 깊이에 따른 감쇠는 ⑤가 `depth`와 `observation_basis`로 적용한다 (⑤ §2-1). ④는 관측값만 물려준다.
 - 메뉴가 어느 사이트에도 없으면 `observations: []` → ⑤가 낮은 `confidence`로 처리
 - **`variant_suggested` 재료는 항상 `observations: []`이다.** base 메뉴 레시피는 변형 재료(예: 차돌된장찌개의 소고기)를 관측한 데이터가 아니다. base 메뉴의 `n_total`을 그대로 쓰면 "57개 레시피 중 0번 등장"으로 계산돼 확률이 0에 가까워지고, 메뉴명에 드러난 재료가 SAFE 쪽으로 기우는 FN이 생긴다.
 
@@ -562,7 +562,7 @@ graph TB
 ### 3-2. 축 2 — Composition (`part-of`, 재귀)
 
 - **depth를 고정하지 않는다.** 김치찌개 → 김치 → 액젓 → 새우처럼 깊이가 가변이다.
-- 각 노드에 `depth` 값을 기록한다. depth 0(직접 재료)과 depth 3(3단계 하위)을 동일 확률로 취급하면 안 되기 때문 (⑤ 감쇠, §8).
+- 각 노드에 `depth` 값을 기록한다. depth 0(직접 재료)과 depth 3(3단계 하위)을 동일한 확신도로 취급하면 안 되기 때문 (⑤ §2-1 감쇠. 확률은 그대로 두고 확신도만 낮춘다).
 - 순환 참조 탐지(cycle detection)는 재귀 조회에서 지나온 경로를 들고 다니며 이미 지난 재료를 다시 방문하지 않는 방식이다 (§2-8 쿼리). 데이터 원본은 `ai_result/rules/hidden_rules_data.py`이며 DB 시드에서 `ingredient_compositions`로 옮겼다 (#223).
 
 ### 3-3. 축 3 — 재료 taxonomy + 위험 속성 (독립 축)
@@ -693,7 +693,7 @@ graph TB
 ## 8. 미확정 항목 (팀 확인 대기)
 
 - [ ] **재료별 taxonomy 카테고리 값 작성** — 현재 온톨로지 데이터에 카테고리 값이 없음 (§4)
-- [ ] **depth 감쇠 함수** — 감쇠 여부 및 형태(선형/지수/없음). ⑤ §8과 연동 결정
+- [x] **depth 감쇠 함수** — ⑤가 최종 α·β에 `max(0.5^depth, 0.125)` 동일 비율 적용, mean 보존 (2026-10-10, ⑤ §2-1)
 - [x] **`max_depth` 상한값** — 5단계 (2026-10-10). 현재 숨은 재료 데이터의 최대 깊이는 2라 여유를 둔 값이다. 닿으면 확장을 멈추고 `max_depth_reached` 경고를 붙여 CAUTION 이상을 유지한다. 깊이 4 이상 경로가 생기면 다시 본다
 - [x] **`menu_category` 전체 목록** — `ai_ruleengine/data/menus.csv`의 25개 분류를 `menu_categories`로 시드했다 (2026-10-10, #223)
 - [x] **`menu_ingredient_cache` 무효화 시점** — `menus.knowledge_revision`과 캐시의 `menu_revision`이 다르면 무효 (2026-10-10, 백엔드 ERD V10)
@@ -774,7 +774,7 @@ graph TB
 - [ ] 재료별 taxonomy 카테고리 값 작성
 - [ ] `menu_category` 76개 매핑 목록 작성
 - [x] `max_depth` 상한 결정 (5)
-- [ ] depth 감쇠 방식 결정 (⑤와 함께)
+- [x] depth 감쇠 방식 결정 (⑤ §2-1)
 - [ ] `menu_ingredient_cache` 무효화 시점 결정
 - [ ] `recursive_expand.py` 위치 확인 또는 신규 구현 결정
 
