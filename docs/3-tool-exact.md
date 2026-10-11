@@ -97,7 +97,6 @@
       },
       "flagged_anomaly": false,
       "override_eligible": true,
-      "superseded": false,
       "expired": false
     }
   ],
@@ -118,7 +117,6 @@
 | `confirmations[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 사장님 답변은 `evidence_class: hard`, `source_type: owner_feedback`, `verification_status: owner_confirmed` (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` 값 |
 | `confirmations[].flagged_anomaly` | 통계적으로 이상한 답변 표시. ⑦이 저장할 때 붙인 값을 ③은 그대로 읽는다 (기준은 §1-6) |
 | `confirmations[].override_eligible` | 이 확인값으로 판정을 덮어써도 되는지 (§1-6) |
-| `confirmations[].superseded` | 같은 재료의 더 최신 기록이 있어 밀려난 기록인지. DB가 재료당 1건이면 필요 없어짐 (#167) |
 | `confirmations[].expired` | 확인 후 3개월이 지났는지 (§1-7) |
 | `warnings` / `errors` | 입력 신호를 보존하고 ③의 신호를 덧붙임 |
 
@@ -191,8 +189,7 @@ flowchart TD
     Q --> N{레코드 존재?}
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
     N -->|있음| TG["ingredient_id 정리<br/>(태그는 ④가 붙임)"]
-    TG --> DD["중복 제거<br/>(confirmed_at 최신)"]
-    DD --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
+    TG --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
     EX --> A{"flagged_anomaly 또는 expired?"}
     A -->|Yes| MARK["override_eligible: false<br/>드롭 금지, 플래그와 함께 반환"]
     A -->|No| OK["override_eligible: true"]
@@ -249,8 +246,6 @@ confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 �
 
 for c in confirmations:
     c.constraint_tags = []                           # 태그는 ④가 붙인다 (④ §2-7)
-
-confirmations = dedupe_latest(confirmations)         # 중복 시 confirmed_at 최신 채택
 
 for c in confirmations:                              # §1-7. 드롭하지 않고 표기만
     c.expired = c.confirmed_at < now() - months(3)
@@ -338,7 +333,7 @@ return ExactFeedbackResponse(
 | `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
 | `menu_id`가 DB에 없음 | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
-| 동일 재료 중복 레코드 | `confirmed_at` 최신 1건 채택, 나머지 `superseded: true` |
+| 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 1·2·3차 사장님 답변은 질문·답변 기록(`owner_verification_requests`)에 따로 쌓이고, 확정 규칙은 ⑦이 센다 (⑦ §2-3, #167). ③은 확정값 표만 읽는다 |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
 | 2차 호출인데 `base_menu_id`가 null | Supervisor가 호출하지 않음. 도달 시 빈 배열 반환 |
@@ -359,7 +354,6 @@ return ExactFeedbackResponse(
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
 | 8 | 전 재료 확인 + anomaly 1건 | `completeness: unknown` | anomaly가 `complete`를 막을 것 |
 | 9 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
-| 10 | 동일 재료 레코드 3건 | 최신 1건 + `superseded: true` 2건 | 중복 집계되지 않을 것 |
 | 11 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
 | 12 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
 | 13 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
@@ -373,7 +367,7 @@ return ExactFeedbackResponse(
 - [x] **확인 정보 유효기간** — 3개월로 결정 (2026-10-06 회의, §1-7)
 - [x] **3개월 세는 기준** — 등록(확인)한 날짜부터 달력 기준 3개월 (2026-10-10 회의, §1-7)
 - [ ] **만료된 재료 재질문 경로** — 만료된 재료를 사장님에게 다시 물어보는 경로(⑧ 사장님 카드 우선순위 등)
-- [ ] **`menu_ingredient_cache` 무효화 시점** — 테이블과 컬럼은 `caution-db-schema.md` §6에 이미 정의됨 (`store_id`, `menu_id`, `ingredients_snapshot`, `computed_at`, UNIQUE `(store_id, menu_id)`). 캐시 저장 명령은 ④가 만든다 (파생 캐시라 ⑦ 승인 대상 아님, AGENTS.md 확정). 남은 것: ④ 재확장 시 갱신, 온톨로지 변경 시 전체 무효화, 사장님 확인값이 새로 들어왔을 때 무효화할지 (#169)
+- [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
 - [ ] **`completeness: partial` 기준** — ⓪ §4-2는 `complete | partial | unknown` 3값인데, ③은 `complete | unknown`만 정의함. 언제 `partial`이고 언제 `unknown`인지 ⓪ 담당자와 정해야 함
