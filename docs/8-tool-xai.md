@@ -103,12 +103,14 @@
 | `locale` | string | ⓪ | 사용자 화면 언어 (예: `ko`). 메시지는 6개 언어를 모두 만든다 (§4) |
 | `warnings` / `errors` | array | ⓪ | 앞 단계(③④⑤ 등)가 남긴 신호. ⑧은 그대로 보존하고 자기 신호를 덧붙인다 |
 
+> **`constraint_tags`는 모두 ④가 붙인 값이다** (결정, 2026-10-10 회의, ④ §2-7). ③·⑥은 태그 없이(`[]`) 반환하고, Supervisor가 ④를 불러 채운 뒤 ⑧에 넘긴다. ③ 확인값은 ④ `lookup_tags`, ⑥ 웹 재료는 ④ `map_ingredients`, ④ 확장 재료는 ④가 처음부터 붙여 ⑤를 거쳐 그대로 온다 (⓪ §1-2, §2-11). ⑧은 태그를 새로 붙이거나 재료 이름으로 추측하지 않는다. 태그 조회·매핑이 실패하면 ④가 붙인 warning(`forces_caution: true`)으로 SAFE를 막는다 (§2-1 3-3).
+
 #### `confirmed_results` 항목 형식 (⓪ §4-7과 동일)
 
 | 필드 | 뜻 |
 |---|---|
 | `ingredient` | 확인된 재료. `ingredient_id`와 표준 이름 |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그 (예: 돼지고기 → `is_pork`). `forbidden_tags`와 비교하는 기준 |
+| `constraint_tags` | 이 재료가 걸리는 제한 태그 (예: 돼지고기 → `is_pork`). `forbidden_tags`와 비교하는 기준. ③은 `[]`로 보내고 Supervisor가 ④ `lookup_tags`로 채운 값 |
 | `status` | `present`(있다고 확인) / `absent`(없다고 확인) / `unknown`(아직 확인 안 됨) |
 | `override_eligible` | 이 확인값으로 판정을 덮어써도 되는지. anomaly(통계적으로 이상한 답변)이거나 3개월이 지난 확인값이면 `false` |
 | `evidence_refs` | 근거 ID 목록 |
@@ -123,7 +125,7 @@
 | 필드 | 뜻 |
 |---|---|
 | `ingredient` | 재료. `ingredient_id`와 표준 이름 |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그 |
+| `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값을 ⑤가 바꾸지 않고 그대로 넘긴 것 (⑥ 웹 재료는 Supervisor가 ④ `map_ingredients`로 채운 값) |
 | `posterior_mean` | 이 가게에서 이 재료가 들어갈 확률 (0~1) |
 | `confidence` | ⑤가 계산한 근거 충분도 (0~1). 아래 출력의 `evidence_basis`(confirmed/estimated/unknown)와는 별개다 |
 | `prior_source` | 사전확률을 가져온 단계: `store` / `cluster` / `global` / `uninformative` |
@@ -135,8 +137,8 @@
 | 필드 | 뜻 |
 |---|---|
 | `ingredient` | ④가 추정한 재료. 예: 트러플된장찌개 → 기본 메뉴 된장찌개 + 남은 글자 "트러플"을 재료로 매핑 (④ §1-3) |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그 |
-| `source` | `variant_suggested` — 런타임 추정 제안. DB에 저장되지 않았고 근거 개수도 0 (`k_count=0, n_total=0`, ④ §1-5) |
+| `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값 |
+| `source` | `variant_suggested` — 런타임 추정 제안. DB에 저장되지 않았고 관측값도 없음 (`observations: []`, ④ §1-5) |
 | `evidence_refs` | 근거 ID 목록 |
 
 - 추정일 뿐이므로 확정 재료와 같은 신뢰도로 다루지 않는다. 사용자 제한과 겹치면 **최소 CAUTION, DANGER 확정 근거로 쓰지 않는다** (§2-1 5단계).
@@ -273,7 +275,7 @@ flowchart TD
 3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙).
 3-1. **anomaly_locked 강제**: `probability_results`에서 `anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `evidence_basis: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
 3-2. **정보 부족 시 SAFE 금지**: `information_status`가 `partial` 또는 `none`이면 확률이 낮게 나와도 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계 조회·계산이 일부 실패한 상태에서 남은 재료만 보고 SAFE를 내면 빠진 재료를 놓친다 (FN).
-3-3. **앞 단계 경고 시 SAFE 금지**: 입력 `warnings` 중 `forces_caution: true`가 하나라도 있으면 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계가 문제를 발견했다는 신호다 (예: ③ 재료 태그 조회 실패 `constraint_tags_lookup_failed`, ④ 순환 참조 `cycle_detected`, ⑥ 태그 매핑 실패 `unmapped_constraint_tags`). 예를 들어 ③이 태그 조회에 실패해 돼지고기에 `is_pork`가 안 붙으면, 이 단계가 없을 때 할랄 사용자에게 SAFE가 나갈 수 있다 (FN).
+3-3. **앞 단계 경고 시 SAFE 금지**: 입력 `warnings` 중 `forces_caution: true`가 하나라도 있으면 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계가 문제를 발견했다는 신호다 (예: ④ 태그 조회 실패 `constraint_tags_lookup_failed`, ④ 순환 참조 `cycle_detected`, ④ 웹 재료 매핑 실패 `unmapped_constraint_tags`). 예를 들어 Supervisor가 ③ 확인값의 태그를 ④에 조회했는데 실패해 돼지고기에 `is_pork`가 안 붙으면, 이 단계가 없을 때 할랄 사용자에게 SAFE가 나갈 수 있다 (FN).
 4. **확정값이 없는 재료는 CAUTION**: `probability_results`나 `proposed_variant_ingredients`에 재료가 하나라도 있으면(사장님 확인값이 아닌 근거에 기대는 재료) `risk_level: caution`, `evidence_basis: estimated`로 둔다. 확률이 아무리 높거나 낮아도 확률만으로 DANGER/SAFE를 내지 않는다 (§3, PPT 8쪽 6). 금지 태그와 겹치는 재료는 `risk_ingredients`에 `posterior_mean`(확률 수치)과 함께 담아 사용자에게 보여준다.
 4-1. **SAFE는 사장님 확인값으로만**: 판정에 쓴 재료가 모두 사장님 확인값(`override_eligible: true`)이고, 금지 태그와 겹치는 `present` 재료가 없고, §2-2의 SAFE 금지 조건에 하나도 해당하지 않을 때만 `risk_level: safe`, `evidence_basis: confirmed`다.
 5. **변형 제안 반영**: `proposed_variant_ingredients`가 있으면 확정 재료와 **절대 같은 신뢰도로 취급하지 않는다** — 최소 caution 처리하고, 문구도 추정형으로만 생성 (danger 확정 근거로 쓰지 않음).
@@ -367,7 +369,7 @@ flowchart TD
 | 7 | 할랄 사용자 + `confirmed_results`: 돼지고기 `status: unknown` | 돼지고기를 "없음"으로 처리하지 않음 | `unknown`이 SAFE 근거가 되지 않을 것 (3값 검증) |
 | 8 | 할랄 사용자 + `confirmed_results`: 돼지고기 `status: absent`, `override_eligible: false` + `probability_results`: 돼지고기 0.8 | 확률 쪽으로 판정 (`caution` 이상) | override 불가 확인값이 확률을 덮지 않을 것 |
 | 9 | `information_status: partial` + 남은 재료 확률이 모두 낮음 | `caution` 이상, 출력 `information_status: partial` | 정보가 빠진 상태에서 SAFE가 나오지 않을 것 |
-| 10 | 할랄 사용자 + 돼지고기 `constraint_tags: []` + 입력 `warnings`에 `constraint_tags_lookup_failed`(`forces_caution: true`) | `caution` 이상, 입력 warning을 출력에 보존 | 태그가 빠져도 SAFE가 나오지 않을 것 |
+| 10 | 할랄 사용자 + 돼지고기 `constraint_tags: []` + 입력 `warnings`에 ④가 붙인 `constraint_tags_lookup_failed`(`forces_caution: true`) | `caution` 이상, 입력 warning을 출력에 보존 | 태그가 빠져도 SAFE가 나오지 않을 것 |
 | 11 | 할랄 사용자 + `probability_results`: 돼지고기 `posterior_mean: 0.95`만 있음 | `caution`, `evidence_basis: estimated`, 확률 0.95 표시 | 확률만으로 DANGER를 내지 않을 것 (PPT 8쪽 6) |
 | 12 | 할랄 사용자 + `confirmed_results`만 있음: 모든 재료 사장님 확인, 돼지고기 `absent`(`override_eligible: true`) + `probability_results: []` + SAFE 금지 조건 없음 | `safe`, `evidence_basis: confirmed` | SAFE는 사장님 확인값으로만 나올 것 |
 

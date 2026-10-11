@@ -9,7 +9,8 @@
 **③은 순수 조회기다. 판단하지 않는다.**
 
 - 하는 것: `store_id + menu_id`로 `ingredient_confirmations` 조회 → 재료 단위 확인 맵 반환
-- 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④가 모두 관리한다** (결정, 2026-10-10, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고, ③만 거치는 경로에서는 Supervisor가 ④의 태그 조회(`lookup_tags`)를 불러 태그를 붙인다 (⓪ §2-11)
+- 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
+- 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-11 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
 - 설계 원칙: **메뉴 단위 이분법 금지.** 부분 확인을 반드시 지원한다.
 
 | 하지 않음 | 담당 |
@@ -83,7 +84,7 @@
         "ingredient_id": "ingredient-001",
         "canonical_name": "돼지고기"
       },
-      "constraint_tags": ["is_pork"],
+      "constraint_tags": [],
       "status": "present",
       "evidence": {
         "evidence_id": "evidence-001",
@@ -112,7 +113,7 @@
 | `confirmation_scope` | 입력 `scope_hint` 값 그대로 (§1-5) |
 | `completeness` | `complete \| unknown` (§2). ⓪에는 `partial`도 있으나 기준이 정해지지 않음 (§6) |
 | `confirmations[].ingredient` | 재료 (⓪ §1-2 `IngredientRef`) |
-| `confirmations[].constraint_tags` | ③은 항상 `[]`로 보낸다. Supervisor가 ④ 태그 조회 결과로 채운다 (§0) |
+| `confirmations[].constraint_tags` | ③은 항상 `[]`로 보낸다. Supervisor가 ④ `lookup_tags`를 불러 채운다 (§0) |
 | `confirmations[].status` | `present \| absent \| unknown` (§1-3) |
 | `confirmations[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 사장님 답변은 `evidence_class: hard`, `source_type: owner_feedback`, `verification_status: owner_confirmed` (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` 값 |
 | `confirmations[].flagged_anomaly` | 통계적으로 이상한 답변 표시. ⑦이 저장할 때 붙인 값을 ③은 그대로 읽는다 (기준은 §1-6) |
@@ -363,6 +364,7 @@ return ExactFeedbackResponse(
 | 12 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
 | 13 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
 | 15 | 김치찌개 `땅콩: present` + `flagged_anomaly: false` (레시피 확률 낮음) | `override_eligible: true` | "있음" 답변은 anomaly가 아니므로 override가 거부되지 않을 것 |
+| 16 | 일부만 확인된 메뉴(④⑤ 경로) + 돼지고기 `status: present` | ③은 `constraint_tags: []`로 반환, Supervisor가 ④ `lookup_tags`로 `is_pork`를 채운 뒤 ⑧에 전달 | ④⑤를 거치는 경로에서도 확인값 태그가 빠지지 않을 것 (§0) |
 
 ---
 
@@ -372,6 +374,8 @@ return ExactFeedbackResponse(
 - [x] **3개월 세는 기준** — 등록(확인)한 날짜부터 달력 기준 3개월 (2026-10-10 회의, §1-7)
 - [ ] **만료된 재료 재질문 경로** — 만료된 재료를 사장님에게 다시 물어보는 경로(⑧ 사장님 카드 우선순위 등)
 - [ ] **`menu_ingredient_cache` 무효화 시점** — 테이블과 컬럼은 `caution-db-schema.md` §6에 이미 정의됨 (`store_id`, `menu_id`, `ingredients_snapshot`, `computed_at`, UNIQUE `(store_id, menu_id)`). 캐시 저장 명령은 ④가 만든다 (파생 캐시라 ⑦ 승인 대상 아님, AGENTS.md 확정). 남은 것: ④ 재확장 시 갱신, 온톨로지 변경 시 전체 무효화, 사장님 확인값이 새로 들어왔을 때 무효화할지 (#169)
+- [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
+- [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
 - [ ] **`completeness: partial` 기준** — ⓪ §4-2는 `complete | partial | unknown` 3값인데, ③은 `complete | unknown`만 정의함. 언제 `partial`이고 언제 `unknown`인지 ⓪ 담당자와 정해야 함
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 
