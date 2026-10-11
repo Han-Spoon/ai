@@ -25,8 +25,8 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 | [5-tool-Statistics.md](5-tool-Statistics.md) | ⑤ Bayesian Tool | 가게별 α/β 기반 재료 포함 확률 계산 |
 | [6-agent-websearch.md](6-agent-websearch.md) | ⑥ Web Search Agent | DB 미등록 메뉴의 외부 재료 근거 수집 (soft evidence) |
 | [7-tool-dbupdate.md](7-tool-dbupdate.md) | ⑦ DB Update Tool | 저장 명령 생성 · 관리자 컨펌 게이트 |
-| [8-tool-xai.md](8-tool-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
-| [9-agent-curation.md](9-agent-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
+| [8-agent-xai.md](8-agent-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
+| [9-tool-curation.md](9-tool-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
 
 > **스펙 문서가 아직 없는 노드**
 > - ① OCR Tool — 구현은 [`../ai_ocr/README.md`](../ai_ocr/README.md)에 있고, 별도 스펙 문서는 없습니다.
