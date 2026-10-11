@@ -306,7 +306,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 | 다른 곳에 등록된 항목 | 소유 문서 |
 |---|---|
-| DANGER / CAUTION / SAFE threshold 보유 주체 | [`8-tool-xai.md`](8-tool-xai.md) §3, [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) §4 |
+| DANGER / CAUTION / SAFE threshold 보유 주체 | [`8-agent-xai.md`](8-agent-xai.md) §3, [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) §4 |
 | `/v1/analyze` 추가와 기존 API 호환 기간 | [`0-agent-supervisor.md`](0-agent-supervisor.md) §8 |
 | 배치 API 형태와 동시성 제한, checkpoint 사용 여부 | [`0-agent-supervisor.md`](0-agent-supervisor.md) §8 |
 

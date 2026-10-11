@@ -10,11 +10,12 @@
 
 ⑨ Curation Tool은 ⑧ Decision Policy / XAI Agent의 안전 판정이 끝난 뒤, **안전 후보를 대상으로 검증된 큐레이션/RAG 인덱스를 검색하고 순위를 매겨 메뉴와 한식 문화 콘텐츠를 추천**한다.
 
-핵심 책임은 세 가지다.
+핵심 책임은 네 가지다.
 
 1. ⑧이 `safe`로 판정한 후보만 추천 대상에 포함
 2. 검증된 큐레이션/RAG 인덱스에서 후보 메뉴와 문화 콘텐츠 검색
-3. 정해진 랭킹 정책에 따라 결과를 정렬하고 근거·출처와 함께 Supervisor에 반환
+3. 정해진 랭킹 정책에 따라 추천 결과를 정렬하고 근거·출처와 함께 Supervisor에 반환
+4. 메뉴판의 **전체 메뉴**를 위험도·근거 순으로 정렬 (§2-3). PPT 8쪽 "추천 메뉴 정렬 (위험도와 근거 기준으로 정렬)"
 
 ⑨는 **Tool**이다. 위험 여부를 새로 판단하는 Agent가 아니라, ⑧의 확정된 판정과 정해진 검색·랭킹 절차를 수행한다. LLM을 사용하더라도 안전 판정을 재해석하거나 출처에 없는 내용을 생성하는 데 사용할 수 없다.
 
@@ -31,7 +32,7 @@
 
 PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨는 다음 확정 원칙을 지켜야 한다.
 
-- `risk_level: safe`인 메뉴만 추천 후보로 사용한다.
+- `risk_level: safe`인 메뉴만 추천 후보로 사용한다 (확정, 2026-10-11, #140). CAUTION은 확률이 낮아도 추천하지 않는다. 사장님 확인값이 아니라서 FN 위험이 남기 때문이다 (⑧ §3).
 - `danger`, `caution`, `unknown`, `partial_failed` 항목을 안전 메뉴처럼 추천하지 않는다.
 - 추천 점수와 관계없이 ⑧의 `risk_level`, `evidence_basis`, 근거, 위험 재료를 변경하지 않는다.
 - 추천할 안전 후보가 없으면 빈 배열을 반환한다. 후보를 채우기 위해 CAUTION을 SAFE로 낮추지 않는다.
@@ -47,48 +48,36 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
 
 ## 1. 입력 / 출력 스펙
 
-아래 JSON은 PPT의 역할 정의를 구현 계약으로 옮긴 **초안**이다. 필드명과 필수 여부는 ⑧·Supervisor·백엔드 담당자 리뷰 후 확정한다.
+입출력 JSON은 ⓪ §1(공통 모델)·§4-8을 기준으로 한다. 아래는 같은 내용을 옮긴 것이다. 단, §2-3 전체 메뉴 정렬에 필요한 부분(전체 메뉴 전달, 정렬 결과 필드)은 아직 ⓪에 없어 §8에서 반영을 요청한다.
 
-### 1-1. 입력 (⓪ Supervisor Agent로부터)
-
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `context` | object | 필수 | `schema_version`, `trace_id`, `scan_session_id`, 양의 정수 `store_id` |
-| `decision_results` | CurationDecisionItem[] | 필수 | ⑧이 반환한 메뉴별 최종 판정. `item_id`, `menu_id`, 메뉴명, `risk_level`, `evidence_basis`, 근거 포함 |
-| `user_profile` | object | 필수 | 추천 필터링에 필요한 최소 식단 프로필. 원본 사용자 식별자는 전달하지 않음 |
-| `locale` | string | 선택 | 콘텐츠 표시 언어. 기본값과 지원 언어 범위는 §8에서 확정 |
-| `limit` | integer | 선택 | 최대 추천 개수. 허용 범위와 기본값은 §8에서 확정 |
+### 1-1. 입력 — `CurationRequest` (⓪ Supervisor Agent로부터)
 
 ```json
 {
   "context": {
     "schema_version": "1.0",
-    "trace_id": "0199...",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
-    "store_id": 123456
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
   },
   "decision_results": [
     {
-      "item_id": "scan-123:0",
-      "menu_id": "menu-001",
+      "item_id": "scan-123:1",
+      "source_index": 1,
+      "menu_id": "menu-002",
       "normalized_menu_name": "비빔밥",
       "risk_level": "safe",
       "evidence_basis": "confirmed",
-      "hits": [],
-      "evidence_refs": ["evidence-001"]
-    },
-    {
-      "item_id": "scan-123:1",
-      "menu_id": "menu-002",
-      "normalized_menu_name": "김치찌개",
-      "risk_level": "caution",
-      "evidence_basis": "estimated",
-      "hits": ["is_pork"],
-      "evidence_refs": ["evidence-002"]
+      "information_status": "complete",
+      "risk_ingredients": [],
+      "matched_tags": [],
+      "evidence_refs": ["evidence-010"]
     }
   ],
   "user_profile": {
-    "religion_type": null,
+    "religion_type": "halal",
     "is_vegetarian": false,
     "vegetarian_type": null,
     "no_alcohol": false,
@@ -96,21 +85,45 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
     "no_spicy": false
   },
   "locale": "ko",
-  "limit": 5
+  "limit": 5,
+  "warnings": [],
+  "errors": []
 }
 ```
 
-`decision_results`는 ⑧의 최종 결과를 복사해 전달한다. ⑨는 이 값의 소유자가 아니며 수정할 수 없다.
+| 필드 | 설명 |
+|---|---|
+| `context` | 요청 공통 정보 (⓪ §1-2 `NodeContext`). 메뉴판 전체 단위 호출이라 `call_scope: scan`, `item_id: null`. ⑨는 수정하지 않고 그대로 반환 |
+| `decision_results[]` | ⑧이 반환한 메뉴별 최종 판정을 복사한 것. ⑨는 이 값의 소유자가 아니며 수정할 수 없다 |
+| `decision_results[].source_index` | 메뉴판에서의 메뉴 순서. §2-3 정렬에서 같은 칸 안의 순서로 쓴다 |
+| `decision_results[].matched_tags` | 사용자 제한과 실제로 겹친 태그 (예전 이름 `hits`) |
+| `decision_results[].information_status` | `complete` / `partial` / `none`. 판정에 필요한 정보가 다 모였는지 |
+| `decision_results[].risk_ingredients` | ⑧의 위험 재료 목록 그대로 |
+| `decision_results[].evidence_refs` | ⑧ 결과의 최상위 근거 ID를 그대로 전달 |
+| `user_profile` | 추천 필터에 필요한 식단 프로필. 원본 사용자 식별자는 전달하지 않음 |
+| `locale` | 콘텐츠 표시 언어. `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` (⓪ §1-3) |
+| `limit` | 최대 추천 개수. ⓪ 초안은 1~20, 기본 5 (§8) |
+| `warnings` / `errors` | 앞 단계 신호. ⑨는 그대로 보존하고 자기 신호를 덧붙인다 |
 
-### 1-2. 출력 (⓪ Supervisor Agent에게 반환)
+- 지금 ⓪ §4-8은 `risk_level: safe`이면서 `information_status: complete`인 메뉴만 넘긴다. 추천(§2-2)은 이것으로 충분하지만, §2-3 전체 메뉴 정렬을 하려면 전체 메뉴가 필요하다 (§8 요청).
+
+### 1-2. 출력 — `CurationResponse` (⓪ Supervisor Agent에게 반환)
 
 ```json
 {
+  "context": {
+    "schema_version": "1.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
   "recommendations": [
     {
       "rank": 1,
-      "item_id": "scan-123:0",
-      "menu_id": "menu-001",
+      "item_id": "scan-123:1",
+      "menu_id": "menu-002",
       "menu_name": "비빔밥",
       "score": 0.91,
       "reason_codes": ["safe_confirmed", "profile_match"],
@@ -125,14 +138,17 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
       "sponsored": false
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "errors": []
 }
 ```
 
+- `context`는 입력 값을 그대로 반환한다.
+- §2-3 정렬 결과를 담을 필드는 ⓪ 반영 후 추가한다 (§8).
 - `rank`는 1부터 시작하고 응답 안에서 중복되지 않는다.
 - `item_id`와 `menu_id`는 입력에 존재한 값을 그대로 사용한다. 인덱스 검색 결과만으로 새로운 안전 메뉴 ID를 만들어내지 않는다.
 - `score`는 추천 순위를 위한 값이며 위험 확률이나 안전 신뢰도가 아니다.
-- `reason_codes`는 랭킹 이유를 구조화해서 전달한다. 사용자용 문구 생성 방식은 §8에서 확정한다.
+- `reason_codes`는 랭킹 이유를 구조화해서 전달한다. ⓪ 초안의 허용값은 `safe_confirmed` / `profile_match` / `culture_match`다. 사용자용 문구 생성 방식은 §8에서 확정한다.
 - `culture_contents`는 검증된 인덱스에 존재하고 `source_id`로 추적 가능한 항목만 포함한다.
 - `sponsored`는 안전 판정과 분리하기 위한 표시 필드다. 실제 스폰서 콘텐츠의 포함·정렬 정책은 §8에서 확정한다.
 
@@ -178,6 +194,23 @@ flowchart TD
 - 일부 처리 실패로 안전 판정이 완결되지 않은 메뉴
 - 사용자 식단 프로필과 충돌하는 콘텐츠
 - 검증된 인덱스에서 출처를 찾을 수 없는 문화 콘텐츠
+
+### 2-3. 전체 메뉴 정렬 (규칙)
+
+추천(§2-2)은 SAFE만 하지만, 사용자가 모든 메뉴를 보고 직접 고를 수 있도록 **메뉴판 전체 메뉴**도 정렬해 돌려준다. 정해진 규칙으로 계산하므로 LLM을 쓰지 않는다 (⑨는 Tool, §0).
+
+PPT 8쪽은 정렬 기준을 **위험도**(`risk_level`)와 **근거**(`evidence_basis`, 판정 근거 종류)로 적었다. 확률(`posterior_mean`)은 PPT 8쪽 "6 최종판단 기준"에서 화면에 **보여주는 값**으로만 나오므로 정렬에 쓰지 않는다.
+
+| 순서 | 메뉴 | 표시 |
+|---|---|---|
+| 1 | `safe` | 추천 표시 + 문화 콘텐츠 (§2-2) |
+| 2 | `caution` + `evidence_basis: estimated` (확률 근거 있음) | CAUTION + 확률 수치 |
+| 3 | `caution` + `evidence_basis: unknown` (정보 없음) | CAUTION + 정보 부족 |
+| 4 | `danger` | — |
+
+- **같은 칸 안에서는 메뉴판 순서(`source_index`)를 유지한다.** CAUTION끼리 확률 순으로 세우면 "위에 있을수록 덜 위험하다"는 메시지를 줘서 FN 쪽으로 기울 수 있다.
+- 일부 처리 실패(`partial_failed`)로 판정이 완결되지 않은 메뉴는 ⑧ 정책상 CAUTION 이상이므로 위 표의 `risk_level`대로 들어간다.
+- 정렬은 표시 순서만 정한다. ⑧의 `risk_level`, `evidence_basis`, 근거, 위험 재료는 바꾸지 않는다 (§0-1).
 
 ---
 
@@ -266,16 +299,19 @@ PPT의 “Sponsored 콘텐츠와 AI 안전 판정은 명확히 분리” 원칙�
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] **입력·출력 JSON 최종 계약** — ⑧·Supervisor·백엔드 담당자와 필드명, 타입, 필수 여부 확정
+- [ ] **입력·출력 JSON 최종 계약** — §1을 ⓪ §4-8에 맞춤 (2026-10-11). 남은 것: §2-3 정렬용 필드(아래 ⓪ 계약 변경)
+- [x] **SAFE만 추천할지, CAUTION도 포함할지** — SAFE만 추천. 대신 전체 메뉴를 위험도·근거 순으로 정렬해 함께 돌려준다 (2026-10-11, #140, §0-1, §2-3)
+- [ ] **문화 콘텐츠를 CAUTION 메뉴에도 붙일지** — 추천은 SAFE만이지만, 문화 콘텐츠는 안전 정보가 아니라서 CAUTION 메뉴에 붙여도 되는지 따로 정해야 함. 붙이더라도 위험도 표시는 그대로 둔다 (#140)
 - [ ] **추천 후보 범위** — 현재 메뉴판에서 SAFE인 메뉴만 추천할지, 같은 가게 또는 전체 메뉴 카탈로그의 SAFE 메뉴까지 확장할지
+- [ ] **전체 메뉴 정렬을 위한 ⓪ 계약 변경 (외부 의존)** — 지금 ⓪ §4-8은 SAFE이면서 정보가 다 모인 메뉴만 ⑨에 넘기고, 응답에도 `recommendations`만 있다. §2-3 정렬을 하려면 ⓪이 전체 `decision_results`를 넘기고, 응답에 정렬 결과 필드(예: `item_id` 순서 목록)를 추가해야 한다. ⓪ 담당자 요청
 - [ ] **Curation/RAG 인덱스 소유 주체와 저장 방식** — 벡터 DB, 관계형 DB, 파일 기반 인덱스 중 무엇을 사용할지
 - [ ] **콘텐츠 검수·승인 기준** — `review_status`를 누가 부여하고 언제 재검수할지
 - [ ] **랭킹 feature와 가중치** — 안전 확정도, 사용자 선호, 문화 콘텐츠 품질, 다양성 등을 어떤 순서로 반영할지
-- [ ] **동점 tie-break 규칙** — 메뉴판 원본 순서, `menu_id`, 콘텐츠 최신성 중 무엇을 우선할지
-- [ ] **추천 개수** — 기본 Top-K와 `limit` 허용 범위
+- [ ] **동점 tie-break 규칙** — 메뉴판 원본 순서, `menu_id`, 콘텐츠 최신성 중 무엇을 우선할지. ⓪ §4-8 초안은 `source_index` → `menu_id` 오름차순
+- [ ] **추천 개수** — 기본 Top-K와 `limit` 허용 범위. ⓪ §1-3 초안은 1~20, 기본 5
 - [ ] **지원 언어와 fallback** — 문화 콘텐츠가 요청 언어로 없을 때 사용할 언어와 번역 정책
 - [ ] **스폰서 콘텐츠 노출 방식** — SAFE 후보 내 별도 영역으로 분리할지, 랭킹에 반영할지
-- [ ] **추천 이유 문구 생성 주체** — ⑨의 템플릿인지 별도 표현 계층인지
+- [ ] **추천 이유 문구 생성 주체** — ⑨의 템플릿인지 별도 표현 계층인지. ⓪ §4-8 초안의 `reason_codes`는 `safe_confirmed` / `profile_match` / `culture_match`
 - [ ] **인덱스 장애 fallback** — 빈 배열만 반환할지, 메뉴판 원본 순서의 SAFE 후보를 반환할지
 - [ ] **캐시와 인덱스 갱신 주기** — 콘텐츠 수정·삭제가 추천 결과에 반영되는 시점
 - [ ] **개인정보 최소화 범위** — ⑨에 전달할 `user_profile` 필드의 최종 목록과 로그 보존 정책
