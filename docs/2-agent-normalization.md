@@ -1,488 +1,595 @@
 # ② Menu Normalization Agent 스펙
 
 담당: 박다은
-상태: 초안 (미확정 항목은 §8 참조)
-상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
+상태: 구현 기준안 (Prepare/Judge 2-phase 계약 및 v1 판정 정책 확정, 운영 버전만 §8에서 고정)
+상위 문서: `0-agent-supervisor.md`, `caution-multi-agent-architecture.md`, `caution-db-schema.md`
+
+## 문서 읽는 방법
+
+- **전체 흐름만 볼 사람**: §0-1 → §2 → §4 순서로 읽는다.
+- **백엔드 담당자**: §3의 후보 조회 계약과 §1-2 JSON을 구현한다.
+- **② 구현 담당자**: §1 전체, §2의 ②-A, §4의 ②-B, §5를 기준으로 구현한다.
+- **리뷰 담당자**: §6 오류 정책과 §7 테스트를 확인한다.
+
+## 목차
+
+1. [역할과 2-phase 책임](#0-역할-범위)
+2. [완전한 입출력 JSON](#1-입력--출력-계약)
+3. [②-A 문자열 정제](#2-prepare--②-a-문자열-정제)
+4. [백엔드 후보 조회](#3-prepare와-judge-사이--백엔드-후보-조회)
+5. [②-B 후보 선택](#4-judge--②-b-후보-선택)
+6. [효율적인 구현 방식](#5-효율적인-구현-방식)
+7. [경고와 예외](#6-경고와-예외-처리)
+8. [테스트 케이스](#7-테스트-케이스)
 
 ---
 
 ## 0. 역할 범위
 
-②는 ① OCR Tool이 추출한 원본 메뉴명을 DB 매칭에 적합한 형태로 정제하는 **전처리 전용 Agent**다.
+②는 OCR 문자열을 안전하게 정리하고, 백엔드가 조회한 후보 안에서 표준 메뉴 후보를 선택하는 Agent다. 재료를 추론하거나 DB 메뉴를 새로 만들지 않는다.
 
-핵심 목표는 `menus.name_ko`와 매칭 가능한 후보를 만들되, 불확실한 추측을 확정 사실처럼 만들지 않는 것이다. 정규화는 매칭 가능성을 높이는 단계이지, 메뉴 존재 여부를 판정하는 단계가 아니다.
+### 0-1. 2-phase에서의 위치
+
+```text
+Prepare
+① OCR → ②-A 문자열 정제 → PrepareResponse
+                              ↓
+                    백엔드 후보 조회
+                              ↓
+Judge
+JudgeRequest → ②-B 후보 선택 → ③~⑨
+```
+
+- **②-A Name Cleaning**: DB를 조회하지 않는다. OCR 원문을 정리하고 옵션과 위험 가능 토큰을 보존한다.
+- **백엔드 후보 조회**: 정제된 이름으로 `menus`·`menu_aliases`를 조회해 메뉴별 최대 5개 후보와 KnowledgeBundle을 만든다.
+- **②-B Candidate Selection**: 백엔드가 준 후보만 비교한다. 후보 밖 `menu_id`를 만들거나 선택하지 않는다.
+- **④ DB/Ontology Tool**: 선택된 메뉴의 재료 조회와 base/remain 변형 판정을 담당한다. ②는 `차돌된장찌개`를 임의로 `된장찌개`로 잘라 확정하지 않는다.
+
+### 0-2. 하지 않는 일
 
 | 하지 않음 | 담당 |
 |---|---|
-| 가게 식별 | ⓪ Supervisor Agent |
-| DB / Ontology 조회 | ④ |
-| 변형 메뉴의 remain 토큰 해석 | ④ |
-| 재료 추론 | ④/⑤/⑥ |
-| 최종 위험 판정 | ⑧ |
-| DB 쓰기 | ⑦ |
+| 이미지 OCR, 가격·설명 영역 인식, `is_spicy` 관측 생성 | ① OCR Tool |
+| 메뉴 후보 DB 조회와 KnowledgeBundle 구성 | 백엔드 |
+| base 메뉴·`remain_token`·변형 재료 확정 | ④ DB/Ontology Tool |
+| 재료·확률·위험도 추론 | ④·⑤·⑧ |
+| 신규 메뉴나 별칭 저장 명령 생성 | ⑦ DB Update Tool |
+| 물리 DB 쓰기 | 백엔드 |
 
-### 0-1. 설계 원칙
+### 0-3. 안전 원칙
 
-- 입력 순서를 유지한다. 메뉴판의 표시 순서가 사용자 응답 UI와 연결되기 때문이다.
-- 원본 문자열을 버리지 않는다. 정규화 실패나 검수 시 OCR 원문이 필요하다.
-- 옵션과 메뉴명을 분리하되, 옵션을 완전히 폐기하지 않는다.
-- 과한 의미 추론을 하지 않는다. "차돌된장찌개"를 "된장찌개"로 확정하지 않고, ④가 변형 태깅할 수 있도록 후보와 토큰을 남긴다.
-- 결정론적 규칙을 먼저 적용하고, 다국어·문맥·복수 후보처럼 규칙만으로 확정할 수 없는 경우에만 LLM을 호출한다.
-- LLM은 후보를 재정렬하거나 표준명 후보를 제안할 수 있지만 카탈로그에 없는 `menu_id`를 만들 수 없다.
-- 불확실성을 `ambiguous`/`unmatched`로 보존하고 억지로 하나의 메뉴로 확정하지 않는다.
+- `raw_menu_name`, `item_id`, `source_index`와 입력 순서를 바꾸지 않는다.
+- 위험과 연결될 수 있는 단어는 삭제하지 않는다. `치즈`, `차돌`, `해물`, `돼지` 같은 토큰은 전체 메뉴명 또는 `residual_tokens`에 반드시 남는다.
+- 규칙과 사전을 먼저 사용하고 LLM은 다국어 또는 모호한 후보에서만 호출한다.
+- LLM 실패는 전체 배치 실패로 만들지 않는다.
+- 모르면 `ambiguous` 또는 `unmatched`로 남긴다. 편의를 위해 잘못된 메뉴를 확정하지 않는다.
+- 사용자의 알레르기·종교 프로필은 정규화에 필요하지 않으므로 ②에 전달하지 않는다.
 
 ---
 
-## 1. 입력 / 출력 스펙
+## 1. 입력 / 출력 계약
 
-### 1-1. 입력 (Supervisor로부터 배치 수신)
+wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② 담당자가 그대로 구현할 수 있도록 같은 계약을 단계별로 풀어쓴다. 모든 모델은 Pydantic `extra="forbid"`인 closed schema이며 공통 `context`·`warnings`·`errors`를 항상 포함한다.
 
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `context` | object | 필수 | `schema_version`, `trace_id`, `scan_session_id`, 양의 정수 `store_id` |
-| `items` | NormalizationInputItem[] | 필수 | `item_id`, OCR 원문, 설명, OCR confidence, 언어 힌트 |
+### 1-1. Prepare — `NameCleaningRequest / Response`
 
-운영 경로에서 `store_id`는 Supervisor 공통 문맥의 필수 필드다. 다만 매장별 별칭 사전이 없거나 조회에 실패해도 정규화 자체는 전역 표준 사전과 원문 기반으로 계속 동작한다.
+#### 요청
 
 ```json
 {
   "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
+    "schema_version": "2.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
-    "store_id": 123456
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
   },
   "items": [
     {
       "item_id": "scan-123:0",
+      "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
       "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
       "ocr_confidence": 0.93,
-      "locale_hint": "ko"
+      "locale_hint": "ko",
+      "risk_tag_observations": []
     }
-  ]
+  ],
+  "warnings": [],
+  "errors": []
 }
 ```
 
-### 1-2. 출력 (Supervisor에게 반환)
+#### 응답
 
 ```json
 {
+  "context": {
+    "schema_version": "2.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
   "items": [
     {
       "item_id": "scan-123:0",
+      "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
       "normalized_menu_name": "김치찌개",
       "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
+      "locale_hint": "ko",
       "options": ["2인"],
       "residual_tokens": [],
+      "cleaning_status": "cleaned",
+      "risk_tag_observations": []
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
+```
+
+- `cleaning_status`: `cleaned | unchanged | invalid`.
+- `cleaned | unchanged`이면 `normalized_menu_name`은 비어 있지 않은 string이다.
+- `invalid`이면 `normalized_menu_name: null`이다. Supervisor는 이 항목을 Prepare 외부 응답에서 제외하고 item warning을 보존한다.
+- `display_name`은 사용자에게 보여줄 이름이다. 불릿·가격만 제거하고 띄어쓰기와 인분 표기는 보존한다.
+- `normalized_menu_name`은 후보 검색용 이름이다. 장식·가격·비위험 옵션·불필요 공백을 제거하되 재료 의미는 보존한다.
+- `options`는 분리한 인분·크기·조리·추가 옵션 전체다.
+- `residual_tokens`는 `치즈 추가`처럼 재료 의미가 있어 ④가 다시 확인해야 하는 옵션 토큰만 담는다.
+- `description`, `price_text`, `price_options`, `ocr_confidence`, `locale_hint`, `risk_tag_observations`는 해석하거나 수정하지 않고 보존한다.
+
+### 1-2. Judge — `CandidateSelectionRequest / Response`
+
+#### 요청
+
+```json
+{
+  "context": {
+    "schema_version": "2.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
+  "items": [
+    {
+      "item_id": "scan-123:0",
+      "source_index": 0,
+      "raw_menu_name": "■ 김치 찌개 2인",
+      "normalized_menu_name": "김치찌개",
+      "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
+      "locale_hint": "ko",
+      "options": ["2인"],
+      "residual_tokens": [],
+      "risk_tag_observations": [],
+      "candidate_status": "ok",
       "match_candidates": [
         {
-          "menu_id": "menu-id-or-null",
-          "name_ko": "김치찌개",
-          "score": 0.97,
+          "menu_id": 1001,
+          "menu_category_id": 11,
+          "canonical_name": "김치찌개",
+          "score": 1.0,
           "match_type": "canonical"
         }
-      ],
-      "normalization_status": "normalized",
-      "warnings": []
+      ]
     }
-  ]
-}
-```
-
-- `item_id`, `raw_menu_name`, 입력 순서는 절대 변경하지 않는다.
-- `menu_id`는 표준 메뉴 카탈로그에서 조회된 값만 허용한다. 신규·미확정 후보는 null이다.
-- `residual_tokens`는 ④가 변형 재료로 해석해야 할 `치즈`, `차돌` 같은 의미 토큰이다.
-
-### 1-3. `normalization_status`
-
-| 값 | 의미 | Supervisor 동작 |
-|---|---|---|
-| `normalized` | 대표 정규명이 안정적으로 생성됨 | ③/④에 `normalized_menu_name` 전달 |
-| `ambiguous` | 후보가 여러 개거나 score가 근접함 | ④에 후보 목록까지 전달 |
-| `unmatched` | 의미 있는 후보를 만들지 못함 | 원본 기반 unknown 경로 허용 |
-| `invalid` | 메뉴명이 아닌 잡문자/가격/헤더로 판단 | 기본적으로 분석 대상에서 제외 |
-
----
-
-## 2. 처리 로직
-
-```mermaid
-flowchart TD
-    IN["OCR 메뉴 항목 배치"] --> CLEAN["Unicode/잡문자/가격/불릿 정제"]
-    CLEAN --> SPLIT["메뉴명과 옵션 분리"]
-    SPLIT --> PRESERVE["재료 의미 토큰<br/>residual_tokens 보존"]
-    PRESERVE --> SPELL["사전 기반 오탈자·표기 변형 보정"]
-    SPELL --> CANON["표준 표기 후보 생성"]
-    CANON --> SCORE["menus.name_ko/별칭 사전 후보 점수화"]
-    SCORE --> NEEDLLM{"다국어·문맥·복수 후보로<br/>추가 판단이 필요한가?"}
-    NEEDLLM -->|Yes| LLM["LangChain 구조화 출력<br/>후보 재정렬/표준명 제안"]
-    NEEDLLM -->|No| DECIDE{"후보 신뢰도"}
-    LLM --> VALIDATE["schema·카탈로그 검증"]
-    VALIDATE --> DECIDE
-    DECIDE -->|높음| OK["normalization_status: normalized"]
-    DECIDE -->|복수 후보 근접| AMB["normalization_status: ambiguous"]
-    DECIDE -->|후보 없음| UNM["normalization_status: unmatched"]
-    DECIDE -->|메뉴 아님| INV["normalization_status: invalid"]
-    OK --> OUT["Supervisor 반환"]
-    AMB --> OUT
-    UNM --> OUT
-    INV --> OUT
-```
-
-### 2-1. 정제 단계
-
-| 단계 | 예시 | 결과 |
-|---|---|---|
-| OCR 잡문자 제거 | `"■김치찌개–"` | `"김치찌개"` |
-| 가격 제거 | `"김치찌개 8,000"` | `"김치찌개"` |
-| 공백 정규화 | `"김치 찌개"` | `"김치찌개"` |
-| 표기 통일 | `"돈까스"` | `"돈가스"` |
-| 옵션 분리 | `"부대찌개 2인"` | 메뉴 `"부대찌개"`, 옵션 `["2인"]` |
-| 크기 분리 | `"냉면 곱빼기"` | 메뉴 `"냉면"`, 옵션 `["곱빼기"]` |
-
-### 2-2. 제거/분리 대상
-
-| 유형 | 예시 | 처리 |
-|---|---|---|
-| 가격 | `8000`, `8,000원`, `₩8,000` | 제거 |
-| 수량/인분 | `1인`, `2인분`, `소`, `중`, `대` | `options`로 분리 |
-| 조리 옵션 | `순한맛`, `매운맛`, `곱빼기` | `options`로 분리 |
-| 메뉴판 장식 | `■`, `★`, `-`, `•` | 제거 |
-| 섹션 헤더 | `식사류`, `추천메뉴`, `주류` | `invalid` 가능 |
-
-옵션 중 재료 의미가 강한 토큰은 제거하지 않는다. 예를 들어 "치즈 추가", "차돌 추가"는 알레르기/식이 위험과 연결될 수 있으므로 `options`와 `residual_tokens` 성격으로 남겨 ④가 해석할 수 있게 한다.
-
-### 2-3. 결정론적 처리와 LLM 경계
-
-| 처리 | 방식 |
-|---|---|
-| Unicode NFKC, 공백, 가격, 불릿 제거 | 결정론적 규칙 |
-| 인분·크기·맵기 옵션 분리 | 결정론적 규칙 |
-| 표기 통일·동의어 | 버전 관리되는 사전 |
-| canonical/spacing/synonym 후보 | 결정론적 매칭 |
-| fuzzy 후보 점수 | 결정론적 알고리즘 |
-| 다국어 메뉴 의미 해석 | 필요할 때만 LLM |
-| OCR 문맥상 복수 후보 재정렬 | 필요할 때만 LLM |
-| 변형 재료 확정·재료 추론 | 수행하지 않음 — ④/⑤/⑥ 책임 |
-
-LLM 호출은 LangChain의 구조화 출력으로 제한하고 결과를 Pydantic schema로 검증한다. timeout, 파싱 실패, 카탈로그에 없는 `menu_id`가 반환되면 LLM 결과를 폐기하고 규칙 기반 후보를 그대로 반환한다.
-
----
-
-## 3. 매칭 후보 생성
-
-②는 최종 하나의 정규명을 반환하되, 내부적으로는 후보 목록을 같이 제공한다.
-
-```json
-{
-  "raw_menu_name": "돈까스",
-  "normalized_menu_name": "돈가스",
-  "match_candidates": [
-    {
-      "name_ko": "돈가스",
-      "menu_id": "menu-id-or-null",
-      "score": 0.96,
-      "match_type": "synonym"
-    }
-  ]
-}
-```
-
-### 3-1. `match_type`
-
-| 값 | 의미 |
-|---|---|
-| `canonical` | DB 대표명과 직접 일치 |
-| `spacing` | 띄어쓰기만 다른 경우 |
-| `synonym` | 사전 기반 표기 통일 |
-| `ocr_correction` | OCR 오탈자 보정 |
-| `fuzzy` | 편집거리/유사도 기반 후보 |
-| `llm_context` | 다국어·OCR 문맥으로 기존 후보를 재정렬한 경우 |
-| `unmatched` | 후보 없음 |
-
-### 3-2. 후보 점수와 판정
-
-후보 판정에는 다음 두 설정을 사용한다.
-
-- `accept_threshold`: 1위 후보를 `normalized`로 받아들일 최소 점수
-- `ambiguity_margin`: 1위와 2위 점수 차이가 이 값보다 작을 때 `ambiguous`로 처리할 기준
-
-실제 수치는 임의로 확정하지 않는다. 대표 OCR 오류·표기 변형·다국어·변형 메뉴가 포함된 검증 데이터에서 FN 중심으로 측정한 뒤 설정 파일에 기록한다. threshold를 코드 곳곳에 하드코딩하지 않는다.
-
-### 3-3. ambiguous 처리
-
-후보 1위와 2위 점수 차이가 작으면 `ambiguous`로 반환한다.
-
-```json
-{
-  "raw_menu_name": "갈비",
-  "normalized_menu_name": "갈비",
-  "normalization_status": "ambiguous",
-  "match_candidates": [
-    {"menu_id": "menu-1", "name_ko": "갈비구이", "score": 0.78, "match_type": "fuzzy"},
-    {"menu_id": "menu-2", "name_ko": "갈비찜", "score": 0.75, "match_type": "fuzzy"}
   ],
-  "warnings": ["multiple_close_candidates"]
+  "warnings": [],
+  "errors": []
 }
 ```
 
-Supervisor는 ambiguous 결과를 실패로 처리하지 않는다. ④에 후보 목록을 전달해 메뉴 category, longest-match, 변형 태깅과 함께 다음 판단을 하게 한다.
+#### 응답
 
----
+```json
+{
+  "context": {
+    "schema_version": "2.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "scan",
+    "item_id": null
+  },
+  "items": [
+    {
+      "item_id": "scan-123:0",
+      "source_index": 0,
+      "raw_menu_name": "■ 김치 찌개 2인",
+      "normalized_menu_name": "김치찌개",
+      "display_name": "김치 찌개 2인",
+      "description": null,
+      "price_text": "8,000원",
+      "price_options": [],
+      "ocr_confidence": 0.93,
+      "locale_hint": "ko",
+      "options": ["2인"],
+      "residual_tokens": [],
+      "risk_tag_observations": [],
+      "candidate_status": "ok",
+      "normalization_status": "normalized",
+      "selection_method": "deterministic",
+      "selection_reason_codes": ["exact_unique"],
+      "selected_candidate": {
+        "menu_id": 1001,
+        "menu_category_id": 11,
+        "canonical_name": "김치찌개",
+        "score": 1.0,
+        "match_type": "canonical"
+      },
+      "match_candidates": [
+        {
+          "menu_id": 1001,
+          "menu_category_id": 11,
+          "canonical_name": "김치찌개",
+          "score": 1.0,
+          "match_type": "canonical"
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
+```
 
-## 4. 변형 메뉴와의 경계
+`selected_candidate`는 반드시 입력 `match_candidates` 원소 하나를 값까지 그대로 복사한다. 이름·점수·분류를 ②가 다시 만들지 않는다.
 
-②는 변형 메뉴를 확정하지 않는다.
+### 1-3. 상태와 enum
 
-| 입력 | ② 출력 | ④에서 할 일 |
+| 필드 | 허용값 | 의미 |
 |---|---|---|
-| `차돌된장찌개` | `차돌된장찌개`, 후보 `된장찌개` 가능 | longest-match로 base=`된장찌개`, remain=`차돌` 판정 |
-| `해물순두부` | `해물순두부`, 후보 `순두부찌개` 가능 | remain 토큰 `해물` 해석 |
-| `치즈김치볶음밥` | `치즈김치볶음밥`, 후보 `김치볶음밥` 가능 | `치즈`를 변형 재료로 제안 |
+| `candidate_status` | `ok | not_found | unavailable` | 후보 조회 성공, 데이터 없음, 조회 실패 구분 |
+| `normalization_status` | `normalized | ambiguous | unmatched | invalid` | 최종 선택 상태 |
+| `selection_method` | `deterministic | llm | none` | 최종 후보를 고른 방법 |
+| `match_type` | `canonical | spacing | synonym | ocr_correction | fuzzy` | 백엔드가 후보를 찾은 방법 |
 
-정규화 단계에서 remain 토큰을 잘라 버리면 ④가 변형 재료를 태깅할 근거가 사라진다. 따라서 ②는 "대표 후보가 있음"까지만 표시하고, 변형 확정은 ④에 맡긴다.
+`selection_reason_codes` 허용값은 다음과 같다.
 
----
+- `exact_unique`: 정확·공백·사전 후보가 유일하고 안정적임
+- `score_and_margin`: 점수와 1·2위 차이가 자동 선택 기준을 충족함
+- `llm_context_resolved`: 허용 후보 중 하나를 문맥으로 해소함
+- `multiple_close_candidates`: 상위 후보 점수가 가까움
+- `below_accept_threshold`: 후보가 있지만 자동 선택 기준 미달
+- `candidate_not_found`: 정상 조회했으나 후보 없음
+- `candidate_unavailable`: 후보 조회 실패
+- `invalid_input`: Prepare에서 분석 불가능한 문자열
+- `llm_failed`: timeout·검증 실패로 규칙 결과 유지
 
-## 5. Supervisor와의 계약
-
-| ②가 받는 것 | 보장 사항 |
-|---|---|
-| `context` | 유효한 `schema_version`, `trace_id`, `scan_session_id`, 양의 정수 `store_id` |
-| `items` | ① OCR Tool이 추출한 원본 순서와 `item_id` 그대로 |
-
-| ②가 돌려주는 것 | Supervisor의 후속 판단 |
-|---|---|
-| `normalization_status: normalized` | ③/④에 `normalized_menu_name` 전달 |
-| `ambiguous` | ④에 `match_candidates`까지 전달 |
-| `unmatched` | ④ unknown/longest-match 경로로 전달 |
-| `invalid` | 기본 분석 대상에서 제외하되, UI에는 필요시 숨김/낮은 우선순위 표시 |
-
-②는 어떤 경우에도 ③④⑤⑥⑦⑧을 직접 호출하지 않는다.
-
-②가 표준 메뉴 카탈로그를 읽어 후보를 만들 수는 있지만, DB 메뉴 존재 여부·레시피·온톨로지를 판정하지 않는다. 매장 별칭 조회 실패 시 전역 표준 사전으로 fallback하고 warning을 남긴다.
+`normalized`일 때만 `selected_candidate`가 객체이고 method는 `deterministic | llm`이다. 나머지는 `selected_candidate: null`, method는 `none`이다.
 
 ---
 
-## 6. 예외 처리
+## 2. Prepare — ②-A 문자열 정제
 
-| 상황 | 처리 |
-|---|---|
-| 빈 문자열 | `invalid`, warning `empty_string` |
-| 가격만 있는 문자열 | `invalid`, warning `price_only` |
-| 한 글자 메뉴명 | 후보가 명확하지 않으면 `ambiguous` 또는 `unmatched` |
-| 외국어 메뉴명 | 한식 메뉴 사전에 있으면 후보 생성, 없으면 `unmatched` |
-| OCR confidence 낮음 | warning에 `low_ocr_confidence` 표시 |
-| 후보 score 낮음 | `unmatched`로 두고 ④/⑥ 경로 허용 |
-| 매장 별칭 조회 실패 | 전역 사전으로 계속 처리, warning `store_alias_unavailable` |
-| LLM timeout/파싱 실패 | LLM 결과 폐기, 규칙 기반 후보로 fallback |
-| LLM이 없는 `menu_id` 생성 | 해당 후보 폐기, warning `invalid_llm_candidate` |
+②-A는 모든 항목을 한 번의 배치로 받아 항목별로 독립 처리한다. 한 항목 실패가 나머지 항목을 막지 않는다.
+
+### 2-1. 처리 순서
+
+1. 원문·식별자와 OCR 부가 필드를 복사해 보존한다.
+2. Unicode NFKC, 제어문자 제거, 연속 공백 축소를 적용한다.
+3. 선행 불릿·장식 문자와 끝에 독립적으로 붙은 가격 패턴만 제거한다.
+4. 인분·크기·조리·추가 옵션을 분류한다.
+5. 검색용 이름에서는 인분·크기만 제거하고 재료·조리 의미 토큰은 보존한다.
+6. 버전 관리 사전으로 안전한 표기만 통일한다.
+7. 다국어·혼합 표기이며 사전으로 해석되지 않을 때만 제한적 LLM 해석을 시도한다.
+8. 메뉴가 아닌 문자열을 `invalid`로 분류한다.
+9. 원래 `source_index` 순서로 반환한다.
+
+### 2-2. 문자열 처리 규칙
+
+| 유형 | 예시 | `display_name` | `normalized_menu_name` |
+|---|---|---|---|
+| 장식·가격 | `■ 김치 찌개 8,000원` | `김치 찌개` | `김치찌개` |
+| 인분 | `부대찌개 2인` | `부대찌개 2인` | `부대찌개` |
+| 크기 | `냉면 대` | `냉면 대` | `냉면` |
+| 재료 추가 | `라면 치즈 추가` | 원문 표기 보존 | `라면치즈추가` |
+| 변형 메뉴 | `차돌 된장찌개` | 원문 표기 보존 | `차돌된장찌개` |
+| 조리·매운맛 | `매운 닭갈비` | 원문 표기 보존 | `매운닭갈비` |
+| 표기 사전 | `돈까스` | `돈까스` | `돈가스` |
+
+가격 제거는 통화 기호 또는 `원`과 결합되거나 문자열 끝에서 가격 열로 확실히 분리된 숫자에만 적용한다. `오삼불고기`처럼 이름에 포함된 숫자·문자를 가격으로 오인해 지우지 않는다.
+
+검색 키에서는 한글 음절 사이 공백과 일반 구분 공백을 제거한다. 사용자 표시 이름에는 원래 띄어쓰기를 최대한 보존한다. Latin 문자는 검색 비교용으로만 case-fold하고 `display_name`은 바꾸지 않는다.
+
+### 2-3. 옵션과 위험 토큰
+
+| 분류 | 예시 | `options` | `residual_tokens` | 이름에서 제거 |
+|---|---|---|---|---|
+| 인분·수량 | `1인`, `2인분` | 포함 | 미포함 | O |
+| 크기 | `소`, `중`, `대`, `곱빼기` | 포함 | 미포함 | O |
+| 조리·맵기 | `매운맛`, `덜 맵게`, `튀김` | 포함 | 미포함 | X |
+| 재료 추가·교체 | `치즈 추가`, `차돌 추가`, `해물` | 포함 | 재료 토큰 포함 | X |
+
+`소/중/대`는 문자열 끝에서 독립 토큰이고 앞에 실제 메뉴명이 있을 때만 크기 옵션이다. `대구탕`의 `대`처럼 메뉴명 내부 문자는 제거하지 않는다.
+
+②는 `risk_tag_observations`를 새로 만들지 않는다. 매운맛 문구를 분리하더라도 ①이 만든 관측을 그대로 보존한다. 재료 옵션은 ④가 해석할 수 있도록 전체 이름과 `residual_tokens` 양쪽에서 잃지 않는다.
+
+### 2-4. 표기 사전과 다국어
+
+표기 사전은 저장소의 버전 관리 데이터로 시작한다. 항목은 `source_text → normalized_text`와 버전을 가지며, 위험 재료를 삭제하거나 더 일반적인 메뉴로 축약하는 규칙은 등록할 수 없다.
+
+- 허용: `돈까스 → 돈가스`, 검증된 OCR 오탈자 교정
+- 금지: `차돌된장찌개 → 된장찌개`, `치즈라면 → 라면`
+- 매장별 별칭과 DB 메뉴 ID는 ②-A가 조회하지 않는다.
+- DB 기반 별칭은 Prepare 이후 백엔드의 `menu_aliases` 후보 조회에서 처리한다.
+
+다국어 처리는 다음 순서다.
+
+1. 검증된 다국어 별칭 사전
+2. 한글·Latin 혼합 표기의 결정론적 정리
+3. 둘로 해석되지 않을 때만 LangChain 구조화 출력
+
+②-A의 LLM은 `normalized_menu_name` 후보와 confidence만 반환한다. confidence가 0.90 미만이거나 빈 문자열·과도한 삭제·schema 위반이면 결과를 폐기하고 정제된 원문을 사용한다. LLM은 `menu_id`를 받거나 만들지 않는다.
+
+### 2-5. invalid 판정
+
+다음은 `invalid`다.
+
+- 정제 후 빈 문자열
+- 가격만 남은 문자열
+- `식사류`, `주류`, `추천 메뉴`처럼 버전 관리된 섹션 헤더와 정확히 일치
+- 전화번호·영업시간처럼 메뉴가 아님을 규칙으로 확정할 수 있는 문자열
+
+한 글자, 낯선 외국어, 처음 보는 메뉴라는 이유만으로 invalid로 만들지 않는다. 이런 값은 유효한 이름으로 Prepare에 남겨 백엔드 조회 후 `unmatched` 경로를 허용한다.
+
+---
+
+## 3. Prepare와 Judge 사이 — 백엔드 후보 조회
+
+백엔드는 `PrepareResponse.prepared_items[]`의 `normalized_menu_name`으로 후보를 조회한다. ②가 DB를 직접 호출하지 않으므로 Prepare가 빠르고, 같은 DB snapshot으로 KnowledgeBundle을 만들 수 있다.
+
+### 3-1. 조회 순서
+
+1. `menus.name_normalized` exact
+2. `menu_aliases.alias_normalized` exact
+3. 공백 차이·검증된 OCR 교정 사전
+4. 위 결과가 없거나 하나로 충분하지 않을 때만 fuzzy 검색
+
+exact·alias 단계에서 유일한 안정 후보를 찾으면 불필요한 fuzzy 검색을 생략한다. 후보는 메뉴 하나당 최대 5개다.
+
+### 3-2. 후보 점수 표준
+
+서로 다른 구현이 같은 기준으로 동작하도록 v1 점수를 고정한다.
+
+| `match_type` | score |
+|---|---:|
+| `canonical` | 1.00 |
+| `spacing` | 0.99 |
+| `synonym` | 0.98 |
+| `ocr_correction` | 0.95 |
+| `fuzzy` | 사용한 문자열 유사도 0~1, 최대 0.94 |
+
+fuzzy 알고리즘은 Unicode 정규화 후 문자 기반 유사도를 0~1로 변환한다. 구현 라이브러리와 버전은 §8에서 고정하되, 결과 score 의미는 위 계약을 지킨다.
+
+후보 배열은 score 내림차순, 동점이면 `menu_id` 오름차순이다. 같은 `menu_id`가 여러 경로에서 나오면 가장 높은 score 하나만 남긴다. `menu_id`는 integer, `menu_category_id`는 integer 또는 null이다.
+
+### 3-3. 조회 상태
+
+- `ok`: 후보가 1개 이상이며 후보마다 같은 `menu_id`의 KnowledgeBundle 자료가 정확히 하나 있음
+- `not_found`: 조회는 성공했지만 후보가 없음. `match_candidates: []`
+- `unavailable`: DB 장애·timeout으로 조회하지 못함. 빈 후보를 “없는 메뉴”로 해석하지 않음
+
+백엔드는 후보 밖 메뉴 자료를 ②-B에 넣지 않는다. `unavailable`은 Supervisor warning과 함께 전달하며 해당 메뉴의 SAFE를 금지한다.
+
+---
+
+## 4. Judge — ②-B 후보 선택
+
+### 4-1. v1 판정 상수
+
+| 설정 | 값 | 역할 |
+|---|---:|---|
+| `candidate_floor` | 0.65 | 이보다 낮으면 `unmatched` |
+| `accept_threshold` | 0.92 | 자동 선택 최소 점수 |
+| `ambiguity_margin` | 0.08 | 1·2위 점수 차이 최소값 |
+| `llm_accept_confidence` | 0.90 | 문맥 선택을 인정할 최소 구조화 confidence |
+
+후보가 하나면 margin은 1.0으로 본다. 상수는 코드에 흩어 쓰지 않고 하나의 정책 설정에 둔다. v1 이후 수치를 바꾸려면 고정 검증셋에서 메뉴 오매칭 FN, precision/recall/F2와 경계 사례를 기록한다.
+
+### 4-2. 결정 순서
+
+1. Prepare에서 제외돼야 할 `invalid` 항목이 들어오면 `invalid`, method `none`, reason `invalid_input`으로 방어 처리한다.
+2. `candidate_status: unavailable` → `unmatched`, method `none`, reason `candidate_unavailable`.
+3. `candidate_status: not_found` → `unmatched`, reason `candidate_not_found`.
+4. `candidate_status: ok`인데 후보가 비어 있으면 계약 위반이므로 Supervisor가 `bundle_miss`로 Judge 요청을 거부한다.
+5. 1위 score < 0.65 → `unmatched`, reason `below_accept_threshold`.
+6. 1위 score ≥ 0.92이고 margin ≥ 0.08 → `normalized`, method `deterministic`.
+7. 위 조건을 못 채운 후보가 1~5개이면 `ambiguous` 후보로 두고, §4-3 조건에서만 LLM을 호출한다.
+8. LLM 결과가 검증 조건을 모두 통과하면 `normalized`, method `llm`.
+9. LLM 미호출·실패·낮은 confidence이면 `ambiguous`, method `none`.
+
+1위가 `canonical | spacing | synonym | ocr_correction`이고 유일하며 자동 선택 기준을 충족하면 reason은 `exact_unique`다. fuzzy를 포함한 일반 점수 선택은 `score_and_margin`이다.
+
+### 4-3. LLM 호출 조건과 제한
+
+다음 조건을 모두 만족할 때만 ②-B LLM을 호출한다.
+
+- 자동 선택 기준은 충족하지 못했지만 1위 score가 `candidate_floor` 이상
+- 후보가 1~5개
+- `description`, `locale_hint`, 메뉴판 인접 문맥 등 규칙 외의 실제 문맥이 하나 이상 있음
+- Supervisor의 남은 시간 예산 안에서 호출 가능
+
+LLM 입력에는 OCR 이름·설명·옵션과 허용 후보의 ID·이름만 보낸다. 사용자 프로필, 재료 정보, 다른 가게 정보는 보내지 않는다.
+
+구조화 출력은 다음 내부 모델이다.
+
+```json
+{
+  "selected_menu_id": 1001,
+  "confidence": 0.93,
+  "reason_code": "description_supports_candidate"
+}
+```
+
+결과는 다음을 모두 만족해야 한다.
+
+- `selected_menu_id`가 요청 후보에 존재
+- confidence ≥ 0.90
+- 선택 근거가 입력 문맥에 있음
+- 후보 이름을 새로 만들거나 `residual_tokens`를 삭제하지 않음
+- Pydantic closed schema 검증 통과
+
+실패하면 결과를 폐기하고 규칙 기반 `ambiguous`를 유지한다. LLM은 후보 점수나 `match_type`을 바꾸지 않는다.
+
+### 4-4. 변형 메뉴 처리
+
+`차돌된장찌개`에 `된장찌개` 후보가 있더라도 ②는 전체 정규화 이름을 `차돌된장찌개`로 유지한다. 후보를 선택했다면 ④가 원문 전체와 후보의 `menu_id`를 함께 보고 DB의 `base_menu_id/remain_token` 또는 longest-match 규칙으로 변형 여부를 판단한다.
+
+②-B의 선택은 “참조할 수 있는 가장 가까운 DB 메뉴”를 고르는 일이지, 추가 토큰이 재료인지 확정하는 일이 아니다. 위험 토큰이 남아 있으면 Supervisor는 ④의 변형 경로를 반드시 실행한다.
+
+### 4-5. 간단한 의사 코드
+
+```python
+def select_candidate(item):
+    if item.candidate_status == "unavailable":
+        return unmatched("candidate_unavailable")
+    if item.candidate_status == "not_found" or not item.match_candidates:
+        return unmatched("candidate_not_found")
+
+    candidates = sort_and_dedupe(item.match_candidates)
+    top = candidates[0]
+    margin = 1.0 if len(candidates) == 1 else top.score - candidates[1].score
+
+    if top.score < 0.65:
+        return unmatched("below_accept_threshold")
+
+    if top.score >= 0.92 and margin >= 0.08:
+        reason = "exact_unique" if top.match_type != "fuzzy" else "score_and_margin"
+        return normalized(top, method="deterministic", reason=reason)
+
+    llm_result = resolve_with_llm_only_if_context_exists(item, candidates)
+    if validated_existing_candidate(llm_result, min_confidence=0.90):
+        return normalized(
+            candidate_by_id(candidates, llm_result.selected_menu_id),
+            method="llm",
+            reason="llm_context_resolved",
+        )
+
+    return ambiguous(
+        candidates,
+        reasons=["multiple_close_candidates", "llm_failed"],
+    )
+```
+
+실제 구현은 LLM을 호출하지 않은 경우 `llm_failed`를 넣지 않는다. 후보가 가까우면 `multiple_close_candidates`, 단순 점수 미달이면 `below_accept_threshold`를 사용한다.
+
+---
+
+## 5. 효율적인 구현 방식
+
+- 문자열 규칙은 순수 함수로 만들고 전체 메뉴를 한 번에 배치 처리한다.
+- 사전은 요청마다 파일을 읽지 않고 애플리케이션 시작 시 immutable 구조로 로드한다.
+- exact·alias DB 인덱스를 먼저 사용하고 fuzzy는 필요한 이름에만 수행한다.
+- LLM은 정확 후보·후보 없음·문맥 없음에는 호출하지 않는다.
+- ②-A LLM 캐시는 `cleaned_name + locale_hint + dictionary_version + model_version`, ②-B 캐시는 `item context hash + ordered candidate IDs/scores + policy_version + model_version`을 키로 삼을 수 있다.
+- 캐시는 결과 재사용 최적화일 뿐 계약의 정본이 아니다. 실패하면 동일 규칙으로 재계산한다.
+- 모든 응답은 `source_index`로 정렬하고 병렬 완료 순서를 출력 순서로 쓰지 않는다.
+- LLM temperature는 0, 출력은 Pydantic 구조화 모델, timeout 시 규칙 결과를 사용한다.
+
+### 5-1. 구현 모듈 경계
+
+```text
+normalization/
+├── contracts.py       # §1 모델
+├── cleaning.py        # NFKC·장식·가격·옵션·표기 사전
+├── option_rules.py    # 크기/인분/조리/재료 옵션 분류
+├── candidate_policy.py# §4의 순수 판정 함수
+├── multilingual.py    # 제한적 LangChain 구조화 호출
+├── dictionaries/      # 버전 관리 표기·헤더·다국어 사전
+└── tests/
+```
+
+기존 `ai_ocr`의 텍스트 구조화와 `ai_ruleengine`의 표기 정리 코드는 동작을 조사해 재사용하되, ①과 ④가 같은 문자열을 다시 정규화하지 않도록 책임을 한곳으로 모은다.
+
+---
+
+## 6. 경고와 예외 처리
+
+모든 warning은 ⓪의 `NodeWarning` 형식을 사용한다.
+
+| code | 상황 | 처리 | `forces_caution` |
+|---|---|---|---|
+| `empty_menu_name` | 정제 후 빈 문자열 | `invalid`, Prepare 외부 목록에서 제외 | false |
+| `price_only` | 가격만 존재 | `invalid`, 제외 | false |
+| `section_header` | 확정된 메뉴판 헤더 | `invalid`, 제외 | false |
+| `low_ocr_confidence` | OCR confidence가 품질 기준 미달 | 이름은 보존하고 계속 진행 | true |
+| `name_llm_failed` | ②-A 다국어 해석 실패 | 정제된 원문 fallback | false |
+| `candidate_unavailable` | 백엔드 후보 조회 실패 | `unmatched`, unknown 경로 | true |
+| `multiple_close_candidates` | 자동 선택할 수 없는 근접 후보 | `ambiguous` | true |
+| `invalid_llm_candidate` | LLM이 후보 밖 ID 또는 잘못된 형식 반환 | LLM 결과 폐기 | true |
+| `candidate_llm_failed` | ②-B timeout·파싱 실패 | `ambiguous` 유지 | true |
+
+한 항목의 오류는 해당 항목에만 기록한다. 전체 요청을 실패시키는 경우는 공통 context 위변조, schema 위반, 입력 item_id 중복처럼 배치 계약 자체가 깨진 경우뿐이다.
 
 ---
 
 ## 7. 테스트 케이스
 
-| # | 입력 | 기대 출력 | 검증 포인트 |
-|---|---|---|---|
-| 1 | `["■김치 찌개– 8,000"]` | `김치찌개`, 옵션 없음 | 잡문자/가격/공백 제거 |
-| 2 | `["돈까스"]` | `돈가스`, `match_type: synonym` | 표기 통일 |
-| 3 | `["부대찌개 2인"]` | `부대찌개`, 옵션 `["2인"]` | 옵션 분리 |
-| 4 | `["차돌된장찌개"]` | 원문 의미 보존, 후보 `된장찌개` 가능 | 변형 토큰 삭제 금지 |
-| 5 | `["갈비"]` | `ambiguous` | 갈비구이/갈비찜 등 복수 후보 유지 |
-| 6 | `["식사류"]` | `invalid` | 메뉴 섹션 헤더 제외 |
-| 7 | `["마라샹궈"]` | `unmatched` 또는 후보 낮은 점수 | ④/⑥ unknown 경로 가능 |
-| 8 | 다국어 메뉴 + 유효 후보 | 구조화 출력으로 후보 재정렬 | 카탈로그 밖 ID 생성 없음 |
-| 9 | LLM timeout | 규칙 기반 후보 반환 | 전체 배치 실패 없음 |
-| 10 | 메뉴 3개 중 빈 문자열 1개 | 2개 정상 + 1개 invalid | 입력 순서와 item_id 유지 |
+| # | 입력/상황 | 기대 결과 |
+|---|---|---|
+| 1 | `■ 김치 찌개 8,000원` | display `김치 찌개`, normalized `김치찌개` |
+| 2 | `돈까스` | 사전으로 `돈가스`, 원문·display 유지 |
+| 3 | `부대찌개 2인` | normalized `부대찌개`, options `["2인"]` |
+| 4 | `라면 치즈 추가` | 치즈가 이름과 residual token에 남음 |
+| 5 | `차돌된장찌개` | 전체 이름 유지, ②가 `된장찌개`로 축약하지 않음 |
+| 6 | `대구탕` | `대`를 크기 옵션으로 잘못 제거하지 않음 |
+| 7 | `식사류` | `invalid`, Prepare 외부 목록에서 제외 |
+| 8 | 낯선 한 글자 메뉴 | invalid가 아니라 유효 이름으로 후보 조회 |
+| 9 | canonical 1.00 단일 후보 | deterministic `normalized` |
+| 10 | fuzzy 0.93 / 0.80 | margin 0.13, deterministic `normalized` |
+| 11 | 후보 0.91 / 0.87 | `ambiguous`, 문맥 있을 때만 LLM |
+| 12 | 후보 최고 0.60 | `unmatched` |
+| 13 | 후보 조회 `not_found` | `unmatched`, ④ unknown 경로 |
+| 14 | 후보 조회 `unavailable` | warning + SAFE 금지 |
+| 15 | LLM이 후보 밖 ID 반환 | 결과 폐기, `ambiguous` |
+| 16 | LLM timeout | 규칙 결과 유지, 다른 메뉴 정상 처리 |
+| 17 | 다국어 별칭 사전 적중 | LLM 없이 한국어 검색명 생성 |
+| 18 | 메뉴 20개 중 정확 후보 18개 | LLM은 나머지 문맥 있는 모호 항목에만 호출 |
+| 19 | 입력 순서와 비동기 완료 순서가 다름 | 출력은 `source_index` 순서 |
+| 20 | ②-B 선택 후보 | `selected_candidate`가 입력 후보와 값까지 동일 |
 
 ---
 
-## 8. 미확정 항목 (팀 확인 대기)
+## 8. 확정 상태와 구현 전 고정할 운영값
 
-- [ ] 표기 통일 사전의 최종 소유 주체: 초기 버전의 버전 관리 파일 + 추후 DB adapter 제안 승인
-- [ ] fuzzy `accept_threshold`와 `ambiguity_margin` 검증 데이터·실제 수치
-- [ ] 매장별 별칭 사전 조회 API와 갱신 주체
-- [ ] PPT의 다국어 해석을 ②의 제한적 LLM 경로로 포함하는 안 승인
-- [ ] 재료 의미 옵션 전달 필드를 `residual_tokens`로 통일하는 안을 ④ 담당자와 승인
-- [ ] LLM 모델·timeout·호출 예산
+### 확정
+
+- ②-A는 DB를 조회하지 않고 문자열만 정제한다.
+- 후보 조회와 KnowledgeBundle 구성은 백엔드가 담당한다.
+- ②-B는 최대 5개 허용 후보 안에서만 선택한다.
+- 위험 가능 토큰은 삭제하지 않고 전체 이름 또는 `residual_tokens`에 남긴다.
+- exact·alias·점수 기준을 먼저 쓰고 LLM은 문맥이 있는 모호한 경우에만 쓴다.
+- v1 판정값은 `candidate_floor=0.65`, `accept_threshold=0.92`, `ambiguity_margin=0.08`, `llm_accept_confidence=0.90`이다.
+- 후보 조회 실패와 모호성은 SAFE 금지 신호로 보존한다.
+- schema 2.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
+
+### 구현 전 저장소에서 고정할 값
+
+다음은 JSON이나 책임 경계가 아니라 패키지·배포 설정이다.
+
+- fuzzy 문자열 유사도 라이브러리와 정확한 버전
+- 다국어 구조화 LLM 모델·provider 패키지 버전
+- Supervisor 전체 시간 예산 안에서 ②-A·②-B LLM timeout
+- 표기·헤더·다국어 사전 파일 경로와 version 표기 방식
+- 고정 검증셋 위치와 정책 수치 변경 승인 절차
 
 ---
 
-## 9. 구현 계획 (GitHub Backlog / Iteration)
+## 9. 구현 추적
 
-아래 항목은 GitHub Issue 등록 시 각각 하나의 Sub-issue로 만든다. 문서 작업은 #68, 구현 작업은 #56에 연결한다.
-
-### Iteration 1 — 처리 경계와 정책 확정 (10/13까지)
-
-#### `[DOCS] Menu Normalization 처리 경계와 후보 판정 정책 확정`
-
-**작업 내용**
-
-규칙 기반 전처리, 후보 매칭, 제한적 LLM 보정 범위와 Supervisor·④ 사이의 데이터 계약을 확정한다.
-
-**배경**
-
-정규화가 OCR과 Rule Engine에 흩어져 있고, 변형 토큰을 과하게 제거하거나 LLM이 메뉴를 임의 확정하면 위험 근거가 사라질 수 있다.
-
-**세부 작업**
-
-- [ ] 결정론적 정제·옵션 분리 단계 확정
-- [ ] `residual_tokens`와 ④ 전달 계약 확정
-- [ ] 상태·후보·match type 판정 조건 확정
-- [ ] 사전·카탈로그 소유와 fallback 확정
-- [ ] LLM 호출 조건·구조화 출력·금지 규칙 확정
-- [ ] fuzzy threshold 산정 방법과 ④ 책임 경계 확정
-
-**관련 서비스**
-
-- [x] ai_ocr
-- [ ] ai_result
-- [x] ai_ruleengine
-- [ ] ai_web_search_agent
-- [ ] crawling
-- [x] 공통 (app.py, README, 인프라)
-
-**참고**
-
-- 상위 이슈 #68, 구현 이슈 #56
-- `docs/ppt-baseline.md`, `docs/caution-multi-agent-architecture.md`
-- `ai_ruleengine/modifier_strip.py`, `ai_ruleengine/menu_matcher.py`, `ai_ocr/normalizer.py`
-
-### Iteration 2 — 핵심 구현
-
-#### `[FEAT] Menu Normalization 결정론적 전처리 파이프라인 구현`
-
-**작업 내용**
-
-원문을 보존하면서 잡문자·가격·공백을 정리하고 옵션과 residual token을 분리하는 규칙 기반 파이프라인을 구현한다.
-
-**배경**
-
-LLM과 fuzzy matching 전에 재현 가능한 정제 기반이 필요하며 기존 수식어 제거에서 위험 재료 토큰이 사라지면 안 된다.
-
-**세부 작업**
-
-- [ ] 배치 Pydantic 모델과 item_id·순서 보존 구현
-- [ ] Unicode·공백·불릿·가격 정제 구현
-- [ ] 인분·크기·맵기 옵션 분리 구현
-- [ ] 재료 의미 옵션의 residual token 보존
-- [ ] invalid 분류와 #38 회귀 테스트
-- [ ] 변형 토큰 보존 단위 테스트
-
-**관련 서비스**
-
-- [x] ai_ocr
-- [ ] ai_result
-- [x] ai_ruleengine
-- [ ] ai_web_search_agent
-- [ ] crawling
-- [ ] 공통 (app.py, README, 인프라)
-
-**참고**
-
-- 상위 이슈 #56
-- 선행: #68 및 Iteration 1 정책 확정
-
-#### `[FEAT] Menu Normalization 후보 매칭과 불확실성 보존 구현`
-
-**작업 내용**
-
-표준 메뉴 후보 생성·점수화와 ambiguous/unmatched 처리를 구현하고 필요한 경우에만 LangChain 구조화 출력 보정을 적용한다.
-
-**배경**
-
-후보를 하나로 억지 확정하지 않고 불확실성을 ④에 전달해야 FN 위험을 줄일 수 있다.
-
-**세부 작업**
-
-- [ ] canonical·spacing·synonym·OCR·fuzzy 후보 구현
-- [ ] 검증 데이터로 threshold와 margin 산정
-- [ ] 후보별 menu_id/name/score/match_type 반환
-- [ ] ambiguous·unmatched 처리 구현
-- [ ] 제한적 LLM 구조화 출력과 fallback 구현
-- [ ] 카탈로그 밖 ID 방지 및 상태별 테스트
-
-**관련 서비스**
-
-- [x] ai_ocr
-- [ ] ai_result
-- [x] ai_ruleengine
-- [ ] ai_web_search_agent
-- [x] crawling
-- [ ] 공통 (app.py, README, 인프라)
-
-**참고**
-
-- 상위 이슈 #56
-- `ai_ruleengine/data/menus.csv`
-
-### Iteration 3 — 기존 로직 통합
-
-#### `[REFACTOR] 기존 정규화 로직을 ② Agent로 통합하고 Supervisor에 연결`
-
-**작업 내용**
-
-OCR과 Rule Engine에 흩어진 정규화 책임을 ②로 통합하고 기존 API와 Supervisor가 동일 구현을 재사용하도록 정리한다.
-
-**배경**
-
-중복 로직을 유지하면 단계별로 다른 메뉴명이 만들어지고 기존 동작 회귀를 발견하기 어렵다.
-
-**세부 작업**
-
-- [ ] 기존 정규화 책임 목록과 이관 범위 확정
-- [ ] 중복 정제·옵션 분리 로직 통합
-- [ ] OCR 원문 보존과 Rule Engine 재정규화 제거
-- [ ] Supervisor·기존 API 호환 adapter 연결
-- [ ] 변경 전후 회귀 fixture와 전체 테스트
-- [ ] 관련 README 갱신
-
-**관련 서비스**
-
-- [x] ai_ocr
-- [ ] ai_result
-- [x] ai_ruleengine
-- [ ] ai_web_search_agent
-- [ ] crawling
-- [x] 공통 (app.py, README, 인프라)
-
-**참고**
-
-- 상위 이슈 #56
-- 관련 이슈 #38
-
-### Iteration 4 — QA
-
-#### `[CHORE] Menu Normalization 시나리오 QA 및 회귀 검증`
-
-**작업 내용**
-
-정상·다국어·변형·모호·실패 입력을 검증하고 후보 오확정과 위험 토큰 손실을 수정한다.
-
-**배경**
-
-정규화의 잘못된 확정은 이후 모든 재료 판정의 입력을 왜곡하므로 FN 중심의 회귀 검증이 필요하다.
-
-**세부 작업**
-
-- [ ] normalized·ambiguous·unmatched·invalid 전체 검증
-- [ ] 다국어·OCR 오인식·변형 토큰 보존 검증
-- [ ] threshold precision/recall/F2 측정
-- [ ] LLM timeout·파싱 실패 fallback 검증
-- [ ] 기존 API 결과와 Supervisor 경로 회귀 검증
-
-**관련 서비스**
-
-- [x] ai_ocr
-- [ ] ai_result
-- [x] ai_ruleengine
-- [ ] ai_web_search_agent
-- [x] crawling
-- [x] 공통 (app.py, README, 인프라)
-
-**참고**
-
-- 상위 이슈 #56
-- 북극성 지표: FN 최소화, F2 기준
+이 문서는 ②의 실행 계약과 정책만 유지한다. 일정·담당자·완료 체크는 중복을 막기 위해 GitHub Issues와 Projects Iteration에서 관리한다.
