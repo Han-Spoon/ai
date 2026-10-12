@@ -132,7 +132,7 @@
 | `context` | 입력 `context`를 그대로 반환 |
 | `menu_id` | 조회한 메뉴 |
 | `confirmation_scope` | 입력 `scope_hint` 값 그대로 (§1-5) |
-| `completeness` | `complete \| unknown` (§2). ⓪에는 `partial`도 있으나 기준이 정해지지 않음 (§6) |
+| `completeness` | `complete \| unknown` (§2). 두 값만 쓴다 (2026-10-12, §6) |
 | `confirmations[].ingredient` | 재료 (⓪ §1-2 `IngredientRef`) |
 | `confirmations[].constraint_tags` | ③은 항상 `[]`로 보낸다. Supervisor가 ④ `lookup_tags`를 불러 채운다 (§0) |
 | `confirmations[].status` | `present \| absent \| unknown` (§1-3) |
@@ -388,11 +388,11 @@ return ExactFeedbackResponse(
 
 - [x] **확인 정보 유효기간** — 3개월로 결정 (2026-10-06 회의, §1-7)
 - [x] **3개월 세는 기준** — 등록(확인)한 날짜부터 달력 기준 3개월 (2026-10-10 회의, §1-7)
-- [ ] **만료된 재료 재질문 경로** — 만료된 재료를 사장님에게 다시 물어보는 경로(⑧ 사장님 카드 우선순위 등)
+- [x] **만료된 재료 재질문 경로** — ⑧이 만료된 확인값(`expired: true`) 중 사용자 태그와 관련 있는 재료를 다시 묻는 질문 카드를 만든다(이유 `expired`). ⓪ §4-7이 ⑧에 `expired`를 넘겨야 한다 (2026-10-12, ⑧ §2-1 7단계)
 - [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
-- [ ] **`completeness: partial` 기준** — ⓪ §4-2는 `complete | partial | unknown` 3값인데, ③은 `complete | unknown`만 정의함. 언제 `partial`이고 언제 `unknown`인지 ⓪ 담당자와 정해야 함
+- [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 
 ## 7. 확정된 결정 (변경 금지)
