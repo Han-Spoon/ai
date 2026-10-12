@@ -115,7 +115,7 @@ graph TB
 | `residual_tokens` | string[] | 선택 | ②가 보존한 재료 의미 토큰 (`치즈`, `차돌` 등). 변형 재료 태깅의 입력 |
 | `unconfirmed_only` | bool | 필수 | 미확인 재료만 처리할지 |
 | `confirmed_ingredients` | `{name, status}`[] | 선택 | ③ 출력 중 `status != unknown` **AND** `override_eligible: true` 인 재료만. `status`는 `present` / `absent` (§2-1) |
-| `anomaly_locked_ingredients` | string[] | 선택 | ③이 `override_eligible: false`로 반환한 anomaly 재료. Supervisor가 채운다 |
+| `anomaly_locked_ingredients` | string[] | 선택 | ③이 `flagged_anomaly: true`(이상 답변)로 반환한 재료만. Supervisor가 채운다. 3개월 만료(`expired: true`)로 `override_eligible: false`가 된 재료는 넣지 않는다 (③ §1-6) |
 | `knowledge` | object | 필수 | 고른 후보의 `ontology` 또는 `fallback_ontology` 원재료 행 (§0-0). Supervisor가 KnowledgeBundle에서 꺼내 그대로 넣는다 |
 | `ingredient_graph` | object | 필수 | KnowledgeBundle의 전체 재료 그래프 (§0-0) |
 
@@ -138,8 +138,8 @@ graph TB
 }
 ```
 
-> ⚠️ `override_eligible: false`인 재료(anomaly)는 `confirmed_ingredients`에 **포함되지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다.
-> Supervisor는 이런 재료를 `anomaly_locked_ingredients`에 담아 전달한다. `anomaly_locked` 값을 부여하는 주체는 Supervisor이며, ④는 이 값을 가공하거나 재판단하지 않고 **그대로 보존**해서 출력의 해당 재료 노드에 `anomaly_locked: true`로 실어 반환한다 (§1-2). 이 값이 ④에서 끊기면 ⑤/⑧까지 전달이 안 돼 CAUTION 강제가 무력화된다.
+> ⚠️ `override_eligible: false`인 재료는 `confirmed_ingredients`에 **포함되지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다. `override_eligible: false`가 되는 이유는 두 가지다 (③ §1-6): 이상 답변(`flagged_anomaly: true`)과 3개월 만료(`expired: true`).
+> Supervisor는 이 중 **이상 답변 재료만** `anomaly_locked_ingredients`에 담아 전달한다. 만료 재료는 확장·확률 계산 대상으로 남기되 잠그지 않는다. 잠그면 ⑧ 질문 카드 이유가 `expired` 대신 `anomaly`로 나가고 카드 순서·고위험 재검증 대상이 틀어진다. `anomaly_locked` 값을 부여하는 주체는 Supervisor이며, ④는 이 값을 가공하거나 재판단하지 않고 **그대로 보존**해서 출력의 해당 재료 노드에 `anomaly_locked: true`로 실어 반환한다 (§1-2). 이 값이 ④에서 끊기면 ⑤/⑧까지 전달이 안 돼 CAUTION 강제가 무력화된다.
 >
 > `menu_id` / `match_candidates` / `residual_tokens`는 ② 문서 §1-2가 정의한 출력이다 (④ 승인, 2026-10-12).
 
@@ -602,7 +602,7 @@ graph TB
 | `context` | 유효한 공통 호출 문맥. `store_id`는 가게 식별 완료된 양의 정수, **null 불가** |
 | `normalized_menu_name` | ② Menu Normalization Agent 완료값. ④는 재정규화하지 않음 |
 | `confirmed_ingredients` | ③ 출력 중 `status != unknown` AND `override_eligible: true` 인 재료만. `status`(`present`/`absent`)를 함께 전달 |
-| `anomaly_locked_ingredients` | ③ 출력 중 `override_eligible: false`인 anomaly 재료. 누락 금지 |
+| `anomaly_locked_ingredients` | ③ 출력 중 `flagged_anomaly: true`인 재료만. 누락 금지. `expired: true`만으로 override가 거부된 재료는 넣지 않는다 |
 | `menu_id` / `match_candidates` / `residual_tokens` | ② 출력을 그대로 전달. 없으면 생략 가능 |
 
 ### 5-2. ④ → Supervisor (돌려주는 것)
@@ -683,6 +683,7 @@ graph TB
 | 20 | 메뉴 레시피 변경 후 호출 | 리비전이 다른 캐시는 쓰지 않음 | 옛 캐시로 재료가 빠지지 않을 것 |
 | 15 | `menu_id` 입력 + 다른 이름 | `menu_id` 행 사용 | ③과 ④가 같은 메뉴를 볼 것 |
 | 16 | `anomaly_locked_ingredients=["돼지고기"]` | 해당 노드 `anomaly_locked: true` | 값이 ④에서 끊기지 않을 것 |
+| 16-b | 3개월 지난 `돼지고기: absent` (`expired: true`, `flagged_anomaly: false`) | 돼지고기는 확장 대상에 남고 `anomaly_locked: false` | 만료 재료에 이상 답변 잠금을 붙이지 않을 것 |
 | 17 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
 | 23 | 참치김밥: 참치·밥·단무지·마요네즈 속 달걀 | `role`: 참치·밥 `identity`, 단무지 `component`, 달걀 `hidden` | 같은 메뉴는 매번 같은 role일 것 |
 | 24 | 리비전이 같은 캐시가 `knowledge`에 있음 | 확장하지 않고 캐시 재사용, 캐시 저장 명령 없음 | 같은 결과를 두 번 계산·저장하지 않을 것 |
