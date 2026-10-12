@@ -150,8 +150,7 @@ graph TB
       "ingredient_id": 212,
       "canonical_name": "멸치액젓",
       "taxonomy_category": "fermented",
-      "allergen_tags": ["is_fish"],
-      "dietary_tags": [],
+      "constraint_tags": ["is_fish"],
       "depth": 1,
       "parent_ingredient_id": 87,
       "ambiguity_flag": "has_unclear_jeotgal",
@@ -244,7 +243,7 @@ flowchart TD
     DBV --> R["recursive_expand<br/>+ cycle detection"]
     PLAIN --> R
     RTV --> R
-    R --> TAG["taxonomy + allergen_tags/dietary_tags 부착<br/>(전 depth 노드)"]
+    R --> TAG["taxonomy + constraint_tags 부착<br/>(전 depth 노드)"]
     TAG --> CACHE["menu_ingredient_cache 저장 명령 생성<br/>(파생 캐시, ⑦ 게이트 없음, §0)"]
     CACHE --> OUT[Supervisor에 반환]
     NF --> OUT
@@ -288,7 +287,7 @@ flowchart TD
 ### 2-3. 카테고리·위험 속성 태깅
 
 - 확장된 **전 노드**에 taxonomy 카테고리 매핑 (depth 무관)
-- 위험 속성 재료에 `allergen_tags` / `dietary_tags` 부착 (`is_*` 어휘, §3-3)
+- 위험 속성 재료에 `constraint_tags` 부착 (`is_*` 어휘, §3-3)
 - 재료의 태그 = **노드 태그**(`ingredient_tags`) ∪ **경로 태그**(`ingredient_composition_tags`). 경로 태그는 그 상위 → 하위 경로에서만 성립하는 위험이다. 예) 김치 → 액젓 경로의 `is_shellfish`
 - 태그 어휘는 22종이다. 식약처 알레르기 19종(`is_egg` … `is_sulfite`)에 `is_fish`, `is_duck`, `is_alcohol`을 더한다. 원본 키워드 사전은 `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS`이고, DB 시드의 `ingredient_tags`도 이 사전으로 만든다 (#223)
 
@@ -323,7 +322,7 @@ def recursive_expand(
 
 
 def attach_taxonomy(nodes: list[IngredientNode]) -> list[IngredientNode]:
-    """전 depth 노드에 taxonomy_category + allergen_tags + dietary_tags 부착.
+    """전 depth 노드에 taxonomy_category + constraint_tags 부착.
     미분류 재료는 'unknown' 부여. 드롭 금지."""
 
 
@@ -568,10 +567,10 @@ graph TB
 ### 3-3. 축 3 — 재료 taxonomy + 위험 속성 (독립 축)
 
 - taxonomy 카테고리는 **재귀의 모든 노드에 붙는다.** depth 0이든 depth 3이든 전부 카테고리를 가진다. 축 2와 독립이기 때문.
-- **알레르겐은 taxonomy 카테고리가 아니라 별개 축이다.** 밀가루/새우/땅콩은 재료(ingredient)이지 카테고리가 아니다. taxonomy에 끼워넣으면 분류 체계가 무너진다 → `allergen_tags` 배열로 분리.
-- **식이 제약 속성도 같은 방식으로 붙인다.** PPT 7쪽은 ④가 "알레르기·식이 제약 지식"을 연결한다고 정의한다. 돼지고기·소고기·주류처럼 알레르기는 아니지만 종교·채식 제약에 걸리는 속성은 `dietary_tags` 배열에 담는다.
+- **알레르겐은 taxonomy 카테고리가 아니라 별개 축이다.** 밀가루/새우/땅콩은 재료(ingredient)이지 카테고리가 아니다. taxonomy에 끼워넣으면 분류 체계가 무너진다 → 별도 태그 축(AGENTS.md의 `allergen_tags` 축)으로 분리. 출력 필드 이름은 `constraint_tags`다.
+- **식이 제약 속성도 같은 축에 붙인다.** PPT 7쪽은 ④가 "알레르기·식이 제약 지식"을 연결한다고 정의한다. 주류처럼 종교·채식 제약에 걸리는 속성도 같은 `constraint_tags`에 담는다.
 - **태그 값은 `is_*` 어휘 하나로 통일한다.** `ingredient_tags.tag_code`(백엔드 ERD V7), 재료 온톨로지 데이터(`ai_result/rules/hidden_rules_data.py`), ⑧의 `forbidden_tags`가 모두 `is_pork`, `is_fish` 같은 값을 쓴다. ④가 다른 이름(예: "어패류")을 쓰면 ⑧에서 대조가 실패해 FN이 된다.
-- `allergen_tags`와 `dietary_tags`로 어느 태그를 나눌지의 상세 목록은 미확정이다 (§8). ⑧은 두 배열의 합집합을 사용자 금지 태그와 대조한다.
+- **알레르겐과 식이 제약을 두 배열로 나누지 않는다** (결정, 2026-10-12). 식약처 알레르기 19종에 돼지고기·쇠고기·닭고기가 들어 있어 한 태그가 양쪽에 걸치고, DB도 `ingredient_tags` 테이블 하나이며, ⑧은 어차피 하나의 금지 태그 집합과 대조한다. `lookup_tags`·`map_ingredients`·⑧이 쓰는 `constraint_tags` 하나로 통일한다.
 
 ---
 
@@ -594,7 +593,7 @@ graph TB
 - **`base`를 뺀 7개는 숨은 재료를 품을 수 있는 재료다.** `ai_result/rules/hidden_rules_data.py`의 숨은 재료 규칙과 맞춘 것이다. 모호성 flag와 대응: `has_unclear_jeotgal` → `fermented`, `has_unclear_broth` → `broth`, `has_hidden_animal` → `processed`, `has_unclear_seasoning` → `sauce`·`seasoning`. 시드에 있는 숨은 재료 규칙 대상 40개는 모두 `base`가 아닌 카테고리다.
 - **재료 하나에 카테고리 하나.** 두 카테고리에 걸치면 숨은 재료를 품을 가능성이 큰 쪽을 고른다: `fermented > broth > sauce > processed > seasoning > oil > garnish > base`. 예: 고추장은 소스로도 쓰지만 `fermented`.
 - **`unknown`과 `base`는 다르다.** `base`는 원재료라는 분류 결과이고, `unknown`은 분류가 비어 있다는 데이터 누락 신호다. 예전 `기타`를 둘로 나눴다.
-- **알레르겐은 섞지 않는다.** 버터는 `oil`이고, 우유 알레르겐은 `allergen_tags`로 따로 붙는다 (§3-3).
+- **알레르겐은 섞지 않는다.** 버터는 `oil`이고, 우유 알레르겐은 `constraint_tags`(`is_milk`)로 따로 붙는다 (§3-3).
 - 재료별 값: `crawling/ingredient_taxonomy.csv` (시드 재료 324개, 2026-10-12 1차 분류). 시드를 다시 만들 때 이 파일로 `ingredients.taxonomy_category`를 채운다. 여기 없는 재료는 `unknown`.
 
 ---
@@ -683,7 +682,7 @@ graph TB
 | 12 | 갈비구이-마늘 | `observations`에 사이트별 `k_count`, `n_total` 반환 | ⑤가 사이트별로 α, β를 산출할 수 있을 것 |
 | 12-b | 사이트에 메뉴는 있는데 재료가 안 나옴 | 그 사이트 `k_count=0`, `n_total=레시피 수` | 행이 없다고 관측값을 빠뜨리지 않을 것 |
 | 12-c | 큐레이션 목록엔 없고 크롤링에만 나온 재료 | 시작 재료에 포함, `curated: false` | 합집합에서 빠지지 않을 것 |
-| 13 | 돼지고기 포함 메뉴 | `dietary_tags`에 `is_pork` | ⑧ `forbidden_tags`와 같은 어휘일 것 |
+| 13 | 돼지고기 포함 메뉴 | `constraint_tags`에 `is_pork` | ⑧ `forbidden_tags`와 같은 어휘일 것 |
 | 14 | `트러플된장찌개`의 변형 재료 | `observations: []` | base 메뉴 레시피 수로 계산되지 않을 것 |
 | 21 | 김치찌개의 숨은 재료 새우 (레시피에 직접 안 적힘) | 새우 `k_count`가 상위 재료(김치)의 k 이상, `observation_basis: inherited` | 숨은 재료가 k=0으로 채워져 확률이 0 가까이 떨어지지 않을 것 |
 | 22 | 김치찌개 메뉴 (`has_unclear_jeotgal`) | `menu_ambiguity_flags`와 액젓의 `ambiguity_flag`가 출력에 있음 | 애매함 플래그가 ④에서 끊기지 않을 것 |
@@ -706,22 +705,22 @@ graph TB
 - [x] **시작 재료 범위** — 큐레이션 레시피와 크롤링 코퍼스 재료의 합집합 (2026-10-10, §2-1)
 - [x] **관측값 형식** — 출처별 `observations` 목록 (2026-10-10, §1-5)
 - [x] **분류 관계(is-a) 저장 위치** — `ingredients.taxonomy_category` 컬럼에 둔다 (2026-10-10, #49와 같은 결정). `ingredient_compositions`는 구성 관계(`part_of`)만 담는다. 분류를 구성 간선에 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료처럼 펼친다. 백엔드에 `relation_type`을 `part_of`로 한정해 달라고 요청한다
-- [ ] **⑥ Web Search Agent 출력 필드 정합 (외부 의존)** — ⑥ 결과가 ⑤로 갈 때 `source: web_search`, `depth: 0`, `k_count`/`n_total` 필드를 채워야 함. 레시피 수 계산 방식은 단체 논의 #201 (#171, #122)
-- [ ] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는 안. ② §8 "`residual_tokens`로 통일하는 안을 ④ 담당자와 승인" 항목과 같은 결정
-- [ ] **`allergen_tags` / `dietary_tags` 분류 목록** — `is_*` 태그 중 어느 것을 알레르겐, 어느 것을 식이 제약으로 둘지. ⑧ 담당자와 함께 확정
+- [x] **⑥ Web Search Agent 출력 필드 정합** — ⑥ 출력이 `source: web_search`, `depth: 0`, 사이트별 `observations`를 채운다 (⑥ §1-2, 2026-10-12 확인)
+- [x] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는다. ④ 담당자 승인 (2026-10-12). ② §8 해당 항목도 닫아야 함
+- [x] **태그 배열 구성** — 나누지 않고 `constraint_tags` 하나로 통일 (2026-10-12, §3-3). ⓪ 예시의 `allergen_tags`/`dietary_tags`는 ⓪ 담당자가 맞춰야 함
 - [x] **재료 공통 식별자** — 출력은 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 - [x] **`variant_suggested` 재료의 관측값 규칙** — `observations: []` (2026-10-10, §1-5, ⑤ 담당 확인)
 - [x] **cycle detection 구현** — 별도 파일 대신 재귀 조회에서 경로를 들고 다니며 차단한다 (§2-8)
 - [x] **`menus.remain_token` 컬럼** — 백엔드 ERD V7에 반영됨. `caution-db-schema.md` v4에 반영 (#47)
 - [x] **확인된 복합 재료의 하위 재료 처리** — §2-1 표대로 간다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다 (2026-10-06, #181)
-- [ ] **`confirmed_ingredients` 형태 (외부 의존)** — 재료명 배열에서 `{name, status}` 배열로 바뀌었다. ⓪ §4-3에서 같은 형태로 전달해야 함
+- [x] **`confirmed_ingredients` 형태** — `{name, status}` 배열. ⓪ 계약에 같은 형태로 반영됨 (2026-10-12 확인)
 - [x] **확장된 하위 재료의 관측값** — k=0으로 채우지 않고 상위 재료 관측값을 물려받는다. 사이트별 `max(직접, 상위)` (2026-10-10, §1-5)
 - [x] **애매함 플래그 전달** — `menu_ambiguity_flags`와 재료별 `ambiguity_flag`를 출력에 넣는다 (2026-10-10, §1-2)
 - [ ] **애매함 플래그 사용 (외부 의존)** — ⑧ 입력에 플래그를 받고, 사용자 금지 태그와 관련 있으면 CAUTION 유지·사장님 질문 근거로 쓰는 규칙 추가 요청. 지금 룰엔진 `risk_judge._relevant_ambiguity_flags`와 같은 동작. ⓪ §4 계약에도 필드 추가 필요
-- [ ] **재료 단위 변경의 캐시 무효화 (외부 의존)** — 구성 간선·재료 태그는 여러 메뉴에 걸친다. 바뀌면 그 재료가 들어간 메뉴의 `knowledge_revision`을 백엔드가 올려야 한다. 메뉴별로 올릴지, 전역 지식 리비전 하나를 둘지 백엔드와 정한다
+- [ ] **재료 단위 변경의 캐시 무효화 (외부 의존)** — 구성 간선·재료 태그·분류가 바뀌면 그 재료가 들어간 메뉴들의 `knowledge_revision`을 백엔드가 올려야 한다. `caution-db-schema.md` §6 요청 9번으로 전달, 백엔드 답변 대기
 - [x] **taxonomy 코드 값** — 8종 + `unknown` (2026-10-12, §4, #182). 가공식품 `processed`를 추가하고 `기타`를 `base`·`unknown`으로 나눴다. ⓪ 예시 값(`발효_장류`)은 ⓪ 담당자가 `fermented`로 맞춰야 한다
-- [ ] **`warnings` 전달 (외부 의존)** — ⓪ §4-7 ⑧ 입력 형식에 `warnings`를 넣는 안. ⓪·⑧ 담당자 확인 필요
-- [ ] **캐시 내용 정의 (외부 의존)** — `caution-db-schema.md` §5는 캐시에 "④ 출력의 `ingredients[]`(`anomaly_locked` 포함)"를 저장한다고 적는다. ③이 분모로 쓰려면 확인 재료를 빼기 전 전체 확장 목록이어야 하고, `anomaly_locked`는 요청 단위 값이라 제외해야 한다 (§2-1). 스키마 문서 수정 필요
+- [x] **`warnings` 전달** — ⑧ 입력 형식에 `warnings`가 들어감 (⑧ §1, 2026-10-12 확인)
+- [x] **캐시 내용 정의** — 확인 재료를 빼기 전 전체 확장 목록, `anomaly_locked` 제외. `caution-db-schema.md` v4 §5에 반영 (#241)
 
 ---
 
@@ -743,13 +742,13 @@ graph TB
 
 **세부 작업**
 
-- [ ] ② 출력 필드(`menu_id`, `match_candidates`, `residual_tokens`) 수용 여부를 ② 담당자와 확정
-- [ ] `allergen_tags` / `dietary_tags` 분류 목록을 ⑧ 담당자와 확정
-- [ ] 재료 공통 식별자(`ingredient_id` + `canonical_name`) 적용 여부를 #103과 함께 확정
-- [ ] 변형 재료 관측치 0 규칙을 ⑤와 함께 확정
-- [ ] 확인된 복합 재료의 하위 재료 처리 규칙 확정, `confirmed_ingredients` 형태를 ⓪과 맞추기
-- [ ] `warnings`를 ⑧까지 전달하는 안을 ⓪·⑧ 담당자와 확정
-- [ ] 스키마 문서에 `remain_token` 컬럼 추가와 캐시 내용 정의 수정 요청
+- [x] ② 출력 필드(`menu_id`, `match_candidates`, `residual_tokens`) 수용 여부를 ② 담당자와 확정
+- [x] 태그 배열 구성 확정 (`constraint_tags` 하나)
+- [x] 재료 공통 식별자(`ingredient_id` + `canonical_name`) 적용 여부를 #103과 함께 확정
+- [x] 변형 재료 관측치 0 규칙을 ⑤와 함께 확정 (`observations: []`)
+- [x] 확인된 복합 재료의 하위 재료 처리 규칙 확정, `confirmed_ingredients` 형태를 ⓪과 맞추기
+- [x] `warnings`를 ⑧까지 전달하는 안을 ⓪·⑧ 담당자와 확정
+- [x] 스키마 문서에 `remain_token` 컬럼 추가와 캐시 내용 정의 수정 요청 (#241)
 
 **관련 서비스**
 
@@ -778,10 +777,10 @@ graph TB
 **세부 작업**
 
 - [x] 재료별 taxonomy 카테고리 값 작성 (§4)
-- [ ] `menu_category` 76개 매핑 목록 작성
+- [x] `menu_category` 매핑 목록 작성 (25개 분류, #223)
 - [x] `max_depth` 상한 결정 (5)
 - [x] depth 감쇠 방식 결정 (⑤ §2-1)
-- [ ] `menu_ingredient_cache` 무효화 시점 결정
+- [x] `menu_ingredient_cache` 무효화 시점 결정 (`knowledge_revision`)
 - [ ] `recursive_expand.py` 위치 확인 또는 신규 구현 결정
 
 **관련 서비스**
@@ -848,7 +847,7 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 - [ ] 가변 depth 재귀 확장과 `visited` 순환 차단 구현
 - [ ] 전 노드 `depth`·`parent`·`k_count`·`n_total` 기록
 - [ ] taxonomy 카테고리와 `unknown` fallback 구현
-- [ ] `allergen_tags` / `dietary_tags` `is_*` 태깅 구현
+- [ ] `constraint_tags` `is_*` 태깅 구현
 - [ ] anomaly 재료 `anomaly_locked` 보존 구현
 - [ ] 확인 재료 제외 규칙 구현 (`present` 하위 재료 유지, `absent` 경로 제외)
 - [ ] 캐시에는 전체 확장 목록 저장, `warnings` 수집 구현
