@@ -8,7 +8,7 @@
 
 **③은 순수 조회기다. 판단하지 않는다.**
 
-- 하는 것: `store_id + menu_id`로 `ingredient_confirmations` 조회 → 재료 단위 확인 맵 반환
+- 하는 것: `store_id + menu_id`로 `ingredient_confirmations` 조회 → 재료 단위 확인 맵 반환. 메뉴 애매함 플래그에 대한 사장님 답도 함께 조회해 반환한다 (§1-8)
 - 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
 - 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-11 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
 - 설계 원칙: **메뉴 단위 이분법 금지.** 부분 확인을 반드시 지원한다.
@@ -122,6 +122,7 @@
       "expired": false
     }
   ],
+  "flag_confirmations": [],
   "warnings": [],
   "errors": []
 }
@@ -140,6 +141,7 @@
 | `confirmations[].flagged_anomaly` | 통계적으로 이상한 답변 표시. ⑦이 저장할 때 붙인 값을 ③은 그대로 읽는다 (기준은 §1-6) |
 | `confirmations[].override_eligible` | 이 확인값으로 판정을 덮어써도 되는지 (§1-6) |
 | `confirmations[].expired` | 확인 후 3개월이 지났는지 (§1-7) |
+| `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8). 없으면 `[]` |
 | `warnings` / `errors` | 입력 신호를 보존하고 ③의 신호를 덧붙임 |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
@@ -198,6 +200,42 @@
 - **만료 레코드도 드롭하지 않는다.** `expired: true`로 표기해 반환한다. 재료가 리스트에서 사라지면 FN이 생긴다 (§1-6과 같은 이유).
 - 만료 판정은 ③이 조회 시점에 `confirmed_at`만 보고 한다. DB 레코드를 지우거나 바꾸지 않는다 (DB 쓰기는 ③ 범위 밖).
 - 만료된 재료는 사장님에게 다시 확인받을 대상이다. ⑧이 다시 묻는 질문 카드를 만든다 (⑧ §2-1 7단계, 이유 `expired`).
+
+### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
+
+메뉴에는 "젓갈 종류가 불분명" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다.
+
+```json
+{
+  "ambiguity_flag": "has_unclear_jeotgal",
+  "constraint_tags": ["is_fish"],
+  "status": "absent",
+  "evidence": {
+    "evidence_id": "evidence-101",
+    "evidence_class": "hard",
+    "source_type": "owner_feedback",
+    "source_ref": "(저장 테이블 미정):confirmation-101",
+    "verification_status": "owner_confirmed",
+    "reliability_weight": 1.0,
+    "observed_at": "2026-09-01T00:00:00Z"
+  },
+  "override_eligible": true,
+  "expired": false
+}
+```
+
+| 필드 | 설명 |
+|---|---|
+| `ambiguity_flag` | 어떤 플래그에 대한 답인지 |
+| `constraint_tags` | 사장님에게 물어본 태그. 질문에 들어 있던 값을 저장한 것이라 ③이 붙이는 태그가 아니다 (§0의 "태그는 ④만"은 재료 태그 이야기) |
+| `status` | `present \| absent \| unknown` (§1-3과 같은 3값) |
+| `evidence` | 근거. 재료 확인값과 같은 형식 (§1-4) |
+| `override_eligible` | `expired: false`면 `true`. 재료 확인값과 달리 비교할 확률이 없어 anomaly 표시는 없다 |
+| `expired` | §1-7과 같은 3개월 규칙 |
+
+- 같은 플래그를 다른 태그로 물은 답은 따로 반환한다. 어느 답을 쓸지는 ⑧이 정한다.
+- 2번 연속 같은 답이면 확정하는 규칙(10/10 회의)은 재료 확인값과 같이 ⑦이 저장할 때 적용한다. ③은 확정된 답만 읽는다.
+- `completeness`(§2)에는 영향을 주지 않는다. `completeness`는 재료 확인값만 본다.
 
 ---
 
@@ -381,6 +419,8 @@ return ExactFeedbackResponse(
 | 12 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
 | 13 | 김치찌개 `땅콩: present` + `flagged_anomaly: false` (레시피 확률 낮음) | `override_eligible: true` | "있음" 답변은 anomaly가 아니므로 override가 거부되지 않을 것 |
 | 14 | 일부만 확인된 메뉴(④⑤ 경로) + 돼지고기 `status: present` | ③은 `constraint_tags: []`로 반환, Supervisor가 ④ `lookup_tags`로 `is_pork`를 채운 뒤 ⑧에 전달 | ④⑤를 거치는 경로에서도 확인값 태그가 빠지지 않을 것 (§0) |
+| 15 | 김치찌개에 젓갈 플래그 답 1건(`is_fish`, `absent`) | `flag_confirmations`에 1건, `confirmations`·`completeness`는 그대로 | 플래그 답이 재료 확인값과 섞이지 않을 것 |
+| 16 | 4개월 전 젓갈 플래그 답 | `expired: true`, `override_eligible: false` + 답 유지 | 만료 규칙이 플래그 답에도 적용될 것 |
 
 ---
 
@@ -393,6 +433,7 @@ return ExactFeedbackResponse(
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
+- [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리가 없다. 지금 `ingredient_confirmations`는 재료 단위라 메뉴·플래그·물어본 태그 단위로 저장할 곳이 필요하다. 윤지·백엔드 확인, 저장은 ⑦
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 
 ## 7. 확정된 결정 (변경 금지)
