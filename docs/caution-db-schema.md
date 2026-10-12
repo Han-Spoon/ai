@@ -1,253 +1,324 @@
-# Caution DB 스키마 설계 (백엔드 전달용) — v3
+# Caution DB 스키마 (AI 관점 정리) — v4
 
-v1 → v2에서 구조적 빈틈(FK 깨짐, 로그/스냅샷 분리, OCR 변형재료 미반영, 추적 링크) 전부 수정 완료.
-v3는 **구조 변경 없음, 테이블명만 직관적으로 정리**.
+AI(④⑤⑦)가 읽고, 저장 명령을 만드는 테이블을 백엔드 ERD 기준으로 정리한 문서다. **물리 스키마의 정본은 백엔드 ERD와 마이그레이션(V1~V11)이다.** 이 문서는 컬럼을 새로 정의하지 않고, AI가 기대하는 값과 제약, 그리고 백엔드에 요청한 변경을 적는다.
+
+| 버전 | 내용 |
+|---|---|
+| v3 | AI 쪽 초안. 구조 변경 없이 테이블명 정리 |
+| **v4 (2026-10-12)** | 백엔드 ERD V7~V11에 맞춤. 코퍼스·배치·별칭·태그·멱등 영수증·검토 항목 테이블 추가, `ingredient_hierarchy` → `ingredient_compositions`, `store_menus` 삭제(ERD에 없음), `user_feedback` 출처 삭제(사장님 답변만 씀, ③ 결정 2026-10-09), 백엔드 변경 요청 정리 (§6) |
+
+표기: 🔶 = 백엔드에 변경 요청한 항목 (§6). 컬럼은 AI가 쓰는 것만 적는다. 전체 컬럼은 백엔드 ERD를 본다.
 
 ---
 
 ## 0. 설계 원칙
 
-물리 스키마와 마이그레이션의 소유자는 **백엔드**다. AI는 분석 결과와 저장 명령을 구조화해 반환하고, 백엔드가 권한·FK·멱등성을 검증한 뒤 트랜잭션으로 반영한다. AI 서비스는 `stores`를 직접 생성·수정하지 않는다.
+물리 DB 쓰기는 **백엔드만** 한다. AI는 저장 명령과 근거를 반환하고, 백엔드가 권한·FK·멱등성을 검증한 뒤 트랜잭션으로 반영한다. AI는 `stores`를 만들거나 고치지 않는다.
 
 | 원칙 | 이유 |
 |---|---|
-| store_id 없는 학습/피드백 테이블 금지 | 가게 간 위험도 추정치 오염 방지 |
-| **`ingredient_risk_scores`(현재 스냅샷)과 `ingredient_evidence_log`(원본 증거)를 분리** | 나중에 출처 신뢰도 학습(Dawid & Skene 1979 계열 — 관찰자별 오류율을 EM/계층 베이지안으로 추정) 붙이려면 이벤트 단위 로그가 반드시 필요함 |
-| 웹서치로 새로 발견한 메뉴도 정식 FK 경로로 편입 | `menu_id` FK 깨짐 방지 |
-| 모든 override/피드백은 "어디서 왔는지" 추적 가능해야 함 | 디버깅, 이상 피드백 감사 |
+| 가게별 학습·확정 테이블은 `store_id NOT NULL` | 다른 가게 정보로 위험도가 낮아지는 것을 막는다 |
+| **`ingredient_risk_scores`(현재 값)와 `ingredient_evidence_log`(원본 증거)를 분리** | 출처 신뢰도 학습(Dawid & Skene 계열)에 증거 단위 로그가 필요하다 |
+| 웹서치·변형으로 새로 생긴 메뉴도 `menus` 행을 먼저 만든다 | `menu_id` FK가 끊기지 않게 한다 |
+| 모든 확정값·증거는 출처를 추적할 수 있어야 한다 | 디버깅, 이상 답변 감사 |
+| 전역 지식(메뉴·재료·레시피·코퍼스)은 가게와 무관 | 가게 데이터는 가게 스코프 테이블에만 쌓는다 |
 
 ---
 
-## 1. ERD
+## 1. ERD (AI 관련 부분)
 
 ```mermaid
 erDiagram
-    MENUS ||--o{ RECIPE_INGREDIENTS : "has"
-    INGREDIENTS ||--o{ RECIPE_INGREDIENTS : "tagged in"
-    INGREDIENTS ||--o{ INGREDIENT_HIERARCHY : "parent/child"
+    menu_categories |o..o{ menus : "메뉴 분류"
+    menus |o..o{ menus : "변형 원본"
+    menus ||..o{ menu_aliases : "별칭"
+    menus ||--o{ recipe_ingredients : "큐레이션 레시피"
+    ingredients ||--o{ recipe_ingredients : "레시피 재료"
+    ingredients ||..o{ ingredient_aliases : "별칭"
+    ingredients ||--o{ ingredient_tags : "노드 태그"
+    ingredients ||--o{ ingredient_compositions : "상위/하위 (part_of)"
+    ingredient_compositions ||--o{ ingredient_composition_tags : "경로 태그"
+    knowledge_import_batches ||..o{ menu_recipe_corpora : "적재 배치"
+    menus ||--o{ menu_recipe_corpora : "코퍼스 레시피 수"
+    menu_recipe_corpora ||--o{ menu_ingredient_priors : "코퍼스 관측"
+    ingredients ||--o{ menu_ingredient_priors : "관측 재료"
 
-    STORES ||--o{ STORE_MENUS : "serves"
-    MENUS ||--o{ STORE_MENUS : "offered as"
+    stores ||..o{ ingredient_confirmations : "확정값"
+    stores ||..o{ ingredient_evidence_log : "증거"
+    stores ||--o{ ingredient_risk_scores : "확률"
+    ingredient_evidence_log ||..o{ ingredient_risk_scores : "마지막 반영 증거"
+    stores ||--o{ menu_ingredient_cache : "확장 캐시"
 
-    STORES ||--o{ INGREDIENT_RISK_SCORES : "current estimate"
-    STORES ||--o{ INGREDIENT_EVIDENCE_LOG : "evidence history"
-    MENUS ||--o{ INGREDIENT_EVIDENCE_LOG : "scoped by"
-    INGREDIENTS ||--o{ INGREDIENT_EVIDENCE_LOG : "scoped by"
-
-    STORES ||--o{ INGREDIENT_CONFIRMATIONS : "hard evidence"
-
-    STORES ||--o{ OWNER_VERIFICATION_REQUESTS : "asked to"
-    SCAN_SESSIONS ||--o{ OWNER_VERIFICATION_REQUESTS : "raised during"
-    OWNER_VERIFICATION_REQUESTS ||--o| INGREDIENT_CONFIRMATIONS : "resolves to"
-
-    STORES ||--o{ SCAN_SESSIONS : "scanned at"
-    SCAN_SESSIONS ||--|| MENU_IMAGES : "has"
-    SCAN_SESSIONS ||--o{ MENU_ANALYSES : "produces"
-    MENUS ||--o{ MENU_ANALYSES : "matched to"
-    MENU_ANALYSES ||--o{ INGREDIENT_EVIDENCE_LOG : "ocr variant evidence"
-    USER_PROFILES ||--o{ SCAN_SESSIONS : "owns"
+    stores ||..o{ owner_verification_requests : "질문 대상"
+    ingredient_confirmations |o..o{ owner_verification_requests : "답변 반영"
+    owner_verification_requests |o..o| ingredient_evidence_log : "답변 증거"
+    knowledge_review_items |o..o{ ingredient_evidence_log : "승인 증거"
+    knowledge_review_items |o..o{ recipe_ingredients : "승인 출처"
+    web_search_cache |o..o{ knowledge_review_items : "검색 원본"
+    stores |o..o{ ai_command_receipts : "명령 가게"
+    ingredient_evidence_log |o..o{ source_reliability : "마지막 반영 증거 (🔶 신규)"
+    menus |o..o{ menu_analyses : "매칭 메뉴 (V11)"
 ```
 
 ---
 
-## 2. 전역 참조 테이블 (store 무관)
+## 2. 전역 지식 테이블 (가게 무관, V7·V8)
+
+### `menu_categories`
+| 컬럼 | 설명 |
+|---|---|
+| `id` BIGINT PK | |
+| `name_ko` UK | 예: 찌개, 구이, 김치. 시드 25개 (`ai_ruleengine/data/menus.csv`) |
+
+⑤의 `cluster` prior 단위다. 메뉴의 `category_id`가 NULL이면 ⑤는 cluster 단계를 건너뛴다.
 
 ### `menus`
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | |
-| `name_ko` | varchar | 베이스 메뉴명 (변형 메뉴면 변형 표기 그대로, 예: "차돌된장찌개") |
-| `base_menu_id` | FK → menus, nullable | 이름 변형 메뉴가 참조하는 원본 메뉴. `NULL`이면 독립 메뉴(변형 아님) |
-| `category` | varchar | 메뉴 카테고리 |
-| `ambiguity_flags` | text[] | `has_unclear_broth` 등 |
-| `source` | enum | `curated`(원래 76개 큐레이션) \| `web_search_generated`(⑥ Web Search Agent가 자동 생성) \| `variant_generated`(변형 태깅 과정에서 자동 생성) |
-| `needs_review` | boolean | `web_search_generated`/`variant_generated`로 들어온 메뉴는 기본 `true` |
+| 컬럼 | 설명 |
+|---|---|
+| `id` BIGINT PK | AI 입출력에서 정수 `menu_id` |
+| `name_ko` | 변형 메뉴면 변형 표기 그대로 (예: 차돌된장찌개) |
+| `name_normalized` UK | GENERATED, `normalize_food_name(name_ko)`. ④는 이 값으로 메뉴를 찾는다 |
+| `category_id` FK | `menu_categories.id`, NULL 허용 |
+| `base_menu_id` FK, `remain_token` | 변형 메뉴의 원본과 남은 토큰. 둘은 함께 있거나 함께 NULL. **변형 판별은 이 컬럼이 우선**이고 파싱은 컬럼이 없을 때만 한다 |
+| `ambiguity_flags` | 애매함 플래그 5종의 부분집합. ④가 `menu_ambiguity_flags`로 그대로 내보낸다 |
+| `source` | `curated` / `web_search_generated` / `variant_generated` |
+| `needs_review` | 웹서치·변형으로 생긴 메뉴는 `true` |
+| `knowledge_revision` | 기본 1. 메뉴의 지식이 바뀌면 +1. ④ 캐시 무효화 기준 (§5) |
 
-> **⑥ Web Search Agent 플로우**: DB에 없는 메뉴 발견 시 AI가 저장 명령을 반환하고, 백엔드가 `menus`에 `source: web_search_generated`로 먼저 행 생성 → 그 `menu_id`로 `recipe_ingredients`, `ingredient_evidence_log` 채움. FK가 끊기지 않게 하는 순서.
+- **웹서치 메뉴**: 관리자가 승인하면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`·`ingredient_evidence_log`를 채운다.
+- **변형 메뉴**: 원본 메뉴 행을 다시 쓰지 않고 `base_menu_id`로 원본을 가리키는 새 행(`source: variant_generated`)을 만든다. 변형 메뉴의 증거가 원본 메뉴 확률과 섞이지 않게 하기 위해서다. 확정 정보 상속은 `base_menu_id` 한 단계까지만이고 형제 변형은 제외한다.
 
-> **변형 메뉴 플로우**: 메뉴명이 기존 메뉴와 longest-match 되고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행을 `source: variant_generated`로 생성 → 그 변형 메뉴의 `menu_id`로 `recipe_ingredients`(변형 재료, `evidence_type: variant`)와 `ingredient_evidence_log`를 채움. 이렇게 분리해야 변형 메뉴("차돌된장찌개")에서 나온 증거가 원본 메뉴("된장찌개")의 확률과 섞이지 않음.
+### `menu_aliases`, `ingredient_aliases`
+별칭 → 대표 메뉴·재료. `alias_normalized`(GENERATED, 전역 유일)로 찾는다. 예: 돈까스 → 돈가스, 쇠고기 → 소고기.
 
 ### `ingredients`
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | |
-| `name_ko` | varchar | 재료명 |
-| `tag` | varchar | `is_pork`, `is_shrimp` 등 |
-| `taxonomy_category` | varchar | `fermented` / `broth` / `sauce` / `processed` / `seasoning` / `oil` / `garnish` / `base` / `unknown` (④ §4) |
+| 컬럼 | 설명 |
+|---|---|
+| `id` BIGINT PK | AI 입출력에서 정수 `ingredient_id`. 이름은 `canonical_name`(= `name_ko`)으로 함께 보낸다 |
+| `name_ko`, `name_normalized` UK | 대표 표기와 정규화 값 |
+| `taxonomy_category` 🔶 | `fermented` / `broth` / `sauce` / `processed` / `seasoning` / `oil` / `garnish` / `base` / `unknown` (④ §4). ERD는 "7종 code"라 9종으로 바꿔 달라고 요청함 |
 
-**교차오염 카테고리 제외 (4-tool 확정)**: 조리 과정의 교차오염(공유 기름·도마·불판 등)은 가게 단위로 관측 불가능해 확률 모델 범위에서 제외 — 해당 위험은 ⑧ Decision Policy / XAI Agent의 사장님 질문 생성 경로로 위임. 기존 교차오염 소속 재료는 실제 성격에 맞는 카테고리로 재배치하거나(예: 소스/양념/유지류) `기타`로 분류. 31개 재료의 상세 재배치 매핑표는 `4-tool-DBontology.md` §8에서 작업 중(미완성).
+- 시드 324개의 분류 값은 `crawling/ingredient_taxonomy.csv`.
+- **알레르겐은 분류에 넣지 않는다.** 별도 축인 `ingredient_tags`에 둔다.
+- **교차오염은 다루지 않는다.** 공유 기름·도마 같은 조리 과정 위험은 가게 단위로 관측할 수 없어 확률 모델 범위 밖이다.
 
-### `recipe_ingredients` (구 menu_recipe_ingredients)
-베이스 레시피 — 메뉴당 재료 목록, store 무관
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `menu_id` | FK → menus | |
-| `ingredient_id` | FK → ingredients | |
-| `evidence_type` | enum | `explicit`(레시피 명시) \| `variant`(변형/remain 토큰 유래) |
+### `ingredient_tags`
+| 컬럼 | 설명 |
+|---|---|
+| `ingredient_id` PK·FK, `tag_code` PK | 재료 자체의 위험 태그 |
 
-PK: `(menu_id, ingredient_id)`
+`tag_code`는 `is_*` 22종이다: 식약처 알레르기 19종 + `is_fish`, `is_duck`, `is_alcohol`. 원천은 `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS`. 사용자 알레르기(`user_allergies.allergy_code`)와 같은 어휘를 쓴다. 태그를 붙이는 쪽은 ④ 하나다 (④ §2-6).
 
-### `ingredient_hierarchy` (구 ingredient_relations)
-재귀 확장용 (예: 김치찌개 → 김치 → 액젓 → 새우)
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `parent_ingredient_id` | FK → ingredients | |
-| `child_ingredient_id` | FK → ingredients | |
+### `ingredient_compositions`
+재료의 구성 관계. ④의 재귀 확장이 따라가는 간선이다 (예: 김치 → 멸치액젓 → 멸치).
 
-순환 참조 방지를 위해 `recursive_expand.py`의 cycle detection 로직 유지.
+| 컬럼 | 설명 |
+|---|---|
+| `parent_ingredient_id`, `child_ingredient_id` PK·FK | 상위 ≠ 하위 |
+| `relation_type` 🔶 | **`part_of`만.** ERD는 `part_of/is_a`인데, 분류(is-a)는 `ingredients.taxonomy_category`에 둔다. 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료로 펼친다 |
+| `ambiguity_flag` | 이 간선을 만든 애매함 플래그 4종 중 하나 (`has_unclear_jeotgal` / `has_unclear_broth` / `has_unclear_seasoning` / `has_hidden_animal`). ④가 노드의 `ambiguity_flag`로 내보낸다 |
 
----
+- 원천은 `ai_result/rules/hidden_rules_data.py`.
+- 순환은 ④가 지나온 경로로 막고(`cycle_detected`), 깊이는 5에서 멈춘다(`max_depth_reached`).
 
-## 3. 가게 스코프 테이블 (store_id 필수)
+### `ingredient_composition_tags`
+그 간선에서만 성립하는 위험 태그. 예) 김치 → 액젓 간선의 `is_fish`·`is_shellfish`: 액젓이라는 재료 자체가 아니라 김치에 쓰이는 액젓(멸치·새우)일 때의 위험이다.
 
-### `stores` (백엔드 소유 외부 마스터)
+### `recipe_ingredients`
+큐레이션 레시피. 메뉴마다 재료 목록, 가게 무관.
 
-이 문서에서 `stores`를 다시 정의하지 않는다. 정본은 백엔드의 `docs/13-store-domain.md`와 마이그레이션이다. AI 스키마의 `store_id`는 백엔드 `stores.id BIGINT`를 참조하며 JSON에서는 정수, Python에서는 `int`로 전달한다.
+| 컬럼 | 설명 |
+|---|---|
+| `menu_id`, `ingredient_id` PK·FK | |
+| `evidence_type` | `explicit`(레시피 명시) / `variant`(변형 토큰) / `name_rule` / `web_search` |
+| `review_item_id` FK | `web_search`면 필수. 승인한 검토 항목 |
 
-- 가게 데이터 출처: `stores.origin`
-- 스캔별 식별 방법: `scan_sessions.store_match_method`
-- AI 호출 전 검증: 존재하는 `status='active'` 가게인지 백엔드가 확인
-- 금지: AI의 GPS/지도 API 검색, 가게 후보 생성, `stores` INSERT/UPDATE
+④의 시작 재료(depth 0)는 이 테이블과 `menu_ingredient_priors`에 나온 재료의 **합집합**이다 (④ §2-1).
 
-### `store_menus`
-이 가게가 실제로 취급하는 걸로 확인된 메뉴 (OCR 스캔 이력)
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `store_id` | FK → stores | |
-| `menu_id` | FK → menus | |
-| `first_seen_at` | timestamp | |
+### `knowledge_import_batches`
+시드·코퍼스 적재 이력.
 
-PK: `(store_id, menu_id)`
+| 컬럼 | 설명 |
+|---|---|
+| `source` 🔶 | `menus_csv` / `hidden_rules` / `variant_ingredients` / `ingredient_rules` / `semie_prior` / `wtable_prior` + **`10000recipe_prior` 추가 요청** |
+| `source_version` | 시드를 만든 AI 저장소 커밋 SHA |
 
-### `ingredient_risk_scores` (구 store_menu_ingredient_priors)
-**"이 가게, 이 메뉴, 이 재료가 들어있을 확률이 지금 얼마냐"** — 현재 스냅샷, ⑤ Bayesian Tool이 읽는 테이블
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `store_id` | FK → stores, NOT NULL | |
-| `menu_id` | FK → menus, NOT NULL | |
-| `ingredient_id` | FK → ingredients | |
-| `alpha` | float | 현재 α |
-| `beta` | float | 현재 β |
-| `evidence_count` | int | 누적 증거 건수 |
-| `updated_at` | timestamp | |
+### `menu_recipe_corpora`
+메뉴별·사이트별 크롤링 레시피 수.
 
-**UNIQUE `(store_id, menu_id, ingredient_id)`**
+| 컬럼 | 설명 |
+|---|---|
+| `menu_id`, `corpus` PK | `corpus` 🔶: `semie` / `wtable` + **`10000recipe` 추가 요청** |
+| `n_total` | 그 사이트의 그 메뉴 레시피 수 (1 이상) |
 
-**이 테이블은 직접 UPDATE 하지 않음.** 항상 `ingredient_evidence_log`에 이벤트 INSERT → 애플리케이션 로직이 재계산해서 반영.
+### `menu_ingredient_priors`
+메뉴 × 재료 × 사이트 관측값. ⑤의 전역 prior 원천이다.
 
-**확률 공식 및 초기화 (5-tool 확정, 기존 α=5/β=1 규칙은 폐기)**: Beta(1,1) 균등 사전분포로 시작(`α0=β0=1`, 라플라스 스무딩), `α = k_count+1, β = (n_total−k_count)+1`. store 고유 prior(`ingredient_risk_scores`에 해당 store_id 레코드 존재)가 없으면 `menu_category` 클러스터 prior → 전역 prior → 완전 무정보(`uninformative`) 순으로 fallback(전역은 최후의 수단). 재료 출처(`recipe`/`expanded`/`variant_suggested`)에 따라 α·β를 **동일 비율로** 스케일 조정해 신뢰도를 반영(mean은 보존하고 분산만 키움 — α만 줄이면 SAFE 쪽으로 오판하는 FN 위험이 있어 금지). 상세는 `5-tool-Statistics.md` 참고.
+| 컬럼 | 설명 |
+|---|---|
+| `menu_id`, `corpus`, `ingredient_id` PK | |
+| `n_total` | 부모(`menu_recipe_corpora`)와 복합 FK로 일치 강제 |
+| `k_count` | 그 재료가 나온 레시피 수 (1 이상 `n_total` 이하) |
 
-### `ingredient_evidence_log` (구 prior_update_log)
-**"왜 그 확률로 바뀌었냐"의 원본 증거 로그.** 나중에 출처 신뢰도 학습(Dawid & Skene 1979 / Whitehill et al. 2009 GLAD / Kim & Ghahramani Bayesian Classifier Combination 계열) 붙일 때 이 테이블이 학습 데이터가 됨.
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | |
-| `store_id` | FK → stores, NOT NULL | |
-| `menu_id` | FK → menus | |
-| `ingredient_id` | FK → ingredients | |
-| `delta_alpha` | float | 이번 이벤트로 증가한 α |
-| `delta_beta` | float | 이번 이벤트로 증가한 β |
-| `source_type` | enum | `web_search` \| `owner_feedback` \| `user_feedback` \| `ocr_variant_tag` |
-| `evidence_ref_table` | varchar | 참조 테이블명 (`menu_analyses` / `owner_verification_requests` / `web_search_cache`) |
-| `evidence_ref_id` | bigint | 위 테이블의 PK |
-| `created_at` | timestamp | |
-
-**`source_type: owner_feedback`(사장님 확정 답변) 기록 방식**: 사장님 답변은 확률 계산을 거치지 않고 `ingredient_confirmations`에 바로 override로 반영되므로, 이 로그의 `delta_alpha`/`delta_beta`는 `0`으로 기록한다(재계산에 영향 없음). `ingredient_confirmations`는 UNIQUE 제약상 항상 최신 답변 1건만 남기지만, 이 로그엔 매 답변마다 새 행이 쌓이므로 **답변이 바뀐 이력(예: 같은 질문에 서로 다른 답이 반복됨) 자체는 여기서 확인 가능** — `evidence_ref_table: owner_verification_requests`로 어느 질문에 대한 답인지 연결.
-
-**OCR 변형재료 반영**: 기존 변형 토큰 태깅 로직(remain 토큰 → 재료 태그 매핑, 예: "차돌" → 소고기)을 재사용해서, `menu_analyses` 저장과 별개로 (위 변형 메뉴 플로우로 생성된) 변형 `menu_id` 기준으로 `ingredient_evidence_log`에 `source_type: ocr_variant_tag`로 한 줄 남김. **이건 다른 출처(`web_search`/`owner_feedback`/`user_feedback`)와 동등한 확률 갱신용 증거 신호일 뿐, 확정 판정이 아님** — 하드 오버라이드는 `ingredient_confirmations`만 담당.
-
-### `ingredient_confirmations` (구 store_menu_ingredient_exact)
-**"확정된 사실"** — hard evidence override
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `store_id` | FK → stores | |
-| `menu_id` | FK → menus | |
-| `ingredient_id` | FK → ingredients | |
-| `present` | boolean | 재료 존재 여부 (확정값) |
-| `source` | enum | `owner_confirmed` \| `user_reported` |
-| `flagged_anomaly` | boolean | base rate와 극단적으로 어긋나는 답변 플래그 |
-| `confirmed_at` | timestamp | |
-
-**UNIQUE `(store_id, menu_id, ingredient_id)`**. 이 테이블에 행이 있으면 원칙적으로 `ingredient_risk_scores` 조회를 스킵하고 이 값을 그대로 씀.
-
-**예외 — `flagged_anomaly: true` + `present: false`**: "재료 없음" 확정 답변이 base rate와 극단적으로 어긋나는 경우엔 확정값을 무조건 신뢰하지 않는다. 이때는 `ingredient_risk_scores` 확률도 함께 조회해서, 확률이 낮지 않으면 확정값(없음) 대신 CAUTION 이상으로 유지한다. `present: true`인 이상 답변(예: 원래 안 들어가는 재료를 있다고 확인)은 이미 안전한 방향(위험 인정)이라 이 예외 대상이 아님 — FN-minimization 원칙상 "없다"는 이상 답변으로 실제 위험을 놓치는 경우만 막으면 됨.
-
-### `owner_verification_requests` (구 owner_questions)
-**"사장님에게 검증을 요청한 건"** — ⑧ Decision Policy / XAI Agent가 생성한 질문과 답변 로그
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | |
-| `store_id` | FK → stores | |
-| `scan_session_id` | FK → scan_sessions | 어느 스캔에서 발생했는지 |
-| `menu_id` | FK → menus | |
-| `ingredient_id` | FK → ingredients | |
-| `question_text` | text | |
-| `answer_text` | text, nullable | |
-| `resolved_confirmation_id` | FK → ingredient_confirmations, nullable | 답변이 반영된 확정 행 링크 |
-| `answered_at` | timestamp, nullable | |
+- **k가 0인 행은 저장하지 않는다.** 행이 없으면 ④가 직접 재료에 한해 "n개 중 0개"로 채운다. 숨은 재료(depth ≥ 1)는 0으로 채우지 않고 상위 재료 값을 물려받는다 (④ §1-5).
+- ⑤는 사이트별 관측값에 출처 신뢰도를 곱해 더한다: `α = 1 + Σ 신뢰도 × k`, `β = 1 + Σ 신뢰도 × (n − k)` (⑤ §3-3). 신뢰도가 모두 1이면 확정 공식 `α = k + 1`, `β = n − k + 1`과 같다.
 
 ---
 
-## 4. 세션/스캔 테이블 (기존 `ai_ocr` ERD와 이름 동일하게 유지)
+## 3. 가게 스코프 테이블 (`store_id` 필수, V10)
 
-### `scan_sessions` — 기존 구조 + `store_id`, `user_id` FK
-### `menu_images` — 기존 구조 그대로
-### `menu_analyses` — 기존 구조 + `menu_id` nullable FK
+### `stores` (백엔드 소유)
+이 문서에서 다시 정의하지 않는다. AI의 `store_id`는 `stores.id BIGINT`(JSON 정수, Python `int`)다. 가게 검색·선택·공공데이터 매칭은 백엔드 책임이고, AI는 확정된 `store_id`만 받는다. AI는 GPS·지도 검색, 가게 후보 생성, `stores` INSERT/UPDATE를 하지 않는다.
+
+### `ingredient_risk_scores`
+"이 가게, 이 메뉴에 이 재료가 들어 있을 확률" — 현재 값. ⑤의 `store` prior.
+
+| 컬럼 | 설명 |
+|---|---|
+| `store_id`, `menu_id`, `ingredient_id` PK | |
+| `delta_alpha_sum`, `delta_beta_sum` | 증거 로그 합계 |
+| `alpha`, `beta` | GENERATED. `1 + δα 합계`, `1 + δβ 합계` |
+| `evidence_count`, `last_evidence_id` | 반영한 증거 수, 마지막 증거 |
+
+- **직접 UPDATE 금지.** 항상 `ingredient_evidence_log` INSERT → 재계산.
+- 가게 증거는 ⑦이 기록할 때 이미 출처 신뢰도를 곱해 둔다. ⑤는 `α − 1`, `β − 1`을 그대로 더하고 다시 곱하지 않는다 (⑤ §3-3).
+- 가게 증거는 전역 prior(`menu_ingredient_priors`)를 바꾸지 않는다.
+
+### `ingredient_evidence_log`
+"왜 그 확률이 됐나"의 원본 증거. append-only.
+
+| 컬럼 | 설명 |
+|---|---|
+| `id` PK | |
+| `store_id`, `menu_id`, `ingredient_id` | |
+| `source_type` | `owner_feedback` / `web_search` / `ocr_variant_tag`. 손님 피드백은 쓰지 않는다 |
+| `delta_alpha`, `delta_beta` | soft evidence는 `delta_beta = 0` 고정 |
+| `owner_verification_request_id` / `review_item_id` | 배타적 아크. 사장님 답변이면 앞쪽, 웹서치·변형이면 뒤쪽 |
+
+- 사장님 답변은 확률을 거치지 않고 `ingredient_confirmations`로 override하지만, 답변 이력은 이 로그에 **매번** 남는다. 답이 바뀐 이력은 여기서 본다.
+- OCR 변형 재료(예: "차돌" → 소고기)는 변형 `menu_id`로 `ocr_variant_tag` 증거 한 줄을 남긴다. 확정이 아니라 확률 증거다.
+
+### `ingredient_confirmations`
+사장님이 확인한 확정값 (hard evidence).
+
+| 컬럼 | 설명 |
+|---|---|
+| `store_id`, `menu_id`, `ingredient_id` UK | |
+| `present` | 있음/없음. **행이 없으면 `unknown`** (status 3값) |
+| `source` | `owner_confirmed` |
+| `flagged_anomaly` | 통계적으로 이상한 답변 |
+| `override_eligible` | GENERATED, `NOT(flagged_anomaly AND NOT present)` |
+| `confirmed_at` | 확정 시각 |
+
+- **확정 규칙**: 확인 차례(마지막 확정 이후의 답변)에서 1·2차 답이 같으면 확정, 다르면 3차까지 받아 3개 중 2개 다수결 (⑦ §2-3).
+- **유효기간 3개월.** 지나면 override에 쓰지 않지만 삭제하지 않는다. ⑤가 prior 보정에만 쓴다.
+- **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
+
+### `owner_verification_requests`
+⑧이 만든 사장님 질문과 답변.
+
+| 컬럼 | 설명 |
+|---|---|
+| `id` UUID PK | `question_id` |
+| `store_id`, `scan_session_id`, `menu_id`, `ingredient_id` | |
+| `question_text` | 언어별 문구 (🔶 6개 언어, §6) |
+| `status` | `pending` / `answered` / `expired` |
+| `answer` | `present` / `absent` / `unknown` |
+| `resolved_confirmation_id` | 답변이 확정값으로 반영되면 채움 |
+
+### `knowledge_review_items` (V9)
+웹서치 결과·변형 제안을 관리자가 검토하는 항목. ⑦의 `create_review_item`이 만든다. `status`는 `pending` / `approved` / `rejected`. 승인되면 `resolved_menu_id`가 채워진다.
 
 ---
 
-## 5. 사용자 프로필
+## 4. 운영 테이블
 
-### `user_profiles`
+### `ai_command_receipts` (V9)
+AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`를 먼저 기록하고, 이미 있으면 다시 실행하지 않는다.
+
+| 컬럼 | 설명 |
+|---|---|
+| `action` PK 🔶 | 허용값 **6종** (ERD는 3종): `create_review_item`, `create_owner_verification_request`, `record_owner_answer`, `update_source_reliability`, `save_web_search_cache`, `save_menu_ingredient_cache` |
+| `idempotency_key` PK | AI가 결정적으로 만든다 |
+| `store_id` | 캐시 명령 외에는 필수 |
+| `request_hash`, `result` | payload 해시, 재응답용 결과 |
+
+### `source_reliability` 🔶 신규
+출처별 신뢰도. **모든 가게 공통 1벌**이다 (⑦ §3-1).
+
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
-| `id` | PK | |
-| `religion_type` | enum, nullable | `halal` \| `kosher` \| `hindu` |
-| `is_vegetarian` | boolean | |
-| `vegetarian_type` | enum, nullable | `vegan` \| `lacto` \| `ovo` \| `lacto_ovo` \| `pesco` |
-| `no_alcohol` | boolean | |
-| `allergies` | text[] | |
-| `no_spicy` | boolean | |
+| `source_type` | VARCHAR, PK | `corpus:semie`, `corpus:wtable`, `corpus:10000recipe`, `curated`, `web_search`, `ocr_variant_tag` 등 |
+| `agree_count` | INTEGER, 기본 0 | 사장님 확정값과 맞은 수 |
+| `compared_count` | INTEGER, 기본 0 | 비교한 수 (`agree_count` 이하) |
+| `reliability` | NUMERIC, GENERATED | `(agree_count + 1) / (compared_count + 2)` |
+| `last_evidence_id` | BIGINT, FK → `ingredient_evidence_log.id`, NULL 허용 | 마지막으로 반영한 증거 |
+| `updated_at` | TIMESTAMPTZ | |
+
+⑦의 `update_source_reliability` 명령으로 갱신한다.
+
+### 스캔·사용자 테이블
+`scan_sessions`, `menu_images`, `menu_analyses`, `user_profiles`, `user_allergies`는 백엔드 ERD를 따른다. AI와 맞닿는 곳만 적는다.
+
+- `menu_analyses.menu_id`, `menu_match_type`(V11): `exact` / `alias` / `fuzzy` / `runtime_variant` / `unmatched`
+- `menu_analyses.owner_card`: ⑧이 만든 사장님 질문 카드
+- `user_allergies.allergy_code`: `ingredient_tags.tag_code`와 같은 어휘
+- `user_profiles`: `religion_type`, `vegetarian_type`, `no_alcohol`, `no_spicy` → ⑧이 금지 태그로 바꾼다
 
 ---
 
-## 6. 캐시 테이블
+## 5. 캐시 테이블
 
 ### `web_search_cache`
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `id` | PK | |
-| `menu_id` | FK → menus, nullable | 생성된 `menus` 행과 연결 |
-| `menu_name` | varchar | |
-| `source_url` | varchar | |
-| `extracted_ingredients` | text[] | |
-| `fetched_at` | timestamp | |
+| 컬럼 | 설명 |
+|---|---|
+| `normalized_menu_name` UK | `normalize_food_name` 결과와 같아야 한다 |
+| `search_status` | `searched` / `unresolved` |
+| `payload` | 후보 URL별 추출 재료 |
+| `expires_at` | TTL |
 
-원칙: 이 캐시 데이터는 "실제 식당 레시피"로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음 (`ai_web_search_agent` 기존 원칙 유지).
+⑥이 검색할 때마다 `save_web_search_cache` 명령으로 원본을 남긴다(관리자 게이트 없음). **실제 식당 레시피로 보지 않고, 판정을 낮추는 데 쓰지 않는다.** DB 반영은 관리자 승인을 거친 `knowledge_review_items`로만 한다.
 
 ### `menu_ingredient_cache`
-④ DB / Ontology Tool이 매번 재귀 확장을 다시 계산하지 않도록, 자신이 만든 확장 결과를 저장해두는 **파생 캐시**.
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| `store_id` | FK → stores | |
-| `menu_id` | FK → menus | |
-| `ingredients_snapshot` | jsonb | ④ 출력의 `ingredients[]`를 그대로 저장 (name, taxonomy_category, allergen_tags, depth, parent, source, k_count, n_total, anomaly_locked 등) |
-| `computed_at` | timestamp | |
+④의 재귀 확장 결과를 저장한 **파생 캐시**.
 
-**UNIQUE `(store_id, menu_id)`**
+| 컬럼 | 설명 |
+|---|---|
+| `store_id`, `menu_id` PK | |
+| `menu_revision` | 계산할 때의 `menus.knowledge_revision`. **다르면 캐시 무효** |
+| `ingredients_snapshot` | 확인 재료를 빼기 전 **전체 확장 목록**. 전역 데이터만 담고, 가게 데이터인 `anomaly_locked`·확정값은 넣지 않는다 (③이 분모로 쓰기 때문) |
 
-**쓰기 권한 예외**: `ingredient_risk_scores`/`ingredient_confirmations`/`recipe_ingredients`/`menus`와 달리, 이 테이블은 **④가 직접 쓴다** (`4-tool-DBontology.md` §6-4). `recipe_ingredients`나 재료 온톨로지(`hidden_rules.py`)에서 재계산 가능한 파생 데이터이지 새로운 증거·사실이 아니므로, ⑦의 관리자 컨펌 게이트를 거치지 않음. **이 테이블에 한해서만** "DB 쓰기는 ⑦만 한다"는 원칙의 예외가 적용됨.
-
-무효화 시점(`recipe_ingredients`/온톨로지 변경 시 언제 이 캐시를 지울지)은 아직 미확정 — `4-tool-DBontology.md` §8 참고.
+- **쓰기 예외**: ④가 `save_menu_ingredient_cache` 명령을 직접 만든다. 재계산할 수 있는 파생 데이터라 ⑦ 관리자 게이트를 거치지 않는다. AGENTS.md의 유일한 예외다.
+- **무효화** 🔶: 메뉴 하나의 지식이 바뀌면 그 메뉴의 `knowledge_revision` +1. 재료 단위 데이터(구성 간선·재료 태그·분류)가 바뀌면 **그 재료가 들어간 모든 메뉴**의 `knowledge_revision` +1을 요청함 (④ §8).
 
 ---
 
-## 7. 백엔드에게 강조할 핵심 제약사항
+## 6. 백엔드 변경 요청 (2026-10-12)
 
-1. `ingredient_risk_scores`, `ingredient_confirmations`, `ingredient_evidence_log` 세 테이블 전부 `store_id NOT NULL` DB 레벨 강제
-2. **`ingredient_risk_scores`는 직접 UPDATE 금지** — 항상 `ingredient_evidence_log` INSERT → 재계산 순서
-3. ⑥ Web Search Agent가 새 메뉴 발견 시 `menus` INSERT(`source: web_search_generated`)가 반드시 먼저 실행
-4. `owner_verification_requests.resolved_confirmation_id`는 사장님 답변이 실제로 확정 테이블에 반영된 시점에 채움
-5. 이름 변형 메뉴(remain 토큰 매칭)는 원본 메뉴 row를 재사용하지 말고 `base_menu_id`로 연결된 새 `menus` INSERT(`source: variant_generated`)가 먼저 실행 — 원본 메뉴와 변형 메뉴의 증거/확률이 섞이지 않게 하기 위함
-6. 3·5번의 웹서치/변형 태깅 기반 INSERT는 **AI가 실시간으로 자동 실행하지 않음** — 사용자에게 결과를 보여주는 흐름과는 분리된 관리자 페이지에서, 사람이 컨펌한 시점에만 실행됨 (사장님 답변 기반 `ingredient_confirmations`는 예외로 즉시 반영)
-7. 물리 DB 쓰기는 백엔드만 수행. ⑦은 저장할 명령/근거를 반환하며 백엔드가 권한·FK·멱등성을 검증하고 트랜잭션으로 반영
+| # | 대상 | 지금 ERD | 요청 | 이유 |
+|---|---|---|---|---|
+| 1 | `source_reliability` | 없음 | 테이블 생성 (§4) | 출처별 신뢰도 저장 |
+| 2 | `ai_command_receipts.action` | 3종 | 6종 (§4) | ⑦·④·⑥ 저장 명령 멱등 처리 |
+| 3 | `menu_recipe_corpora.corpus` | `semie` / `wtable` | + `10000recipe` | 만개의레시피 코퍼스 |
+| 4 | `knowledge_import_batches.source` | 6종 | + `10000recipe_prior` | 시드 배치 출처 |
+| 5 | `ingredient_compositions.relation_type` | `part_of` / `is_a` | `part_of`만 | 분류는 `taxonomy_category`에 둠 |
+| 6 | `ingredients.taxonomy_category` | 7종 code | 9종 (§2) | 가공식품 추가, 기타를 `base`·`unknown`으로 분리 (#182) |
+| 7 | 다국어 JSONB (`name_i18n`, `question_text`, `message` 등) | `ko` / `en` / `ar` | `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` | 팀 확정 6개 언어 |
+| 8 | `record_owner_answer` 응답 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`) 포함 | ⑧이 2·3차 질문을 만든다 (⑦ §1-2) |
+| 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
+| 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT 가능한지 확인 | 시드 CSV의 FK가 id로 연결돼 있음 |
+
+**시드 적재 순서** (FK): `menu_categories` → `menus` → `ingredients` → `ingredient_tags` · `recipe_ingredients` · `ingredient_compositions` · `ingredient_composition_tags` → `knowledge_import_batches` → `menu_recipe_corpora` → `menu_ingredient_priors`. 적재 뒤 영향받은 메뉴의 `knowledge_revision` +1. 재생성 절차는 `crawling/README.md` "DB 시드 재생성".
+
+---
+
+## 7. 백엔드에 강조할 제약
+
+1. `ingredient_risk_scores`, `ingredient_confirmations`, `ingredient_evidence_log`는 `store_id NOT NULL`
+2. **`ingredient_risk_scores` 직접 UPDATE 금지** — 항상 `ingredient_evidence_log` INSERT → 재계산
+3. 웹서치 새 메뉴는 `menus` INSERT(`source: web_search_generated`)가 먼저
+4. 변형 메뉴는 원본 행을 다시 쓰지 않고 `base_menu_id`로 연결된 새 `menus` 행(`source: variant_generated`)을 먼저 만든다
+5. 3·4번은 AI가 실시간으로 실행하지 않는다. 관리자가 승인한 시점에만 실행한다. 사장님 답변 이력은 예외로 즉시 기록한다
+6. `owner_verification_requests.resolved_confirmation_id`는 답변이 실제로 확정값에 반영된 시점에 채운다
+7. 물리 DB 쓰기는 백엔드만. AI 명령은 `ai_command_receipts`로 한 번만 반영한다
+8. 메뉴·재료 이름 비교는 DB 함수 `normalize_food_name()` 하나로 한다 (`name_normalized`, `alias_normalized`, `web_search_cache.normalized_menu_name`)

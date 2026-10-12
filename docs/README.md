@@ -8,7 +8,7 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 |---|---|---|
 | 1 | [ppt-baseline.md](ppt-baseline.md) | **제출 PPT 기준 문서 (AI 파트 7~10쪽).** 이미 제출된 내용이라 수정 대상이 아니며, 다른 문서·코드와 충돌하면 이 문서가 우선합니다 |
 | 2 | [caution-multi-agent-architecture.md](caution-multi-agent-architecture.md) | 전체 서비스 흐름도, 케이스별 시나리오, 오케스트레이션 구조, Agent·Tool별 역할 |
-| 3 | [caution-db-schema.md](caution-db-schema.md) | DB 스키마 v3 — 전역 참조 테이블, 가게 스코프 테이블, 캐시 테이블, 백엔드 전달용 제약사항 |
+| 3 | [caution-db-schema.md](caution-db-schema.md) | DB 스키마 v4 (백엔드 ERD V7~V11 기준) — 전역 지식, 가게 스코프, 운영·캐시 테이블, 백엔드 변경 요청과 제약사항 |
 | 4 | Agent·Tool 스펙 | 아래 표 참고 |
 
 ## Agent · Tool 스펙
