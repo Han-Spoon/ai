@@ -127,6 +127,7 @@ graph LR
 | 사장님 답변 | `record_owner_answer` (이력 기록 + 확정 조건을 채우면 확정값 upsert, §2-3) |
 | 사장님 확정값이 생기거나 바뀜 | `update_source_reliability` (출처별 맞춘 수·비교 수 갱신, §3-1) |
 | ⑥ 웹서치 결과 원본 | `save_web_search_cache` (관리자 게이트 없이 원본 기록, §4) |
+| ④ 재료 확장 결과 캐시 | `save_menu_ingredient_cache` (④가 직접 만드는 명령. ⑦을 거치지 않음, ④ §2-8) |
 
 - 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`(`action` + `idempotency_key`가 PK)에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2). 위 6종이 `ai_command_receipts.action`의 허용값이다.
 

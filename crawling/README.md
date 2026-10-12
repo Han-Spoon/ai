@@ -61,7 +61,7 @@ python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-p
 | DB 테이블 | 원천 |
 |---|---|
 | `menu_categories`, `menus`, `recipe_ingredients` | `ai_ruleengine/data/menus.csv` (큐레이션 레시피) |
-| `ingredients` | 사이트별 prior의 표준 재료 + 큐레이션 레시피 재료 + 숨은 재료 구조의 재료 |
+| `ingredients` | 사이트별 prior의 표준 재료 + 큐레이션 레시피 재료 + 숨은 재료 구조의 재료. `taxonomy_category`는 `ingredient_taxonomy.csv` (없으면 `unknown`, ④ §4) |
 | `ingredient_tags` | `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS` (22종 `is_*`) |
 | `ingredient_compositions`, `ingredient_composition_tags` | `ai_result/rules/hidden_rules_data.py` (구성 관계 `part_of`만) |
 | `menu_recipe_corpora`, `menu_ingredient_priors` | `<사이트>_prior.csv` (사이트별 `n_total`, `k_count`) |
