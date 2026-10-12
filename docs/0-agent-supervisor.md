@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: AI 내부 구현 기준안 (①~⑨ 노드 계약 확정, 외부 2-phase API·KnowledgeBundle 계약은 §8에서 협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase 진입점 확정, KnowledgeBundle 세부 계약은 §8에서 협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ---
@@ -107,6 +107,125 @@ JSON 계약은 **공통 envelope + 노드별 payload**의 2층 구조로 유지�
 - 예시 JSON도 계약으로 취급한다. `"str | null"`처럼 설명용 union 문자열을 실제 값으로 보내지 않는다.
 - 요청의 `warnings`·`errors`에는 해당 branch에서 앞 단계가 만든 신호를 한 번씩 넣는다. 응답은 이를 그대로 보존하고 현재 노드 신호를 append한다. Supervisor는 `(code, node, item_id)` 기준으로 중복 제거한다.
 
+### 0-4. 외부 진입점 전환 — 기존 3-phase 폐기, 2-phase 채택
+
+기존에는 백엔드 `ScanProcessor`가 같은 FastAPI 프로세스의 API 세 개를 순서대로 호출했다.
+
+| 순서 | 기존 API | 백엔드 read timeout | 하는 일 |
+|---|---|---|---|
+| 1 | `/v1/ocr` | 18초 | 이미지에서 메뉴를 추출하고 촬영 품질 평가 |
+| 2 | `/v1/ruleengine` | 2초 | OCR 결과와 사용자 프로필로 메뉴별 위험도 계산 |
+| 3 | `/v1/result` | 7초 | 룰엔진 결과로 최종 문구와 사장님 질문 카드 생성 |
+
+이 3-phase 구조에서는 OCR이 Supervisor 밖에서 실행되고, AI 내부 중간 결과를 백엔드가 다음 AI API로 다시 전달해야 한다. 또한 메뉴가 정해진 뒤 필요한 DB 데이터를 판정 흐름에 한 번에 넣을 경계가 없다.
+
+신규 구현은 기존 세 경로를 Supervisor의 다음 두 경로로 대체한다.
+
+| 순서 | 신규 API | Supervisor가 하는 일 | 결과를 사용하는 주체 |
+|---|---|---|---|
+| 1 | `/v1/analyze/prepare` | ① OCR → 촬영 품질 분기 → ②-A 메뉴명 정제 | 백엔드가 `prepared_items`를 저장하고 메뉴 후보·판정 지식을 조회 |
+| 2 | `/v1/analyze/judge` | ②-B 후보 선택 → 메뉴별 ③~⑧ 판정 → 결과 취합 → ⑨ Curation | 백엔드가 최종 결과와 ⑦ 저장 명령을 처리 |
+
+두 요청 사이에는 백엔드의 지식 조회 단계가 들어간다.
+
+```text
+POST /v1/analyze/prepare
+  → Prepare Graph
+  → prepared_items
+  → 백엔드 메뉴 후보 조회 및 KnowledgeBundle 구성
+  → POST /v1/analyze/judge
+  → Judge Graph
+  → 최종 판정
+```
+
+확정 원칙은 다음과 같다.
+
+- 신규 Supervisor 외부 진입점은 `/v1/analyze/prepare`, `/v1/analyze/judge` 두 개만 사용한다.
+- 단일 `/v1/analyze` 경로는 만들지 않는다.
+- `/v1/ocr`, `/v1/ruleengine`, `/v1/result`는 신규 구조의 일부가 아니며 2-phase 전환이 완료되면 제거한다.
+- 배포 중 호출 단절을 막기 위해 백엔드가 두 신규 경로로 전환한 뒤 기존 세 경로를 제거한다. 기존 경로 제거와 신규 경로 적용을 순서 없이 따로 배포하지 않는다.
+- 두 경로 모두 Supervisor가 진입점이다. 백엔드는 ①~⑨ Agent·Tool을 직접 호출하지 않는다.
+- Prepare와 Judge 사이의 상태를 AI 프로세스 메모리나 LangGraph checkpoint에 보관하지 않는다. Judge에 필요한 값은 백엔드가 Prepare 결과와 KnowledgeBundle로 다시 전달한다.
+- 외부 경로는 확정했지만 Prepare/Judge의 정확한 필드, KnowledgeBundle 스키마, 후보 개수와 상태 코드는 §8의 백엔드 합의 항목으로 남긴다.
+
+### 0-5. JSON을 조립해서 전달하는 방법
+
+각 Agent·Tool의 응답 JSON이 그대로 다음 Agent·Tool의 요청이 되는 것은 아니다. Supervisor가 응답을 LangGraph state에 저장한 뒤, 다음 노드의 Request 모델에 필요한 값만 골라 새로운 JSON을 만든다.
+
+```text
+앞 단계 Response
+  → Supervisor state에 저장
+  → 다음 Request에 필요한 필드 선택
+  → Pydantic 모델로 검증
+  → 다음 Agent·Tool 호출
+```
+
+예를 들어 ③의 `ExactFeedbackResponse` 전체를 ④에 그대로 보내지 않는다. Supervisor는 확정 재료, override 가능 여부, anomaly·만료 상태, 근거 참조를 state에 보존하고 ④·⑤·⑧이 요구하는 Request 모양으로 각각 조립한다.
+
+#### 공통 영역과 노드별 영역
+
+```text
+모든 요청·응답의 공통 영역
+  context + warnings + errors
+
+노드별 payload 예시
+  ① OCR         : image, scan_quality, items
+  ③ Exact       : confirmations
+  ④ Ontology    : ingredients, variant_suggestion
+  ⑤ Bayesian    : probabilities
+  ⑧ Decision    : risk_level, message, owner_card
+```
+
+모든 JSON을 같은 모양으로 만들지 않는다. 공통 영역은 동일하게 유지하고, 각 노드는 자기 역할에 필요한 payload만 가진다.
+
+#### Supervisor가 끝까지 보존하는 값
+
+- `schema_version`, `trace_id`, `scan_session_id`, `store_id`
+- `item_id`, `source_index`
+- OCR 원문, 정규화 메뉴명, 가격과 설명
+- `constraint_tags`, `anomaly_locked`
+- `evidence_refs`, `warnings`, `errors`
+
+노드 요청에 당장 쓰이지 않는 값도 state에서는 삭제하지 않는다. 예를 들어 ②가 가격을 사용하지 않더라도 Supervisor는 가격을 state에 보존해 Judge 결과에 다시 넣는다.
+
+#### Prepare에서 Judge까지의 조립 흐름
+
+```text
+OcrResponse.items[]
+  → NameCleaningRequest.items[]
+  → NameCleaningResponse.items[]
+  → PrepareResponse.prepared_items[]
+  → 백엔드 후보 조회 및 KnowledgeBundle 구성
+  → CandidateSelectionRequest.items[]
+  → CandidateSelectionResponse.items[]
+  → 메뉴별 Item Graph
+```
+
+Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Judge는 백엔드가 제공한 후보 밖의 `menu_id`를 새로 만들 수 없다. `item_id`와 `source_index`는 Prepare부터 최종 결과까지 바꾸지 않는다.
+
+#### Judge 내부의 대표 조립 흐름
+
+```text
+③ ExactFeedbackResponse.confirmations[]
+  → override 가능한 값은 ⑧ confirmed_results[]
+  → 만료·anomaly 등 override 불가 값은 버리지 않고 ④·⑤ 경로
+
+④ OntologyResponse.ingredients[]
+  → ⑤ BayesianRequest.ingredients[]
+
+⑤ BayesianResponse.probabilities[]
+  → ⑧ DecisionRequest.probability_results[]
+
+⑧ DecisionResponse
+  → 메뉴별 ItemResult
+  → source_index 순서로 취합
+  → ⑨ CurationRequest.decision_results[]
+```
+
+`warnings`와 `errors`는 앞 단계 값을 보존하고 현재 노드 값을 append한다. `forces_caution: true`인 warning이 하나라도 있으면 해당 메뉴는 SAFE가 될 수 없다. 근거 원본은 state의 evidence registry에 한 번 등록하고, 이후 결과는 `evidence_refs`로 가리킨다.
+
+값이 없을 때 목록은 `[]`, nullable 단일 값과 객체는 `null`을 사용한다. 이전 Response에만 존재하고 다음 Request에 정의되지 않은 필드를 임의로 복사하지 않으며, 다음 Request에 없는 값을 새로 추측해 만들지도 않는다.
+
 ---
 
 ## 1. 입력 / 출력 스펙
@@ -207,9 +326,9 @@ JSON 계약은 **공통 envelope + 노드별 payload**의 2층 구조로 유지�
 }
 ```
 
-### 1-3. Supervisor 입력 — `AnalyzeRequest`
+### 1-3. 분리 전 참고 입력 — `AnalyzeRequest` (신규 구현 금지)
 
-> 아래 `AnalyzeRequest`와 §1-4 `AnalyzeResponse`는 기존 단일 진입점 기준의 임시 외부 계약이다. Prepare/Judge 경로와 KnowledgeBundle의 최종 필드는 백엔드 합의 후 교체한다. §4의 ①~⑨ 내부 노드 계약은 이 협의와 별개로 유지한다.
+> 아래 `AnalyzeRequest`와 §1-4 `AnalyzeResponse`는 2-phase 결정 전에 작성된 필드 목록을 보존하기 위한 참고 모델이다. 신규 endpoint나 Pydantic 모델로 구현하지 않는다. 실제 외부 계약은 `/v1/analyze/prepare`의 PrepareRequest/Response와 `/v1/analyze/judge`의 JudgeRequest/Response로 분리하며, KnowledgeBundle 세부 합의 후 이 참고 모델을 교체한다. §4의 ①~⑨ 내부 노드 계약은 계속 사용한다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
@@ -250,14 +369,14 @@ JSON 계약은 **공통 envelope + 노드별 payload**의 2층 구조로 유지�
 }
 ```
 
-기존 `/v1/ocr`, `/v1/ruleengine`, `/v1/result`의 호환 기간과 Supervisor 외부 진입점을 `/v1/analyze/prepare`, `/v1/analyze/judge`로 나눌지는 백엔드와 협의한다. AI 내부 구현은 외부 경로명과 무관하게 Prepare Graph와 Judge Graph를 분리한다.
+이 모델을 받는 단일 `/v1/analyze` endpoint는 만들지 않는다. 외부 요청은 §0-4의 Prepare/Judge 두 경로로만 받는다.
 
 - `image.source`는 `camera | upload`다. `storage_key`와 `image_url` 중 하나 이상은 null이 아니어야 한다. `version_id`와 `expected_etag`는 저장소가 제공하지 않으면 `null`이다.
 - `user_profile.religion_type`은 `halal | kosher | hindu | null`, `vegetarian_type`은 `vegan | lacto | ovo | lacto_ovo | pesco | null`이다. `allergies`는 ④가 반환하는 `is_*` 표준 태그 배열이며 중복을 허용하지 않는다.
 - `locale`은 `ko | en | ja | zh_hans | zh_hant | es`, 기본값은 `ko`다.
 - `curation.limit`은 1~20 정수, 기본값은 5다.
 
-### 1-4. Supervisor 출력 — `AnalyzeResponse`
+### 1-4. 분리 전 참고 출력 — `AnalyzeResponse` (신규 구현 금지)
 
 ```json
 {
@@ -448,7 +567,7 @@ flowchart TD
     end
 ```
 
-위 그림에서 확정하는 것은 **AI 내부 실행 경계와 순서**다. HTTP 경로명, Prepare/Judge 외부 요청·응답 필드, KnowledgeBundle 스키마, 후보 개수는 백엔드와 합의할 항목이다. `②-A`와 `②-B`는 별도 Agent 두 개가 아니라 같은 Normalization 책임을 두 operation으로 나눈 이름이다.
+위 그림의 **AI 내부 실행 경계와 순서**, `/v1/analyze/prepare`, `/v1/analyze/judge` 경로는 확정이다. Prepare/Judge의 세부 필드, KnowledgeBundle 스키마, 후보 개수는 백엔드와 합의할 항목이다. `②-A`와 `②-B`는 별도 Agent 두 개가 아니라 같은 Normalization 책임을 두 operation으로 나눈 이름이다.
 
 ### 2-1. 기본 순서
 
@@ -1174,7 +1293,7 @@ Supervisor 구현에서는 `create_agent()`나 ReAct loop를 사용하지 않는
 
 ### 2-14. 서비스 연결 경계
 
-FastAPI endpoint는 graph 구조를 알 필요가 없고 `SupervisorService`만 호출한다. AI 내부에서는 `prepare()`와 `judge()`를 분리하지만, 실제 HTTP 경로와 외부 Pydantic 모델 이름은 백엔드 합의 후 확정한다.
+FastAPI endpoint는 graph 구조를 알 필요가 없고 `SupervisorService`만 호출한다. `/v1/analyze/prepare`는 `prepare()`만, `/v1/analyze/judge`는 `judge()`만 호출한다. 외부 Pydantic 모델의 정확한 필드는 KnowledgeBundle 합의 후 확정한다.
 
 ```python
 class SupervisorService:
@@ -1202,6 +1321,35 @@ class SupervisorService:
             context=run_context,
         )
 ```
+
+외부 endpoint는 다음 두 개만 등록한다. 아래 모델 이름은 고정하고 세부 필드는 KnowledgeBundle 합의 후 채운다.
+
+```python
+@app.post("/v1/analyze/prepare", response_model=PrepareResponse)
+async def prepare_analysis(
+    request: PrepareRequest,
+    service: SupervisorService = Depends(get_supervisor_service),
+) -> PrepareResponse:
+    result = await service.prepare(
+        to_prepare_graph_input(request),
+        make_run_context(request),
+    )
+    return PrepareResponse.model_validate(result)
+
+
+@app.post("/v1/analyze/judge", response_model=JudgeResponse)
+async def judge_analysis(
+    request: JudgeRequest,
+    service: SupervisorService = Depends(get_supervisor_service),
+) -> JudgeResponse:
+    result = await service.judge(
+        to_judge_graph_input(request),
+        make_run_context(request),
+    )
+    return JudgeResponse.model_validate(result)
+```
+
+`/v1/ocr`, `/v1/ruleengine`, `/v1/result`, 단일 `/v1/analyze` router는 신규 Supervisor 애플리케이션에 등록하지 않는다.
 
 HTTP adapter는 요청에서 `RunContext`를 만들고 위 메서드에 전달한다. Prepare와 Judge 사이에 AI 프로세스의 in-memory state를 공유하지 않는다. Judge에 필요한 값은 백엔드가 저장한 Prepare 결과와 지식 데이터를 다시 전달해야 하므로 LangGraph checkpoint를 phase 연결 수단으로 사용하지 않는다.
 
@@ -2453,7 +2601,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - [x] AI 내부 실행은 Prepare Graph와 Judge Graph로 분리하고 Judge 안에서 메뉴별 Item Graph fan-out
 - [x] Prepare는 ① OCR→재촬영 분기→②-A 이름 정제, Judge는 ②-B 후보 선택→③~⑨ 판정
 - [x] 초기 graph는 영속 checkpoint 없이 실행하고 phase 사이 상태는 process memory에 의존하지 않음
-- [ ] 외부 진입점을 `/v1/analyze/prepare`, `/v1/analyze/judge`로 나눌지와 기존 3개 API 호환 기간 — 백엔드 합의
+- [x] 외부 진입점은 `/v1/analyze/prepare`, `/v1/analyze/judge` 두 개만 사용. 백엔드 전환 후 기존 `/v1/ocr`, `/v1/ruleengine`, `/v1/result` 제거
 - [ ] Prepare/Judge 요청·응답, KnowledgeBundle 전체 JSON과 schema version — 백엔드 합의
 - [ ] 후보 조회 책임, 후보 개수 `k`, `not_found | unavailable | bundle_miss` 의미 — 백엔드 합의
 - [ ] Prepare/Judge 연결 식별자·hash·revision의 생성 및 검증 주체 — 백엔드 합의
@@ -2489,7 +2637,7 @@ PPT의 Hub & Spoke 흐름을 LangGraph 상태 그래프로 확정하고 Supervis
 - [x] LLM Agent와 결정론적 Tool 경계 확정
 - [x] fan-out/collect와 ⑦ 명령 흐름 확정
 - [x] Prepare/Judge 내부 graph 책임과 ②-A/②-B 경계 정의
-- [ ] Prepare/Judge 외부 API·KnowledgeBundle·기존 API 전환 방식 백엔드 합의
+- [ ] Prepare/Judge 외부 JSON과 KnowledgeBundle 세부 계약 백엔드 합의
 
 **관련 서비스**
 
