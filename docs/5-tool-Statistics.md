@@ -85,7 +85,7 @@
 | 구분 | ⑤에 오는가 | 이유 |
 |---|---|---|
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
-| `scope: exact` + `override_eligible: false` (anomaly) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. 결과는 CAUTION 이상 유지 |
+| `scope: exact` + `flagged_anomaly: true` (이상 답변) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. `anomaly_locked: true`로 CAUTION 이상 유지 |
 | `scope: inherited` | 보류 | 원본 메뉴 확정값. override도 prior 보정도 하지 않는다 (③ §6) |
 | 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
@@ -160,7 +160,7 @@ confidence = 1 − 1 / √(ν + 1)
 
 ### 1-4. `anomaly_locked`
 
-③이 `override_eligible: false`로 반환한 재료에 Supervisor가 `true`를 부여하고, ④가 그대로 보존해 ⑤로 넘긴다 (④ §1-1, ⓪ §4-7).
+③이 **`flagged_anomaly: true`(이상 답변)** 로 반환한 재료에만 Supervisor가 `true`를 부여하고, ④가 그대로 보존해 ⑤로 넘긴다 (④ §1-1, ③ §1-6). 3개월 만료(`expired: true`)로 `override_eligible: false`가 된 재료는 ⑤ 확률 계산 대상이지만 `anomaly_locked: false`다.
 **⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.**
 ⑧은 이 플래그가 있으면 **posterior_mean과 무관하게 CAUTION 이상을 유지**한다.
 
@@ -514,6 +514,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
 | 8 | `inherited` 확인 정보 포함 | α·β 변화 없음 | override로도, prior 보정으로도 쓰지 않을 것 |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
+| 9-b | 3개월 만료 재료 (`expired: true`, `anomaly_locked: false`로 들어옴) | 확률 계산, `anomaly_locked: false` 그대로 | 만료를 이상 답변으로 바꾸지 않을 것 |
 | 10 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
 | 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
 | 12 | `k_count > n_total` | `uninformative` + 오류 로그 | 음수 β 발생하지 않을 것 |
