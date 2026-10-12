@@ -56,7 +56,7 @@
 | `menu_id` | integer \| null | 필수 | 가게 증거(`ingredient_risk_scores`) 조회용. DB에 없는 메뉴는 `null` |
 | `menu_category_id` | integer \| null | 필수 | 클러스터 fallback용 (④ 출력, `menus.category_id`). `null`이면 `cluster` 단계를 건너뛴다 |
 | `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5. 하위 재료는 상위 재료 관측값을 물려받으며 `observation_basis: inherited`), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
-| `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **prior 보정용, override 아님** |
+| `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **쓰지 않음(보류)** — 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6) |
 
 ```json
 {
@@ -86,8 +86,8 @@
 |---|---|---|
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
 | `scope: exact` + `override_eligible: false` (anomaly) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. 결과는 CAUTION 이상 유지 |
-| `scope: inherited` | ✅ 온다 | `inherited_confirmations`로 prior 보정에만 사용 |
-| 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 확률 계산 대상이며 그 답은 `inherited`와 같은 방식으로 prior 보정에만 쓴다 |
+| `scope: inherited` | 보류 | 원본 메뉴 확정값. override도 prior 보정도 하지 않는다 (③ §6) |
+| 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
 ### 1-2. 출력 (Supervisor에게 반환)
@@ -112,7 +112,6 @@
       "source": "expanded",
       "depth": 2,
       "confidence": 0.49,
-      "credible_interval_90": [0.27, 0.92],
       "anomaly_locked": false
     }
   ],
@@ -122,7 +121,6 @@
 
 - `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
 - `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과 "낮음" 기준은 §1-2-1에 있다.
-- `credible_interval_90`은 확률의 90% 신용구간 `[하한, 상한]`이다 (Beta(`alpha_post`, `beta_post`)의 5%·95% 분위수). ⑧이 "애매한 재료"를 고를 때 쓴다 (§1-2-2).
 
 #### 1-2-1. `confidence` 계산식 (결정, 2026-10-12)
 
@@ -133,7 +131,7 @@ confidence = 1 − 1 / √(ν + 1)
 ```
 
 - **뜻**: 근거 덕분에 불확실성이 얼마나 줄었는가. Beta 분포의 표준편차는 `√(p(1−p)/(α+β+1))`이다. 같은 확률 p에서 근거가 없을 때와 비교한 표준편차 비율은 `1/√(ν+1)`로, **p와 무관하게 근거 양만으로 정해진다.**
-- **분포 폭(표준편차)을 그대로 쓰지 않는 이유**: 확률이 0.5 근처인 재료는 근거가 많아도 폭이 넓게 나와 "확률이 반반"과 "근거 부족"이 섞인다. confidence는 근거 양만 나타낸다. 사장님 질문 대상("애매함")은 confidence가 아니라 신용구간으로 정한다 (§1-2-2).
+- **분포 폭(표준편차)을 그대로 쓰지 않는 이유**: 확률이 0.5 근처인 재료는 근거가 많아도 폭이 넓게 나와 "확률이 반반"과 "근거 부족"이 섞인다. confidence는 근거 양만 나타낸다. ⑧은 `low_confidence`를 카드 이유 표시로만 쓴다 (⑧ §2-1 7단계).
 - **"낮음" 기준 5**: ⑥에서 정한 "고유 레시피 최소 5개"와 같은 기준이다 (⑥ 결정, 2026-10-10). 새로 정한 숫자가 아니다.
 - 출처 신뢰도(§3-3)와 depth 감쇠(§2-1)는 둘 다 ν를 줄이므로 따로 반영하지 않는다.
 - **`prior_source`는 섞지 않는다.** confidence는 근거 양만, `prior_source`는 근거 출처만 나타낸다. ⑧은 둘을 따로 받는다 (§5-2). 지금 데이터는 대부분 `global`이라, 단계로 상한을 두면 거의 모든 재료가 "낮음"이 되어 순위를 매길 수 없다.
@@ -147,27 +145,9 @@ confidence = 1 − 1 / √(ν + 1)
 | 레시피 57개, depth 2 (scale 0.25) | 14.25 | 0.74 |
 | 레시피 57개, 출처 신뢰도 1 | 57 | 0.87 |
 
-#### 1-2-2. 애매한 재료 기준 — 사장님 질문 후보 (결정, 2026-10-12)
+#### 1-2-2. 사장님 질문 후보 — ⑤는 거르지 않는다
 
-```
-애매함 = credible_interval_90 상한 ≥ 0.1  AND  하한 ≤ 0.9
-```
-
-"10% 미만이라고 장담할 수 없고, 90% 이상이라고도 장담할 수 없는 재료"다. ⑧은 CAUTION 재료 중 사용자 태그와 겹치고 이 기준에 해당하는 재료를 사장님 질문 카드 후보로 쓴다 (⑧ §2-1 7단계). 사용자가 후보 중에서 골라 사장님께 보낸다.
-
-**시드 데이터로 정했다** (메뉴 76개, 알레르겐 태그가 붙은 메뉴-재료 쌍 2,013개, 출처 신뢰도 1로 계산):
-
-| 구간 | 쌍 수 | 예시 |
-|---|---|---|
-| 거의 없음 (상한 < 0.1) | 1,217 | 간장게장의 초장 (967개 중 1개) |
-| **애매** | **780 (39%)** | 파전의 튀김가루 0.24, 백김치의 멸치액젓 0.38, 설렁탕의 새우젓 0.61 |
-| 거의 확실히 있음 (하한 > 0.9) | 16 | 깻잎장아찌의 간장 0.97 |
-
-- **confidence로는 못 고른다.** DB 메뉴는 레시피가 최소 37개라 직접 재료의 confidence가 항상 0.84 이상이다. DB 메뉴의 애매함은 데이터 부족이 아니라 **가게마다 레시피가 다르다**는 데 있다.
-- **두 종류의 애매함을 한 규칙으로 잡는다.** 확률이 중간이면(레시피마다 다름) 구간이 0.1~0.9에 걸치고, 근거가 적으면 구간이 넓어져 저절로 걸린다. 근거 0개(변형 추정 재료, ⑥ 후보)는 Beta(1,1)이라 구간이 [0.05, 0.95]로 애매에 들어간다.
-- 메뉴당 애매한 알레르겐 재료는 중앙값 9개(모든 태그 합계)다. 사용자 한 명의 태그는 보통 1~3개라 실제 후보는 그보다 적다.
-- **0.1을 0.05로 낮추면** 애매가 80%(1,602쌍)로 늘어 칼국수의 만두(0.03) 같은 드문 경우까지 묻게 된다. 판정은 어차피 CAUTION이고 확률도 사용자에게 보이므로 질문 대상만 줄어드는 것이다. 0.1로 시작하고 F2 튜닝(QA #192)에서 다시 본다.
-- `warnings`는 판정에 영향을 주는 데이터 이상을 담는다. 값: `empty_ingredients`(재료 0개), `integrity_error`(`k_count > n_total`). ⑧이 CAUTION 이상을 유지하려면 이 신호가 ⑧까지 가야 한다 (§8).
+⑧은 사용자 태그와 겹치고 사장님 확인값이 없는 재료마다 카드를 만들고, 확률이나 confidence 숫자로 거르지 않기로 했다 (⑧ §2-1 7단계, 2026-10-12). 그래서 ⑤는 질문 후보용 기준을 따로 내보내지 않는다. 한때 검토한 신용구간 기준(상한 ≥ 0.1, 하한 ≤ 0.9; 시드의 알레르겐 재료 쌍 2,013개 중 780개가 해당)은 QA(#192) 참고용으로만 남긴다.
 
 ### 1-3. `prior_source` — fallback 단계 (내림차순 우선)
 
@@ -202,7 +182,7 @@ flowchart TD
     G -->|Yes| GP["prior_source: global"]
     G -->|No| UP["prior_source: uninformative<br/>Beta(1,1), confidence 0"]
 
-    SP --> INH["inherited_confirmations로<br/>prior 보정 (override 아님)"]
+    SP --> INH["확률 계산<br/>(사장님 답변은 넣지 않음)"]
     CP --> INH
     GP --> INH
     UP --> INH
@@ -339,9 +319,7 @@ for ing in ingredients:
     prior_src = decide_prior_source(store, ing.observations, ing.curated, menu_category_id)
     # store → cluster(#200 연기) → global → uninformative
 
-    if inherited_confirmations:
-        alpha, beta = adjust_with_inherited(alpha, beta, ing.name, inherited_confirmations)
-        # prior 보정만. status를 확정값으로 쓰지 않는다.
+    # inherited_confirmations는 쓰지 않는다 (보류, 10/10 회의: 사장님 답변은 확률 계산에 쓰지 않음)
 
     alpha, beta = apply_source_scale(alpha, beta, ing.source, ing.depth, ing.observation_basis)   # 최종 α·β 동일 비율
 
@@ -351,7 +329,6 @@ for ing in ingredients:
         beta_post      = beta,
         prior_source   = prior_src,
         confidence     = confidence_score(alpha, beta),   # 1 − 1/√(α+β−2+1), §1-2-1
-        credible_interval_90 = (beta_ppf(0.05, alpha, beta), beta_ppf(0.95, alpha, beta)),   # §1-2-2
         anomaly_locked = ing.anomaly_locked,
     ))
 
@@ -457,19 +434,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - 신뢰도가 낮은 출처는 근거가 작게 반영된다. 그만큼 확률이 0.5(모름) 쪽으로 가고 `confidence`가 낮아진다. 확률을 0 쪽으로 끌어내리지 않으므로 SAFE로 기울지 않는다.
 - 사장님 확정값은 이 식에 들어가지 않는다. 확률 계산 없이 override로 쓰인다 (③).
 
-**상속 확정 정보 보정 (`inherited_confirmations`, 결정, 2026-10-12)**
-
-변형 메뉴는 원본 메뉴(`base_menu_id`)의 사장님 확정값을 물려받아 prior 보정에만 쓴다 (override 아님, 형제 변형 제외). 3개월 지난 확정값도 같은 방식으로 쓴다 (§1-1).
-
-| 원본 메뉴 확정값 | 보정 |
-|---|---|
-| `present` | **α + 1** |
-| `absent` | 반영하지 않음 |
-| `unknown` | 반영하지 않음 |
-
-- 큐레이션 레시피를 "α에만 더한다"고 정한 것과 같은 논리다. 원본 메뉴에 없다고 변형 메뉴에도 없다고 보면 β가 늘어 SAFE 쪽으로 기운다. 변형 메뉴는 재료가 더 들어간 경우가 많다 (예: 차돌된장찌개).
-- 보정은 최종 scale 전에 더한다. 그다음 근거 강도별 scale을 동일 비율로 적용한다 (§2-1).
-- 근거 강도별 scale(변형 재료 0.5 등)은 이 식으로 구한 최종 α·β에 동일 비율로 적용한다 (§2-1, 확정).
+**원본 메뉴 확정값 (`inherited_confirmations`)은 쓰지 않는다 (보류).** 10/10 회의에서 사장님 답변은 확률 계산에 넣지 않기로 했다. 원본 메뉴의 답은 override도, prior 보정도 하지 않는다 (③ §6).
 
 ---
 
@@ -481,7 +446,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | **2) DB 존재 + 피드백 일부** | 미확인 재료만 계산. override 재료는 Supervisor가 제외 |
 | **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** |
 | **2-c) 피드백 전부 (anomaly 포함)** | anomaly 재료만 계산 + `anomaly_locked: true` |
-| **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. `inherited` prior 보정 적용 |
+| **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. 원본 메뉴 확정값은 쓰지 않음 (보류) |
 | **3-b) 신규 변형** | `variant_suggested` 재료는 `observations: []`(④ §1-5) → mean 0.5, 낮은 `confidence`, scale 0.5 (mean 보존) |
 | **4) DB에 없는 unknown 메뉴** | Supervisor가 ⑥ 결과로 ⑦ 검토 명령을 만든 뒤 ⑤를 호출한다(⓪ §2). 웹 근거는 관리자 검토 전이라 미검증 상태다. `menu_category_id`가 없으므로 `prior_source`는 `global` 또는 `uninformative` |
 | **5) 웹서치도 실패 (엣지)** | 호출되지 않거나 `uninformative` 반환. **SAFE로 떨어뜨리지 않음** |
@@ -498,7 +463,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | `context` | 유효한 공통 호출 문맥. `store_id`는 가게 식별 완료값, null 불가 |
 | `ingredients` | ④ 출력은 `ingredient_id` / `source` / `depth` / `curated` / `observations`가 채워져 있음. ⑥ 출력은 필드 정합이 미확정이며(④ §8, #171), 빠진 필드는 §6 규칙으로 처리 |
-| `inherited_confirmations` | ③ 2차 호출(`scope: inherited`) 결과만. override 대상 `exact`는 오지 않음 |
+| `inherited_confirmations` | 보류. 받아도 쓰지 않는다 (③ §6) |
 
 ### 5-2. ⑤ → Supervisor (돌려주는 것)
 
@@ -506,7 +471,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
-| `credible_interval_90` | → 상한 ≥ 0.1이고 하한 ≤ 0.9면 애매한 재료. 사용자 태그와 겹치면 ⑧이 사장님 질문 카드 후보로 만든다 (§1-2-2, ⑧ §2-1 7단계) |
+| 낮은 `confidence` | → ⑧이 카드 이유 `low_confidence`로 표시한다. 카드를 만들지 정하는 조건은 아니다 (⑧ §2-1 7단계) |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
 > ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
@@ -526,7 +491,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | `observations` 안에 `k_count > n_total` | 데이터 무결성 오류. 로그 + 그 출처 관측값은 버리고, 남은 근거가 없으면 `uninformative`. `warnings`에 `integrity_error` |
 | `observations` 필드 부재 또는 `[]` | 크롤링 근거 없음. 큐레이션·가게 증거도 없으면 `uninformative` |
 | `source_reliability`에 그 출처가 없음 | 처음 보는 출처는 신뢰도 0.5(`(0+1)/(0+2)`)로 쓴다 |
-| `inherited`와 store prior 상충 | store prior 우선, `inherited`는 가중 보정에만 사용 |
+| `inherited` 확정값이 들어옴 | 쓰지 않는다 (보류, ③ §6) |
 | 재료 리스트 빈 배열 | 빈 결과 + `warnings`에 `empty_ingredients`. ⑧에서 CAUTION 이상 유지 |
 | `anomaly_locked` 재료의 확률이 낮게 나옴 | **확률과 무관하게 플래그 유지.** ⑧이 CAUTION 이상 강제 |
 
@@ -547,7 +512,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 6 | `db_registered` 변형 재료 | scale 1.0 | 신규 변형과 같게 취급되지 않을 것 |
 | 7 | depth 0 vs depth 3 동일 관측값 (`inherited`) | scale 1.0 vs 0.125, mean 같음 | depth가 무시되지 않고, mean이 내려가지 않을 것 |
 | 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
-| 8 | `inherited` 확인 정보 포함 | prior 보정만 수행 | **override로 처리되지 않을 것** |
+| 8 | `inherited` 확인 정보 포함 | α·β 변화 없음 | override로도, prior 보정으로도 쓰지 않을 것 |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
 | 10 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
 | 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
@@ -562,14 +527,11 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 20 | 큐레이션 목록에 없는 재료 | 큐레이션 근거 없음 | "목록에 없음"을 없다는 근거로 쓰지 않을 것 |
 | 21 | 사이트 2곳에 관측값 | 사이트별 신뢰도를 곱해 합산 | 한 사이트 값만 쓰지 않을 것 |
 | 22 | 가게 증거 있음 | `ingredient_risk_scores`의 α−1, β−1을 그대로 더함 | 신뢰도를 두 번 곱하지 않을 것 |
-| 23 | 3개월 지난 사장님 확정값 | ⑤로 넘어와 확률 계산, 확정 답은 prior 보정에만 사용 | 만료값으로 override하지 않을 것 |
+| 23 | 3개월 지난 사장님 확정값 | 재료는 레시피 확률로 계산, 만료된 답은 α·β에 넣지 않음 | 만료값으로 override하지도, 확률에 섞지도 않을 것 |
 | 24 | `α=1, β=1` (관측 0건) | `confidence = 0` | 무정보에 0보다 큰 값을 주지 않을 것 |
 | 25 | `k=53, n=57`, 신뢰도 1 vs `k=28, n=57`, 신뢰도 1 | 둘 다 `confidence ≈ 0.87` | 확률이 0.5 근처라고 confidence가 낮아지지 않을 것 |
 | 26 | ν = 4.9 / 5.0 | "낮음" / "낮지 않음" | 기준 ν < 5를 지킬 것 |
-| 27 | `α=1, β=1` (근거 0개) | `credible_interval_90 = [0.05, 0.95]`, 애매 | 근거 없는 재료가 질문 후보에서 빠지지 않을 것 |
-| 28 | `k=33, n=54` (설렁탕 새우젓) / `k=1, n=967` (간장게장 초장) | 애매 / 애매 아님 | 레시피마다 다른 재료는 근거가 많아도 애매로 잡을 것 |
-| 29 | 변형 메뉴, 원본 메뉴 확정값 `absent` | α·β 변화 없음 | 원본에 없다고 β를 더하지 않을 것 |
-| 30 | `source: web_search`, 출처 신뢰도 0.6 | 신뢰도만 곱하고 scale 1.0 | 두 번 할인하지 않을 것 |
+| 27 | `source: web_search`, 출처 신뢰도 0.6 | 신뢰도만 곱하고 scale 1.0 | 두 번 할인하지 않을 것 |
 
 ---
 
@@ -577,19 +539,18 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 - [x] **depth 감쇠 함수** — 최종 α·β에 `max(0.5^depth, 0.125)` 동일 비율 적용, mean 보존. `observation_basis: direct`는 1.0 (2026-10-10, §2-1). 값 조정은 QA #192
 - [x] **`variant_suggested` scale 0.5의 적정성** — 0.5 유지 (2026-10-06, #187). F2 튜닝 시 재조정은 QA #192
-- [x] **`inherited_confirmations` prior 보정 강도** — `present`면 α + 1, `absent`·`unknown`은 반영 안 함 (2026-10-12, §3-3)
+- [x] **`inherited_confirmations` 사용** — 쓰지 않음(보류). 사장님 답변은 확률 계산에 넣지 않는다 (10/10 회의, ③ §6)
 - [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
 - [x] **F2 최적화 threshold를 누가 계산하는가** — 판정용 threshold는 쓰지 않는다. ⑧ §3에서 확률은 판정 기준선이 아니라고 정했다. F2는 QA(#192)에서 scale·애매 기준 같은 값을 맞추는 데 쓴다 (2026-10-12 확인)
 - [x] **`confidence` 계산식** — `1 − 1/√(ν+1)`, ν = 실질 근거 수. "낮음"은 ν < 5 (2026-10-12, §1-2-1)
-- [x] **애매한 재료 기준** — `credible_interval_90` 상한 ≥ 0.1 AND 하한 ≤ 0.9 (2026-10-12, §1-2-2)
-- [ ] **⑧ 외부 의존** — ⑧ §2-1 7단계 "확률도 애매한 재료"를 §1-2-2 기준으로 바꾸는 것. ⑧ 담당자 확인 필요
+- [x] **사장님 질문 후보 기준** — ⑤는 거르지 않는다. ⑧이 숫자 필터 없이 카드를 만든다 (⑧ §2-1, 2026-10-12, §1-2-2)
 - [x] **prior와 관측치의 결합 방식** — 출처별 `k`·`n`에 출처 신뢰도(0~1)를 곱해 더한다 (2026-10-06, #187, §3-3). 같은 레시피 데이터가 두 번 세어지지 않게 가게 증거에는 그 가게에서 새로 생긴 증거만 담는다
 - [x] **PPT 9쪽 결합 모델 반영** — 이번엔 Beta-Binomial만, 결합 모델은 QA 단계 확률 보정으로 단계적 도입 (2026-10-12, §3-2). 실험 코드 위치 확인은 QA #192에서
 - [x] **신뢰도를 곱하는 위치** — 코퍼스·큐레이션은 ⑤가 계산할 때, 가게 증거는 ⑦이 기록할 때 곱한다 (2026-10-10, §3-3)
 - [x] **관광객 피드백을 출처로 쓸지** — 쓰지 않는다. 확인 정보는 사장님 답변만 다룬다 (③ 결정, 2026-10-09, §3-3)
 - [x] **출처 신뢰도(Dawid-Skene) 반영 위치** — ⑦이 계산하고 ⑤가 근거 가중치로 사용 (2026-10-06, ⑦ §3-1). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
 - [x] **`web_search` 출처의 scale** — 1.0. 출처 신뢰도로 이미 할인하므로 추가로 줄이지 않는다 (2026-10-12, §2-1)
-- [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). `credible_interval_90` 추가는 ⓪ 담당자 대기
+- [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). 
 - [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 
 ---
@@ -614,7 +575,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 
 - [x] prior와 관측치 결합 방식 결정
 - [x] `confidence` 0~1 계산식과 "낮음" 기준값 결정 (§1-2-1)
-- [x] `inherited_confirmations` 보정 강도 결정
+- [x] `inherited_confirmations` 사용 여부 결정 (보류)
 - [x] depth 감쇠 방식 결정 (§2-1)
 - [x] `web_search` scale 결정
 - [x] `prior_source`·`confidence`를 ⑧ 입력에 넣는 안을 ⓪·⑧ 담당자와 확정
@@ -680,7 +641,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 - [ ] 입력·출력 모델과 `context.store_id` 검증 구현
 - [ ] prior fallback 4단계와 `menu_category_id: null` 처리 구현
-- [ ] `confidence_score`·`credible_interval_90` 구현 (§1-2-1, §1-2-2). 무정보 prior는 confidence 0
+- [ ] `confidence_score` 구현 (§1-2-1). 무정보 prior는 confidence 0
 - [ ] prior 조회를 저장소 인터페이스와 테스트용 가짜 저장소로 분리
 
 **관련 서비스**
