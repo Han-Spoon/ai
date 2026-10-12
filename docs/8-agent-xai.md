@@ -50,7 +50,7 @@
 | LLM 실패·시간 초과 | 판정은 그대로 두고 `risk_level + evidence_basis`별 고정 문장 템플릿을 쓴다. 문장 LLM 재시도는 1회 |
 
 **LLM 사용 원칙 (결정, 2026-10-11)**
-- **같은 입력에 같은 결과가 나와야 하는 항목은 LLM을 쓰지 않는다.** `risk_level`, `evidence_basis`, `matched_tags`, `risk_ingredients`, `information_status`, 금지 태그 매핑(§2-1 1단계), SAFE 금지 조건 판단(§2-2)이 여기에 해당한다. 같은 메뉴를 다시 찍었는데 판정이 바뀌면 사용자가 결과를 믿을 수 없다.
+- **같은 입력에 같은 결과가 나와야 하는 항목은 LLM을 쓰지 않는다.** `risk_level`, `evidence_basis`, `matched_tags`, `risk_ingredients`(재료 역할 `role` 포함), `information_status`, 금지 태그 매핑(§2-1 1단계), SAFE 금지 조건 판단(§2-2)이 여기에 해당한다. 같은 메뉴를 다시 찍었는데 판정이 바뀌면 사용자가 결과를 믿을 수 없다.
 - **설명 문장 LLM은 고위험 메뉴에만 한정하지 않고 필요할 때 쓴다.** 기본은 고정 템플릿이고, 템플릿으로 표현하기 어려운 경우 LLM을 쓴다. "필요할 때"의 기준은 §8 미확정.
 
 - ⑧이 Agent인 이유: 근거를 사람이 읽을 수 있게 **설명**하는 데 언어 판단(LLM)이 필요하기 때문이다. 판정 자체는 FN을 막기 위해 규칙으로 고정한다.
@@ -84,6 +84,7 @@
         "canonical_name": "돼지고기"
       },
       "constraint_tags": ["is_pork"],
+      "role": "component",
       "status": "present",
       "override_eligible": true,
       "evidence_refs": ["evidence-001"]
@@ -96,6 +97,7 @@
         "canonical_name": "액젓"
       },
       "constraint_tags": ["is_fish"],
+      "role": "hidden",
       "posterior_mean": 0.62,
       "confidence": 0.55,
       "prior_source": "store",
@@ -110,6 +112,7 @@
         "canonical_name": "소고기"
       },
       "constraint_tags": ["is_beef"],
+      "role": "identity",
       "source": "variant_suggested",
       "evidence_refs": ["runtime:scan-123:0:ocr_variant_tag:0"]
     }
@@ -151,6 +154,7 @@
 |---|---|
 | `ingredient` | 확인된 재료. `ingredient_id`와 표준 이름 |
 | `constraint_tags` | 이 재료가 걸리는 제한 태그 (예: 돼지고기 → `is_pork`). `forbidden_tags`와 비교하는 기준. ③은 `[]`로 보내고 Supervisor가 ④ `lookup_tags`로 채운 값 |
+| `role` | 메뉴에서 이 재료의 역할: `identity` / `component` / `hidden` / `null` (§1 "`role` — 재료 역할"). ④가 정한 값 |
 | `status` | `present`(있다고 확인) / `absent`(없다고 확인) / `unknown`(아직 확인 안 됨) |
 | `override_eligible` | 이 확인값으로 판정을 덮어써도 되는지. anomaly(통계적으로 이상한 답변)이거나 3개월이 지난 확인값이면 `false` |
 | `evidence_refs` | 근거 ID 목록 |
@@ -166,6 +170,7 @@
 |---|---|
 | `ingredient` | 재료. `ingredient_id`와 표준 이름 |
 | `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값을 ⑤가 바꾸지 않고 그대로 넘긴 것 (⑥ 웹 재료는 Supervisor가 ④ `map_ingredients`로 채운 값) |
+| `role` | 메뉴에서 이 재료의 역할. ④가 정한 값을 ⑤가 바꾸지 않고 그대로 넘긴 것 |
 | `posterior_mean` | 이 가게에서 이 재료가 들어갈 확률 (0~1) |
 | `confidence` | ⑤가 계산한 근거 충분도 (0~1). 아래 출력의 `evidence_basis`(confirmed/estimated/unknown)와는 별개다 |
 | `prior_source` | 사전확률을 가져온 단계: `store` / `cluster` / `global` / `uninformative` |
@@ -178,6 +183,7 @@
 |---|---|
 | `ingredient` | ④가 추정한 재료. 예: 트러플된장찌개 → 기본 메뉴 된장찌개 + 남은 글자 "트러플"을 재료로 매핑 (④ §1-3) |
 | `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값 |
+| `role` | 메뉴에서 이 재료의 역할. ④가 정한 값 (변형 메뉴 이름에서 나온 재료면 보통 `identity`) |
 | `source` | `variant_suggested` — 런타임 추정 제안. DB에 저장되지 않았고 관측값도 없음 (`observations: []`, ④ §1-5) |
 | `evidence_refs` | 근거 ID 목록 |
 
@@ -210,6 +216,7 @@
       },
       "constraint_tags": ["is_pork"],
       "matched_tags": ["is_pork"],
+      "role": "component",
       "status": "present",
       "posterior_mean": null,
       "anomaly_locked": false,
@@ -238,12 +245,28 @@
 | `risk_level` | `danger` / `caution` / `safe` |
 | `evidence_basis` | 판정 근거 종류: `confirmed`(사장님 확인값) / `estimated`(확률 추정) / `unknown`(근거 부족) |
 | `information_status` | `complete` / `partial` / `none`. 입력 값을 반영하며, `complete`가 아니면 `risk_level`은 `safe`가 될 수 없다 |
-| `risk_ingredients[]` | 위험 재료 목록. 재료마다 `constraint_tags`(재료의 전체 제한 태그), `matched_tags`(그중 이 사용자와 실제로 겹친 태그), `status`(확인값이면 3값, 확률 근거면 `unknown`), `posterior_mean`(확률 근거일 때 값, 확인값이면 `null`), `anomaly_locked`, `evidence_refs` |
+| `risk_ingredients[]` | 위험 재료 목록. 재료마다 `constraint_tags`(재료의 전체 제한 태그), `matched_tags`(그중 이 사용자와 실제로 겹친 태그), `role`(재료 역할, 아래), `status`(확인값이면 3값, 확률 근거면 `unknown`), `posterior_mean`(확률 근거일 때 값, 확인값이면 `null`), `anomaly_locked`, `evidence_refs` |
 | `matched_tags` | 모든 위험 재료에서 사용자 제한과 겹친 태그를 중복 제거한 목록 (예전 이름 `hits`) |
 | `evidence_refs` | 판정에 쓴 근거 ID 전체를 중복 제거한 목록. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다 |
 | `message` | 6개 언어 문구. 키는 `ko`, `en`, `ja`, `zh_hans`, `zh_hant`, `es` (§4) |
 | `owner_cards` | 사장님 질문 카드 목록. 질문이 필요 없으면 `[]`. 카드 하나에 재료 하나이며, **한 메뉴에서 여러 장이 나올 수 있다** (사용자 제한과 관련된 애매한 재료가 여러 개이거나, 고위험 재검증이 재료를 더 찾은 경우). 형식은 아래 참고 |
 | `warnings` / `errors` | 입력 신호를 보존하고 ⑧의 신호를 덧붙임 |
+
+#### `role` — 재료 역할 (결정, 2026-10-12)
+
+판정에 걸린 재료가 메뉴에서 어떤 역할인지 알려 준다. 사용자가 "빼고 요청"을 할 때 빼기 어려운 재료인지 설명하는 데 쓴다 (§4-1).
+
+| 값 | 뜻 | 예 |
+|---|---|---|
+| `identity` | 주재료. 메뉴명에 들어간 재료, 또는 그 음식을 성립시키는 기본 재료 | 참치김밥의 참치·밥·김, 국수의 면 |
+| `component` | 속재료. 따로 넣는 재료 중 주재료가 아닌 것 | 참치김밥의 단무지·어묵·햄·달걀 지단 |
+| `hidden` | 숨은 재료. 양념·육수·소스·가공품 안에 섞인 재료 | 마요네즈 속 달걀, 김치 속 젓갈 |
+| `null` | 역할을 정하지 못함 | — |
+
+- **값은 ④가 정한다.** ⑧은 입력에 들어온 값을 그대로 옮기고 새로 정하지 않는다 (태그와 같은 방식). 정하는 규칙은 ④ 담당이며 §8 외부 의존.
+- **판정에는 쓰지 않는다.** 주재료라고 더 위험하게 보지 않는다. `risk_level`, `evidence_basis`는 role과 무관하다.
+- **LLM으로 정하지 않는다.** 같은 메뉴는 항상 같은 role이어야 한다 (§0-2).
+- ⓪ §4-7에는 아직 `role` 필드가 없다. Supervisor 문서 수정 때 함께 반영한다 (§8).
 
 `evidence_basis` 필드가 핵심이다 — 같은 `risk_level: danger`라도 **확정값 기반인지 확률 추정 기반인지**를 사용자에게 다른 톤으로 전달해야 한다 (§4 참고).
 
@@ -322,6 +345,7 @@ flowchart TD
 4-1. **SAFE는 사장님 확인값으로만**: 판정에 쓴 재료가 모두 사장님 확인값(`override_eligible: true`)이고, 금지 태그와 겹치는 `present` 재료가 없고, §2-2의 SAFE 금지 조건에 하나도 해당하지 않을 때만 `risk_level: safe`, `evidence_basis: confirmed`다.
 5. **변형 제안 반영**: `proposed_variant_ingredients`가 있으면 확정 재료와 **절대 같은 신뢰도로 취급하지 않는다** — 최소 caution 처리하고, 문구도 추정형으로만 생성 (danger 확정 근거로 쓰지 않음).
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
+6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 "빼기 어려울 수 있어요" 안내를 덧붙인다 (§4-1). 판정은 바꾸지 않는다.
 7. **사장님 질문 생성**: 확정도 안 되고 확률도 애매한 재료 중 사용자 태그와 관련 있는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 같은 재료는 한 장만 만든다.
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
@@ -419,6 +443,20 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 이 구분을 안 하면 확률 추정치를 확정 사실처럼 전달하게 되어, 사용자가 과신하거나(추정을 확정으로 오해) 반대로 신뢰를 잃을(나중에 틀렸을 때) 위험이 있다.
 
+### 4-1. 빼기 어려움 안내 (결정, 2026-10-12)
+
+'빼고 요청' 버튼은 그대로 두고, 판정에 걸린 재료가 빼기 어려운 재료이면 설명에 안내 한 줄을 덧붙인다. 재료 역할(`role`, §1)로 정한다.
+
+| `role` | 안내 (ko 예시) |
+|---|---|
+| `identity` | "참치는 이 메뉴의 주재료라 빼기 어려울 수 있어요." |
+| `hidden` | "새우는 젓갈 같은 양념 안에 들어 있어 빼기 어려울 수 있어요." |
+| `component`, `null` | 안내 없음 |
+
+- 판정에 걸린 재료(`risk_ingredients`)에만 붙인다.
+- 안내는 판정을 바꾸지 않는다. 빼기 어렵다고 위험도를 올리거나, 뺄 수 있다고 내리지 않는다.
+- "~수 있어요" 말투로만 쓴다. 실제로 뺄 수 있는지는 가게마다 다르다.
+
 ---
 
 ## 5. Supervisor와의 계약
@@ -462,6 +500,9 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 10 | 할랄 사용자 + 돼지고기 `constraint_tags: []` + 입력 `warnings`에 ④가 붙인 `constraint_tags_lookup_failed`(`forces_caution: true`) | `caution` 이상, 입력 warning을 출력에 보존 | 태그가 빠져도 SAFE가 나오지 않을 것 |
 | 11 | 할랄 사용자 + `probability_results`: 돼지고기 `posterior_mean: 0.95`만 있음 | `caution`, `evidence_basis: estimated`, 확률 0.95 표시 | 확률만으로 DANGER를 내지 않을 것 (PPT 8쪽 6) |
 | 12 | 할랄 사용자 + `confirmed_results`만 있음: 모든 재료 사장님 확인, 돼지고기 `absent`(`override_eligible: true`) + `probability_results: []` + SAFE 금지 조건 없음 | `safe`, `evidence_basis: confirmed` | SAFE는 사장님 확인값으로만 나올 것 |
+| 13 | 해산물 알레르기 + 참치김밥, 참치 `role: identity`, 사장님 확인 `present` | `danger`, `risk_ingredients`의 참치 `role: identity`, 설명에 "주재료라 빼기 어려울 수 있어요" | 안내가 붙어도 판정은 그대로일 것 |
+| 14 | 새우 알레르기 + 김치찌개, 새우 `role: hidden`, 확률 근거 | `caution`, 새우 `role: hidden`, 설명에 "양념 안에 들어 있어 빼기 어려울 수 있어요" | 숨은 재료 안내가 붙을 것 |
+| 15 | 위험 재료 `role: component` 또는 `null` | 빼기 어려움 안내 없음 | 역할을 모를 때 안내를 지어내지 않을 것 |
 
 ---
 
@@ -472,4 +513,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [ ] **고위험 재검증 정의** (§2-3) — PPT 8쪽 6·10쪽은 정보 부족·충돌 케이스(5~10%)를 고가 모델로 재검증한다고 했다. 대상 기준, 하는 일(놓친 위험 찾기·근거 충돌 설명·질문 다듬기), 결과 사용처(사장님 질문·사용자 설명)는 결정(§2-3, 2026-10-11). 시간 제한은 judge 단계 전체 시간 제한에 맞춤, 질문 카드는 여러 장 허용(`owner_cards`), 재검증 LLM은 표준 재료 목록 안에서만 고름 (2026-10-11). 남은 것: 판정 변경 여부(#234)
 - [x] **LLM 호출 범위** — 고위험 메뉴에 한정하지 않고 설명 문장에 필요할 때 쓴다. 같은 입력에 같은 결과가 필요한 항목(판정 값 등)은 LLM 금지 (2026-10-11, §0-2)
 - [ ] **설명 문장에 LLM을 쓰는 기준** — 고정 템플릿으로 충분한 경우와 LLM이 필요한 경우를 나누는 기준 (예: 위험 재료가 여러 개, 숨은 재료 경로 설명, 변형 메뉴 추정 설명)
+- [x] **'빼고 요청' 안내** — 버튼은 유지하고, 판정에 걸린 재료가 주재료(`identity`)나 숨은 재료(`hidden`)면 설명에 "빼기 어려울 수 있어요" 안내를 덧붙인다 (2026-10-12, §1 `role`, §4-1)
+- [ ] **재료 역할(`role`)을 정하는 규칙 (외부 의존)** — ④ 담당. `hidden`은 ④가 펼친 하위 재료(depth 1 이상), `identity` 중 메뉴명에 들어간 재료는 이름 맞추기로 정할 수 있다. 메뉴명에 없는 "기본 재료"(참치김밥의 밥·김, 국수의 면)는 지금 DB에 정보가 없어 메뉴별 데이터가 필요하다. ③ 확인값·⑥ 웹 재료에도 Supervisor가 ④를 부를 때 함께 받아야 한다
+- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-7의 ⑧ 입력 세 목록과 `risk_ingredients`, §1-4 최종 응답에 `role` 필드 추가. ④⑤ 응답에도 필요
 - [ ] **만료된 확인값 재질문** — PPT 8쪽 6 "n개월마다 재확인". 3개월 지난 재료를 사장님에게 다시 묻는 질문 카드를 언제 만들지 (③ §6과 같은 건)
