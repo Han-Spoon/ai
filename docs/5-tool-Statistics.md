@@ -111,7 +111,7 @@
       "prior_source": "store",
       "source": "expanded",
       "depth": 2,
-      "confidence": 0.55,
+      "confidence": 0.49,
       "anomaly_locked": false
     }
   ],
@@ -120,7 +120,30 @@
 ```
 
 - `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
-- `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과, 어느 값 아래를 "낮음"으로 볼지(이하 "낮은 `confidence`")는 미확정이다 (§8).
+- `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과 "낮음" 기준은 §1-2-1에 있다.
+
+#### 1-2-1. `confidence` 계산식 (결정, 2026-10-12)
+
+```
+ν = alpha_post + beta_post − 2        # 실질 근거 수. 출처 신뢰도·depth 감쇠 반영 후, Beta(1,1) 몫 2를 뺀다. 0 미만이면 0
+confidence = 1 − 1 / √(ν + 1)
+낮은 confidence = ν < 5  (confidence < 0.59)
+```
+
+- **뜻**: 근거 덕분에 불확실성이 얼마나 줄었는가. Beta 분포의 표준편차는 `√(p(1−p)/(α+β+1))`이다. 같은 확률 p에서 근거가 없을 때와 비교한 표준편차 비율은 `1/√(ν+1)`로, **p와 무관하게 근거 양만으로 정해진다.**
+- **분포 폭(표준편차)을 그대로 쓰지 않는 이유**: 확률이 0.5 근처인 재료는 근거가 많아도 폭이 넓게 나와 "확률이 반반"과 "근거 부족"이 섞인다. ⑧이 알아야 하는 것은 "근거가 부족해 사장님께 물어봐야 하나"다.
+- **"낮음" 기준 5**: ⑥에서 정한 "고유 레시피 최소 5개"와 같은 기준이다 (⑥ 결정, 2026-10-10). 새로 정한 숫자가 아니다.
+- 출처 신뢰도(§3-3)와 depth 감쇠(§2-1)는 둘 다 ν를 줄이므로 따로 반영하지 않는다.
+- **`prior_source`는 섞지 않는다.** confidence는 근거 양만, `prior_source`는 근거 출처만 나타낸다. ⑧은 둘을 따로 받는다 (§5-2). 지금 데이터는 대부분 `global`이라, 단계로 상한을 두면 거의 모든 재료가 "낮음"이 되어 순위를 매길 수 없다.
+
+| 경우 | ν | confidence |
+|---|---|---|
+| 관측 0건 / `uninformative` / ⑥ 후보 | 0 | 0 |
+| 레시피 3개 | 3 | 0.50 |
+| 레시피 5개 (기준선) | 5 | 0.59 |
+| 레시피 57개, 출처 신뢰도 0.2 | 11.4 | 0.72 |
+| 레시피 57개, depth 2 (scale 0.25) | 14.25 | 0.74 |
+| 레시피 57개, 출처 신뢰도 1 | 57 | 0.87 |
 - `warnings`는 판정에 영향을 주는 데이터 이상을 담는다. 값: `empty_ingredients`(재료 0개), `integrity_error`(`k_count > n_total`). ⑧이 CAUTION 이상을 유지하려면 이 신호가 ⑧까지 가야 한다 (§8).
 
 ### 1-3. `prior_source` — fallback 단계 (내림차순 우선)
@@ -129,7 +152,7 @@
 |---|---|---|
 | `store` | 해당 가게 고유 prior | `ingredient_risk_scores`에 (`store_id`, `menu_id`, `ingredient_id`) 레코드 존재 |
 | `cluster` | 동일 메뉴 분류(`menus.category_id`) 클러스터 prior | store prior 없음. 구현은 #200으로 연기 (§8) |
-| `global` | 전역 prior. 크롤링 코퍼스 관측값(`menu_recipe_corpora`, `menu_ingredient_priors`, ④가 `observations`로 전달)과 큐레이션 레시피 | **최후의 수단.** 낮은 `confidence` 강제 |
+| `global` | 전역 prior. 크롤링 코퍼스 관측값(`menu_recipe_corpora`, `menu_ingredient_priors`, ④가 `observations`로 전달)과 큐레이션 레시피 | **최후의 수단.** confidence는 근거 양대로 계산하고, 가게와 다를 수 있다는 점은 `prior_source`로 ⑧에 전달 (§1-2-1, §5-2) |
 | `uninformative` | 근거 전무 (`n_total=0` 포함) | ⑧에서 CAUTION 이상 강제 유지 |
 
 ### 1-4. `anomaly_locked`
@@ -153,8 +176,8 @@ flowchart TD
     P -->|No| CL{"menu_category_id 있고<br/>클러스터 prior 존재?"}
     CL -->|Yes| CP["prior_source: cluster"]
     CL -->|No| G{"전역 prior 존재?"}
-    G -->|Yes| GP["prior_source: global<br/>confidence 낮음"]
-    G -->|No| UP["prior_source: uninformative<br/>Beta(1,1), confidence 낮음"]
+    G -->|Yes| GP["prior_source: global"]
+    G -->|No| UP["prior_source: uninformative<br/>Beta(1,1), confidence 0"]
 
     SP --> INH["inherited_confirmations로<br/>prior 보정 (override 아님)"]
     CP --> INH
@@ -241,7 +264,7 @@ def resolve_prior(
 ) -> tuple[float, float, PriorSource]:
     """store → cluster → global → uninformative 순 fallback.
     menu_category_id가 None이면 cluster를 건너뛴다.
-    전역 prior는 최후의 수단이며 confidence를 낮게 강등."""
+    전역 prior는 최후의 수단이며 prior_source로 표시한다."""
 
 
 def apply_source_scale(
@@ -303,7 +326,7 @@ for ing in ingredients:
         alpha_post     = alpha,
         beta_post      = beta,
         prior_source   = prior_src,
-        confidence     = confidence_score(prior_src, ing.source, ing.depth, alpha, beta),   # 0~1, 계산식 미확정 §8
+        confidence     = confidence_score(alpha, beta),   # 1 − 1/√(α+β−2+1), §1-2-1
         anomaly_locked = ing.anomaly_locked,
     ))
 
@@ -444,7 +467,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
-| 낮은 `confidence` | → ⑧이 사장님 질문 생성 우선순위 상향 |
+| 낮은 `confidence` | → ⑧이 사장님 질문 생성 우선순위 상향. 기준값으로 자르지 말고 **낮은 순으로 순위**를 매긴다 (질문 폭주 방지) |
+| `prior_source: global` + 낮은 `posterior_mean` | → 전역 데이터에서 "없음"이 나와도 그 가게 레시피는 다를 수 있다. ⑧이 근거 양이 많다고 SAFE로 확정하지 않도록 따로 본다 (⑧ 확인 필요, §8) |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
 > ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
@@ -501,6 +525,9 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 21 | 사이트 2곳에 관측값 | 사이트별 신뢰도를 곱해 합산 | 한 사이트 값만 쓰지 않을 것 |
 | 22 | 가게 증거 있음 | `ingredient_risk_scores`의 α−1, β−1을 그대로 더함 | 신뢰도를 두 번 곱하지 않을 것 |
 | 23 | 3개월 지난 사장님 확정값 | ⑤로 넘어와 확률 계산, 확정 답은 prior 보정에만 사용 | 만료값으로 override하지 않을 것 |
+| 24 | `α=1, β=1` (관측 0건) | `confidence = 0` | 무정보에 0보다 큰 값을 주지 않을 것 |
+| 25 | `k=53, n=57`, 신뢰도 1 vs `k=28, n=57`, 신뢰도 1 | 둘 다 `confidence ≈ 0.87` | 확률이 0.5 근처라고 confidence가 낮아지지 않을 것 |
+| 26 | ν = 4.9 / 5.0 | "낮음" / "낮지 않음" | 기준 ν < 5를 지킬 것 |
 
 ---
 
@@ -511,7 +538,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [ ] **`inherited_confirmations` prior 보정 강도** — 상속 정보를 α₀/β₀에 얼마나 반영할지 (구체 계수)
 - [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
 - [ ] **F2 최적화 threshold를 누가 계산하는가** — Supervisor 내부 규칙 vs ⑧ Decision Policy / XAI Agent 내부. 아키텍처 문서 §4 미해결 (#173, #139)
-- [ ] **`confidence` 계산식** — 0~1 숫자로 쓰기로 결정 (2026-10-06, #187). 남은 것: 무엇으로 계산할지(근거 양, 분포 폭, prior 단계 등)와 "낮음"으로 볼 기준값
+- [x] **`confidence` 계산식** — `1 − 1/√(ν+1)`, ν = 실질 근거 수. "낮음"은 ν < 5 (2026-10-12, §1-2-1)
+- [ ] **⑧ 외부 의존** — `prior_source: global`이면서 확률이 낮은 재료를 SAFE로 확정하지 않는 규칙, 낮은 confidence를 순위로 쓰는 방식. ⑧ 담당자 확인 필요
 - [x] **prior와 관측치의 결합 방식** — 출처별 `k`·`n`에 출처 신뢰도(0~1)를 곱해 더한다 (2026-10-06, #187, §3-3). 같은 레시피 데이터가 두 번 세어지지 않게 가게 증거에는 그 가게에서 새로 생긴 증거만 담는다
 - [ ] **PPT 9쪽 결합 모델 반영** — 자카드 보정·Chow-Liu + TAN 결합 모델(§3-2)을 런타임 ⑤에 넣을지, 시점과 형태. 실험 코드 위치 확인 포함
 - [x] **신뢰도를 곱하는 위치** — 코퍼스·큐레이션은 ⑤가 계산할 때, 가게 증거는 ⑦이 기록할 때 곱한다 (2026-10-10, §3-3)
@@ -542,7 +570,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 **세부 작업**
 
 - [ ] prior와 관측치 결합 방식 결정
-- [ ] `confidence` 0~1 계산식과 "낮음" 기준값 결정
+- [x] `confidence` 0~1 계산식과 "낮음" 기준값 결정 (§1-2-1)
 - [ ] `inherited_confirmations` 보정 강도 결정
 - [x] depth 감쇠 방식 결정 (§2-1)
 - [ ] `web_search` scale 결정
@@ -609,7 +637,7 @@ PPT는 "독립 가정 X"와 결합 모델 성능을 제출했지만, 현재 스�
 
 - [ ] 입력·출력 모델과 `context.store_id` 검증 구현
 - [ ] prior fallback 4단계와 `menu_category_id: null` 처리 구현
-- [ ] 전역·무정보 prior에서 낮은 `confidence` 부여 구현
+- [ ] `confidence_score` 구현 (§1-2-1). 무정보 prior는 0
 - [ ] prior 조회를 저장소 인터페이스와 테스트용 가짜 저장소로 분리
 
 **관련 서비스**
