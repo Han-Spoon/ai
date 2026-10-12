@@ -152,7 +152,7 @@ confidence = 1 − 1 / √(ν + 1)
 |---|---|---|
 | `store` | 해당 가게 고유 prior | `ingredient_risk_scores`에 (`store_id`, `menu_id`, `ingredient_id`) 레코드 존재 |
 | `cluster` | 동일 메뉴 분류(`menus.category_id`) 클러스터 prior | store prior 없음. 구현은 #200으로 연기 (§8) |
-| `global` | 전역 prior. 크롤링 코퍼스 관측값(`menu_recipe_corpora`, `menu_ingredient_priors`, ④가 `observations`로 전달)과 큐레이션 레시피 | **최후의 수단.** confidence는 근거 양대로 계산하고, 가게와 다를 수 있다는 점은 `prior_source`로 ⑧에 전달 (§1-2-1, §5-2) |
+| `global` | 전역 prior. 크롤링 코퍼스 관측값(`menu_recipe_corpora`, `menu_ingredient_priors`, ④가 `observations`로 전달)과 큐레이션 레시피 | **최후의 수단.** confidence는 근거 양대로 계산하고, 가게와 다를 수 있다는 점은 `prior_source`로 ⑧에 전달. 확률만으로는 SAFE가 나오지 않는다 (⑧ §3) |
 | `uninformative` | 근거 전무 (`n_total=0` 포함) | ⑧에서 CAUTION 이상 강제 유지 |
 
 ### 1-4. `anomaly_locked`
@@ -468,7 +468,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
 | 낮은 `confidence` | → ⑧이 "근거가 부족한 애매한 재료"로 보고, 사용자 태그와 관련 있으면 사장님 질문 카드를 만든다 (⑧ §2-1 7단계). 카드는 해당 재료마다 다 만든다 |
-| `prior_source: global` + 낮은 `posterior_mean` | → 전역 데이터에서 "없음"이 나와도 그 가게 레시피는 다를 수 있다. ⑧이 근거 양이 많다고 SAFE로 확정하지 않도록 따로 본다 (⑧ 확인 필요, §8) |
 | `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
 > ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
@@ -539,7 +538,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
 - [ ] **F2 최적화 threshold를 누가 계산하는가** — Supervisor 내부 규칙 vs ⑧ Decision Policy / XAI Agent 내부. 아키텍처 문서 §4 미해결 (#173, #139)
 - [x] **`confidence` 계산식** — `1 − 1/√(ν+1)`, ν = 실질 근거 수. "낮음"은 ν < 5 (2026-10-12, §1-2-1)
-- [ ] **⑧ 외부 의존** — `prior_source: global`이면서 확률이 낮은 재료를 SAFE로 확정하지 않는 규칙, "애매한 재료" 판단에 낮은 confidence(ν < 5)를 쓰는지. ⑧ 담당자 확인 필요
+- [ ] **⑧ 외부 의존** — ⑧ §2-1 7단계의 "확률도 애매한 재료" 판단에 낮은 confidence(ν < 5)를 쓰는지. ⑧ 담당자 확인 필요
 - [x] **prior와 관측치의 결합 방식** — 출처별 `k`·`n`에 출처 신뢰도(0~1)를 곱해 더한다 (2026-10-06, #187, §3-3). 같은 레시피 데이터가 두 번 세어지지 않게 가게 증거에는 그 가게에서 새로 생긴 증거만 담는다
 - [ ] **PPT 9쪽 결합 모델 반영** — 자카드 보정·Chow-Liu + TAN 결합 모델(§3-2)을 런타임 ⑤에 넣을지, 시점과 형태. 실험 코드 위치 확인 포함
 - [x] **신뢰도를 곱하는 위치** — 코퍼스·큐레이션은 ⑤가 계산할 때, 가게 증거는 ⑦이 기록할 때 곱한다 (2026-10-10, §3-3)
