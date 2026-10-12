@@ -57,6 +57,19 @@
 | `menu_category_id` | integer \| null | 필수 | 클러스터 fallback용 (④ 출력, `menus.category_id`). `null`이면 `cluster` 단계를 건너뛴다 |
 | `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5. 하위 재료는 상위 재료 관측값을 물려받으며 `observation_basis: inherited`), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
 | `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **쓰지 않음(보류)** — 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6) |
+| `priors` | object | 필수 | KnowledgeBundle의 prior 슬라이스 (⓪ §1-3). 아래 표대로 해석한다 |
+| `source_reliability` | object | 필수 | KnowledgeBundle의 출처 신뢰도 `weights[]` (`source_key`, `weight`). 목록에 없는 출처는 0.5 (⑦ §3-1) |
+
+**`priors` 슬라이스의 뜻 (결정, 2026-10-12)** — 판정 단계에서 ⑤는 DB를 조회하지 않고 이 값만 쓴다
+
+| 배열 | 내용 | ⑤의 처리 |
+|---|---|---|
+| `store` | `ingredient_risk_scores` (가게 증거 합계, `alpha = 1 + δα`, `beta = 1 + δβ`) | `alpha − 1`, `beta − 1`만 더한다 (§3-3, 테스트 22). 근거 출처는 `web_search`·`ocr_variant_tag`뿐이고 사장님 답변(`owner_feedback`)은 들어오지 않는다 |
+| `cluster` | **항상 `[]`** | 메뉴 분류 prior는 #200으로 연기 |
+| `global` | **항상 `[]`** | 전역 prior는 ⑤가 ④의 `observations` × 출처 신뢰도 + 큐레이션으로 계산한다 (§3-3). 여기에 α·β를 또 받으면 같은 크롤링 레시피를 두 번 센다 |
+
+- 필드는 ⓪ 계약 호환을 위해 남기되 `cluster`·`global`은 빈 배열로 정의한다. 값이 들어오면 무시하고 `prior_global_ignored` warning을 남긴다.
+- `priors.status`가 `unavailable`이면 `store`가 비어도 "가게 증거 없음"으로 보지 않는다. ⓪ 규칙대로 SAFE 금지 warning을 유지한다.
 
 ```json
 {
@@ -335,9 +348,9 @@ for ing in ingredients:
 return BayesianResult(context=context, probabilities=results)
 ```
 
-### 2-4. DB 조회 쿼리
+### 2-4. KnowledgeBundle 조립 쿼리 (백엔드가 실행)
 
-백엔드 ERD(V7~V10) 기준 PostgreSQL 예시다. ⑤는 읽기만 한다. 크롤링 코퍼스 관측값은 ④가 `observations`로 넘기므로 ⑤가 따로 조회하지 않는다.
+⑤는 판정 단계에서 DB를 조회하지 않는다. 아래는 **백엔드가 KnowledgeBundle의 `priors`·`source_reliability`를 만들 때** 쓰는 쿼리다 (백엔드 ERD V7~V11 기준). 크롤링 코퍼스 관측값은 ④가 `observations`로 넘기므로 여기서 가져오지 않는다. `priors.cluster`·`priors.global`은 빈 배열로 보낸다 (§1-1).
 
 ```sql
 -- 가게 증거 (prior_source: store)
@@ -346,7 +359,7 @@ FROM ingredient_risk_scores
 WHERE store_id = :store_id AND menu_id = :menu_id
   AND ingredient_id = ANY(:ingredient_ids);
 
--- 출처 신뢰도 (전체 공통 하나)
+-- 출처 신뢰도 (전체 공통 하나) → source_reliability.weights[]: source_key = source_type, weight = reliability
 SELECT source_type, reliability FROM source_reliability;
 
 -- 클러스터 prior (같은 분류 메뉴 합산) — #200 연기, 지금은 쓰지 않음
@@ -532,6 +545,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 25 | `k=53, n=57`, 신뢰도 1 vs `k=28, n=57`, 신뢰도 1 | 둘 다 `confidence ≈ 0.87` | 확률이 0.5 근처라고 confidence가 낮아지지 않을 것 |
 | 26 | ν = 4.9 / 5.0 | "낮음" / "낮지 않음" | 기준 ν < 5를 지킬 것 |
 | 27 | `source: web_search`, 출처 신뢰도 0.6 | 신뢰도만 곱하고 scale 1.0 | 두 번 할인하지 않을 것 |
+| 28 | `priors.global`에 α·β가 들어옴 + ④ `observations` 있음 | `global` 값은 무시, `observations`로만 전역 prior 계산, warning | 같은 크롤링 레시피를 두 번 세지 않을 것 |
+| 29 | `priors.status: unavailable`, `store: []` | 관측값으로 계산하되 SAFE 금지 warning 유지 | "가게 증거 없음"으로 보지 않을 것 |
 
 ---
 
@@ -552,6 +567,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [x] **`web_search` 출처의 scale** — 1.0. 출처 신뢰도로 이미 할인하므로 추가로 줄이지 않는다 (2026-10-12, §2-1)
 - [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). 
 - [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
+- [ ] **KnowledgeBundle `priors` 정의 반영 (외부 의존)** — ⓪ §1-3·§4-4에 `priors.cluster`·`priors.global`은 항상 빈 배열, `priors.store` 근거 출처는 `web_search`·`ocr_variant_tag`만이라는 정의를 넣는다 (§1-1). ⓪ 담당자와 백엔드 확인 필요
 
 ---
 
