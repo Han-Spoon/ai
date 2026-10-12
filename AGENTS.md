@@ -54,7 +54,6 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - `status`는 **3값** `present` / `absent` / `unknown`. 2값으로 축약 금지.
 - anomaly 판정된 재료는 override를 거부하고 **CAUTION 이상을 강제 유지**한다 (FN 최소화 우선).
 - anomaly 재료도 확률 계산은 수행하되 `anomaly_locked`로 잠근다.
-- 확정 정보 상속 범위는 `base_menu_id` 단일 메뉴까지. **형제 변형 제외.**
 
 ### 온톨로지
 - **교차오염은 다루지 않는다**
