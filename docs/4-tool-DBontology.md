@@ -60,12 +60,12 @@ PPT 8쪽 "3 숨은 재료·변형 확장"(복합 재료 재귀 확장 후 메뉴
 
 | 용어 | 관계 | 질문 | 예시 | 구현 필드 |
 |---|---|---|---|---|
-| **Taxonomy** | `is-a` | "이건 무슨 종류인가?" | 액젓 **is-a** 발효/장류 | `taxonomy` |
+| **Taxonomy** | `is-a` | "이건 무슨 종류인가?" | 액젓 **is-a** 발효/장류(`fermented`) | `taxonomy` |
 | **Ontology** | taxonomy + `part-of` 등 | "이건 무엇으로 이루어지는가?" | 김치찌개 **has** 김치 **has** 액젓 | `hidden` + `taxonomy` |
 
 - **Taxonomy는 Ontology의 부분집합이다.** Taxonomy는 계층 분류 트리 하나뿐이고, 여기에 `part-of` 같은 다른 관계가 추가되면 Ontology가 된다.
 - `hidden_rules.py`는 두 관계를 모두 담고 있으므로 **재료 온톨로지(ingredient ontology)** 가 정확한 명칭이다.
-  - 7개 카테고리 분류 부분만 지칭할 때 → "taxonomy 분류"
+  - 8개 카테고리 분류 부분만 지칭할 때 → "taxonomy 분류"
   - 재귀 확장 부분을 지칭할 때 → "composition(part-of) 기반 재귀 확장"
 
 ```mermaid
@@ -149,7 +149,7 @@ graph TB
     {
       "ingredient_id": 212,
       "canonical_name": "멸치액젓",
-      "taxonomy_category": "발효/장류",
+      "taxonomy_category": "fermented",
       "allergen_tags": ["is_fish"],
       "dietary_tags": [],
       "depth": 1,
@@ -324,7 +324,7 @@ def recursive_expand(
 
 def attach_taxonomy(nodes: list[IngredientNode]) -> list[IngredientNode]:
     """전 depth 노드에 taxonomy_category + allergen_tags + dietary_tags 부착.
-    미등록 재료는 '기타' 부여. 드롭 금지."""
+    미분류 재료는 'unknown' 부여. 드롭 금지."""
 
 
 def update_ingredient_cache(
@@ -545,9 +545,9 @@ graph TB
     end
 
     subgraph "축 3: 재료 is-a + 위험 속성"
-        I0 -.taxonomy.-> T0["발효/장류"]
-        I1 -.taxonomy.-> T1["발효/장류"]
-        I2 -.taxonomy.-> T2["기타"]
+        I0 -.taxonomy.-> T0["fermented"]
+        I1 -.taxonomy.-> T1["fermented"]
+        I2 -.taxonomy.-> T2["base"]
         I1 -.allergen.-> A1["is_fish"]
         I2 -.allergen.-> A2["is_shellfish"]
     end
@@ -577,19 +577,25 @@ graph TB
 
 ## 4. Taxonomy 카테고리
 
-재료에 붙이는 taxonomy 카테고리는 아래 7개다.
+재료에 붙이는 taxonomy 카테고리는 아래 8개다 (결정, 2026-10-12, #182). 값은 ERD `ingredients.taxonomy_category`에 코드로 저장한다.
 
-| 카테고리 | 비고 |
-|---|---|
-| 발효/장류 | |
-| 소스 | |
-| 육수 | |
-| 양념 | |
-| 고명/견과 | |
-| 유지류 | |
-| 기타 | 어느 카테고리에도 맞지 않는 재료 |
+| 코드 | 이름 | 기준 | 예시 |
+|---|---|---|---|
+| `fermented` | 발효/장류 | 발효·절임으로 만든 재료 | 된장, 고추장, 간장, 액젓, 젓갈, 김치, 치즈 |
+| `broth` | 육수 | 우려낸 국물 | 멸칫국물, 사골, 다시물 |
+| `sauce` | 소스 | 여러 재료를 섞은 액상·페이스트 | 마요네즈, 굴소스, 양념장, 케첩 |
+| `processed` | 가공식품 | 공장·가게에서 만든 완제품·반제품 | 햄, 어묵, 만두, 맛살, 라면, 튀김가루, 면류, 두부 |
+| `seasoning` | 양념 | 단일 가루·결정·조미료·향신료·술 | 소금, 설탕, 고춧가루, 다시다, 맛술, 후춧가루 |
+| `oil` | 유지류 | 기름·지방 | 식용유, 참기름, 들기름, 버터 |
+| `garnish` | 고명/견과 | 위에 뿌리거나 얹는 것 | 깨, 김, 잣, 땅콩, 호두 |
+| `base` | 원재료 | 그 자체로 한 가지인 재료 | 돼지고기, 새우, 배추, 밀가루, 밥 |
+| `unknown` | 미분류 | 아직 분류하지 않은 재료 (fallback) | — |
 
-2026-10-06 기준 재료 온톨로지 데이터(`ai_result/rules/hidden_rules_data.py`)에는 카테고리 값이 없다. 재료별 카테고리 값을 채우는 작업이 필요하다 (§8).
+- **`base`를 뺀 7개는 숨은 재료를 품을 수 있는 재료다.** `ai_result/rules/hidden_rules_data.py`의 숨은 재료 규칙과 맞춘 것이다. 모호성 flag와 대응: `has_unclear_jeotgal` → `fermented`, `has_unclear_broth` → `broth`, `has_hidden_animal` → `processed`, `has_unclear_seasoning` → `sauce`·`seasoning`. 시드에 있는 숨은 재료 규칙 대상 40개는 모두 `base`가 아닌 카테고리다.
+- **재료 하나에 카테고리 하나.** 두 카테고리에 걸치면 숨은 재료를 품을 가능성이 큰 쪽을 고른다: `fermented > broth > sauce > processed > seasoning > oil > garnish > base`. 예: 고추장은 소스로도 쓰지만 `fermented`.
+- **`unknown`과 `base`는 다르다.** `base`는 원재료라는 분류 결과이고, `unknown`은 분류가 비어 있다는 데이터 누락 신호다. 예전 `기타`를 둘로 나눴다.
+- **알레르겐은 섞지 않는다.** 버터는 `oil`이고, 우유 알레르겐은 `allergen_tags`로 따로 붙는다 (§3-3).
+- 재료별 값: `crawling/ingredient_taxonomy.csv` (시드 재료 324개, 2026-10-12 1차 분류). 시드를 다시 만들 때 이 파일로 `ingredients.taxonomy_category`를 채운다. 여기 없는 재료는 `unknown`.
 
 ---
 
@@ -648,7 +654,7 @@ graph TB
 | 재귀 깊이 과다 | `max_depth` = 5에서 확장을 멈추고 `warnings`에 `max_depth_reached`를 붙인다. ⑧은 이 경고가 있으면 CAUTION 이상을 유지한다. 그 아래 재료를 몰라서 SAFE로 새는 것을 막기 위함 |
 | `base_menu_id`는 있으나 참조 메뉴가 없음 | 일반 메뉴로 처리 + 무결성 오류 로그. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
 | longest-match 성공, remain 매핑 실패 (`"우리집된장찌개"`) | base로 처리, remain 무시, `unmapped_token`에 기록 |
-| taxonomy 미등록 재료 | `기타` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
+| taxonomy 미등록 재료 | `unknown` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
 | `recipe_ingredients` 빈 배열 | `exists_in_db: true`지만 재료 0개 → `warnings`에 `empty_recipe`. ⑧에서 CAUTION 이상 유지 |
 | 메뉴가 어느 크롤링 사이트에도 없음 | `observations: []`. ⑤가 낮은 `confidence`로 처리 |
 
@@ -672,7 +678,7 @@ graph TB
 | 7-d | 일부 확인 상태에서 호출 | 캐시 저장 명령에 전체 목록 | ③의 분모가 부분 목록이 되지 않을 것 |
 | 8 | ③에서 anomaly 재료 포함 | anomaly 재료도 확장 대상 | **확장에서 빠지지 않을 것** |
 | 9 | `우리집된장찌개` | base 처리 + remain 매핑 실패 | `unmapped_token` 기록, 에러 없을 것 |
-| 10 | taxonomy 미등록 재료 | `기타` 부여 | 재료 드롭되지 않을 것 |
+| 10 | taxonomy 미등록 재료 | `unknown` 부여 | 재료 드롭되지 않을 것, `base`로 채우지 않을 것 |
 | 11 | `base_menu_id` 참조 깨짐 | 일반 메뉴 처리 + 로그 | 크래시 없을 것 |
 | 12 | 갈비구이-마늘 | `observations`에 사이트별 `k_count`, `n_total` 반환 | ⑤가 사이트별로 α, β를 산출할 수 있을 것 |
 | 12-b | 사이트에 메뉴는 있는데 재료가 안 나옴 | 그 사이트 `k_count=0`, `n_total=레시피 수` | 행이 없다고 관측값을 빠뜨리지 않을 것 |
@@ -692,7 +698,7 @@ graph TB
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] **재료별 taxonomy 카테고리 값 작성** — 현재 온톨로지 데이터에 카테고리 값이 없음 (§4)
+- [x] **재료별 taxonomy 카테고리 값 작성** — 시드 재료 324개 1차 분류, `crawling/ingredient_taxonomy.csv` (2026-10-12, §4)
 - [x] **depth 감쇠 함수** — ⑤가 최종 α·β에 `max(0.5^depth, 0.125)` 동일 비율 적용, mean 보존 (2026-10-10, ⑤ §2-1)
 - [x] **`max_depth` 상한값** — 5단계 (2026-10-10). 현재 숨은 재료 데이터의 최대 깊이는 2라 여유를 둔 값이다. 닿으면 확장을 멈추고 `max_depth_reached` 경고를 붙여 CAUTION 이상을 유지한다. 깊이 4 이상 경로가 생기면 다시 본다
 - [x] **`menu_category` 전체 목록** — `ai_ruleengine/data/menus.csv`의 25개 분류를 `menu_categories`로 시드했다 (2026-10-10, #223)
@@ -713,7 +719,7 @@ graph TB
 - [x] **애매함 플래그 전달** — `menu_ambiguity_flags`와 재료별 `ambiguity_flag`를 출력에 넣는다 (2026-10-10, §1-2)
 - [ ] **애매함 플래그 사용 (외부 의존)** — ⑧ 입력에 플래그를 받고, 사용자 금지 태그와 관련 있으면 CAUTION 유지·사장님 질문 근거로 쓰는 규칙 추가 요청. 지금 룰엔진 `risk_judge._relevant_ambiguity_flags`와 같은 동작. ⓪ §4 계약에도 필드 추가 필요
 - [ ] **재료 단위 변경의 캐시 무효화 (외부 의존)** — 구성 간선·재료 태그는 여러 메뉴에 걸친다. 바뀌면 그 재료가 들어간 메뉴의 `knowledge_revision`을 백엔드가 올려야 한다. 메뉴별로 올릴지, 전역 지식 리비전 하나를 둘지 백엔드와 정한다
-- [ ] **taxonomy 7종의 코드 값** — §4는 한글 이름만 있고 ERD `taxonomy_category`는 코드(VARCHAR(20))다. 코드 값(예: `fermented`, `sauce`, `broth`, `seasoning`, `garnish_nut`, `oil`, `etc`)과 재료 324개 분류를 #182에서 정한다. 비어 있으면 ④는 "기타"로 두고 재료는 버리지 않는다
+- [x] **taxonomy 코드 값** — 8종 + `unknown` (2026-10-12, §4, #182). 가공식품 `processed`를 추가하고 `기타`를 `base`·`unknown`으로 나눴다. ⓪ 예시 값(`발효_장류`)은 ⓪ 담당자가 `fermented`로 맞춰야 한다
 - [ ] **`warnings` 전달 (외부 의존)** — ⓪ §4-7 ⑧ 입력 형식에 `warnings`를 넣는 안. ⓪·⑧ 담당자 확인 필요
 - [ ] **캐시 내용 정의 (외부 의존)** — `caution-db-schema.md` §6은 캐시에 "④ 출력의 `ingredients[]`(`anomaly_locked` 포함)"를 저장한다고 적는다. ③이 분모로 쓰려면 확인 재료를 빼기 전 전체 확장 목록이어야 하고, `anomaly_locked`는 요청 단위 값이라 제외해야 한다 (§2-1). 스키마 문서 수정 필요
 
@@ -771,7 +777,7 @@ graph TB
 
 **세부 작업**
 
-- [ ] 재료별 taxonomy 카테고리 값 작성
+- [x] 재료별 taxonomy 카테고리 값 작성 (§4)
 - [ ] `menu_category` 76개 매핑 목록 작성
 - [x] `max_depth` 상한 결정 (5)
 - [x] depth 감쇠 방식 결정 (⑤ §2-1)
@@ -841,7 +847,7 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 
 - [ ] 가변 depth 재귀 확장과 `visited` 순환 차단 구현
 - [ ] 전 노드 `depth`·`parent`·`k_count`·`n_total` 기록
-- [ ] taxonomy 카테고리와 `기타` fallback 구현
+- [ ] taxonomy 카테고리와 `unknown` fallback 구현
 - [ ] `allergen_tags` / `dietary_tags` `is_*` 태깅 구현
 - [ ] anomaly 재료 `anomaly_locked` 보존 구현
 - [ ] 확인 재료 제외 규칙 구현 (`present` 하위 재료 유지, `absent` 경로 제외)

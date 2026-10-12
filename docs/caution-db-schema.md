@@ -73,7 +73,7 @@ erDiagram
 | `id` | PK | |
 | `name_ko` | varchar | 재료명 |
 | `tag` | varchar | `is_pork`, `is_shrimp` 등 |
-| `taxonomy_category` | varchar | 발효장류 / 소스 / 육수 / 양념 / 고명견과 / 유지류 / 기타 |
+| `taxonomy_category` | varchar | `fermented` / `broth` / `sauce` / `processed` / `seasoning` / `oil` / `garnish` / `base` / `unknown` (④ §4) |
 
 **교차오염 카테고리 제외 (4-tool 확정)**: 조리 과정의 교차오염(공유 기름·도마·불판 등)은 가게 단위로 관측 불가능해 확률 모델 범위에서 제외 — 해당 위험은 ⑧ Decision Policy / XAI Agent의 사장님 질문 생성 경로로 위임. 기존 교차오염 소속 재료는 실제 성격에 맞는 카테고리로 재배치하거나(예: 소스/양념/유지류) `기타`로 분류. 31개 재료의 상세 재배치 매핑표는 `4-tool-DBontology.md` §8에서 작업 중(미완성).
 
