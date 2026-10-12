@@ -125,8 +125,8 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
       "item_id": "scan-123:1",
       "menu_id": "menu-002",
       "menu_name": "비빔밥",
-      "score": 0.91,
-      "reason_codes": ["safe_confirmed", "profile_match"],
+      "recommendation_score": 1.0,
+      "reason_codes": ["safe_confirmed", "culture_match"],
       "culture_contents": [
         {
           "content_id": "culture-101",
@@ -147,8 +147,8 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
 - §2-3 정렬 결과를 담을 필드는 ⓪ 반영 후 추가한다 (§8).
 - `rank`는 1부터 시작하고 응답 안에서 중복되지 않는다.
 - `item_id`와 `menu_id`는 입력에 존재한 값을 그대로 사용한다. 인덱스 검색 결과만으로 새로운 안전 메뉴 ID를 만들어내지 않는다.
-- `score`는 위험 확률이나 안전 신뢰도가 아니다. SAFE 추천의 순서는 점수가 아니라 DB 순서로 정한다 (§2-1 5단계). `score`를 계속 둘지는 ⓪ 계약을 고칠 때 함께 정한다.
-- `reason_codes`는 랭킹 이유를 구조화해서 전달한다. ⓪ 초안의 허용값은 `safe_confirmed` / `profile_match` / `culture_match`다. 사용자용 문구 생성 방식은 §8에서 확정한다.
+- `recommendation_score`(추천 점수)는 **추천할 만한 정도**이지 안전도가 아니다. 이름을 `score`로 두지 않은 이유: 최종 응답에 OCR 품질 `scan_quality.score`, ② 메뉴 후보 매칭 `score`가 이미 있어 뜻이 다른 값이 같은 이름이 된다 (2026-10-12). 검증된 문화 콘텐츠가 있으면 `1.0`, 없으면 `0.5`다 (§2-1 5단계). 확률·위험도·스폰서 여부는 점수에 넣지 않는다.
+- `reason_codes`는 랭킹 이유를 구조화해서 전달한다. ⓪ 초안의 허용값은 `safe_confirmed` / `profile_match` / `culture_match`다. `culture_match`는 검증된 문화 콘텐츠가 있어 `recommendation_score: 1.0`일 때 붙인다. `profile_match`는 사용자 선호 데이터가 없어 지금은 쓰지 않는다 (§8). 사용자용 문구 생성 방식은 §8에서 확정한다.
 - `culture_contents`는 검증된 인덱스에 존재하고 `source_id`로 추적 가능한 항목만 포함한다.
 - `sponsored`는 안전 판정과 분리하기 위한 표시 필드다. 실제 스폰서 콘텐츠의 포함·정렬 정책은 §8에서 확정한다.
 
@@ -165,11 +165,12 @@ flowchart TD
     EMPTY -->|No| NONE["recommendations: []"]
     EMPTY -->|Yes| QUERY["검증된 Curation/RAG 인덱스 검색"]
     QUERY --> FOUND{"검증된 결과가 있는가?"}
-    FOUND -->|No| FALLBACK["안전 후보 기본 순서 유지\n문화 콘텐츠는 빈 배열"]
-    FOUND -->|Yes| SCORE["DB 순서(menu_id 오름차순)로 정렬"]
-    SCORE --> LIMIT["중복 제거 + limit 적용"]
-    FALLBACK --> OUT["Supervisor에 추천 결과 반환"]
-    LIMIT --> OUT
+    FOUND -->|No| FALLBACK["문화 콘텐츠 없음\n모두 recommendation_score 0.5"]
+    FOUND -->|Yes| SCORE["recommendation_score 계산\n문화 콘텐츠 있으면 1.0, 없으면 0.5"]
+    FALLBACK --> SORT
+    SCORE --> SORT["recommendation_score 높은 순\n같으면 menu_id 오름차순"]
+    SORT --> LIMIT["중복 제거 + limit 적용"]
+    LIMIT --> OUT["Supervisor에 추천 결과 반환"]
     NONE --> OUT
 ```
 
@@ -179,8 +180,8 @@ flowchart TD
 2. **안전 필터**: `risk_level == safe`인 항목만 남긴다. 이 단계는 랭킹보다 항상 먼저 실행한다.
 3. **RAG 검색**: 안전 후보의 `menu_id`, 표준 메뉴명, 사용자 언어를 이용해 검증된 인덱스에서 메뉴·문화 콘텐츠를 검색한다.
 4. **프로필 필터**: 사용자 식단 프로필과 명백히 충돌하는 결과는 제외한다. 이 필터는 새로운 위험 판정이 아니라 이미 확정된 사용자 제약을 추천 결과에 다시 적용하는 방어 절차다.
-5. **정렬**: SAFE 추천끼리는 **DB 순서(`menu_id` 오름차순)**로 정렬한다. 점수 가중치는 쓰지 않는다 (결정, 2026-10-11). 같은 입력에는 항상 같은 순서가 나온다.
-6. (삭제 — 점수를 쓰지 않으므로 동점 처리가 필요 없다)
+5. **점수 계산** (결정, 2026-10-12): 검증된 문화 콘텐츠가 있으면 `recommendation_score: 1.0`과 `reason_codes`에 `culture_match`, 없으면 `recommendation_score: 0.5`다. `recommendation_score`는 추천할 만한 정도이지 안전도가 아니다. 확률·위험도·스폰서 여부는 넣지 않는다. 규칙으로만 계산하고 LLM은 쓰지 않는다.
+6. **정렬**: `recommendation_score` 높은 순으로 정렬하고, 같은 `recommendation_score` 안에서는 DB 순서(`menu_id` 오름차순)로 정렬한다. 같은 입력에는 항상 같은 순서가 나온다.
 7. **결과 제한**: 중복 메뉴·중복 콘텐츠를 제거하고 `limit`만큼 반환한다.
 8. **출처 포함**: 문화 콘텐츠마다 `source_id`를 포함해 검증된 원문으로 추적할 수 있게 한다.
 
@@ -288,7 +289,7 @@ PPT의 “Sponsored 콘텐츠와 AI 안전 판정은 명확히 분리” 원칙�
 | 3 | SAFE 후보 + 검증된 문화 콘텐츠 | `source_id`가 있는 추천 결과 | 출처 추적 가능 |
 | 4 | SAFE 후보 + 미검증 콘텐츠 | 미검증 콘텐츠 제외 | 검증된 인덱스만 사용 |
 | 5 | RAG timeout | 기존 판정 유지 + 추천 fallback | 전체 요청 실패 없음 |
-| 6 | SAFE 후보 2개 | `menu_id` 오름차순, 반복 실행 시 동일 순서 | DB 순서 정렬 |
+| 6 | SAFE 후보 3개: A·C는 문화 콘텐츠 없음, B만 있음 (`menu_id` A < B < C) | B(1.0) → A(0.5) → C(0.5) | 콘텐츠가 있는 메뉴가 먼저, 같은 `recommendation_score`는 `menu_id` 오름차순, 반복 실행 시 동일 순서 |
 | 7 | DANGER 스폰서 메뉴 | 추천 제외 | 스폰서와 안전 판정 분리 |
 | 8 | 입력과 다른 `menu_id` 검색 결과 | 해당 결과 제외 + warning | 인덱스 결과로 후보 확장 금지 |
 | 9 | 사용자 프로필과 충돌하는 콘텐츠 | 추천 제외 | 식단 제약 재검증 |
@@ -305,8 +306,9 @@ PPT의 “Sponsored 콘텐츠와 AI 안전 판정은 명확히 분리” 원칙�
 - [ ] **전체 메뉴 정렬을 위한 ⓪ 계약 변경 (외부 의존)** — 지금 ⓪ §4-8은 SAFE이면서 정보가 다 모인 메뉴만 ⑨에 넘기고, 응답에도 `recommendations`만 있다. §2-3 정렬을 하려면 ⓪이 전체 `decision_results`를 넘기고, 응답에 정렬 결과 필드(예: `item_id` 순서 목록)를 추가해야 한다. ⓪ 담당자 요청
 - [ ] **Curation/RAG 인덱스 소유 주체와 저장 방식** — 벡터 DB, 관계형 DB, 파일 기반 인덱스 중 무엇을 사용할지
 - [ ] **콘텐츠 검수·승인 기준** — `review_status`를 누가 부여하고 언제 재검수할지
-- [x] **SAFE 추천끼리의 순서** — 점수 가중치 없이 DB 순서(`menu_id` 오름차순) (2026-10-11, §2-1 5단계)
-- [x] **동점 tie-break 규칙** — 점수를 쓰지 않아 해당 없음 (2026-10-11)
+- [x] **SAFE 추천끼리의 순서** — `recommendation_score` 높은 순, 같은 `recommendation_score`는 DB 순서(`menu_id` 오름차순). `recommendation_score`는 검증된 문화 콘텐츠가 있으면 1.0, 없으면 0.5 (2026-10-12, §2-1 5·6단계)
+- [x] **동점 tie-break 규칙** — 같은 `recommendation_score`는 `menu_id` 오름차순 (2026-10-12). ⓪ §4-8 초안의 `source_index` 우선은 Supervisor 문서 수정 때 맞춘다
+- [ ] **인기도·사용자 선호(`profile_match`)를 점수에 넣을지** — 지금은 데이터가 없어 넣지 않는다. 메뉴 인기도나 사용자 선호 데이터가 생기면 `recommendation_score` 계산식에 추가를 검토한다
 - [ ] **추천 개수** — 기본 Top-K와 `limit` 허용 범위. ⓪ §1-3 초안은 1~20, 기본 5
 - [ ] **지원 언어와 fallback** — 문화 콘텐츠가 요청 언어로 없을 때 사용할 언어와 번역 정책
 - [ ] **스폰서 콘텐츠 노출 방식** — SAFE 후보 내 별도 영역으로 분리할지, 랭킹에 반영할지
