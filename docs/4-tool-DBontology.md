@@ -515,7 +515,7 @@ LEFT JOIN menu_ingredient_priors p
 WHERE c.menu_id = :menu_id;
 ```
 
-**캐시 저장 명령** (④가 만들고 백엔드가 실행)
+**캐시 저장 명령** (④가 만들고 백엔드가 실행, `action: save_menu_ingredient_cache`. ⑦ §1-2의 허용 action 6종 중 하나)
 
 ```sql
 INSERT INTO menu_ingredient_cache (store_id, menu_id, menu_revision, ingredients_snapshot)
