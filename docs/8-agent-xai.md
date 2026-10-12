@@ -22,11 +22,11 @@
 | PPT 표현 | 이 문서 |
 |---|---|
 | 7쪽: 사용자 식단 제약과 확정·추정 근거를 정책에 따라 종합해 Safe / Caution / Danger 판정 (`정책 기반 판정`) | §2, §3. 판정은 정해진 정책(규칙)으로 한다 |
-| 7쪽: 위험 재료·판정 근거 생성 (`근거 설명`) | §1 출력 `risk_ingredients`, `evidence_refs`, `message`. §4 다국어 문구 |
-| 7쪽: 확인 질문 생성 (`확인 질문`) | §1 `owner_cards`, §2-1 7단계 |
+| 7쪽: 위험 재료·판정 근거 생성 (`근거 설명`) | §1-2 `risk_ingredients`, `evidence_refs`, `message`. §4 다국어 문구 |
+| 7쪽: 확인 질문 생성 (`확인 질문`) | §1-3 `owner_cards`, §2-1 7단계 |
 | 3쪽: Hard Evidence와 Soft Evidence를 구분, 근거의 출처·신뢰도를 함께 전달 | `evidence_basis`(`confirmed` / `estimated` / `unknown`)로 근거 종류를 구분하고, `evidence_refs`로 근거를 가리킨다. 출처·신뢰도는 ⓪ 근거 목록(`EvidenceRef`)에 있다 |
 | 3쪽: 근거가 부족하면 억지로 확정하지 않고 Caution / 확인 질문으로 전환 | §2-2 SAFE 금지 조건, §2-1 7단계 |
-| 3쪽 OUTPUT: 위험도 판정 결과 / 판정 근거 / 위험 재료 / 확인 질문 | §1 출력 |
+| 3쪽 OUTPUT: 위험도 판정 결과 / 판정 근거 / 위험 재료 / 확인 질문 | §1-2 |
 | 8쪽 4: 정보 부족 → 보수적 판정 (NO_INFORMATION, 안전으로 단정하지 않음) | §2-1 3단계, §3. `no_information`이면 CAUTION, `evidence_basis: unknown` |
 | 8쪽 흐름: 확정값과 미확인 재료의 확률값 통합 → ⑧ 최종 판정 생성 | ⓪이 ③ 확정값과 ⑤ 확률을 모아 넘기고(§5), ⑧이 합쳐 판정한다 (§2) |
 | 8쪽 6: Hard Evidence 있음(사장님 확인 n건↑) → DANGER / SAFE 확정 | §3. n건 확정 규칙은 ⑦ §2-3 |
@@ -64,163 +64,41 @@
 
 ## 1. 입력 / 출력 스펙
 
-입출력 JSON은 ⓪ §1(공통 모델)·§4-7을 기준으로 한다. 아래는 같은 내용을 옮긴 것이다.
+**JSON 형식은 [⓪ §4-7 "⑧ Decision Policy / XAI Agent"](0-agent-supervisor.md)에서만 정의한다** (요청 `DecisionRequest`, 응답 `DecisionResponse`, 질문 카드 `owner_cards[]`, 공통 모델은 ⓪ §1-2). 이 문서에는 JSON을 다시 적지 않고, ⑧이 값을 어떻게 쓰고 정하는지만 적는다. 필드를 바꾸려면 ⓪을 고친다. 아직 ⓪에 없는 필드는 **⓪ 반영 대기**로 표시했다 (§8).
 
-### 입력 — `DecisionRequest` (Supervisor가 취합해서 전달)
-
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu": {
-    "menu_id": "menu-001",
-    "normalized_menu_name": "김치찌개"
-  },
-  "confirmed_results": [
-    {
-      "ingredient": {
-        "ingredient_id": "ingredient-001",
-        "canonical_name": "돼지고기"
-      },
-      "constraint_tags": ["is_pork"],
-      "role": "component",
-      "status": "present",
-      "override_eligible": true,
-      "expired": false,
-      "evidence_refs": ["evidence-001"]
-    }
-  ],
-  "probability_results": [
-    {
-      "ingredient": {
-        "ingredient_id": "ingredient-010",
-        "canonical_name": "액젓"
-      },
-      "constraint_tags": ["is_fish"],
-      "role": "hidden",
-      "posterior_mean": 0.62,
-      "confidence": 0.55,
-      "prior_source": "store",
-      "anomaly_locked": false,
-      "evidence_refs": ["recipe:menu-001:ingredient-010"]
-    }
-  ],
-  "proposed_variant_ingredients": [
-    {
-      "ingredient": {
-        "ingredient_id": "ingredient-020",
-        "canonical_name": "소고기"
-      },
-      "constraint_tags": ["is_beef"],
-      "role": "identity",
-      "source": "variant_suggested",
-      "evidence_refs": ["runtime:scan-123:0:ocr_variant_tag:0"]
-    }
-  ],
-  "menu_ambiguity_flags": ["has_unclear_jeotgal"],
-  "flag_confirmations": [],
-  "risk_tag_observations": [
-    {
-      "tag": "is_spicy",
-      "confidence": 0.78,
-      "evidence_refs": ["ocr:scan-123:0:is_spicy"]
-    }
-  ],
-  "no_information": false,
-  "information_status": "complete",
-  "user_profile": {
-    "religion_type": "halal",
-    "is_vegetarian": false,
-    "vegetarian_type": null,
-    "no_alcohol": false,
-    "allergies": ["is_fish"],
-    "no_spicy": false
-  },
-  "locale": "ko",
-  "warnings": [],
-  "errors": []
-}
-```
-
-| 필드 | 타입 | 출처 | 설명 |
-|---|---|---|---|
-| `context` | object | ⓪ | 요청 공통 정보 (⓪ §1-2 `NodeContext`: `store_id`, `trace_id`, `item_id` 등). ⑧은 수정하지 않고 그대로 반환 |
-| `menu` | object | ⓪ | `{menu_id, normalized_menu_name}`. 판정 대상 메뉴 |
-| `confirmed_results` | `ConfirmedResult[]` | ③ Exact Feedback Tool | hard evidence. 재료별 `status` 3값과 `override_eligible`을 담은 목록. 없으면 `[]`. 형식은 아래 참고 |
-| `probability_results` | `ProbabilityResult[]` | ⑤ Bayesian Tool | soft evidence. 재료별 확률 목록. 없으면 `[]`. 형식은 아래 참고 |
-| `proposed_variant_ingredients` | `ProposedVariantIngredient[]` | ④ 변형 태깅 | **DB 미반영 제안.** DB에 없는 변형 메뉴에서 ④가 추정한 재료 목록. 없으면 `[]`. 형식은 아래 참고 |
-| `risk_tag_observations` | `RiskTagObservation[]` | ① OCR Tool | 메뉴판 문구에서 감지한 **메뉴 속성** 태그 (지금은 `is_spicy`만). 재료 태그가 아니다. 없으면 `[]`. 형식은 아래 참고 |
-| `menu_ambiguity_flags` | string[] | ④ DB / Ontology Tool | 메뉴의 애매함 플래그 (`menus.ambiguity_flags`, 5종). 레시피 목록 밖에 무엇이 더 들어갈지 불분명하다는 표시다. 없으면 `[]`. 형식은 아래 참고 |
-| `flag_confirmations` | `FlagConfirmation[]` | ③ Exact Feedback Tool | 메뉴 애매함 플래그에 대한 사장님 답 (③ §1-8). 없으면 `[]`. 형식은 아래 참고 |
-| `no_information` | bool | ④/⑥ | 메뉴/재료 정보 자체가 없을 때 true (엣지 케이스 4) |
-| `information_status` | `complete` / `partial` / `none` | ⓪ | 판정에 필요한 정보가 얼마나 모였는지. 앞 단계 조회·계산이 일부 실패하면 `partial`(예: ⑤ 계산 실패), 없으면 `none`. **`complete`가 아니면 SAFE 금지** |
-| `user_profile` | object | `user_profiles` | `religion_type`, `is_vegetarian`, `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy` |
-| `locale` | string | ⓪ | 사용자 화면 언어 (예: `ko`). 메시지는 6개 언어를 모두 만든다 (§4) |
-| `warnings` / `errors` | array | ⓪ | 앞 단계(③④⑤ 등)가 남긴 신호. ⑧은 그대로 보존하고 자기 신호를 덧붙인다 |
+### 1-1. 입력에서 ⑧이 지키는 것
 
 > **`constraint_tags`는 모두 ④가 붙인 값이다** (결정, 2026-10-10 회의, ④ §2-7). ③·⑥은 태그 없이(`[]`) 반환하고, Supervisor가 ④를 불러 채운 뒤 ⑧에 넘긴다. ③ 확인값은 ④ `lookup_tags`, ⑥ 웹 재료는 ④ `map_ingredients`, ④ 확장 재료는 ④가 처음부터 붙여 ⑤를 거쳐 그대로 온다 (⓪ §1-2, §2-11). ⑧은 태그를 새로 붙이거나 재료 이름으로 추측하지 않는다. 태그 조회·매핑이 실패하면 ④가 붙인 warning(`forces_caution: true`)으로 SAFE를 막는다 (§2-1 3-3).
 
-#### `confirmed_results` 항목 형식 (⓪ §4-7과 동일)
-
-| 필드 | 뜻 |
-|---|---|
-| `ingredient` | 확인된 재료. `ingredient_id`와 표준 이름 |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그 (예: 돼지고기 → `is_pork`). `forbidden_tags`와 비교하는 기준. ③은 `[]`로 보내고 Supervisor가 ④ `lookup_tags`로 채운 값 |
-| `role` | 메뉴에서 이 재료의 역할: `identity` / `component` / `hidden` / `null` (§1 "`role` — 재료 역할"). ④가 정한 값 |
-| `status` | `present`(있다고 확인) / `absent`(없다고 확인) / `unknown`(아직 확인 안 됨) |
-| `override_eligible` | 이 확인값으로 판정을 덮어써도 되는지. anomaly(통계적으로 이상한 답변)이거나 3개월이 지난 확인값이면 `false` |
-| `expired` | 확인한 지 3개월이 지났는지 (③ §1-7). `true`면 `override_eligible: false`이고, ⑧은 이 재료를 다시 묻는 질문 카드를 만든다 (§2-1 7단계) |
-| `evidence_refs` | 근거 ID 목록 |
-
+**`confirmed_results` (③ 사장님 확인값, hard evidence)**
 - **`status`는 3값을 유지한다. `true/false` 2값으로 축약하지 않는다** (AGENTS.md 확정). 2값이면 "없다고 확인됨"과 "아직 안 물어봄"이 구분되지 않아, 안 물어본 재료가 "없음"으로 읽혀 SAFE가 될 수 있다 (FN).
 - hard evidence로 쓰는 것은 **`override_eligible: true`이고 `status`가 `present` 또는 `absent`인 항목뿐**이다.
 - `status: unknown`은 "없음"으로 취급하지 않는다. 확인값이 없는 것과 같다.
-- `override_eligible: false`인 항목은 hard evidence로 쓰지 않는다. 이 재료는 ③이 ⑤로 넘겼으므로 `probability_results`의 확률로 판정한다.
+- `override_eligible: false`(anomaly이거나 3개월 만료)인 항목은 hard evidence로 쓰지 않는다. 이 재료는 ③이 ⑤로 넘겼으므로 `probability_results`의 확률로 판정한다.
+- `expired: true`(확인한 지 3개월 경과, ③ §1-7)면 이 재료를 다시 묻는 질문 카드를 만든다 (§2-1 7단계).
 
-#### `probability_results` 항목 형식 (⓪ §4-7과 동일)
+**`probability_results` (⑤ 확률, soft evidence)**
+- `confidence`는 ⑤가 계산한 근거 충분도(0~1)다. 출력 `evidence_basis`(confirmed/estimated/unknown)와는 별개다. "낮음" 기준은 §1-3 `low_confidence`.
+- `anomaly_locked: true`(③이 override를 거부한 이상 답변 재료)면 확률값과 무관하게 CAUTION 이상 강제 (§2-1 3-1).
 
-| 필드 | 뜻 |
-|---|---|
-| `ingredient` | 재료. `ingredient_id`와 표준 이름 |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값을 ⑤가 바꾸지 않고 그대로 넘긴 것 (⑥ 웹 재료는 Supervisor가 ④ `map_ingredients`로 채운 값) |
-| `role` | 메뉴에서 이 재료의 역할. ④가 정한 값을 ⑤가 바꾸지 않고 그대로 넘긴 것 |
-| `posterior_mean` | 이 가게에서 이 재료가 들어갈 확률 (0~1) |
-| `confidence` | ⑤가 계산한 근거 충분도 (0~1). 아래 출력의 `evidence_basis`(confirmed/estimated/unknown)와는 별개다 |
-| `prior_source` | 사전확률을 가져온 단계: `store` / `cluster` / `global` / `uninformative` |
-| `anomaly_locked` | ③이 override를 거부한 이상 답변 재료인지. `true`면 확률값과 무관하게 CAUTION 이상 강제 (§2-1) |
-| `evidence_refs` | 근거 ID 목록 |
+**`proposed_variant_ingredients` (④ 변형 추정 재료)**
+- DB에 저장되지 않은 런타임 추정이고 관측값도 없다 (`source: variant_suggested`, ④ §1-3·§1-5). 확정 재료와 같은 신뢰도로 다루지 않는다. 사용자 제한과 겹치면 **최소 CAUTION, DANGER 확정 근거로 쓰지 않는다** (§2-1 5단계).
 
-#### `proposed_variant_ingredients` 항목 형식 (⓪ §4-7과 동일)
-
-| 필드 | 뜻 |
-|---|---|
-| `ingredient` | ④가 추정한 재료. 예: 트러플된장찌개 → 기본 메뉴 된장찌개 + 남은 글자 "트러플"을 재료로 매핑 (④ §1-3) |
-| `constraint_tags` | 이 재료가 걸리는 제한 태그. ④가 붙인 값 |
-| `role` | 메뉴에서 이 재료의 역할. ④가 정한 값 (변형 메뉴 이름에서 나온 재료면 보통 `identity`) |
-| `source` | `variant_suggested` — 런타임 추정 제안. DB에 저장되지 않았고 관측값도 없음 (`observations: []`, ④ §1-5) |
-| `evidence_refs` | 근거 ID 목록 |
-
-- 추정일 뿐이므로 확정 재료와 같은 신뢰도로 다루지 않는다. 사용자 제한과 겹치면 **최소 CAUTION, DANGER 확정 근거로 쓰지 않는다** (§2-1 5단계).
-
-#### `risk_tag_observations` 항목 형식 (⓪ §4-0·§4-7과 동일)
-
-| 필드 | 뜻 |
-|---|---|
-| `tag` | 메뉴 속성 태그. 지금 허용값은 `is_spicy`(매운 메뉴)뿐 |
-| `confidence` | OCR이 이 태그를 감지한 확신도 (0~1). ⑤의 `confidence`와는 다른 값이다 |
-| `evidence_refs` | 근거 ID 목록 (`source_type: ocr_text_hint`, soft evidence) |
-
+**`risk_tag_observations` (① OCR이 감지한 메뉴 속성)**
 - **매운맛은 재료 태그가 아니라 메뉴 속성이다** (⓪ §1-2). 어떤 재료에도 `is_spicy`가 붙지 않으므로, 이 입력이 없으면 `no_spicy` 사용자의 매운 메뉴를 걸러낼 방법이 없다 (FN).
+- 여기 `confidence`는 OCR 감지 확신도다. ⑤의 `confidence`와 다른 값이다.
 - OCR은 **감지한 태그만** 넣는다. 목록에 없다고 "맵지 않다"는 근거로 쓰지 않는다 (⓪ §4-0).
-- soft evidence라서 사용자 제한과 겹치면 **CAUTION 근거로만** 쓰고 DANGER 근거로는 쓰지 않는다 (§2-1 5-1, ⓪ §4-7).
+- soft evidence라서 사용자 제한과 겹치면 **CAUTION 근거로만** 쓰고 DANGER 근거로는 쓰지 않는다 (§2-1 5-1).
+
+**그 밖의 입력**
+- `no_information: true`(메뉴·재료 정보 자체가 없음, 엣지 케이스 4)면 CAUTION 이상 (§2-1 3단계).
+- `information_status`가 `complete`가 아니면 SAFE 금지 (§2-1 3-2).
+- `locale`은 사용자 화면 언어지만 메시지는 6개 언어를 모두 만든다 (§4).
+- 입력 `warnings`·`errors`는 그대로 보존하고 ⑧의 신호를 덧붙인다.
 
 #### `menu_ambiguity_flags` — 메뉴 애매함 플래그 (결정, 2026-10-12)
+
+> **⓪ 반영 대기**: ⓪ §4-7 요청에 아직 `menu_ambiguity_flags`(string[], ④ `menu_ambiguity_flags` 그대로)가 없다 (§8).
 
 ④가 메뉴 정보에 붙은 플래그를 그대로 넘긴다 (④ §1-2). 예) 김치찌개 → `has_unclear_jeotgal`(어떤 젓갈이 들어가는지 가게마다 다름). 재료 목록 **밖**에 무엇이 더 들어갈 수 있다는 신호라서, 사장님이 목록의 재료를 모두 확인해도 SAFE를 막아야 한다 (§2-1 5-2).
 
@@ -241,7 +119,9 @@
 
 #### `flag_confirmations` 항목 형식 (결정, 2026-10-12)
 
-메뉴 애매함 플래그 질문 카드(§1 `owner_cards`)에 사장님이 답한 값이다. ③이 조회해 넘긴다 (③ §1-8).
+> **⓪ 반영 대기**: ⓪ §4-7 요청에 아직 `flag_confirmations`가 없다. 들어가면 아래 표를 지우고 ⓪ 링크로 바꾼다 (§8).
+
+메뉴 애매함 플래그 질문 카드(§1-3)에 사장님이 답한 값이다. ③이 조회해 넘긴다 (③ §1-8).
 
 | 필드 | 뜻 |
 |---|---|
@@ -254,68 +134,20 @@
 
 - `absent`는 **물어본 태그 전부**가 없다는 뜻이고, `present`는 그중 **하나 이상**이 있다는 뜻이다. 그래서 다른 사용자에게 쓸 때 규칙이 다르다 (§2-1 5-2).
 
-### 출력 — `DecisionResponse` (Supervisor에게 반환)
+### 1-2. 출력 값을 정하는 규칙
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu": {
-    "menu_id": "menu-001",
-    "normalized_menu_name": "김치찌개"
-  },
-  "risk_level": "danger",
-  "evidence_basis": "confirmed",
-  "information_status": "complete",
-  "risk_ingredients": [
-    {
-      "ingredient": {
-        "ingredient_id": "ingredient-001",
-        "canonical_name": "돼지고기"
-      },
-      "constraint_tags": ["is_pork"],
-      "matched_tags": ["is_pork"],
-      "role": "component",
-      "status": "present",
-      "posterior_mean": null,
-      "anomaly_locked": false,
-      "evidence_refs": ["evidence-001"]
-    }
-  ],
-  "matched_tags": ["is_pork"],
-  "evidence_refs": ["evidence-001"],
-  "message": {
-    "ko": "돼지고기 성분이 포함되어 있어요.",
-    "en": "This menu contains pork.",
-    "ja": "このメニューには豚肉が含まれています。",
-    "zh_hans": "这道菜含有猪肉成分。",
-    "zh_hant": "這道菜含有豬肉成分。",
-    "es": "Este plato contiene cerdo."
-  },
-  "owner_cards": [],
-  "warnings": [],
-  "errors": []
-}
-```
-
-| 필드 | 설명 |
-|---|---|
-| `context` / `menu` | 입력 값을 그대로 반환 |
-| `risk_level` | `danger` / `caution` / `safe` |
-| `evidence_basis` | 판정 근거 종류: `confirmed`(사장님 확인값) / `estimated`(확률 추정) / `unknown`(근거 부족) |
-| `information_status` | `complete` / `partial` / `none`. 입력 값을 반영하며, `complete`가 아니면 `risk_level`은 `safe`가 될 수 없다 |
-| `risk_ingredients[]` | 위험 재료 목록. 재료마다 `constraint_tags`(재료의 전체 제한 태그), `matched_tags`(그중 이 사용자와 실제로 겹친 태그), `role`(재료 역할, 아래), `status`(확인값이면 3값, 확률 근거면 `unknown`), `posterior_mean`(확률 근거일 때 값, 확인값이면 `null`), `anomaly_locked`, `evidence_refs` |
-| `matched_tags` | 모든 위험 재료에서 사용자 제한과 겹친 태그를 중복 제거한 목록 (예전 이름 `hits`) |
-| `evidence_refs` | 판정에 쓴 근거 ID 전체를 중복 제거한 목록. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다 |
-| `message` | 6개 언어 문구. 키는 `ko`, `en`, `ja`, `zh_hans`, `zh_hant`, `es` (§4) |
-| `owner_cards` | 사장님 질문 카드 목록. 질문이 필요 없으면 `[]`. 카드 하나에 재료 하나이며, **한 메뉴에서 여러 장이 나올 수 있다** (사용자 제한과 겹치는데 사장님 확인값이 없는 재료가 여러 개이거나, 고위험 재검증이 재료를 더 찾은 경우). 형식은 아래 참고 |
-| `warnings` / `errors` | 입력 신호를 보존하고 ⑧의 신호를 덧붙임 |
+- `context`·`menu`는 입력 값을 그대로 반환한다.
+- `risk_level`·`evidence_basis`·`information_status`는 §2·§3 규칙으로 정한다. `information_status`가 `complete`가 아니면 `risk_level`은 `safe`가 될 수 없다. `evidence_basis`는 판정 근거 종류다: `confirmed`(사장님 확인값) / `estimated`(확률 추정) / `unknown`(근거 부족).
+- `risk_ingredients[]`: 금지 태그와 겹친 재료.
+  - `constraint_tags`는 재료의 전체 제한 태그, `matched_tags`는 그중 이 사용자와 실제로 겹친 태그다.
+  - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
+  - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
+  - `role`은 입력 값을 그대로 옮긴다 (아래).
+- 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
+- `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
+- `message`는 6개 언어 문구다 (§0-2, §4).
+- `owner_cards`는 질문이 필요 없으면 `[]`다. **한 메뉴에서 여러 장이 나올 수 있다** (§1-3, §2-1 7단계).
+- `high_risk_review`는 이 메뉴가 고위험 재검증 후보인지와 그 이유를 표시한다 (§2-3). 이 표시만으로 판정이 바뀌지는 않는다. 재검증 결과가 판정을 바꿀 수 있는지는 #234에서 정한다.
 
 #### `role` — 재료 역할 (결정, 2026-10-12)
 
@@ -331,47 +163,21 @@
 - **값은 ④가 정한다.** ⑧은 입력에 들어온 값을 그대로 옮기고 새로 정하지 않는다 (태그와 같은 방식). 정하는 규칙은 ④ 담당이며 §8 외부 의존.
 - **판정에는 쓰지 않는다.** 주재료라고 더 위험하게 보지 않는다. `risk_level`, `evidence_basis`는 role과 무관하다.
 - **LLM으로 정하지 않는다.** 같은 메뉴는 항상 같은 role이어야 한다 (§0-2).
-- ⓪ §4-7에는 아직 `role` 필드가 없다. Supervisor 문서 수정 때 함께 반영한다 (§8).
 
 `evidence_basis` 필드가 핵심이다 — 같은 `risk_level: danger`라도 **확정값 기반인지 확률 추정 기반인지**를 사용자에게 다른 톤으로 전달해야 한다 (§4 참고).
 
 > 이름: 원래 `confidence`였으나 ⑤가 계산하는 0~1 숫자 `confidence`(재료별 근거 충분도)와 이름이 겹쳐 `evidence_basis`(판정 근거 종류)로 바꿨다 (2026-10-08). 값은 그대로 `confirmed | estimated | unknown`이다.
 
-#### `owner_cards[]` 항목 형식
+### 1-3. `owner_cards` — 질문 카드
 
-> ⓪ §4-7은 아직 카드 한 장(`owner_card`, 객체 또는 `null`)으로 되어 있다. 여러 장으로 바꾸는 것은 Supervisor 문서 수정 때 함께 반영한다 (§8).
+형식은 ⓪ §4-7 `owner_cards[]`다 (`menu_id`, `round`, `ingredient`, `question` 6개 언어, `reason_codes`, `evidence_refs`). ⑧이 정하는 것:
 
-```json
-{
-  "menu_id": "menu-001",
-  "ingredient": {
-    "ingredient_id": "ingredient-010",
-    "canonical_name": "액젓"
-  },
-  "question": {
-    "ko": "이 메뉴에 액젓이 들어가나요?",
-    "en": "Does this menu contain fish sauce?",
-    "ja": "このメニューに魚醤は入っていますか？",
-    "zh_hans": "这道菜含鱼露吗？",
-    "zh_hant": "這道菜含魚露嗎？",
-    "es": "¿Este plato contiene salsa de pescado?"
-  },
-  "reason_codes": ["low_confidence"],
-  "evidence_refs": ["evidence-010"]
-}
-```
+- 카드 하나에 재료 하나다. 어떤 재료에 카드를 만드는지는 §2-1 7단계.
+- **⓪ 반영 대기 — 메뉴 애매함 플래그 카드** (2026-10-12, §2-1 5-2): 재료가 아니라 메뉴 단위로 묻는 카드다. `ingredient: null`이고 아래 두 필드를 더한다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?"
+  - `ambiguity_flag`: 플래그 이름. 재료 카드면 `null`
+  - `constraint_tags`: 물어볼 태그 (§1-1 `menu_ambiguity_flags` 표에서 사용자 금지 태그와 겹친 것). 재료 카드면 `[]`
 
-| 필드 | 설명 |
-|---|---|
-| `menu_id` | 질문 대상 메뉴 |
-| `ingredient` | 물어볼 재료. 메뉴 애매함 플래그 카드면 `null` |
-| `ambiguity_flag` | 메뉴 애매함 플래그 카드일 때만 플래그 이름, 재료 카드면 `null` |
-| `constraint_tags` | 메뉴 애매함 플래그 카드일 때만 물어볼 태그 (§1 `menu_ambiguity_flags` 표에서 사용자 금지 태그와 겹친 것). 재료 카드면 `[]` |
-| `question` | 6개 언어 질문 문구 |
-| `reason_codes` | 왜 묻는지. 허용값은 아래 표 |
-| `evidence_refs` | 질문을 만들게 한 근거 ID |
-
-**`reason_codes` 허용값 (결정, 2026-10-12)** — 모두 ⑧ 입력에 이미 있는 신호에서 정해진다.
+**`reason_codes` 허용값 (결정, 2026-10-12)** — 모두 ⑧ 입력에 이미 있는 신호에서 정해진다. `ambiguous_menu`, `unconfirmed`는 **⓪ 반영 대기**다.
 
 | 값 | 뜻 | 신호 |
 |---|---|---|
@@ -432,14 +238,14 @@ flowchart TD
    - 두 종류가 함께 있으면 `unknown`을 쓴다. 정보가 빠졌다는 사실을 먼저 알리는 쪽이 더 조심스럽다.
 5. **변형 제안 반영**: `proposed_variant_ingredients`가 있으면 확정 재료와 **절대 같은 신뢰도로 취급하지 않는다** — 최소 caution 처리하고, 문구도 추정형으로만 생성 (danger 확정 근거로 쓰지 않음).
 5-1. **메뉴 속성 관측 반영**: `risk_tag_observations`의 `tag`가 forbidden_tags와 겹치면(예: `no_spicy` 사용자 + `is_spicy`) `caution` 이상으로 두고 그 태그를 최상위 `matched_tags`에 넣는다. 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. soft evidence라 DANGER 근거로 쓰지 않는다 (⓪ §4-7).
-5-2. **메뉴 애매함 플래그 반영** (결정, 2026-10-12): `menu_ambiguity_flags`의 플래그마다 물을 태그(§1 표에서 사용자 금지 태그와 겹친 것)를 구한다. 비어 있으면 그 플래그는 건너뛴다. 아니면 `flag_confirmations` 중 같은 플래그이고 `override_eligible: true`인 답을 보고 아래처럼 한다.
+5-2. **메뉴 애매함 플래그 반영** (결정, 2026-10-12): `menu_ambiguity_flags`의 플래그마다 물을 태그(§1-1 표에서 사용자 금지 태그와 겹친 것)를 구한다. 비어 있으면 그 플래그는 건너뛴다. 아니면 `flag_confirmations` 중 같은 플래그이고 `override_eligible: true`인 답을 보고 아래처럼 한다.
    - `absent`이고 답의 `constraint_tags`에 물을 태그가 **모두** 들어 있음 → 플래그가 풀린다. 판정에 영향 없음
    - `present`이고 답의 `constraint_tags`가 **모두** 사용자 금지 태그 → `danger`, `evidence_basis: confirmed`, 그 태그를 최상위 `matched_tags`에 넣는다. 사장님이 "들어 있다"고 확인한 hard evidence다
    - 그 밖(답이 없음, `unknown`, 만료, 물은 태그가 달라 판단할 수 없음) → `safe`를 내지 않고 `caution` 이상으로 둔다. 설명 문장에 이유를 쓰고 (예: "젓갈 종류가 가게마다 달라 확인이 필요해요"), 7단계에서 질문 카드를 만든다
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 "빼기 어려울 수 있어요" 안내를 덧붙인다 (§4-1). 판정은 바꾸지 않는다.
-7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 카드 순서는 §1 `reason_codes` 아래 규칙을 따른다.
+7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다.
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
 
@@ -453,7 +259,7 @@ flowchart TD
 | `warnings`에 `forces_caution: true` 존재 | 앞 단계가 "SAFE 금지" 신호를 보냄 | 3-3 |
 | `probability_results` 또는 `proposed_variant_ingredients`가 비어 있지 않음 | 사장님 확인값이 아닌 근거(확률·변형 추정)에 기대는 재료가 있음 | 4 |
 | `risk_tag_observations`에 forbidden_tags와 겹치는 태그 존재 | OCR이 감지한 메뉴 속성(예: 매운맛)이 사용자 제한과 겹침 | 5-1 |
-| `menu_ambiguity_flags`에 사용자와 관련 있고 사장님 답으로 풀리지 않은 플래그 존재 | 레시피 목록 밖 재료가 사용자 제한에 걸릴 수 있음 (§1 표) | 5-2 |
+| `menu_ambiguity_flags`에 사용자와 관련 있고 사장님 답으로 풀리지 않은 플래그 존재 | 레시피 목록 밖 재료가 사용자 제한에 걸릴 수 있음 (§1-1 표) | 5-2 |
 
 ### 2-3. 고위험 재검증 (설계 중)
 
@@ -572,7 +378,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 ### 4-1. 빼기 어려움 안내 (결정, 2026-10-12)
 
-'빼고 요청' 버튼은 그대로 두고, 판정에 걸린 재료가 빼기 어려운 재료이면 설명에 안내 한 줄을 덧붙인다. 재료 역할(`role`, §1)로 정한다.
+'빼고 요청' 버튼은 그대로 두고, 판정에 걸린 재료가 빼기 어려운 재료이면 설명에 안내 한 줄을 덧붙인다. 재료 역할(`role`, §1-2)로 정한다.
 
 | `role` | 안내 (ko 예시) |
 |---|---|
@@ -645,15 +451,15 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 - [x] **DANGER/CAUTION/SAFE 컷오프** — 확률 컷오프로 판정하지 않는다. DANGER/SAFE는 사장님 확인값으로만, 확정값이 없으면 CAUTION + 확률 수치 (PPT 8쪽 6, §3)
 - [x] **컷오프 계산/보관 주체** — 확률 컷오프가 없으므로 해당 없음 (§3)
-- [ ] **고위험 재검증 정의** (§2-3) — PPT 8쪽 6·10쪽은 정보 부족·충돌 케이스(5~10%)를 고가 모델로 재검증한다고 했다. 대상 기준, 하는 일(놓친 위험 찾기·근거 충돌 설명·질문 다듬기), 결과 사용처(사장님 질문·사용자 설명)는 결정(§2-3, 2026-10-11). 시간 제한은 judge 단계 전체 시간 제한에 맞춤, 질문 카드는 여러 장 허용(`owner_cards`), 재검증 LLM은 표준 재료 목록 안에서만 고름 (2026-10-11). 입력·출력 형식, 한 스캔당 최대 3개(2026-10-12). 남은 것: 판정 변경 여부(#234), 3개를 고르는 일을 Supervisor가 하도록 ⓪ 반영
+- [ ] **고위험 재검증 정의** (§2-3) — PPT 8쪽 6·10쪽은 정보 부족·충돌 케이스(5~10%)를 고가 모델로 재검증한다고 했다. 대상 기준, 하는 일(놓친 위험 찾기·근거 충돌 설명·질문 다듬기), 결과 사용처(사장님 질문·사용자 설명)는 결정(§2-3, 2026-10-11). 시간 제한은 judge 단계 전체 시간 제한에 맞춤, 질문 카드는 여러 장 허용(`owner_cards`), 재검증 LLM은 표준 재료 목록 안에서만 고름 (2026-10-11). 입력·출력 형식, 한 스캔당 최대 3개(2026-10-12). 3개를 고르는 일은 Supervisor가 한다 (⓪ Judge Graph에 반영됨, 2026-10-12 확인). 남은 것: 판정 변경 여부(#234). ⓪은 "재검증은 판정을 바꾸지 않는다"로 적어 두어 #234 결정 전에 먼저 정해진 상태라 ⓪에 "보류" 표시 요청
 - [x] **LLM 호출 범위** — 고위험 메뉴에 한정하지 않고 설명 문장에 필요할 때 쓴다. 같은 입력에 같은 결과가 필요한 항목(판정 값 등)은 LLM 금지 (2026-10-11, §0-2)
 - [x] **설명 문장에 LLM을 쓰는 기준** — 판정 한 줄은 템플릿, 이유 설명은 필요할 때 LLM, 판정·확률·재료명은 코드 값 그대로 (2026-10-12, §0-2)
-- [x] **'빼고 요청' 안내** — 버튼은 유지하고, 판정에 걸린 재료가 주재료(`identity`)나 숨은 재료(`hidden`)면 설명에 "빼기 어려울 수 있어요" 안내를 덧붙인다 (2026-10-12, §1 `role`, §4-1)
+- [x] **'빼고 요청' 안내** — 버튼은 유지하고, 판정에 걸린 재료가 주재료(`identity`)나 숨은 재료(`hidden`)면 설명에 "빼기 어려울 수 있어요" 안내를 덧붙인다 (2026-10-12, §1-2 `role`, §4-1)
 - [ ] **재료 역할(`role`)을 정하는 규칙 (외부 의존)** — ④ 담당. `hidden`은 ④가 펼친 하위 재료(depth 1 이상), `identity` 중 메뉴명에 들어간 재료는 이름 맞추기로 정할 수 있다. 메뉴명에 없는 "기본 재료"(참치김밥의 밥·김, 국수의 면)는 지금 DB에 정보가 없어 메뉴별 데이터가 필요하다. ③ 확인값·⑥ 웹 재료에도 Supervisor가 ④를 부를 때 함께 받아야 한다
-- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-7의 ⑧ 입력 세 목록과 `risk_ingredients`, §1-4 최종 응답에 `role` 필드 추가. ④⑤ 응답에도 필요
-- [x] **메뉴 애매함 플래그 사용** — 사용자와 관련 있는 플래그면 SAFE 금지 (2026-10-12, §1 `menu_ambiguity_flags`, §2-1 5-2). ④ §8 요청 반영
-- [x] **메뉴 애매함 플래그 질문 카드** — 메뉴 단위로 묻는다: 플래그와 사용자 금지 태그로 "이 메뉴의 젓갈에 생선이 들어가나요?"를 만들고, "아니오"면 플래그가 풀린다 (2026-10-12, §1 `flag_confirmations`, §2-1 5-2·7단계, 이유 `ambiguous_menu`)
+- [x] **⓪ 반영 요청 (`role`)** — ⓪ §4-7 입력 세 목록·`risk_ingredients`, ④⑤ 응답에 `role` 반영됨 (2026-10-12 확인)
+- [x] **메뉴 애매함 플래그 사용** — 사용자와 관련 있는 플래그면 SAFE 금지 (2026-10-12, §1-1 `menu_ambiguity_flags`, §2-1 5-2). ④ §8 요청 반영
+- [x] **메뉴 애매함 플래그 질문 카드** — 메뉴 단위로 묻는다: 플래그와 사용자 금지 태그로 "이 메뉴의 젓갈에 생선이 들어가나요?"를 만들고, "아니오"면 플래그가 풀린다 (2026-10-12, §1-1 `flag_confirmations`, §2-1 5-2·7단계, 이유 `ambiguous_menu`)
 - [ ] **플래그 답 저장 (외부 의존)** — 사장님 답을 메뉴·플래그·물어본 태그 단위로 저장할 DB 자리가 필요하다 (지금 `ingredient_confirmations`는 재료 단위). 윤지·백엔드 확인. ⑦이 저장하고 ③이 읽는다 (③ §1-8)
-- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-7 ⑧ 입력에 `menu_ambiguity_flags`·`flag_confirmations`, SAFE 금지 조건, `owner_cards`에 `ambiguity_flag`·`constraint_tags`, `reason_codes`에 `ambiguous_menu`·`unconfirmed` 추가. ③ 결과만으로 끝나는 경로(전 재료 확인 + 캐시, ④⑤ 생략)에서도 메뉴 플래그를 ⑧에 넘겨야 한다. 안 넘기면 그 경로에서 SAFE가 나간다 (FN)
+- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-7 ⑧ 입력에 `menu_ambiguity_flags`·`flag_confirmations`, SAFE 금지 조건(§2-2), `owner_cards`에 `ambiguity_flag`·`constraint_tags`, `reason_codes`에 `ambiguous_menu`·`unconfirmed` 추가. ③ 결과만으로 끝나는 경로(전 재료 확인 + 캐시, ④⑤ 생략)에서도 메뉴 플래그를 ⑧에 넘겨야 한다. 안 넘기면 그 경로에서 SAFE가 나간다 (FN)
 - [x] **만료된 확인값 재질문** — 3개월 지난 확인값은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다(이유 `expired`). ⓪ §4-7 `confirmed_results`에 `expired` 필드가 필요하다 (2026-10-12, §2-1 7단계)
-- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 8개 (2026-10-12, §1. `ambiguous_menu`, `unconfirmed` 추가). `low_confidence` 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
+- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 8개 (2026-10-12, §1-3. `ambiguous_menu`, `unconfirmed` 추가). `low_confidence` 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
