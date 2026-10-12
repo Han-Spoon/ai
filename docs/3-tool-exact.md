@@ -53,96 +53,28 @@
 
 ## 1. 입력 / 출력 스펙
 
-### 1-1. 입력 — `ExactFeedbackRequest` (Supervisor로부터)
+**JSON 형식은 [⓪ §4-2 "③ Exact Feedback Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `ExactFeedbackRequest`, 응답 `ExactFeedbackResponse`, 공통 모델은 ⓪ §1-2). 이 문서에는 JSON을 다시 적지 않고, ③이 값을 어떻게 정하는지만 적는다. 필드를 바꾸려면 ⓪을 고친다.
 
-입출력 JSON은 ⓪ §1(공통 모델)·§4-2를 기준으로 한다. 아래는 같은 내용을 옮긴 것이다.
+### 1-1. 입력에서 ③이 지키는 것
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu": {
-    "menu_id": "menu-001",
-    "normalized_menu_name": "김치찌개"
-  },
-  "scope_hint": "exact",
-  "warnings": [],
-  "errors": []
-}
-```
+- `context.store_id`는 양수 필수다. 없거나 0 이하면 즉시 에러를 낸다. 전역 조회는 하지 않는다. `context`는 수정하지 않고 그대로 반환한다.
+- `menu.menu_id` 하나만 본다. 변형/base 구분은 하지 않는다. `menu_id`가 없으면 Supervisor가 ③을 부르지 않는다.
+- `menu.normalized_menu_name`은 조회에 쓰지 않는다 (로그·추적용).
+- `scope_hint`는 해석하지 않고 응답 `confirmation_scope`로 그대로 돌려준다 (§1-5).
+- 입력 `warnings`·`errors`는 보존하고 ③의 신호를 덧붙인다.
 
-| 필드 | 설명 |
+### 1-2. 출력 값을 정하는 규칙
+
+| 필드 | ③이 정하는 방법 |
 |---|---|
-| `context` | 요청 공통 정보 (⓪ §1-2 `NodeContext`). `context.store_id`는 양수 필수. 없거나 0 이하면 즉시 에러. 전역 조회 금지. ③은 `context`를 수정하지 않고 그대로 반환 |
-| `menu.menu_id` | 조회 대상 메뉴. 변형/base 구분 없이 이 값 하나만 봄. `menu_id`가 없으면 Supervisor가 ③을 호출하지 않음 |
-| `menu.normalized_menu_name` | 정규화된 메뉴명. ③ 조회에는 쓰지 않고 로그·추적용 |
-| `scope_hint` | `exact \| inherited`. 반환 레코드에 붙일 라벨. ③은 이 값을 **해석하지 않고** `confirmation_scope`로 그대로 반환 |
-| `warnings` / `errors` | 앞 단계에서 넘어온 신호. ③은 그대로 보존하고 자기 신호를 덧붙임 |
-
-### 1-2. 출력 — `ExactFeedbackResponse` (Supervisor에게 반환)
-
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu_id": "menu-001",
-  "confirmation_scope": "exact",
-  "completeness": "unknown",
-  "confirmations": [
-    {
-      "ingredient": {
-        "ingredient_id": "ingredient-001",
-        "canonical_name": "돼지고기"
-      },
-      "constraint_tags": [],
-      "status": "present",
-      "evidence": {
-        "evidence_id": "evidence-001",
-        "evidence_class": "hard",
-        "source_type": "owner_feedback",
-        "source_ref": "ingredient_confirmations:confirmation-001",
-        "verification_status": "owner_confirmed",
-        "reliability_weight": 1.0,
-        "observed_at": "2026-09-01T00:00:00Z"
-      },
-      "flagged_anomaly": false,
-      "override_eligible": true,
-      "expired": false
-    }
-  ],
-  "flag_confirmations": [],
-  "warnings": [],
-  "errors": []
-}
-```
-
-| 필드 | 설명 |
-|---|---|
-| `context` | 입력 `context`를 그대로 반환 |
-| `menu_id` | 조회한 메뉴 |
-| `confirmation_scope` | 입력 `scope_hint` 값 그대로 (§1-5) |
-| `completeness` | `complete \| unknown` (§2). 두 값만 쓴다 (2026-10-12, §6) |
-| `confirmations[].ingredient` | 재료 (⓪ §1-2 `IngredientRef`) |
-| `confirmations[].constraint_tags` | ③은 항상 `[]`로 보낸다. Supervisor가 ④ `lookup_tags`를 불러 채운다 (§0) |
-| `confirmations[].status` | `present \| absent \| unknown` (§1-3) |
-| `confirmations[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 사장님 답변은 `evidence_class: hard`, `source_type: owner_feedback`, `verification_status: owner_confirmed` (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` 값 |
-| `confirmations[].flagged_anomaly` | 통계적으로 이상한 답변 표시. ⑦이 저장할 때 붙인 값을 ③은 그대로 읽는다 (기준은 §1-6) |
-| `confirmations[].override_eligible` | 이 확인값으로 판정을 덮어써도 되는지 (§1-6) |
-| `confirmations[].expired` | 확인 후 3개월이 지났는지 (§1-7) |
-| `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8). 없으면 `[]` |
-| `warnings` / `errors` | 입력 신호를 보존하고 ③의 신호를 덧붙임 |
+| `completeness` | `complete \| unknown` 두 값만 쓴다 (§2, §6) |
+| `confirmations[].constraint_tags` | 항상 `[]`. Supervisor가 ④ `lookup_tags`로 채운다 (§0) |
+| `confirmations[].status` | 3값 유지 (§1-3) |
+| `confirmations[].evidence` | 사장님 답변 근거 (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` |
+| `confirmations[].flagged_anomaly` | ⑦이 저장할 때 붙인 값을 그대로 읽는다 (기준 §1-6) |
+| `confirmations[].override_eligible` | §1-6 표 |
+| `confirmations[].expired` | 확인 후 3개월 경과 여부 (§1-7) |
+| `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8). **⓪ 반영 대기** |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
 
@@ -202,6 +134,8 @@
 - 만료된 재료는 사장님에게 다시 확인받을 대상이다. ⑧이 다시 묻는 질문 카드를 만든다 (⑧ §2-1 7단계, 이유 `expired`).
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
+
+> **⓪ 반영 대기**: ⓪ §4-2 응답에 아직 `flag_confirmations`가 없다. ⓪에 들어가면 아래 JSON을 지우고 ⓪ 링크로 바꾼다 (§6).
 
 메뉴에는 "젓갈 종류가 불분명" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다.
 
@@ -433,6 +367,7 @@ return ExactFeedbackResponse(
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
+- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-2 응답에 `flag_confirmations`(§1-8) 추가. 반영되면 §1-8의 JSON을 지우고 ⓪ 링크로 바꾼다
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리가 없다. 지금 `ingredient_confirmations`는 재료 단위라 메뉴·플래그·물어본 태그 단위로 저장할 곳이 필요하다. 윤지·백엔드 확인, 저장은 ⑦
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 

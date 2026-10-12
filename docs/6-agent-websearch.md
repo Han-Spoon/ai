@@ -58,7 +58,7 @@ PPT 7쪽은 ⑥을 "내부 근거가 부족하거나 DB 미등록 메뉴일 때 
 
 | PPT 표현 | 이 문서에서 | 담당 |
 |---|---|---|
-| 조건부 검색 (검색 여부) | DB 미등록이고 기본 메뉴도 없는 메뉴에만 호출 (§2-1). 호출 여부는 ⓪이 정한다 | ⓪ |
+| 조건부 검색 (검색 여부) | DB 미등록이고 기본 메뉴도 없는 메뉴에만 호출 (§2). 호출 여부는 ⓪이 정한다 | ⓪ |
 | 내부 근거가 부족할 때 | **다루지 않는다** (결정, 2026-10-11). 레시피 근거가 적은지 판단하는 로직은 없다. DB에 있는 메뉴는 ④·⑤ 경로로 간다 | — |
 | 쿼리 | 템플릿으로 검색어를 만든다 (§3-0) | ⑥ 코드 |
 | 출처 평가 / 출처 신뢰도 판단 | 레시피 글인지 판별(LLM)하고 우선 검색 사이트(§2-3-1)부터 찾는다. 신뢰도 **숫자 계산**은 하지 않는다 (#194) | ⑥ (판별), ⑦ (신뢰도 계산) |
@@ -71,141 +71,36 @@ PPT 7쪽은 ⑥을 "내부 근거가 부족하거나 DB 미등록 메뉴일 때 
 
 ## 2. 입력 / 출력
 
-입출력 JSON은 ⓪ §1(공통 모델)·§4-5를 기준으로 한다. 아래는 같은 내용을 옮긴 것이다.
-
-### 2-1. 입력 — `WebSearchRequest` (⓪ Supervisor Agent로부터)
-
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu": {
-    "menu_id": null,
-    "normalized_menu_name": "마라탕",
-    "locale_hint": "ko"
-  },
-  "max_sources": 10,
-  "cached_sources": [],
-  "next_rank": 1,
-  "warnings": [],
-  "errors": []
-}
-```
-
-| 필드 | 설명 |
-|---|---|
-| `context` | 요청 공통 정보 (⓪ §1-2 `NodeContext`: `store_id`, `trace_id`, `item_id` 등). `context.store_id`는 로그·추적용이며 `web_search_cache` 자체는 가게와 무관하다. ⑥은 `context`를 수정하지 않고 그대로 반환 |
-| `menu.menu_id` | DB에 없는 메뉴라 항상 `null` |
-| `menu.normalized_menu_name` | 검색할 메뉴명 (②가 정규화한 이름) |
-| `menu.locale_hint` | 메뉴판 언어 (예: `ko`). 검색어를 만들 때 참고 |
-| `max_sources` | 한 번 검색할 때 새로 모을 최대 출처 수. `10` (§2-3). 캐시에 쌓인 레시피는 이 수와 별개로 함께 쓴다 (§2-4) |
-| `cached_sources` | 웹 캐시에 쌓인 레시피 (`sources[]`와 같은 형식). 백엔드가 judge 요청에 담아 넘긴다. 없으면 `[]`. 이번에 새로 검색한 레시피와 합쳐 판정에 쓴다 (§2-4) (결정, 2026-10-12) |
-| `next_rank` | 다음에 가져올 검색 순위. 처음이면 `1`, 두 번째면 `11` (§2-4) |
-| `warnings` / `errors` | 앞 단계에서 넘어온 신호. ⑥은 그대로 보존하고 자기 신호를 덧붙임 |
+**JSON 형식은 [⓪ §4-5 "⑥ Web Search Agent"](0-agent-supervisor.md)에서만 정의한다** (1단계 `WebCollectRequest`·`WebCollectResponse`, 2단계 `WebAggregateRequest`·`WebAggregateResponse`, 공통 모델은 ⓪ §1-2). 이 문서에는 JSON을 다시 적지 않고, ⑥이 값을 어떻게 정하는지만 적는다. 필드를 바꾸려면 ⓪을 고친다.
 
 **호출 조건**: ④가 `exists_in_db: false`이면서 `base_menu_id: null`을 반환한 경우에만 호출된다 (⓪ §4-5). 즉 메뉴도 없고 기본 메뉴도 찾지 못한 경우다. 차돌된장찌개처럼 기본 메뉴(된장찌개)를 찾은 변형 메뉴는 웹서치가 아니라 ④의 변형 경로로 간다. 레시피 근거가 적은지 판단하는 로직은 없으며, DB에 있는 메뉴는 웹서치를 하지 않는다 (PPT 7쪽 "내부 근거가 부족할 때"는 다루지 않음, §1).
 
-### 2-2. 출력 — `WebSearchResponse` (⓪ Supervisor Agent에게 반환)
+### 2-1. 1단계(수집)에서 ⑥이 지키는 것
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
-  },
-  "menu": {
-    "menu_id": null,
-    "normalized_menu_name": "마라탕"
-  },
-  "found": true,
-  "sources": [
-    {
-      "source_url": "https://example.com/recipe/mala-tang",
-      "title": "마라탕 레시피",
-      "fetched_at": "2026-10-08T03:00:00Z",
-      "reliability_weight": null,
-      "evidence": {
-        "evidence_id": "web:https://example.com/recipe/mala-tang",
-        "evidence_class": "soft",
-        "source_type": "web_search",
-        "source_ref": "https://example.com/recipe/mala-tang",
-        "verification_status": "pending_review",
-        "reliability_weight": null,
-        "observed_at": "2026-10-08T03:00:00Z"
-      },
-      "ingredients": [
-        {
-          "ingredient_id": null,
-          "canonical_name": "소고기"
-        }
-      ]
-    }
-  ],
-  "ingredients": [
-    {
-      "ingredient": {
-        "ingredient_id": null,
-        "canonical_name": "소고기"
-      },
-      "constraint_tags": [],
-      "source": "web_search",
-      "depth": 0,
-      "curated": false,
-      "observation_basis": "direct",
-      "observations": [
-        {"corpus": "10000recipe", "k_count": 3, "n_total": 5},
-        {"corpus": "wtable", "k_count": 1, "n_total": 3},
-        {"corpus": "web_search", "k_count": 0, "n_total": 2}
-      ],
-      "anomaly_locked": false,
-      "evidence_refs": ["web:https://example.com/recipe/mala-tang"]
-    }
-  ],
-  "review_notes": [
-    {
-      "rule_code": "rare_ingredient",
-      "message": "땅콩은 레시피 10개 중 1개에만 나와서 확인이 필요해요."
-    }
-  ],
-  "warnings": [],
-  "errors": []
-}
-```
+- `context.store_id`는 로그·추적용이다. 웹 캐시는 가게와 무관하다. `context`는 수정하지 않고 그대로 반환한다.
+- `menu.menu_id`는 DB에 없는 메뉴라 항상 `null`이다. 검색어는 `menu.normalized_menu_name`(②가 정규화한 이름)으로 만들고 `menu.locale_hint`(메뉴판 언어)를 참고한다.
+- `max_sources`는 한 번 검색할 때 **새로** 모을 최대 출처 수 `10`이다 (§2-3). 캐시 레시피(`cached_sources`)는 이 수와 별개로 함께 쓴다 (§2-4).
+- `next_rank`부터 검색한다. 처음이면 `1`, 캐시에 1~10위가 있으면 `11` (§2-4).
+- 응답 `sources[]`에는 **이번에 새로 검색한 출처만** 넣는다. 출처마다 원문 재료명을 그대로 뽑고, 이름을 합치거나 개수를 세지 않는다.
+- `sources[].evidence`는 항상 `evidence_class: soft`, `source_type: web_search`, `verification_status: pending_review`(관리자 검토 대기)다. 출처 신뢰도 `reliability_weight`는 계산하지 않고 `null`로 보낸다 (#194).
+- 입력 `warnings`·`errors`는 보존하고 ⑥의 신호를 덧붙인다 (§3-2).
 
-| 필드 | 설명 |
-|---|---|
-| `context` / `menu` | 입력 값을 그대로 반환 (`menu.locale_hint`는 제외) |
-| `found` | 캐시(`cached_sources`)나 이번 검색에서 쓸 수 있는 출처를 하나라도 찾았는지. `false`면 `sources`와 `ingredients`는 모두 `[]` |
-| `sources[]` | **이번에 새로 검색한 출처별 원본.** 출처마다 `source_url`, `title`(페이지 제목), `fetched_at`(가져온 시각), `evidence`(근거 정보), `ingredients`(그 출처에서 뽑은 재료 목록). 메뉴판 분석이 끝난 뒤 캐시에 더해 저장하고 관리자 검토로 보낸다. 캐시에서 받은 레시피(`cached_sources`)는 다시 넣지 않는다 (§2-4) |
-| `sources[].evidence` | 근거 (⓪ §1-2 `EvidenceRef`). 웹서치는 항상 `evidence_class: soft`(미검증), `source_type: web_search`, `verification_status: pending_review`(관리자 검토 대기) |
-| `sources[].reliability_weight` | 출처 신뢰도(0~1). **⑥은 계산하지 않고 `null`로 보낸다** (#194) |
-| `ingredients[]` | **재료별 집계 (2단계).** 캐시 레시피(`cached_sources`)와 이번 `sources`를 합쳐, ④가 맞춘 표준 재료 기준으로 묶어 출처 수를 센 결과. `ingredient`는 ④가 정한 표준 재료이고, 표준 재료로 못 맞춘 재료는 `ingredient_id: null`, `canonical_name`에 ⑥이 뽑은 이름 그대로 둔다. ⑤ 확률 계산의 입력이 된다 |
-| `ingredients[].observations[]` | **사이트별 개수.** 출처 사이트(`corpus`)마다 "그 사이트의 레시피 `n_total`개 중 `k_count`개에 이 재료가 있었다"를 따로 담는다. ⑤가 사이트별 신뢰도를 곱해 확률을 계산한다 (⑤ §1-1·§3-3, ④ §1-5와 같은 형식) |
-| `observations[].corpus` | 출처 사이트. 우선 검색 사이트는 크롤링 코퍼스와 같은 이름(`10000recipe` / `wtable` / `semie`), 그 밖의 일반 웹 출처는 모두 `web_search`로 묶는다 |
-| `observations[].k_count` | 그 사이트 레시피 중 이 재료가 나온 수 (§2-3) |
-| `observations[].n_total` | 그 사이트의 유효 레시피 수 (§2-3). 같은 사이트면 모든 재료가 같은 값을 가진다. 이 재료가 한 번도 안 나온 사이트도 `k_count: 0`으로 넣는다 |
-| `ingredients[].source` | 항상 `web_search` |
-| `ingredients[].depth` | 재료를 펼친 깊이. 웹에서 뽑은 재료는 펼치기 전이라 `0` |
-| `ingredients[].curated` | 큐레이션 레시피(`recipe_ingredients`)에 있는 재료인지. ⑤가 α를 더할 때 쓴다 (⑤ §2-3). 웹서치 대상은 DB에 없는 메뉴라 큐레이션 레시피가 없으므로 항상 `false` |
-| `ingredients[].observation_basis` | 관측값을 이 재료에서 직접 센 것(`direct`)인지, 상위 재료에서 물려받은 것(`inherited`)인지 (④ §1-5). ⑥은 레시피마다 재료를 직접 세므로 항상 `direct` |
-| `ingredients[].constraint_tags` | ④가 매핑하면서 붙인 태그를 그대로 옮긴다. ⑥이 새로 붙이지 않는다 (§1, ④ §2-7) |
-| `ingredients[].anomaly_locked` | 항상 `false` (사장님 답변이 아니므로 anomaly 대상 아님) |
-| `ingredients[].evidence_refs` | 그 재료가 나온 출처의 `evidence_id` 목록 |
-| `review_notes[]` | 관리자 페이지에 보여줄 **검토 필요 문구** (§2-6). `rule_code`는 걸린 규칙, `message`는 한국어 한 줄(관리자 화면용). 걸린 규칙이 없으면 `[]`. 판정에는 쓰지 않는다 |
-| `warnings` / `errors` | 입력 신호를 보존하고 ⑥의 신호를 덧붙임 (§3-2) |
+### 2-2. 2단계(집계)에서 ⑥이 지키는 것
 
-- **개수 세기는 병합·선택이 아니다.** `ingredients[]`는 "어느 출처를 믿을지" 고르지 않고 모든 유효 출처를 그대로 센다. 출처를 골라내는 일은 ⑥이 하지 않는다. 레시피별 통과·제외는 관리자가 한다 (§2-6).
-- 원본은 `sources`에 그대로 남고, `ingredients[].evidence_refs`가 원본 출처를 가리킨다.
+Supervisor가 새 출처와 캐시를 모두 ④ `map_ingredients`로 표준 재료에 맞춘 뒤(`mapped_sources`) ⑥을 다시 부른다.
+
+- **`ingredients[]`는 표준 재료 기준 개수 세기다.** 새 출처와 캐시를 합쳐 ④가 맞춘 `ingredient_id`로 묶는다. 표준 재료로 못 맞춘 재료는 버리지 않고 `ingredient_id: null`, `canonical_name`에 ⑥이 뽑은 이름 그대로 둔다. ⑤ 확률 계산의 입력이 된다.
+- **`observations[]`는 사이트별로 따로 센다** (⑤ §1-1·§3-3, ④ §1-5와 같은 형식).
+  - `corpus`: 우선 검색 사이트는 크롤링 코퍼스와 같은 이름(`10000recipe` / `wtable` / `semie`), 그 밖의 일반 웹 출처는 모두 `web_search`로 묶는다.
+  - `n_total`: 그 사이트의 유효 레시피 수 (§2-3). 같은 사이트면 모든 재료가 같은 값이다.
+  - `k_count`: 그 사이트 레시피 중 이 재료가 나온 수. 한 번도 안 나온 사이트도 `k_count: 0`으로 넣는다.
+- 고정값: `source: web_search`, `depth: 0`(펼치기 전), `curated: false`(DB에 없는 메뉴라 큐레이션 레시피가 없음), `observation_basis: direct`(레시피마다 직접 셈), `anomaly_locked: false`(사장님 답변이 아님).
+- `constraint_tags`와 `role`은 ④가 매핑하며 붙인 값을 그대로 옮긴다. ⑥이 새로 붙이지 않는다 (§1, ④ §2-7).
+- `ingredients[].evidence_refs`는 그 재료가 나온 출처의 `evidence_id` 목록이다.
+- 응답 `sources`에는 다시 새 출처만 넣는다 (저장·관리자 검토 대상). 캐시 출처는 넣지 않는다 (§2-4).
+- `found`는 캐시와 새 검색 모두에서 쓸 수 있는 출처를 하나도 못 찾았을 때만 `false`다. 그때 `sources`와 `ingredients`는 `[]`.
+- `review_notes[]`는 관리자 페이지에 보여줄 검토 필요 문구다 (§2-6). `rule_code`는 걸린 규칙, `message`는 한국어 한 줄. 걸린 규칙이 없으면 `[]`. 판정에는 쓰지 않는다.
+- **개수 세기는 병합·선택이 아니다.** "어느 출처를 믿을지" 고르지 않고 모든 유효 출처를 그대로 센다. 레시피별 통과·제외는 관리자가 한다 (§2-6). 원본은 `sources`에 남고 `ingredients[].evidence_refs`가 원본을 가리킨다.
 
 ### 2-3. 수집 개수와 중복 허용 (결정)
 
@@ -471,18 +366,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 | LLM이 뽑은 재료가 본문에 없음 | 버린다 (지어낸 재료 방지) |
 | LLM만 찾은 재료가 표준 재료로 매핑되지 않음 | 재료는 남긴다. 매핑은 ④가 하며, 실패하면 ④가 `unmapped_constraint_tags` warning(`forces_caution: true`)을 붙인다 |
 
-오류 형식 예시 (⓪ §1-2 `NodeError`):
-
-```json
-{
-  "code": "web_search_timeout",
-  "node": "web_search",
-  "item_id": "scan-123:0",
-  "message": "웹 검색 시간이 초과되었습니다.",
-  "retryable": true,
-  "fallback": "no_information"
-}
-```
+오류·경고 형식은 [⓪ §1-2 `NodeError`·`NodeWarning`](0-agent-supervisor.md)을 따른다. 위 `web_search_timeout` 예시도 ⓪ §1-2에 있다.
 
 ---
 
@@ -515,7 +399,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 
 - [x] **수집 개수·중복** — 한 번 검색에 최소·최대 10개. 같은 구성의 레시피도 각각 센다 (2026-10-10 회의). 복사본 표시 단계는 두지 않는다 (2026-10-12, §2-3)
 - [x] **관리자 확인 방식** — 웹서치할 때마다 관리자 페이지에 올림, 묶음 요약 기본 + 레시피별 통과·제외, 검토 필요 문구(이유는 규칙, 문장은 LLM), 관리자는 재료를 직접 고치지 않음 (§2-6)
-- [x] **웹 결과와 기존 DB 값이 다를 때 우선순위** — 해당 없음. ⑥은 DB에 없는 메뉴에만 불리고(§2-1), DB에 등록되면 그 메뉴는 웹서치를 하지 않는다(§2-4). 한 메뉴에 웹 값과 DB 값이 동시에 쓰이는 경우가 없다 (2026-10-12, #170)
+- [x] **웹 결과와 기존 DB 값이 다를 때 우선순위** — 해당 없음. ⑥은 DB에 없는 메뉴에만 불리고(§2), DB에 등록되면 그 메뉴는 웹서치를 하지 않는다(§2-4). 한 메뉴에 웹 값과 DB 값이 동시에 쓰이는 경우가 없다 (2026-10-12, #170)
 - [x] **웹 캐시 재사용과 DB 승격 기준** — 다른 사용자의 캐시도 재사용, 관리자가 통과시킨 레시피가 30개 이상이면 DB 등록 (2026-10-10, 2026-10-12 "서로 다른" 조건 삭제, §2-4)
 - [x] **메뉴판 1장당 여러 unknown 메뉴가 나올 때 ⑥ 호출 배치 전략** — 동시에 최대 5개(초기값), 나머지는 이어서. 판정 단계 시간 안에 못 끝난 메뉴는 `found: false` (2026-10-11, §2-5)
 - [x] **LLM이 맡는 부분과 코드가 맡는 부분 구분** — LLM은 레시피 글 판별과 재료 뽑기(규칙과 합집합)에만 쓰고 나머지는 코드 (§3-0)
@@ -531,8 +415,8 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 - [x] **④ 매핑 후 같은 재료로 합쳐질 때 개수 다시 세기** — 순서를 바꿔 해결: ⑥ 1단계(수집) → ④ 매핑 → ⑥ 2단계(표준 재료 기준으로 개수 세기). 처음부터 "간장 10/10"으로 센다 (2026-10-12, §1)
 - [x] **관리자 검토 규칙 5·7을 붙이는 시점** — ⑥ 2단계에서 ④ 결과로 판단한다. 관리자 검토 자료는 ⑥이 맡고, 저장할 때 ⑦을 쓴다 (2026-10-12, §1, §2-6)
 - [ ] **검색 서비스(provider)** — 어떤 검색 API를 쓸지 팀에서 정해야 함 (비용·계정). 한국어 레시피 사이트(§2-3-1)를 우선 검색해야 하므로 네이버 검색 API가 유력 후보. 검색 1회 3초, 동시 5개(§2-5)는 provider 호출 한도에 맞춰 다시 확인한다
-- [ ] **⑥ 두 단계 호출 형식 (외부 의존)** — ⓪ §2-11에 ⑥ 2단계 node를 추가하고(⑥ 1단계 → ④ 매핑 → ⑥ 2단계 → ⑦ → ⑤), §4-5에 단계별 요청·응답 형식을 정해야 함. 두 단계를 합쳐 메뉴 하나 7초 안 (§2-5)
+- [x] **⑥ 두 단계 호출 형식** — ⓪에 반영됨: node `ingredient_mapping` → `web_aggregate`, §4-5 1단계·2단계 요청·응답 (2026-10-12 확인). 원래 요청: ⓪ §2-11에 ⑥ 2단계 node를 추가하고(⑥ 1단계 → ④ 매핑 → ⑥ 2단계 → ⑦ → ⑤), §4-5에 단계별 요청·응답 형식을 정해야 함. 두 단계를 합쳐 메뉴 하나 7초 안 (§2-5)
 - [x] **⑤로 넘기는 개수 형식** — ⑤·④와 같은 사이트별 `observations`로 보낸다. 일반 웹 출처는 `corpus: web_search` 하나로 묶는다 (§2-2)
 - [x] **⑤가 요구하는 재료 필드** — ⑤ 입력에 맞춰 `curated`(항상 `false`)와 `observation_basis`(항상 `direct`)를 `ingredients[]`에 넣는다 (2026-10-11, §2-2)
 - [ ] **⑤ 문서 맞추기 (외부 의존)** — ⑤ §1-1 입력 표의 "⑥ 출력은 필드 정합 미확정"과 테스트 14번("⑥ 후보는 개수 없음 → 무정보") 정리, `web_search` 코퍼스 신뢰도와 반영 비율(#201) 결정 — ⑤ 담당자 요청
-- [ ] **⓪ 문서 반영 요청 (외부 의존)** — ⓪ §4-5 예시는 `reliability_weight: 0.5`를 ⑥이 채우는 것처럼 되어 있고, 같은 값이 `sources[]`와 `evidence`에 두 번 들어간다. `null` 허용과 한 곳으로 합치기를 ⓪ 담당자에게 요청. `insufficient_sources` warning, ⑥ `ingredients[]`의 `k_count`·`n_total`을 사이트별 `observations`로 바꾸는 점도 ⓪에 반영 요청
+- [x] **⓪ 문서 반영 요청** — ⓪에 반영됨: `reliability_weight`는 `evidence` 안에만 `null`, `insufficient_sources` warning, 사이트별 `observations` (2026-10-12 확인). 원래 요청: ⓪ §4-5 예시는 `reliability_weight: 0.5`를 ⑥이 채우는 것처럼 되어 있고, 같은 값이 `sources[]`와 `evidence`에 두 번 들어간다. `null` 허용과 한 곳으로 합치기를 ⓪ 담당자에게 요청. `insufficient_sources` warning, ⑥ `ingredients[]`의 `k_count`·`n_total`을 사이트별 `observations`로 바꾸는 점도 ⓪에 반영 요청
