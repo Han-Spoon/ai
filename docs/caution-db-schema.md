@@ -86,7 +86,7 @@ erDiagram
 | `knowledge_revision` | 기본 1. 메뉴의 지식이 바뀌면 +1. ④ 캐시 무효화 기준 (§5) |
 
 - **웹서치 메뉴**: 관리자가 승인하면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`·`ingredient_evidence_log`를 채운다.
-- **변형 메뉴**: 원본 메뉴 행을 다시 쓰지 않고 `base_menu_id`로 원본을 가리키는 새 행(`source: variant_generated`)을 만든다. 변형 메뉴의 증거가 원본 메뉴 확률과 섞이지 않게 하기 위해서다. 확정 정보 상속은 `base_menu_id` 한 단계까지만이고 형제 변형은 제외한다.
+- **변형 메뉴**: 원본 메뉴 행을 다시 쓰지 않고 `base_menu_id`로 원본을 가리키는 새 행(`source: variant_generated`)을 만든다. 변형 메뉴의 증거가 원본 메뉴 확률과 섞이지 않게 하기 위해서다. 원본 메뉴의 확정값을 변형 메뉴가 물려받아 쓰는 방식은 보류다 (③ §6).
 
 ### `menu_aliases`, `ingredient_aliases`
 별칭 → 대표 메뉴·재료. `alias_normalized`(GENERATED, 전역 유일)로 찾는다. 예: 돈까스 → 돈가스, 쇠고기 → 소고기.
@@ -211,7 +211,7 @@ erDiagram
 | `confirmed_at` | 확정 시각 |
 
 - **확정 규칙**: 확인 차례(마지막 확정 이후의 답변)에서 1·2차 답이 같으면 확정, 다르면 3차까지 받아 3개 중 2개 다수결 (⑦ §2-3).
-- **유효기간 3개월.** 지나면 override에 쓰지 않지만 삭제하지 않는다. ⑤가 prior 보정에만 쓴다.
+- **유효기간 3개월.** 지나면 override에 쓰지 않지만 삭제하지 않는다. 확률 계산에도 넣지 않고(사장님 답변은 확률에 쓰지 않음, 10/10 회의), ⑧이 다시 묻는 카드를 만든다.
 - **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
 
 ### `owner_verification_requests`
