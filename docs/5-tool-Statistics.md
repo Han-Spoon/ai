@@ -48,9 +48,9 @@
 
 ## 1. 입력 / 출력 스펙
 
-> **JSON 형식(필드 이름·타입·허용값·예시)의 기준은 ⓪ 문서 하나다.** 이 절은 ⓪의 해당 모델을 가리키고, ⑤가 값을 어떻게 해석·계산하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
+**JSON 형식은 [⓪ §4-4 "⑤ Bayesian Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `BayesianRequest`, 응답 `BayesianResponse`, 공통 모델은 ⓪ §1-2, `priors`·`source_reliability`는 ⓪ §1-3). 이 문서에는 JSON을 다시 적지 않고, ⑤가 값을 어떻게 해석·계산하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-### 1-1. 입력 — ⓪ §4-4 `BayesianRequest`
+### 1-1. 입력에서 ⑤가 지키는 것
 
 공통 문맥은 ⓪ §1-2 `NodeContext`, `priors`·`source_reliability`는 ⓪ §1-3 KnowledgeBundle 슬라이스다. ⑤가 지켜야 할 것:
 
@@ -59,7 +59,7 @@
 - `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다. `anomaly_locked`는 Supervisor가 붙이고 ④가 보존한 값이다.
 - `inherited_confirmations`는 **쓰지 않는다(보류)**. 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6).
 - `source_reliability.weights[]`에 없는 출처는 0.5로 본다 (⑦ §3-1).
-- ⓪ 반영 대기: ⑤가 내는 warning 코드(`empty_ingredients`, `integrity_error`, `prior_global_ignored`)가 ⓪ 경고 코드 목록에 없다 (§8).
+- ⑤가 내는 warning 코드(`empty_ingredients`, `integrity_error`, `prior_global_ignored`)는 ⓪ §4-4에 있다.
 
 **`priors` 슬라이스의 뜻 (결정, 2026-10-12)** — 판정 단계에서 ⑤는 DB를 조회하지 않고 이 값만 쓴다
 
@@ -82,7 +82,7 @@
 | 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
-### 1-2. 출력 — ⓪ §4-4 `BayesianResponse`
+### 1-2. 출력 값을 정하는 규칙
 
 ⑤가 값을 정하는 방법:
 
@@ -524,7 +524,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). 
 - [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 - [ ] **KnowledgeBundle `priors` 정의 반영 (외부 의존)** — ⓪ §1-3·§4-4에 `priors.cluster`·`priors.global`은 항상 빈 배열, `priors.store` 근거 출처는 `web_search`·`ocr_variant_tag`만이라는 정의를 넣는다 (§1-1). ⓪ 담당자와 백엔드 확인 필요
-- [ ] **⓪ 반영 대기: ⑤ warning 코드** — `empty_ingredients`(재료 0개), `integrity_error`(`k_count > n_total`), `prior_global_ignored`(빈 배열이어야 할 `priors.global`에 값이 옴)를 ⓪ 경고 코드 목록에 추가 요청 (§1-1)
+- [x] **⑤ warning 코드** — `empty_ingredients`, `integrity_error`, `prior_global_ignored`. ⓪ §4-4에 반영 (2026-10-13)
 
 ---
 

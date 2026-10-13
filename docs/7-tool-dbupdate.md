@@ -85,9 +85,9 @@ graph LR
 
 ## 1. 입력 / 출력 스펙
 
-> **JSON 형식(필드 이름·타입·허용값·예시)의 기준은 ⓪ 문서 하나다.** 이 절은 ⓪의 해당 모델을 가리키고, ⑦이 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
+**JSON 형식은 [⓪ §4-6 "⑦ DB Update Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `DbUpdateRequest`, 응답 `DbUpdateResponse`, 공통 모델은 ⓪ §1-2). 이 문서에는 JSON을 다시 적지 않고, ⑦이 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-### 1-1. 입력 — ⓪ §4-6 `DbUpdateRequest`
+### 1-1. 입력에서 ⑦이 지키는 것
 
 Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥은 ⓪ §1-2 `NodeContext`.
 
@@ -103,7 +103,7 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 - 질문 문구는 6개 언어 객체이고 `owner_verification_requests.question_text`(언어 키 JSONB)에 모두 저장한다.
 - 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09).
 
-### 1-2. 출력 — ⓪ §4-6 `DbUpdateResponse`
+### 1-2. 출력 값을 정하는 규칙
 
 모든 출력은 **저장 명령**(`commands[]`)이다. 저장 완료 응답이 아니며, 백엔드가 커밋한 뒤 생성 ID(예: `question_id`)와 최종 상태를 응답한다.
 
@@ -128,7 +128,7 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 | `needs_second` | 확인 차례의 1차 답만 있음 | ⑧이 2차 질문 생성 |
 | `needs_third` | 1·2차 답이 다름 | ⑧이 3차 질문 생성 |
 
-⓪ 반영 대기 (§8):
+미확정 (§8, ⓪ §4-6에도 적어 둠):
 - **2·3차 질문 연결이 ⓪에 없다.** ⑧은 카드에 `round: 1 | 2 | 3`을 붙이지만, 몇 차 질문인지 알려 주는 값(`confirmation_state` 또는 확인 차례의 답변 수)이 ⑧까지 오는 경로가 ⓪에 없다. 백엔드가 이 값을 ③ 확인값과 함께 KnowledgeBundle에 넣어 ⑧까지 전달하는 방안을 요청한다.
 - **이상 답변 판정에 필요한 레시피 확률이 ⓪ `record_owner_answer`에 없다.** 이상 답변은 "레시피 확률 0.9 이상 + 없음"으로 판정하는데(§2-3), 사장님 답변은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 질문을 만들 때(`create_owner_verification_request`) 그 재료의 `posterior_mean`을 함께 저장하고, 답변을 확정할 때 그 값으로 `flagged_anomaly`를 정하는 방안을 요청한다. 이게 없으면 이상 답변이 걸러지지 않아 "돈가스에 돼지고기 없음" 같은 답이 그대로 확정된다 (FN).
 
@@ -522,8 +522,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
-- [ ] **⓪ 반영 대기: 2·3차 질문 연결** — 몇 차 질문인지(`confirmation_state` 또는 확인 차례 답변 수)를 ⑧까지 전달하는 경로 (§1-2)
-- [ ] **⓪ 반영 대기: 이상 답변 판정용 레시피 확률** — 질문 생성 때 `posterior_mean`을 저장하고 답변 확정 때 `flagged_anomaly` 판정에 쓰기. 스키마에도 `owner_verification_requests.recipe_probability` 같은 컬럼이 필요 (§1-2, §2-3)
+- [ ] **2·3차 질문 연결 (③·⑧·백엔드와 함께)** — 몇 차 질문인지(`confirmation_state` 또는 확인 차례 답변 수)를 ⑧까지 전달하는 경로 (§1-2)
+- [ ] **이상 답변 판정용 레시피 확률 (⑧·백엔드와 함께)** — 질문 생성 때 `posterior_mean`을 저장하고 답변 확정 때 `flagged_anomaly` 판정에 쓰기. 스키마에도 `owner_verification_requests.recipe_probability` 같은 컬럼이 필요 (§1-2, §2-3)
 
 ---
 

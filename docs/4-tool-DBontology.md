@@ -104,9 +104,9 @@ graph TB
 
 ## 1. 입력 / 출력 스펙
 
-> **JSON 형식(필드 이름·타입·허용값·예시)의 기준은 ⓪ 문서 하나다.** 이 절은 ⓪의 해당 모델을 가리키고, ④가 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
+**JSON 형식은 [⓪ §4-3 "④ DB / Ontology Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `OntologyRequest`, 응답 `OntologyResponse`, 공통 모델은 ⓪ §1-2, 지식 묶음은 ⓪ §1-3). 이 문서에는 JSON을 다시 적지 않고, ④가 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-### 1-1. 입력 — ⓪ §4-3 `OntologyRequest`
+### 1-1. 입력에서 ④가 지키는 것
 
 공통 문맥은 ⓪ §1-2 `NodeContext`, 메뉴 지식은 ⓪ §1-3 KnowledgeBundle의 `ontology`·`fallback_ontology`와 `ingredient_graph`다. ④가 지켜야 할 것:
 
@@ -116,9 +116,8 @@ graph TB
 - `confirmed_ingredients`는 ③ 출력 중 `status != unknown` **AND** `override_eligible: true`인 재료만이다. 확인 재료를 빼는 규칙은 §2-1 표.
 - `override_eligible: false`인 재료는 `confirmed_ingredients`에 **들어오지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다. false가 되는 이유는 두 가지다 (③ §1-6): 이상 답변(`flagged_anomaly: true`)과 3개월 만료(`expired: true`).
 - `anomaly_locked_ingredients`에는 **이상 답변 재료만** 들어온다. ④는 이 값을 가공하거나 다시 판단하지 않고 해당 노드에 `anomaly_locked: true`로 그대로 실어 보낸다. 만료 재료는 잠그지 않는다. 잘못 잠그면 ⑧ 질문 카드 이유가 `expired` 대신 `anomaly`로 나가고 카드 순서·고위험 재검증 대상이 틀어진다.
-- ⓪ 반영 대기: `confirmed_ingredients[]`와 `anomaly_locked_ingredients[]`의 원소 형태가 ⓪에 정의돼 있지 않다. 재료 ID로 맞출 수 있도록 ⓪ §1-2 `IngredientRef` 기반으로 정의해 달라고 요청한다 (§8).
 
-### 1-2. 출력 — ⓪ §4-3 `OntologyResponse`
+### 1-2. 출력 값을 정하는 규칙
 
 ④가 값을 정하는 방법:
 
@@ -132,10 +131,7 @@ graph TB
 - `variant_suggestion`: `variant_origin: runtime_tagged`일 때만 채운다 (§2-2). ⑦ 검토 명령에 그대로 들어간다 (⑦ §1-1).
 - `role`: 아래 규칙. ⑧이 "빼기 어려운 재료" 안내에만 쓰고 판정에는 쓰지 않는다 (⑧ §1 `role`).
 
-⓪ 반영 대기 (§8):
-- `observation_basis`의 허용값에 `none`(관측 없음)이 ⓪에는 없다 (⓪은 `direct | inherited`). ⑤가 depth 감쇠 예외를 판단할 때 `none`을 쓴다 (⑤ §2-1).
-- ④ warning 코드 중 `empty_recipe`, `broken_base_menu`가 ⓪ 경고 코드 목록에 없다.
-- 노드별 `ambiguity_flag`(그 재료를 펼친 구성 간선의 플래그, 예: 김치 → 멸치액젓의 `has_unclear_jeotgal`)가 ⓪ 응답에 없다. 지금 ⑧은 메뉴 플래그(`menu_ambiguity_flags`)만 쓰므로 **④에서도 빼는 것을 추천**한다. 확인 필요 (§8).
+- 미확정: 노드별 `ambiguity_flag`(그 재료를 펼친 구성 간선의 플래그, 예: 김치 → 멸치액젓의 `has_unclear_jeotgal`)는 ⓪ 응답에 없다. 지금 ⑧은 메뉴 플래그(`menu_ambiguity_flags`)만 쓰므로 **④에서도 빼는 것을 추천**한다. 확인 필요 (§8).
 
 **`role` 정하는 규칙 (결정, 2026-10-12)** — LLM 없이, 같은 메뉴는 항상 같은 값
 
@@ -646,9 +642,9 @@ graph TB
 - [x] **taxonomy 코드 값** — 8종 + `unknown` (2026-10-12, §4, #182). 가공식품 `processed`를 추가하고 `기타`를 `base`·`unknown`으로 나눴다. ⓪ 예시 값(`발효_장류`)은 ⓪ 담당자가 `fermented`로 맞춰야 한다
 - [x] **`warnings` 전달** — ⑧ 입력 형식에 `warnings`가 들어감 (⑧ §1, 2026-10-12 확인)
 - [x] **캐시 내용 정의** — 확인 재료를 빼기 전 전체 확장 목록, `anomaly_locked` 제외. `caution-db-schema.md` v4 §5에 반영 (#241)
-- [ ] **⓪ 반영 대기: 확인 재료·잠금 재료 형태** — `OntologyRequest.confirmed_ingredients[]`와 `anomaly_locked_ingredients[]`의 원소 형태가 ⓪에 없다. `IngredientRef` 기반(`{ingredient, status}`, `IngredientRef[]`)으로 정의 요청 (§1-1)
-- [ ] **⓪ 반영 대기: `observation_basis: none`** — ⓪ 허용값이 `direct | inherited`뿐이다. 관측 없는 재료용 `none` 추가 요청 (§1-2, ⑤ §2-1)
-- [ ] **⓪ 반영 대기: ④ warning 코드** — `empty_recipe`, `broken_base_menu`를 ⓪ 경고 코드 목록에 추가 요청 (§1-2)
+- [x] **확인 재료·잠금 재료 형태** — `{ingredient: IngredientRef, status}`, `IngredientRef[]`. ⓪ §4-3에 반영 (2026-10-13)
+- [x] **`observation_basis: none`** — ⓪ §4-3에 반영 (2026-10-13)
+- [x] **④ warning 코드** — ⓪ §4-3에 ④ 코드 목록 반영, 모두 `forces_caution: true` (2026-10-13)
 - [ ] **노드별 `ambiguity_flag` 유지 여부** — ⓪ 응답에 없고 ⑧은 메뉴 플래그만 쓴다. 추천: ④에서도 뺀다. ④ 담당자 결정 필요 (§1-2)
 
 ---
