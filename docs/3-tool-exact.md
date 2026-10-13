@@ -39,16 +39,16 @@
 | 7쪽: Agent는 판단하고 Tool은 수행한다 | §0. ③은 조회기다. 만료·override 가능 여부·완전성 표시는 정해진 규칙으로 계산한다 (§1-6, §1-7, §2) |
 | 3쪽 외부 연결: 가게 직원 — 질문, 답변 | §1-4. 확정 근거의 출처 |
 | 8쪽 1: 모든 호출에 `store_id`를 유지해 가게별 확정 재료가 섞이지 않게 | §1-1, §4-2. `store_id` 필수, 없으면 에러, 전역 조회 금지 |
-| 8쪽 2: 확인된 재료는 그대로 유지, 미확인 재료만 확장·추정, 전부 확인되면 확률 계산 생략 | §0(부분 확인 지원), §2(`completeness`), §3-3(`complete`면 ④⑤ 생략) |
+| 8쪽 2: 확인된 재료는 그대로 유지, 미확인 재료만 확장·추정, 전부 확인되면 확률 계산 생략 | §0(부분 확인 지원), §2(`completeness`), §3-2(`complete`면 ④⑤ 생략) |
 | 8쪽 흐름: ③ 확정 재료 조회 (가게에서 제공 재료 정보 · 사용자 피드백 우선 반영) | §3 호출 시점. "사용자 피드백"은 손님 화면의 확인 질문으로 받은 **사장님 답변**으로 해석한다 (§1-4) |
-| 8쪽 흐름: 미확정 재료가 없으면 확정 재료로 바로 판정 | §3-3. `completeness: complete` → ⑧ 직행 |
+| 8쪽 흐름: 미확정 재료가 없으면 확정 재료로 바로 판정 | §3-2. `completeness: complete` → ⑧ 직행 |
 | 8쪽 5: 사장님 확인 정보 → 최소 n회 이상 시 기록 · 이상 여부 검사 | ⑦ 담당 (n=2: 1·2차가 같으면 확정, 다르면 3차까지, ⑦ §2-3). ③은 확정된 값과 ⑦이 붙인 `flagged_anomaly`를 읽기만 한다 (§1-6, §4-2) |
 | 8쪽 6: 사장님 확인 n건↑ → DANGER/SAFE 확정 | ③은 `override_eligible: true`로 확정 근거임을 표시하고, 판정은 ⑧이 한다 (§1-6) |
 | 8쪽 6: n개월마다 재확인 | §1-7. 3개월이 지나면 `expired: true`로 override하지 않는다. 다시 묻는 경로는 §6 미확정 |
 | 10쪽: `Exact-first` | §3. ④보다 먼저 호출해 전부 확인된 메뉴는 가벼운 경로로 끝낸다 |
 | 10쪽 RAI 02: 기록 재확인 경로 제공 | §1-7 만료 표시. 재질문 경로는 §6 미확정 |
 
-- PPT에 없는 내용: 기본 메뉴(`base_menu_id`)의 확인값을 가져오는 2차 호출(§3-1)은 PPT에 없다. 10/10 회의 결정으로 쓸 곳이 없어져 보류 중이다 (§6).
+- PPT에 없던 기본 메뉴(`base_menu_id`) 확인값 2차 호출은 삭제했다 (2026-10-13, §3-1, §6).
 
 ---
 
@@ -61,7 +61,7 @@
 - `context.store_id`는 양수 필수다. 없거나 0 이하면 즉시 에러를 낸다. 전역 조회는 하지 않는다. `context`는 수정하지 않고 그대로 반환한다.
 - `menu.menu_id` 하나만 본다. 변형/base 구분은 하지 않는다. `menu_id`가 없으면 Supervisor가 ③을 부르지 않는다.
 - `menu.normalized_menu_name`은 조회에 쓰지 않는다 (로그·추적용).
-- `scope_hint`는 해석하지 않고 응답 `confirmation_scope`로 그대로 돌려준다 (§1-5).
+- `scope_hint`는 항상 `exact`다. 해석하지 않고 응답 `confirmation_scope`로 그대로 돌려준다 (§1-5).
 - 입력 `warnings`·`errors`는 보존하고 ③의 신호를 덧붙인다.
 
 ### 1-2. 출력 값을 정하는 규칙
@@ -100,7 +100,8 @@
 | 값 | 의미 | Supervisor의 사용법 |
 |---|---|---|
 | `exact` | 이 menu_id에 직접 확인됨 | **override** — ⑤ 스킵 가능 (단 `override_eligible: true`일 때만) |
-| `inherited` | base 메뉴에서 상속 | **보류** — 원래는 ⑤ prior 보정에만 썼지만, 10/10 회의 결정(사장님 답변은 확률 계산에 쓰지 않음)으로 쓸 곳이 없어졌다. override도 하지 않는다 (§6) |
+
+- 기본 메뉴에서 물려받는 `inherited`는 삭제했다 (2026-10-13). 10/10 회의에서 사장님 답변을 확률 계산에 쓰지 않기로 해 쓸 곳이 없어졌다. ⓪에서 값을 지울 때까지는 `exact`만 온다 (§6).
 
 ### 1-6. `override_eligible` — anomaly 정책 반영 (확정)
 
@@ -117,7 +118,6 @@
 | `flagged_anomaly: false` AND `expired: false` AND `scope: exact` | `true` | override 적용, ⑤ 스킵 가능 |
 | `flagged_anomaly: true` | **`false`** | **override 거부 → 해당 재료를 ⑤로 전달**, ⑧에서 CAUTION 이상 강제 유지 |
 | `expired: true` (§1-7) | **`false`** | override 거부 → 해당 재료를 ⑤로 전달 |
-| `scope: inherited` | `false` | override하지 않는다. 쓰임은 보류 (§1-5, §6) |
 
 > ⚠️ **anomaly 재료를 "무시"하면 안 된다.** 재료 자체가 리스트에서 사라지면 확률 계산도 안 되고 판정에서도 빠져 **FN이 발생한다.** 반드시 ⑤로 넘겨 확률을 계산하게 하고, 결과를 CAUTION 이상으로 유지한다.
 
@@ -192,8 +192,8 @@ def check_completeness(
     캐시가 없으면 항상 unknown (④ 호출 유도)."""
 
 
-def resolve_override_eligibility(c: Confirmation, scope: str) -> bool:
-    """anomaly이거나, 만료(expired)됐거나, inherited 스코프면 False.
+def resolve_override_eligibility(c: Confirmation) -> bool:
+    """anomaly이거나 만료(expired)됐으면 False.
     False인 재료는 드롭하지 않고 ⑤로 전달한다."""
 ```
 
@@ -225,7 +225,7 @@ for c in confirmations:                              # §1-7. 드롭하지 않�
     c.expired = c.confirmed_at < now() - months(3)
 
 for c in confirmations:
-    c.override_eligible = resolve_override_eligibility(c, scope_hint)
+    c.override_eligible = resolve_override_eligibility(c)
 
 for f in flag_confirmations:                         # §1-8. 이상 답변 표시 없음
     f.expired = f.confirmed_at < now() - months(3)
@@ -260,24 +260,15 @@ return ExactFeedbackResponse(
 
 **호출 시점**: ② Menu Normalization Agent 직후, ④보다 **먼저**. 가벼운 경로 조기 종료를 위해.
 
-### 3-1. 호출 횟수: 최대 2회 — ③은 자신이 몇 번째 호출인지 모른다
+### 3-1. 호출 횟수: 메뉴당 1회
 
-| 회차 | 인자 | 시점 | 결과 사용 |
-|---|---|---|---|
-| 1차 | `menu_id`=대상 메뉴, `scope_hint="exact"` | ④ 이전 | `complete`면 ④⑤ 스킵하고 ⑧ 직행 |
-| 2차 | `menu_id`=`base_menu_id`, `scope_hint="inherited"` | ④가 `base_menu_id`를 반환한 **이후** | **보류** — 결과를 ⑤ prior 보정에 쓰지 않는다 (10/10 회의 결정, §6) |
+| 인자 | 시점 | 결과 사용 |
+|---|---|---|
+| `menu_id`=대상 메뉴, `scope_hint="exact"` | ④ 이전 | `complete`면 ④⑤ 스킵하고 ⑧ 직행 |
 
-> 2차 호출이 필요한 이유: `base_menu_id`는 ④가 DB 컬럼을 읽거나 longest-match로 판별한 결과다. ③에 변형 판정을 넣으면 순서 모순이 발생하므로, 상속은 **Supervisor의 재호출**로 처리한다.
+> 기본 메뉴(`base_menu_id`)의 확인값을 가져오는 2차 호출은 **삭제했다** (2026-10-13). 원래는 ④가 기본 메뉴를 찾은 뒤 Supervisor가 ③을 다시 불러 기본 메뉴 답변을 ⑤ prior 보정에 쓰려 했지만, 10/10 회의에서 사장님 답변을 확률 계산에 쓰지 않기로 해 쓸 곳이 없어졌다. 변형 메뉴(차돌된장찌개)는 자기 `menu_id`의 확인값만 쓰고, 기본 메뉴(된장찌개)의 사장님 답은 쓰지 않는다.
 
-### 3-2. 상속 범위: `base_menu_id` 단일 메뉴만 (확정)
-
-형제 변형(해물된장찌개 등)은 상속 대상이 **아니다.**
-
-- base(된장찌개)는 변형(차돌된장찌개)의 **부분집합**이므로 상속 근거가 성립한다.
-- 형제(해물된장찌개)는 부분집합 관계가 아니다. 해물된장찌개의 `새우: present`가 차돌된장찌개로 넘어오면 오판이다.
-- 형제 상속을 하려면 "공통 재료 vs 변형 고유 재료" 필터가 필요한데, 그것은 사실상 base를 다시 계산하는 것이다.
-
-### 3-3. ③ → Supervisor 반환값별 후속 판단
+### 3-2. ③ → Supervisor 반환값별 후속 판단
 
 | 반환 | Supervisor 동작 |
 |---|---|
@@ -285,7 +276,6 @@ return ExactFeedbackResponse(
 | `confirmations` 일부 존재 | ④ 호출 시 `confirmed_ingredients`에 **`status != unknown` AND `override_eligible: true`** 인 재료만 전달 |
 | `confirmations` 빈 배열 | ④ 호출 (`confirmed_ingredients=[]`) |
 | `override_eligible: false` 포함 | 해당 재료를 override에서 제외하고 **⑤ 계산 대상에 포함** |
-| `confirmation_scope: inherited` | **override 금지.** 쓰임은 보류 (§6) |
 
 **③이 직접 호출하지 않는 것**: 어떤 Agent·Tool도 호출하지 않는다. 조회 후 반환하고 종료.
 
@@ -301,7 +291,7 @@ return ExactFeedbackResponse(
 | **2) DB 존재 + 피드백 일부** | 해당 재료만 반환 | 부분 맵, `unknown` |
 | **2-b) 피드백 전부 (anomaly 없음)** | 캐시 대조 후 완전 확인 | `complete` → ④⑤ 스킵 |
 | **2-c) 피드백 전부 (anomaly 포함)** | 캐시 대조하되 `complete` 불가 | `unknown` → ④⑤ 정상 진행 |
-| **3) 변형 메뉴** | 1차: 변형 menu_id만. 2차(`base_menu_id`) 호출은 보류라 다시 불리지 않는다 (§1-5, ⓪ §2-8 `exact_inherited` 보류 node) | `exact` 1건 |
+| **3) 변형 메뉴** | DB에 등록된 변형은 변형 `menu_id`의 확인값만 반환. 기본 메뉴 확인값은 가져오지 않는다 (§3-1). DB에 없는 런타임 변형은 `menu_id`가 없어 호출되지 않음 | `exact` |
 | **4) DB에 없는 unknown 메뉴** | **호출되지 않음.** `menu_id`가 없어 Supervisor가 ④ unknown 경로로 바로 보낸다 (§1-1) | — |
 | **5) 웹서치까지 실패 (엣지)** | **관여 없음** | 4번과 같이 호출되지 않음 |
 
@@ -316,7 +306,6 @@ return ExactFeedbackResponse(
 | 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 1·2·3차 사장님 답변은 질문·답변 기록(`owner_verification_requests`)에 따로 쌓이고, 확정 규칙은 ⑦이 센다 (⑦ §2-3, #167). ③은 확정값 표만 읽는다 |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
-| 2차 호출인데 `base_menu_id`가 null | Supervisor가 호출하지 않음. 도달 시 빈 배열 반환 |
 | 캐시와 실제 재료 목록 불일치 | 캐시 무효로 간주 → `unknown` 반환 (안전 방향) |
 
 ---
@@ -329,7 +318,7 @@ return ExactFeedbackResponse(
 | 2 | 5개 중 2개만 확인 | 2건 반환 + `unknown` | **메뉴 단위 이분법 없을 것** (부분 확인 지원) |
 | 3 | `status: absent` 레코드 | `absent`로 반환 | `unknown`과 구분될 것 (3값 검증) |
 | 4 | 차돌된장찌개 1차 호출 | 빈 배열 + `scope: exact` | base 정보를 ③이 스스로 끌어오지 않을 것 |
-| 5 | 차돌된장찌개의 기본 메뉴(된장찌개) 확인값 | ③을 다시 부르지 않음, `inherited` 응답 없음 (2차 호출 보류) | 기본 메뉴의 사장님 답이 판정·확률 계산에 쓰이지 않을 것 (⓪ §7 #21) |
+| 5 | 차돌된장찌개의 기본 메뉴(된장찌개) 확인값 | ③을 다시 부르지 않음, `inherited` 응답 없음 (2차 호출 삭제) | 기본 메뉴의 사장님 답이 판정·확률 계산에 쓰이지 않을 것 (⓪ §7 #21) |
 | 6 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
 | 8 | 전 재료 확인 + anomaly 1건 | `completeness: unknown` | anomaly가 `complete`를 막을 것 |
@@ -350,7 +339,8 @@ return ExactFeedbackResponse(
 - [x] **3개월 세는 기준** — 등록(확인)한 날짜부터 달력 기준 3개월 (2026-10-10 회의, §1-7)
 - [x] **만료된 재료 재질문 경로** — ⑧이 만료된 확인값(`expired: true`) 중 사용자 태그와 관련 있는 재료를 다시 묻는 질문 카드를 만든다(이유 `expired`). ⓪ §4-7이 ⑧에 `expired`를 넘겨야 한다 (2026-10-12, ⑧ §2-1 7단계)
 - [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
-- [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
+- [x] **2차 호출(`inherited`)** — 삭제 (2026-10-13). 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해 쓸 곳이 없고, 백엔드도 항상 `null`인 `exact_feedback.inherited`를 지우자고 요청함 (§3-1)
+- [ ] **2차 호출 삭제 ⓪·⑤ 반영 (외부 의존)** — ⓪: JudgeRequest `exact_feedback.inherited`, `scope_hint`·`confirmation_scope`의 `inherited` 값, `exact_inherited` 보류 node(§2-8 라우터, §5 `db_variant_bayes` 경로), ⑤ 요청 `inherited_confirmations` 삭제. ⑤: §1-1·§5·§6의 `inherited_confirmations` 정리 (윤지님)
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪은 반영됨: 모든 경로가 ⑧ 직전에 `tag_lookup`을 거친다 (⓪ §2-8 라우터 `bayesian → tag_lookup → decision`, §4-2, 테스트 12-a, 2026-10-13 확인). 남은 것: ④ 문서 §3의 `lookup_tags` 설명이 아직 "③만 거치는 경로"로 적혀 있어 윤지님께 수정 요청. 안 맞추면 일부만 확인된 메뉴에서 확인값 태그가 비어 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않을 수 있다 (FN)
 - [x] **`completeness` 계산 주체** — ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산한다. 같은 규칙을 백엔드에도 두면 둘이 어긋나 만료값으로 ④⑤를 건너뛸 수 있어서, 백엔드는 Judge 요청에 `completeness`를 넣지 않는다 (2026-10-13, ⓪ §1-3)
 - [x] **판정 중 DB 조회** — 하지 않는다. 확인값·캐시는 백엔드가 Judge 요청에 담아 주고 ③은 읽기만 한다 (10/10 회의 결정 1, §0·§2, 2026-10-13)
@@ -363,7 +353,7 @@ return ExactFeedbackResponse(
 
 - **anomaly 정책**: override 거부, CAUTION 이상 강제 유지 (FN-minimization 우선) — 팀 확정
 - **anomaly 판정 기준**: 레시피 확률 0.9 이상 + "없음" 답변. "있음"은 anomaly 아님. 표시는 ⑦이 붙인다 (#193)
-- **상속 범위**: `base_menu_id` 단일 메뉴만. 형제 변형 제외
+- **기본 메뉴 확인값 상속 안 함**: 2차 호출 삭제. 변형 메뉴는 자기 `menu_id`의 확인값만 쓴다 (2026-10-13)
 - **`status` 3값**: `present` / `absent` / `unknown`
 - **`menu_ingredient_cache`**: 생성하기로 확정. 무효화는 ④ 방식을 따른다 — 메뉴 지식 리비전(`menus.knowledge_revision`)이 바뀌면 자동 무효화, 사장님 확인값으로는 무효화하지 않음 (2026-10-11, ④ §2-1)
 - **확정 근거는 사장님 답변만**: 관광객이 직접 알려주는 재료 정보(`user_hard`)는 수집 경로가 없어 쓰지 않는다 (2026-10-09, #214)
