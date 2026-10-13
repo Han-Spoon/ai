@@ -118,7 +118,7 @@ erDiagram
 |---|---|
 | `parent_ingredient_id`, `child_ingredient_id` PK·FK | 상위 ≠ 하위 |
 | `relation_type` 🔶 | **`part_of`만.** ERD는 `part_of/is_a`인데, 분류(is-a)는 `ingredients.taxonomy_category`에 둔다. 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료로 펼친다 |
-| `ambiguity_flag` | 이 간선을 만든 애매함 플래그 4종 중 하나 (`has_unclear_jeotgal` / `has_unclear_broth` / `has_unclear_seasoning` / `has_hidden_animal`). ④가 노드의 `ambiguity_flag`로 내보낸다 |
+| `ambiguity_flag` | 이 간선을 만든 애매함 플래그 4종 중 하나 (`has_unclear_jeotgal` / `has_unclear_broth` / `has_unclear_seasoning` / `has_hidden_animal`). 메뉴 애매함 플래그(`menus.ambiguity_flags`)를 정할 때의 근거다. ④는 노드별로 내보내지 않는다 (④ §1-2) |
 
 - 원천은 `ai_result/rules/hidden_rules_data.py`.
 - 순환은 ④가 지나온 경로로 막고(`cycle_detected`), 깊이는 5에서 멈춘다(`max_depth_reached`).

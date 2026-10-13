@@ -131,7 +131,7 @@ graph TB
 - `variant_suggestion`: `variant_origin: runtime_tagged`일 때만 채운다 (§2-2). ⑦ 검토 명령에 그대로 들어간다 (⑦ §1-1).
 - `role`: 아래 규칙. ⑧이 "빼기 어려운 재료" 안내에만 쓰고 판정에는 쓰지 않는다 (⑧ §1 `role`).
 
-- 미확정: 노드별 `ambiguity_flag`(그 재료를 펼친 구성 간선의 플래그, 예: 김치 → 멸치액젓의 `has_unclear_jeotgal`)는 ⓪ 응답에 없다. 지금 ⑧은 메뉴 플래그(`menu_ambiguity_flags`)만 쓰므로 **④에서도 빼는 것을 추천**한다. 확인 필요 (§8).
+- 노드별 `ambiguity_flag`는 **출력하지 않는다** (결정, 2026-10-13). ⑧은 메뉴 플래그(`menu_ambiguity_flags`)만 쓰고, 노드 플래그를 쓰는 곳이 없다. 구성 간선의 `ambiguity_flag` 컬럼(예: 김치 → 멸치액젓의 `has_unclear_jeotgal`)은 DB에 남아 메뉴 플래그를 정할 때의 근거로만 쓴다.
 
 **`role` 정하는 규칙 (결정, 2026-10-12)** — LLM 없이, 같은 메뉴는 항상 같은 값
 
@@ -214,7 +214,7 @@ flowchart TD
 2. `knowledge.menu`를 쓴다. 메뉴 후보 조회는 백엔드가 묶음을 만들 때 했고 ②-B가 골랐다 (§0-0). `knowledge.cache`가 있고 `menu_revision`이 `knowledge.menu.knowledge_revision`과 같으면 3~6을 건너뛰고 캐시의 전체 확장 목록을 쓴다
 3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
-5. 전 노드에 `depth`, `parent_ingredient_id`, `ambiguity_flag`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
+5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
 6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다 (캐시를 썼으면 `null`). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
@@ -598,7 +598,7 @@ graph TB
 | 13 | 돼지고기 포함 메뉴 | `constraint_tags`에 `is_pork` | ⑧ `forbidden_tags`와 같은 어휘일 것 |
 | 14 | `트러플된장찌개`의 변형 재료 | `observations: []` | base 메뉴 레시피 수로 계산되지 않을 것 |
 | 21 | 김치찌개의 숨은 재료 새우 (레시피에 직접 안 적힘) | 새우 `k_count`가 상위 재료(김치)의 k 이상, `observation_basis: inherited` | 숨은 재료가 k=0으로 채워져 확률이 0 가까이 떨어지지 않을 것 |
-| 22 | 김치찌개 메뉴 (`has_unclear_jeotgal`) | `menu_ambiguity_flags`와 액젓의 `ambiguity_flag`가 출력에 있음 | 애매함 플래그가 ④에서 끊기지 않을 것 |
+| 22 | 김치찌개 메뉴 (`has_unclear_jeotgal`) | `menu_ambiguity_flags`에 `has_unclear_jeotgal`이 있고, 재료 노드에는 `ambiguity_flag` 필드가 없음 | 메뉴 플래그가 ④에서 끊기지 않을 것 |
 | 19 | 김치 → 액젓 경로 | 액젓에 경로 태그 `is_shellfish` 포함 | 노드 태그만 보고 경로 태그를 빠뜨리지 않을 것 |
 | 20 | 메뉴 레시피 변경 후 호출 | 리비전이 다른 캐시는 쓰지 않음 | 옛 캐시로 재료가 빠지지 않을 것 |
 | 15 | `menu_id` 입력 + 다른 이름 | `menu_id` 행 사용 | ③과 ④가 같은 메뉴를 볼 것 |
@@ -625,7 +625,7 @@ graph TB
 - [x] **분류 관계(is-a) 저장 위치** — `ingredients.taxonomy_category` 컬럼에 둔다 (2026-10-10, #49와 같은 결정). `ingredient_compositions`는 구성 관계(`part_of`)만 담는다. 분류를 구성 간선에 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료처럼 펼친다. 백엔드에 `relation_type`을 `part_of`로 한정해 달라고 요청한다
 - [x] **⑥ Web Search Agent 출력 필드 정합** — ⑥ 출력이 `source: web_search`, `depth: 0`, 사이트별 `observations`를 채운다 (⑥ §1-2, 2026-10-12 확인)
 - [x] **② 출력 필드 수용** — `menu_id` / `match_candidates` / `residual_tokens`를 ④ 입력으로 받는다. ④ 담당자 승인 (2026-10-12). ② §8 해당 항목도 닫아야 함
-- [x] **태그 배열 구성** — 나누지 않고 `constraint_tags` 하나로 통일 (2026-10-12, §3-3). ⓪ 예시의 `allergen_tags`/`dietary_tags`는 ⓪ 담당자가 맞춰야 함
+- [x] **태그 배열 구성** — 나누지 않고 `constraint_tags` 하나로 통일 (2026-10-12, §3-3). ⓪ 반영됨
 - [x] **재료 공통 식별자** — 출력은 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 - [x] **`variant_suggested` 재료의 관측값 규칙** — `observations: []` (2026-10-10, §1-5, ⑤ 담당 확인)
 - [x] **cycle detection 구현** — 별도 파일 대신 재귀 조회에서 경로를 들고 다니며 차단한다 (§2-8)
@@ -633,7 +633,7 @@ graph TB
 - [x] **확인된 복합 재료의 하위 재료 처리** — §2-1 표대로 간다. `present`면 하위 재료를 남기고 `absent`면 그 경로를 뺀다 (2026-10-06, #181)
 - [x] **`confirmed_ingredients` 형태** — `{name, status}` 배열. ⓪ 계약에 같은 형태로 반영됨 (2026-10-12 확인)
 - [x] **확장된 하위 재료의 관측값** — k=0으로 채우지 않고 상위 재료 관측값을 물려받는다. 사이트별 `max(직접, 상위)` (2026-10-10, §1-5)
-- [x] **애매함 플래그 전달** — `menu_ambiguity_flags`와 재료별 `ambiguity_flag`를 출력에 넣는다 (2026-10-10, §1-2)
+- [x] **애매함 플래그 전달** — `menu_ambiguity_flags`를 출력에 넣는다 (2026-10-10, §1-2). 재료별 `ambiguity_flag`는 2026-10-13에 뺐다 (아래)
 - [ ] **애매함 플래그 사용 (외부 의존)** — ⑧ 입력에 플래그를 받고, 사용자 금지 태그와 관련 있으면 CAUTION 유지·사장님 질문 근거로 쓰는 규칙 추가 요청. 지금 룰엔진 `risk_judge._relevant_ambiguity_flags`와 같은 동작. ⓪ §4 계약에도 필드 추가 필요
 - [ ] **재료 단위 변경의 캐시 무효화 (외부 의존)** — 구성 간선·재료 태그·분류가 바뀌면 그 재료가 들어간 메뉴들의 `knowledge_revision`을 백엔드가 올려야 한다. `caution-db-schema.md` §6 요청 9번으로 전달, 백엔드 답변 대기
 - [ ] **KnowledgeBundle 반영 (외부 의존)** — ⓪ §1-3에 `ingredient_graph` 슬라이스 추가, `ontology`·`fallback_ontology`를 펼친 결과가 아니라 원재료 행(메뉴·레시피·관측값·캐시)으로 바꾸기 (§0-0). ⓪ 담당자와 백엔드 확인 필요
@@ -645,7 +645,7 @@ graph TB
 - [x] **확인 재료·잠금 재료 형태** — `{ingredient: IngredientRef, status}`, `IngredientRef[]`. ⓪ §4-3에 반영 (2026-10-13)
 - [x] **`observation_basis: none`** — ⓪ §4-3에 반영 (2026-10-13)
 - [x] **④ warning 코드** — ⓪ §4-3에 ④ 코드 목록 반영, 모두 `forces_caution: true` (2026-10-13)
-- [ ] **노드별 `ambiguity_flag` 유지 여부** — ⓪ 응답에 없고 ⑧은 메뉴 플래그만 쓴다. 추천: ④에서도 뺀다. ④ 담당자 결정 필요 (§1-2)
+- [x] **노드별 `ambiguity_flag` 유지 여부** — 뺀다. ⓪ 응답에 없고 ⑧은 메뉴 플래그만 쓴다 (2026-10-13, §1-2)
 
 ---
 
