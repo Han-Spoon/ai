@@ -210,7 +210,7 @@ erDiagram
 | `source` | `owner_confirmed` |
 | `flagged_anomaly` | 통계적으로 이상한 답변 |
 | `override_eligible` | GENERATED, `NOT(flagged_anomaly AND NOT present)` |
-| `confirmed_at` | 확정 시각 |
+| `confirmed_at` 🔶 | 확정 시각. **확정(upsert)할 때만 갱신**하고, 확정되지 않은 답(예: 확정 뒤 다른 답 1번)으로는 바꾸지 않는다. 3개월 유효기간의 기준이다 (ERD는 "최신 답변 시각") |
 
 - **확정 규칙**: 확인 차례(마지막 확정 이후의 답변)에서 1·2차 답이 같으면 확정, 다르면 3차까지 받아 3개 중 2개 다수결 (⑦ §2-3).
 - **유효기간 3개월.** 지나면 override에 쓰지 않지만 삭제하지 않는다. 확률 계산에도 넣지 않고(사장님 답변은 확률에 쓰지 않음, 10/10 회의), ⑧이 다시 묻는 카드를 만든다.
@@ -233,10 +233,11 @@ erDiagram
 | `question_text` | 언어별 문구 (🔶 6개 언어, §6) |
 | `status` | `pending` / `answered` / `expired` |
 | `answer` | `present` / `absent` / `unknown` |
-| `resolved_confirmation_id` | 재료 답변이 확정값으로 반영되면 채움 |
+| `resolved_confirmation_id` 🔶 | 재료 답변이 확정값으로 반영되면 채움. 1차 답처럼 아직 확정되지 않은 답은 NULL (ERD의 "present/absent면 필수" 삭제 요청) |
 | `resolved_flag_confirmation_id` 🔶 신규 | 플래그 답변이 확정값으로 반영되면 채움 (`owner_flag_confirmations.id`) |
 
 - CHECK: `ingredient_id`와 `ambiguity_flag` 중 **정확히 하나**만 값이 있다. `ambiguity_flag`가 있으면 `asked_tags`는 비어 있지 않다.
+- UNIQUE 🔶: 재료 질문은 `(scan_session_id, menu_id, ingredient_id) WHERE ingredient_id IS NOT NULL`, 플래그 질문은 `(scan_session_id, menu_id, ambiguity_flag, asked_tags) WHERE ambiguity_flag IS NOT NULL`로 나눈다. ERD의 `(scan_session_id, menu_id, ingredient_id)` 하나로는 `ingredient_id`가 NULL인 플래그 질문의 중복을 막지 못한다.
 - 답변 이력은 이 테이블의 answered 행들이다. 확인 차례(⑦ §2-3) 계산도 이 행으로 한다.
 
 ### `owner_flag_confirmations` 🔶 신규 (제안, 2026-10-13)
@@ -325,7 +326,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~15는 2026-10-13 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13 추가)
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -335,15 +336,21 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 4 | `knowledge_import_batches.source` | 6종 | + `10000recipe_prior` | 시드 배치 출처 |
 | 5 | `ingredient_compositions.relation_type` | `part_of` / `is_a` | `part_of`만 | 분류는 `taxonomy_category`에 둠 |
 | 6 | `ingredients.taxonomy_category` | 7종 code | 9종 (§2) | 가공식품 추가, 기타를 `base`·`unknown`으로 분리 (#182) |
-| 7 | 다국어 JSONB (`name_i18n`, `question_text`, `message` 등) | `ko` / `en` / `ar` | `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` | 팀 확정 6개 언어 |
+| 7 | 다국어 JSONB 키 (`menus.name_i18n`, `ingredients.name_i18n`, `menu_analyses.message`, `saved_cards.text`, `owner_verification_requests.question_text`) | `ko` / `en` / `ar` | `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` (`ar` 삭제) | 팀 확정 6개 언어 |
 | 8 | `record_owner_answer` 응답 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`) 포함 | ⑧이 2·3차 질문을 만든다 (⑦ §1-2) |
 | 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
-| 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT 가능한지 확인 | 시드 CSV의 FK가 id로 연결돼 있음 |
+| 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT (IDENTITY 컬럼은 `OVERRIDING SYSTEM VALUE`). 안 되면 AI에 알림 → 이름 기준 매핑으로 바꿈 | 시드 CSV의 FK가 id로 연결돼 있음 |
 | 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
 | 12 | `owner_flag_confirmations` | 없음 | 테이블 생성 (§3) | 플래그 답을 저장할 곳이 없으면 같은 질문을 매번 다시 묻고, 확인된 플래그가 판정에 반영되지 않음 |
 | 13 | `web_search_cache.expires_at` | NOT NULL, TTL | NULL 허용 | ⑥이 캐시 유효기간을 두지 않기로 함 |
 | 14 | `web_search_cache` | `payload` 갱신 시 덮어씀, 순위 컬럼 없음 | `next_rank` INT 추가 + `payload`는 기존 배열에 이어 붙임 (§5) | ⑥이 검색마다 다음 순위 10개를 더해 30개까지 모은다. 덮어쓰면 이전 레시피가 사라짐 |
 | 15 | `owner_verification_requests` | 확률 컬럼 없음 | `recipe_probability` NUMERIC NULL 추가 (§3) | 사장님 답은 스캔 밖에서 들어와 그 순간 비교할 확률이 없다. 없으면 "돈가스에 돼지고기 없음" 같은 이상 답이 그대로 확정된다 (FN) |
+| 16 | `owner_verification_requests.resolved_confirmation_id` | present/absent 답이면 필수 | 필수 조건 삭제. 확정값이 만들어진 때만 채움 (§3) | 1차 답은 확정하지 않는다(`needs_second`). 지금 제약이면 1차 답 저장이 실패해 2·3차 질문 흐름 전체가 막힌다 |
+| 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | 부분 UNIQUE 2개로 분리: 재료 질문 / 플래그 질문 (§3) | 플래그 질문은 `ingredient_id`가 NULL이라 지금 UNIQUE로 중복을 막지 못한다 |
+| 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 확정(upsert)된 시각. 확정되지 않은 답으로는 갱신하지 않음 (§3) | 확정 뒤 다른 답이 1번만 와도 3개월 유효기간이 다시 시작된다 |
+| 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(7), 7번의 6개 값 | `zh_hans`·`zh_hant`가 7자라 지금 길이에 안 들어간다 |
+
+**값 매핑 (스키마 변경 없음)**: ⓪ `create_review_item.review_origin`의 `web_search` → `knowledge_review_items.item_type` `web_search_menu`, `variant_suggestion` → `runtime_variant`.
 
 **시드 적재 순서** (FK): `menu_categories` → `menus` → `ingredients` → `ingredient_tags` · `recipe_ingredients` · `ingredient_compositions` · `ingredient_composition_tags` → `knowledge_import_batches` → `menu_recipe_corpora` → `menu_ingredient_priors`. 적재 뒤 영향받은 메뉴의 `knowledge_revision` +1. 재생성 절차는 `crawling/README.md` "DB 시드 재생성".
 
