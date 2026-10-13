@@ -93,8 +93,8 @@ graph LR
 |---|---|---|
 | 웹서치 결과 | `{context, menu_name, candidates}` (⑥ 출력 그대로) | soft |
 | ④의 변형 태깅 제안 | `{context, base_menu_id, remain_token, suggested_ingredients}` | soft |
-| ⑧의 질문 생성 요청(`owner_card`) | `{context, menu_id, ingredient_id, question}` (⑧ `owner_card` 그대로) | 신규 질문 |
-| 사장님 답변 | `{context, menu_id, ingredient_id, present, question_id}` | hard |
+| ⑧의 질문 생성 요청(`owner_card`) | ⓪ §4-6 `create_owner_verification_request`. 재료 카드(`ingredient`)와 메뉴 애매함 플래그 카드(`ambiguity_flag` + `constraint_tags`) 두 종류 | 신규 질문 |
+| 사장님 답변 | ⓪ §4-6 `record_owner_answer`. 질문과 같은 종류(재료 또는 플래그) | hard |
 
 ```json
 {
@@ -113,7 +113,7 @@ graph LR
 
 - ④의 `variant_origin: runtime_tagged` 결과는 ④ 출력의 `variant_suggestion`(`base_menu_id`, `remain_token`, `suggested_ingredients`)을 그대로 받는다. `db_registered` 변형은 이미 컨펌된 데이터라 ⑦ 대상이 아니다 (④ §5-2).
 - 사장님 답변은 스캔 흐름 밖에서 들어온다. `context.scan_session_id`는 원래 질문이 생긴 스캔(`owner_verification_requests.scan_session_id`)을 쓰고, `item_id`는 `null`이다. ⓪ 공통 문맥 규칙과 맞는지 확인이 필요하다 (§8).
-- ⑧ `owner_card.question`은 6개 언어 객체(`ko`, `en`, `ja`, `zh-Hans`, `zh-Hant`, `es`)다. 스키마의 `owner_verification_requests.question_text`는 text 한 칸이라, 어느 언어를 어떤 형태로 저장할지 정해야 한다 (§8).
+- ⑧ `owner_card.question`은 6개 언어 객체(`ko`, `en`, `ja`, `zh_hans`, `zh_hant`, `es`)다. `owner_verification_requests.question_text`(언어 키 JSONB)에 6개 언어를 모두 저장한다 (§8, 2026-10-12).
 - 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보(③의 `user_hard`)는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09). 손님이 소통 카드로 물어본 결과도 사장님 답변으로 들어온다.
 
 ### 1-2. 출력 (⓪ Supervisor Agent에게 반환)
@@ -207,6 +207,8 @@ flowchart TD
 ```
 
 - **질문 내용(무엇을 물을지)은 ⑧이 만들고, 저장 명령은 ⑦이 만들고, 실제 저장은 백엔드가 한다** — "판정/설명은 ⑧, 저장 명령은 ⑦, 물리 쓰기는 백엔드"라는 역할 분리를 따름.
+- **질문은 두 종류다** (⓪ §4-6, ⑧ §2-1 5-2). 재료 질문은 `ingredient_id`를, 메뉴 애매함 플래그 질문은 `ambiguity_flag`와 물어본 태그(`asked_tags`, 카드의 `constraint_tags`)를 저장한다. 플래그 질문은 `ingredient_id`가 NULL이다 (`caution-db-schema.md` §3).
+- 정보 없는 메뉴의 화면 표시용 카드(`ingredient: null`, `ambiguity_flag: null`)는 저장 명령을 만들지 않는다 (⓪ §4-6).
 - 백엔드가 이 단계에서 발급한 `question_id`가 이후 "사장님 답변" 트리거(§1-1)에서 그대로 쓰인다 — 답변 처리는 질문이 이미 존재한다고 전제하므로, 이 단계가 빠지면 사장님 답변을 저장할 대상 행 자체가 없다.
 
 ### 2-3. hard evidence 처리 (이력 즉시 기록, 확정은 2번 일치 또는 3번 중 2번)
@@ -242,6 +244,24 @@ flowchart TD
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
 - **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
 - 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
+
+### 2-4. 메뉴 애매함 플래그 답 처리 (결정, 2026-10-13)
+
+메뉴에 "젓갈 종류 불분명"(`has_unclear_jeotgal`) 같은 애매함 플래그가 있으면 ⑧이 재료가 아니라 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (③ §1-8, ⑧ §2-1 5-2). 그 답의 저장 명령도 ⑦이 만든다.
+
+| 항목 | 재료 답 (§2-3) | 플래그 답 |
+|---|---|---|
+| 확정 단위 | `(가게, 메뉴, 재료)` | `(가게, 메뉴, 플래그, 물어본 태그)`. 같은 플래그라도 다른 태그로 물은 답은 따로 |
+| 확정 조건 | 확인 차례에서 1·2차 같으면 확정, 다르면 3번 중 2번 | **같음** |
+| `confirmation_state` 응답 | `confirmed` / `needs_second` / `needs_third` | **같음** (⑧이 2·3차 플래그 질문을 만든다) |
+| 유효기간 | 3개월 | **같음** |
+| 이상 답변 표시 | 레시피 확률 ≥ 0.9 + "없음" | **없음.** 비교할 확률이 없다 |
+| 확정값 저장 | `ingredient_confirmations` | `owner_flag_confirmations` (신규 제안, `caution-db-schema.md` §3) |
+| 증거 로그 | `ingredient_evidence_log`에 매번 기록 | **기록하지 않음.** 확률에 쓰지 않고, 로그 테이블은 재료가 필수다. 이력은 `owner_verification_requests` answered 행 |
+| 출처 신뢰도 갱신 | 있음 (§3-1) | **없음.** 플래그에 대해 주장한 출처가 없다 |
+
+- `present`의 뜻: 물어본 태그 중 **하나 이상** 있으면 `true`, **전부** 없으면 `false` (⓪ §4-2 `flag_confirmations`).
+- "모름" 답은 재료 답과 같이 세지 않는다.
 
 ---
 
@@ -333,12 +353,15 @@ RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아�
 **`create_owner_verification_request`**
 
 ```sql
-INSERT INTO owner_verification_requests (id, store_id, scan_session_id, menu_id, ingredient_id, question_text, status)
-VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :question_text, 'pending')
+-- 재료 질문: :ingredient_id 값, :ambiguity_flag·:asked_tags NULL
+-- 플래그 질문: :ingredient_id NULL, :ambiguity_flag·:asked_tags 값 (asked_tags는 정렬)
+INSERT INTO owner_verification_requests
+       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, question_text, status)
+VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :question_text, 'pending')
 ON CONFLICT DO NOTHING;
 ```
 
-**`record_owner_answer`** — 이력 기록, 확정 조건을 채우면 확정 (§2-3)
+**`record_owner_answer` — 재료 답** — 이력 기록, 확정 조건을 채우면 확정 (§2-3)
 
 ```sql
 UPDATE owner_verification_requests
@@ -369,6 +392,34 @@ ON CONFLICT (store_id, menu_id, ingredient_id)
 DO UPDATE SET present = EXCLUDED.present, flagged_anomaly = EXCLUDED.flagged_anomaly,
               confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_confirmation_id에 기록
+```
+
+**`record_owner_answer` — 플래그 답** (§2-4). 증거 로그·신뢰도 갱신 없음
+
+```sql
+UPDATE owner_verification_requests
+SET status = 'answered', answer = :answer, answered_at = now()
+WHERE id = :question_id AND status = 'pending';
+
+-- 이번 확인 차례의 답변 (마지막 확정 이후, unknown 제외, 오래된 순)
+SELECT r.answer
+FROM owner_verification_requests r
+LEFT JOIN owner_flag_confirmations c
+       ON c.store_id = r.store_id AND c.menu_id = r.menu_id
+      AND c.ambiguity_flag = r.ambiguity_flag AND c.asked_tags = r.asked_tags
+WHERE r.store_id = :store_id AND r.menu_id = :menu_id
+  AND r.ambiguity_flag = :ambiguity_flag AND r.asked_tags = :asked_tags
+  AND r.status = 'answered' AND r.answer IN ('present', 'absent')
+  AND r.answered_at > COALESCE(c.confirmed_at, '-infinity')
+ORDER BY r.answered_at ASC
+LIMIT 3;
+-- 판정은 재료 답과 같다 (1개 needs_second / 2개 같음 확정 / 2개 다름 needs_third / 3개 다수결)
+
+INSERT INTO owner_flag_confirmations (store_id, menu_id, ambiguity_flag, asked_tags, present, confirmed_at)
+VALUES (:store_id, :menu_id, :ambiguity_flag, :asked_tags, :present, now())
+ON CONFLICT (store_id, menu_id, ambiguity_flag, asked_tags)
+DO UPDATE SET present = EXCLUDED.present, confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
+RETURNING id;   -- → owner_verification_requests.resolved_flag_confirmation_id에 기록
 ```
 
 **`create_review_item` 승인 후 soft 증거 반영** — 로그 INSERT 후 재계산 (직접 UPDATE 금지)
@@ -482,6 +533,10 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 10 | 비교 기록 없는 새 출처 | 신뢰도 0.5 | (0+1)/(0+2) |
 | 11 | 웹 검색이 "있음", 사장님 확정 "있음" | 웹 검색 비교 +1, 맞춤 +1 | `update_source_reliability` 명령만 만들고 DB에 직접 쓰지 않을 것 |
 | 12 | 이상 답변 표시가 붙은 확정값 | 신뢰도 비교에 쓰지 않음 | 출처 신뢰도가 바뀌지 않을 것 |
+| 13 | ⑧ 플래그 카드 (`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: [is_fish]`) | `create_owner_verification_request`에 `ambiguity_flag`·`asked_tags` 포함, `ingredient_id` 없음 | 재료 질문으로 저장되지 않을 것 |
+| 14 | 같은 플래그 질문에 1·2차 "없음" | `owner_flag_confirmations`에 `present: false` 확정, `confirmed` 반환 | 재료 확정값 테이블에 쓰지 않을 것, 증거 로그를 남기지 않을 것 |
+| 15 | 같은 플래그를 `[is_fish]`와 `[is_shellfish]`로 각각 물음 | 두 답을 따로 확정 | 한 답이 다른 태그 답을 덮어쓰지 않을 것 |
+| 16 | 정보 없는 메뉴의 표시용 카드 (`ingredient: null`, `ambiguity_flag: null`) | 저장 명령 없음 | 빈 질문 행을 만들지 않을 것 |
 
 > 웹서치 수집 단계(성공/타임아웃)의 테스트 케이스는 [`6-agent-websearch.md`](6-agent-websearch.md) §4에 있다.
 
@@ -507,6 +562,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **사장님 질문 저장 언어** — `question_text`는 언어 키를 담는 JSONB라 6개 언어를 모두 저장한다 (`caution-db-schema.md` v4 §3, 2026-10-12). 백엔드에 6개 언어 허용 요청함 (v4 §6 7번)
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
+- [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
 
 ---
 
