@@ -130,7 +130,6 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 
 미확정 (§8, ⓪ §4-6에도 적어 둠):
 - **2·3차 질문 연결이 ⓪에 없다.** ⑧은 카드에 `round: 1 | 2 | 3`을 붙이지만, 몇 차 질문인지 알려 주는 값(`confirmation_state` 또는 확인 차례의 답변 수)이 ⑧까지 오는 경로가 ⓪에 없다. 백엔드가 이 값을 ③ 확인값과 함께 KnowledgeBundle에 넣어 ⑧까지 전달하는 방안을 요청한다.
-- **이상 답변 판정에 필요한 레시피 확률이 ⓪ `record_owner_answer`에 없다.** 이상 답변은 "레시피 확률 0.9 이상 + 없음"으로 판정하는데(§2-3), 사장님 답변은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 질문을 만들 때(`create_owner_verification_request`) 그 재료의 `posterior_mean`을 함께 저장하고, 답변을 확정할 때 그 값으로 `flagged_anomaly`를 정하는 방안을 요청한다. 이게 없으면 이상 답변이 걸러지지 않아 "돈가스에 돼지고기 없음" 같은 답이 그대로 확정된다 (FN).
 
 ## 2. 처리 로직
 
@@ -202,6 +201,7 @@ flowchart TD
 - **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
 - **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
+- **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 이번 확인 차례에서 **가장 최근에 답한 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
 - 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 2-4. 메뉴 애매함 플래그 답 처리 (결정, 2026-10-13)
@@ -314,9 +314,10 @@ RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아�
 ```sql
 -- 재료 질문: :ingredient_id 값, :ambiguity_flag·:asked_tags NULL
 -- 플래그 질문: :ingredient_id NULL, :ambiguity_flag·:asked_tags 값 (asked_tags는 정렬)
+-- :recipe_probability = 질문 시점 ⑤ posterior_mean (재료 질문만, 플래그 질문은 NULL)
 INSERT INTO owner_verification_requests
-       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, question_text, status)
-VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :question_text, 'pending')
+       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, recipe_probability, question_text, status)
+VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :recipe_probability, :question_text, 'pending')
 ON CONFLICT DO NOTHING;
 ```
 
@@ -331,7 +332,7 @@ INSERT INTO ingredient_evidence_log (store_id, menu_id, ingredient_id, source_ty
 VALUES (:store_id, :menu_id, :ingredient_id, 'owner_feedback', 0, 0, :question_id);
 
 -- 이번 확인 차례의 답변 (마지막 확정 이후, unknown 제외, 오래된 순)
-SELECT r.answer
+SELECT r.answer, r.recipe_probability
 FROM owner_verification_requests r
 LEFT JOIN ingredient_confirmations c
        ON c.store_id = r.store_id AND c.menu_id = r.menu_id AND c.ingredient_id = r.ingredient_id
@@ -344,6 +345,7 @@ LIMIT 3;
 -- 2개이고 같음: 그 답으로 아래 upsert
 -- 2개이고 다름: 확정 보류 → needs_third
 -- 3개: 3번 중 2번 나온 답으로 아래 upsert
+-- :flagged_anomaly = (확정 답이 absent) AND (가장 최근 행의 recipe_probability >= 0.9)
 
 INSERT INTO ingredient_confirmations (store_id, menu_id, ingredient_id, present, source, flagged_anomaly, confirmed_at)
 VALUES (:store_id, :menu_id, :ingredient_id, :present, 'owner_confirmed', :flagged_anomaly, now())
@@ -489,6 +491,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 3-e | 확정값 "없음" + 새 차례 "있음", "없음", "없음" | "없음" 유지, `confirmed_at` 갱신 | 유효기간 3개월이 다시 시작될 것 |
 | 4-b | 레시피 확률 0.95 + "없음" | `flagged_anomaly: true` | 0.9 이상 "없음"이면 표시 |
 | 4-c | 레시피 확률 0.95 + "있음" | `flagged_anomaly: false` | "있음"은 이상 답변이 아님 |
+| 4-d | 질문 생성 요청에 `recipe_probability: 0.95` → 나중에 "없음" 1·2차 | 확정 시 `flagged_anomaly: true` | 스캔 밖 답변도 질문 시점 확률로 판정할 것 |
+| 4-e | 1차 질문 `recipe_probability: 0.95`, 2차 질문 0.85, 둘 다 "없음" | `flagged_anomaly: false` | 가장 최근 질문의 값(0.85)을 쓸 것 |
 | 4 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장, ③이 `override_eligible: false` 반환 | **확률 값과 무관하게** ⑧에서 CAUTION 이상 유지될 것 |
 | 5 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 | 6 | ⑧ 질문 생성 요청 | `create_owner_verification_request` 명령만 반환 | ⑦ 출력에 `question_id`·저장 완료 표시가 없을 것 (백엔드가 발급) |
@@ -529,7 +533,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
 - [ ] **2·3차 질문 연결 (③·⑧·백엔드와 함께)** — 몇 차 질문인지(`confirmation_state` 또는 확인 차례 답변 수)를 ⑧까지 전달하는 경로 (§1-2)
-- [ ] **이상 답변 판정용 레시피 확률 (⑧·백엔드와 함께)** — 질문 생성 때 `posterior_mean`을 저장하고 답변 확정 때 `flagged_anomaly` 판정에 쓰기. 스키마에도 `owner_verification_requests.recipe_probability` 같은 컬럼이 필요 (§1-2, §2-3)
+- [x] **이상 답변 판정용 레시피 확률** — 질문 생성 때 ⑤ `posterior_mean`을 `recipe_probability`로 저장하고, 답 확정 때 이번 확인 차례의 가장 최근 질문 값으로 판정 (2026-10-13, §2-3). ⑧은 바뀌지 않는다 (Supervisor가 ⑤ 결과에서 채움)
+- [ ] **`owner_verification_requests.recipe_probability` 컬럼 (외부 의존)** — `caution-db-schema.md` §6 15번으로 백엔드에 요청
 
 ---
 
