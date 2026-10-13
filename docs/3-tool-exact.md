@@ -8,7 +8,8 @@
 
 **③은 순수 조회기다. 판단하지 않는다.**
 
-- 하는 것: `store_id + menu_id`로 `ingredient_confirmations` 조회 → 재료 단위 확인 맵 반환. 메뉴 애매함 플래그에 대한 사장님 답도 함께 조회해 반환한다 (§1-8)
+- 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답도 함께 반환한다 (§1-8)
+- **DB는 부르지 않는다** (10/10 회의 결정 1). 백엔드가 Judge 요청을 만들 때 `store_id + menu_id`로 `ingredient_confirmations`를 미리 조회해 묶음에 담는다 (⓪ §1-3). ③은 Item Graph에 들어온 같은 `item_id`의 자료만 읽는다 (⓪ §2-6)
 - 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
 - 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-11 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
 - 설계 원칙: **메뉴 단위 이분법 금지.** 부분 확인을 반드시 지원한다.
@@ -33,7 +34,7 @@
 
 | PPT 표현 | 이 문서 |
 |---|---|
-| 7쪽: 검증·저장된 메뉴의 재료 확정 근거(Hard Evidence)를 조회 (`확정 근거 조회`) | §0, §2. `ingredient_confirmations`를 `store_id + menu_id`로 조회. 확정 근거는 사장님 답변만 (§1-4) |
+| 7쪽: 검증·저장된 메뉴의 재료 확정 근거(Hard Evidence)를 조회 (`확정 근거 조회`) | §0, §2. 백엔드가 `store_id + menu_id`로 조회해 Judge 요청에 담은 `ingredient_confirmations`를 읽음. 확정 근거는 사장님 답변만 (§1-4) |
 | 7쪽: 존재 / 부재 / 미확인 상태를 반환 (`3-State`) | §1-3. `present` / `absent` / `unknown` |
 | 7쪽: Agent는 판단하고 Tool은 수행한다 | §0. ③은 조회기다. 만료·override 가능 여부·완전성 표시는 정해진 규칙으로 계산한다 (§1-6, §1-7, §2) |
 | 3쪽 외부 연결: 가게 직원 — 질문, 답변 | §1-4. 확정 근거의 출처 |
@@ -67,7 +68,7 @@
 
 | 필드 | ③이 정하는 방법 |
 |---|---|
-| `completeness` | `complete \| unknown` 두 값만 쓴다 (§2, §6) |
+| `completeness` | `complete \| unknown` 두 값만 쓴다. **③이 계산한다** — 백엔드는 보내지 않는다 (§2, §6, ⓪ §1-3) |
 | `confirmations[].constraint_tags` | 항상 `[]`. Supervisor가 ④ `lookup_tags`로 채운다 (§0) |
 | `confirmations[].status` | 3값 유지 (§1-3) |
 | `confirmations[].evidence` | 사장님 답변 근거 (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` |
@@ -108,7 +109,7 @@
 **anomaly 판정 기준 (결정, 2026-10-06, #193 — ⑦ §2-3)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 사장님 답이 **"없음"(`absent`)**이면 `flagged_anomaly: true`다.
 
 - **"있음"(`present`) 답변은 anomaly가 아니다.** "있음"을 믿는 쪽이 더 조심하는 방향이라 위험을 놓치지 않는다. "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려간다.
-- 표시를 붙이는 주체는 ⑦이다 (사장님 답변 저장 시). ③은 판정하지 않고 DB의 `flagged_anomaly`를 그대로 읽는다.
+- 표시를 붙이는 주체는 ⑦이다 (사장님 답변 저장 시). ③은 판정하지 않고 묶음에 담긴 `flagged_anomaly`를 그대로 읽는다.
 - DB 스키마의 예외 규칙(`flagged_anomaly: true` + `present: false`, `caution-db-schema.md` §3 `ingredient_confirmations`)과 같은 방향이다.
 
 | 조건 | `override_eligible` | Supervisor 동작 |
@@ -130,7 +131,7 @@
 | `confirmed_at`이 3개월 경과 | `true` | `override_eligible: false`. 확정 정보로 쓰지 않는다 |
 
 - **만료 레코드도 드롭하지 않는다.** `expired: true`로 표기해 반환한다. 재료가 리스트에서 사라지면 FN이 생긴다 (§1-6과 같은 이유).
-- 만료 판정은 ③이 조회 시점에 `confirmed_at`만 보고 한다. DB 레코드를 지우거나 바꾸지 않는다 (DB 쓰기는 ③ 범위 밖).
+- 만료 판정은 ③이 판정 시점에 `confirmed_at`만 보고 한다. DB 레코드를 지우거나 바꾸지 않는다 (DB 쓰기는 ③ 범위 밖).
 - 만료된 재료는 사장님에게 다시 확인받을 대상이다. ⑧이 다시 묻는 질문 카드를 만든다 (⑧ §2-1 7단계, 이유 `expired`).
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
@@ -154,7 +155,7 @@
 flowchart TD
     S[Supervisor 호출] --> V{store_id 존재?}
     V -->|없음| ERR[StoreIdRequiredError]
-    V -->|있음| Q["ingredient_confirmations 조회<br/>WHERE store_id AND menu_id"]
+    V -->|있음| Q["Judge 요청 묶음에서 읽기<br/>exact_feedback.exact (DB 조회 없음)"]
     Q --> N{레코드 존재?}
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
     N -->|있음| TG["ingredient_id 정리<br/>(태그는 ④가 붙임)"]
@@ -178,8 +179,8 @@ flowchart TD
 def query_exact_confirmations(
     request: ExactFeedbackRequest,                  # context.store_id 필수·양수. None/0 이하 → StoreIdRequiredError
 ) -> ExactFeedbackResponse:
-    """context.store_id + menu.menu_id 스코프의 재료 단위 확인 레코드를 조회해 그대로 반환.
-    판단·확장·라우팅 없음."""
+    """context.store_id + menu.menu_id 범위의 재료 단위 확인값을 Judge 요청 묶음에서 읽어 반환.
+    DB 조회·판단·확장·라우팅 없음."""
 
 
 def check_completeness(
@@ -207,11 +208,15 @@ warnings = list(request.warnings)                    # 입력 신호 보존
 if store_id is None or store_id <= 0:
     raise StoreIdRequiredError
 
-rows = db.query("ingredient_confirmations",
-                store_id=store_id,          # 스코프 필수
-                menu_id=menu_id)
+# DB를 부르지 않는다. 백엔드가 Judge 요청 묶음에 담아 준 같은 item_id의 자료만 읽는다 (⓪ §1-3, §2-6)
+knowledge = item_knowledge.candidate(menu_id)        # ②-B가 고른 후보의 자료
+exact = knowledge.exact_feedback.exact               # not_found·unavailable이면 None
+                                                     # (unavailable warning은 Supervisor가 이미 붙임)
+rows = exact.confirmations if exact else []
+flag_rows = exact.flag_confirmations if exact else []
 
 confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 금지
+flag_confirmations = [to_flag_confirmation(r) for r in flag_rows]   # §1-8
 
 for c in confirmations:
     c.constraint_tags = []                           # 태그는 ④가 붙인다 (④ §2-7)
@@ -222,7 +227,11 @@ for c in confirmations:                              # §1-7. 드롭하지 않�
 for c in confirmations:
     c.override_eligible = resolve_override_eligibility(c, scope_hint)
 
-cached = db.get_menu_ingredient_cache(store_id, menu_id)
+for f in flag_confirmations:                         # §1-8. 이상 답변 표시 없음
+    f.expired = f.confirmed_at < now() - months(3)
+    f.override_eligible = not f.expired
+
+cached = knowledge.ontology.cache                    # 지식 버전이 같은 캐시만 들어옴. 없으면 None
 completeness = (
     "complete"
     if cached
@@ -236,7 +245,8 @@ return ExactFeedbackResponse(
     menu_id             = menu_id,
     confirmation_scope  = scope_hint,
     completeness        = completeness,
-    confirmations       = confirmations,            # evidence.observed_at = DB confirmed_at
+    confirmations       = confirmations,            # evidence.observed_at = confirmed_at
+    flag_confirmations  = flag_confirmations,
     warnings            = warnings,
     errors              = list(request.errors),
 )
@@ -300,7 +310,8 @@ return ExactFeedbackResponse(
 | 상황 | 처리 |
 |---|---|
 | `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
-| `menu_id`가 DB에 없음 | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
+| 묶음에 이 메뉴의 확인값이 없음 (`exact_feedback.status: not_found`) | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
+| 묶음의 확인값을 백엔드가 못 가져옴 (`exact_feedback.status: unavailable`) | 빈 배열 + `unknown`. "확인값 없음"으로 믿지 않고 SAFE 금지 warning(`knowledge_slice_unavailable`)이 남는다 (⓪ §1-3) |
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
 | 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 1·2·3차 사장님 답변은 질문·답변 기록(`owner_verification_requests`)에 따로 쌓이고, 확정 규칙은 ⑦이 센다 (⑦ §2-3, #167). ③은 확정값 표만 읽는다 |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
@@ -341,6 +352,8 @@ return ExactFeedbackResponse(
 - [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
+- [x] **`completeness` 계산 주체** — ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산한다. 같은 규칙을 백엔드에도 두면 둘이 어긋나 만료값으로 ④⑤를 건너뛸 수 있어서, 백엔드는 Judge 요청에 `completeness`를 넣지 않는다 (2026-10-13, ⓪ §1-3)
+- [x] **판정 중 DB 조회** — 하지 않는다. 확인값·캐시는 백엔드가 Judge 요청에 담아 주고 ③은 읽기만 한다 (10/10 회의 결정 1, §0·§2, 2026-10-13)
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
 - [x] **⓪ 반영 요청** — ⓪ §4-2 응답과 §1-3 Judge 요청 `exact_feedback.exact`에 `flag_confirmations` 추가, §1-8은 ⓪ 링크로 바꿈 (2026-10-13)
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리가 없다. 지금 `ingredient_confirmations`는 재료 단위라 메뉴·플래그·물어본 태그 단위로 저장할 곳이 필요하다. 윤지·백엔드 확인, 저장은 ⑦
