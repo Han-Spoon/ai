@@ -74,7 +74,7 @@
 | `confirmations[].flagged_anomaly` | ⑦이 저장할 때 붙인 값을 그대로 읽는다 (기준 §1-6) |
 | `confirmations[].override_eligible` | §1-6 표 |
 | `confirmations[].expired` | 확인 후 3개월 경과 여부 (§1-7) |
-| `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8). **⓪ 반영 대기** |
+| `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8) |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
 
@@ -135,37 +135,12 @@
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
 
-> **⓪ 반영 대기**: ⓪ §4-2 응답에 아직 `flag_confirmations`가 없다. ⓪에 들어가면 아래 JSON을 지우고 ⓪ 링크로 바꾼다 (§6).
+메뉴에는 "젓갈 종류가 불분명" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다. 형식은 [⓪ §4-2 `flag_confirmations`](0-agent-supervisor.md)다 (원본은 Judge 요청의 `exact_feedback.exact.flag_confirmations`, ⓪ §1-3). ③이 지키는 것:
 
-메뉴에는 "젓갈 종류가 불분명" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다.
-
-```json
-{
-  "ambiguity_flag": "has_unclear_jeotgal",
-  "constraint_tags": ["is_fish"],
-  "status": "absent",
-  "evidence": {
-    "evidence_id": "evidence-101",
-    "evidence_class": "hard",
-    "source_type": "owner_feedback",
-    "source_ref": "(저장 테이블 미정):confirmation-101",
-    "verification_status": "owner_confirmed",
-    "reliability_weight": 1.0,
-    "observed_at": "2026-09-01T00:00:00Z"
-  },
-  "override_eligible": true,
-  "expired": false
-}
-```
-
-| 필드 | 설명 |
-|---|---|
-| `ambiguity_flag` | 어떤 플래그에 대한 답인지 |
-| `constraint_tags` | 사장님에게 물어본 태그. 질문에 들어 있던 값을 저장한 것이라 ③이 붙이는 태그가 아니다 (§0의 "태그는 ④만"은 재료 태그 이야기) |
-| `status` | `present \| absent \| unknown` (§1-3과 같은 3값) |
-| `evidence` | 근거. 재료 확인값과 같은 형식 (§1-4) |
-| `override_eligible` | `expired: false`면 `true`. 재료 확인값과 달리 비교할 확률이 없어 anomaly 표시는 없다 |
-| `expired` | §1-7과 같은 3개월 규칙 |
+- `constraint_tags`는 사장님에게 물어본 태그다. 질문에 들어 있던 값을 저장한 것이라 ③이 붙이는 태그가 아니다 (§0의 "태그는 ④만"은 재료 태그 이야기).
+- `status`는 §1-3과 같은 3값이다.
+- `override_eligible`은 `expired: false`면 `true`다. 재료 확인값과 달리 비교할 확률이 없어 anomaly 표시는 없다.
+- `expired`는 §1-7과 같은 3개월 규칙이다.
 
 - 같은 플래그를 다른 태그로 물은 답은 따로 반환한다. 어느 답을 쓸지는 ⑧이 정한다.
 - 2번 연속 같은 답이면 확정하는 규칙(10/10 회의)은 재료 확인값과 같이 ⑦이 저장할 때 적용한다. ③은 확정된 답만 읽는다.
@@ -367,7 +342,7 @@ return ExactFeedbackResponse(
 - [ ] **2차 호출(`inherited`) 보류** — 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해서, 기본 메뉴 답변을 ⑤ prior 보정에 넘기는 2차 호출(§1-5, §3-1, §3-3)은 쓸 곳이 없어짐. 유지·삭제 여부는 보류
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪ §2-11은 ③만 거치는 경로에서만 `tag_lookup`을 부르고, ④ §2-7도 그 경로만 적어 둠. 일부만 확인된 메뉴는 ④가 확인 재료를 빼고 반환하므로 확인값 태그가 비어, 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않는다. 캐시 없이 전부 확인된 메뉴는 확률 결과가 비어 SAFE까지 나갈 수 있다 (FN). ⓪·④ 담당자에게 ③ 확인값이 ⑧로 가는 모든 경로에서 `lookup_tags`를 부르도록 요청
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
-- [ ] **⓪ 반영 요청 (외부 의존)** — ⓪ §4-2 응답에 `flag_confirmations`(§1-8) 추가. 반영되면 §1-8의 JSON을 지우고 ⓪ 링크로 바꾼다
+- [x] **⓪ 반영 요청** — ⓪ §4-2 응답과 §1-3 Judge 요청 `exact_feedback.exact`에 `flag_confirmations` 추가, §1-8은 ⓪ 링크로 바꿈 (2026-10-13)
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리가 없다. 지금 `ingredient_confirmations`는 재료 단위라 메뉴·플래그·물어본 태그 단위로 저장할 곳이 필요하다. 윤지·백엔드 확인, 저장은 ⑦
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 
