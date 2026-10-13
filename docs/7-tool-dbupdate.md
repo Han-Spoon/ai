@@ -414,12 +414,18 @@ DO UPDATE SET agree_count      = source_reliability.agree_count + EXCLUDED.agree
 **`save_web_search_cache`**
 
 ```sql
-INSERT INTO web_search_cache (normalized_menu_name, original_menu_name, search_status, payload, searched_at, expires_at)
-VALUES (normalize_food_name(:menu_name), :menu_name, :search_status, :payload, :searched_at, :expires_at)
+INSERT INTO web_search_cache (normalized_menu_name, original_menu_name, search_status, payload, next_rank, searched_at, expires_at)
+VALUES (normalize_food_name(:menu_name), :menu_name, :search_status, :sources, :next_rank, :searched_at, NULL)
 ON CONFLICT (normalized_menu_name)
-DO UPDATE SET search_status = EXCLUDED.search_status, payload = EXCLUDED.payload,
-              searched_at = EXCLUDED.searched_at, expires_at = EXCLUDED.expires_at, updated_at = now();
+DO UPDATE SET search_status = EXCLUDED.search_status,
+              payload       = web_search_cache.payload || EXCLUDED.payload,   -- 덮어쓰지 않고 이어 붙인다
+              next_rank     = EXCLUDED.next_rank,
+              searched_at   = EXCLUDED.searched_at, updated_at = now();
 ```
+
+- `payload`는 출처 배열(JSONB array)이다. 명령에는 이번에 새로 찾은 `sources`만 들어 있으므로 기존 배열 뒤에 붙인다. 덮어쓰면 2번째 검색 때 1~10위 레시피가 사라져 30개가 모이지 않는다 (⑥ §2-4).
+- `next_rank`는 다음 검색 시작 순위다. 다음 Judge 때 백엔드가 이 값을 ⑥ 입력으로 넘긴다.
+- `expires_at`은 항상 NULL이다 (⑥은 캐시 유효기간을 두지 않음).
 
 ---
 
