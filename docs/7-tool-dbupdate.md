@@ -117,6 +117,7 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 
 - 허용 action은 위 5종 + ④가 직접 만드는 `save_menu_ingredient_cache`, 총 6종이다 (`ai_command_receipts.action`, `caution-db-schema.md` §4).
 - 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2).
+- `idempotency_key`는 **내용 기준**이다: action과 내용 키(예: 질문은 가게·스캔·메뉴·재료 또는 플래그, 답은 `question_id`)의 해시. `trace_id`·`operation_id`는 넣지 않는다. 넣으면 같은 스캔을 재시도할 때 같은 질문이 또 저장된다. action별 내용 키는 ⓪ §4-6 표를 따른다.
 - `context`는 입력 값을 수정하지 않고 그대로 돌려준다. 메뉴·재료 ID는 정수, 질문 ID는 UUID다.
 - 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다.
 
@@ -498,6 +499,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 6 | ⑧ 질문 생성 요청 | `create_owner_verification_request` 명령만 반환 | ⑦ 출력에 `question_id`·저장 완료 표시가 없을 것 (백엔드가 발급) |
 | 7 | 모든 명령 | `payload.provenance` 포함 | `source_type`·`verification_status`가 빠지지 않을 것 |
 | 8 | 같은 명령 2회 전달 | 한 번만 반영 | `idempotency_key`가 같을 것 |
+| 8-b | 같은 스캔(`scan_session_id`)의 Judge를 다른 `trace_id`로 재시도 | 같은 질문 명령의 `idempotency_key`가 같음 | 질문 행이 하나만 생길 것 |
+| 8-c | 같은 재료 질문에 1차·2차 답 (`question_id` 다름) | `record_owner_answer` 키가 서로 다름 | 두 답이 모두 기록될 것 |
 | 9 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`trace_id`를 수정하지 않을 것 |
 | 10 | 비교 기록 없는 새 출처 | 신뢰도 0.5 | (0+1)/(0+2) |
 | 11 | 웹 검색이 "있음", 사장님 확정 "있음" | 웹 검색 비교 +1, 맞춤 +1 | `update_source_reliability` 명령만 만들고 DB에 직접 쓰지 않을 것 |
