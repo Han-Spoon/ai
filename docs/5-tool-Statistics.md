@@ -48,17 +48,18 @@
 
 ## 1. 입력 / 출력 스펙
 
-### 1-1. 입력 (Supervisor로부터, 메뉴 단위)
+> **JSON 형식(필드 이름·타입·허용값·예시)의 기준은 ⓪ 문서 하나다.** 이 절은 ⓪의 해당 모델을 가리키고, ⑤가 값을 어떻게 해석·계산하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `context` | object | **필수** | ⓪ §1-3 공통 호출 문맥. `schema_version`, `trace_id`, `scan_session_id`, `store_id`, `item_id`. `store_id`는 prior 스코프이며 양의 정수만 허용, 없으면 에러 |
-| `menu_id` | integer \| null | 필수 | 가게 증거(`ingredient_risk_scores`) 조회용. DB에 없는 메뉴는 `null` |
-| `menu_category_id` | integer \| null | 필수 | 클러스터 fallback용 (④ 출력, `menus.category_id`). `null`이면 `cluster` 단계를 건너뛴다 |
-| `ingredients` | IngredientNode[] | 필수 | ④ 또는 ⑥ 출력. `ingredient_id`, `canonical_name`, `source`, `depth`, `curated`, `observations`(출처별 관측값, ④ §1-5. 하위 재료는 상위 재료 관측값을 물려받으며 `observation_basis: inherited`), **`anomaly_locked`**(Supervisor가 부여하고 ④가 그대로 보존한 값) 포함. ⑥ 출력은 현재 재료명만 있으므로 빠진 필드는 §6 "필드 부재" 규칙을 따른다 |
-| `inherited_confirmations` | Confirmation[] | 선택 | ③ 2차 호출 결과. **쓰지 않음(보류)** — 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6) |
-| `priors` | object | 필수 | KnowledgeBundle의 prior 슬라이스 (⓪ §1-3). 아래 표대로 해석한다 |
-| `source_reliability` | object | 필수 | KnowledgeBundle의 출처 신뢰도 `weights[]` (`source_key`, `weight`). 목록에 없는 출처는 0.5 (⑦ §3-1) |
+### 1-1. 입력 — ⓪ §4-4 `BayesianRequest`
+
+공통 문맥은 ⓪ §1-2 `NodeContext`, `priors`·`source_reliability`는 ⓪ §1-3 KnowledgeBundle 슬라이스다. ⑤가 지켜야 할 것:
+
+- `context.store_id`가 양의 정수가 아니면 에러. prior는 가게 스코프다.
+- `menu_category_id`가 `null`이면 `cluster` 단계를 건너뛴다 (지금은 `cluster`가 항상 비어 있다).
+- `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다. `anomaly_locked`는 Supervisor가 붙이고 ④가 보존한 값이다.
+- `inherited_confirmations`는 **쓰지 않는다(보류)**. 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6).
+- `source_reliability.weights[]`에 없는 출처는 0.5로 본다 (⑦ §3-1).
+- ⓪ 반영 대기: ⑤가 내는 warning 코드(`empty_ingredients`, `integrity_error`, `prior_global_ignored`)가 ⓪ 경고 코드 목록에 없다 (§8).
 
 **`priors` 슬라이스의 뜻 (결정, 2026-10-12)** — 판정 단계에서 ⑤는 DB를 조회하지 않고 이 값만 쓴다
 
@@ -71,28 +72,6 @@
 - 필드는 ⓪ 계약 호환을 위해 남기되 `cluster`·`global`은 빈 배열로 정의한다. 값이 들어오면 무시하고 `prior_global_ignored` warning을 남긴다.
 - `priors.status`가 `unavailable`이면 `store`가 비어도 "가게 증거 없음"으로 보지 않는다. ⓪ 규칙대로 SAFE 금지 warning을 유지한다.
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": "scan-123:0"
-  },
-  "menu_id": 101,
-  "menu_category_id": 19,
-  "ingredients": [
-    {
-      "ingredient_id": 155, "canonical_name": "새우", "source": "expanded", "depth": 2, "curated": false,
-      "observations": [{"corpus": "10000recipe", "k_count": 33, "n_total": 57}],
-      "anomaly_locked": false
-    }
-  ],
-  "inherited_confirmations": []
-}
-```
-
 **⑤에 오는 재료 / 오지 않는 재료**
 
 | 구분 | ⑤에 오는가 | 이유 |
@@ -103,36 +82,14 @@
 | 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
-### 1-2. 출력 (Supervisor에게 반환)
+### 1-2. 출력 — ⓪ §4-4 `BayesianResponse`
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": "scan-123:0"
-  },
-  "probabilities": [
-    {
-      "ingredient_id": 155,
-      "canonical_name": "새우",
-      "posterior_mean": 0.62,
-      "alpha_post": 3.0,
-      "beta_post": 1.8,
-      "prior_source": "store",
-      "source": "expanded",
-      "depth": 2,
-      "confidence": 0.49,
-      "anomaly_locked": false
-    }
-  ],
-  "warnings": []
-}
-```
+⑤가 값을 정하는 방법:
 
-- `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
+- `context`는 입력 값을 수정하지 않고 그대로 돌려준다.
+- `ingredient`, `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`는 입력 그대로 복사한다. ⑤는 계산하거나 바꾸지 않는다.
+- `posterior_mean`, `alpha_post`, `beta_post`: §2·§3 공식과 scale로 계산한다.
+- `prior_source`: §1-3 fallback 단계.
 - `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과 "낮음" 기준은 §1-2-1에 있다.
 
 #### 1-2-1. `confidence` 계산식 (결정, 2026-10-12)
@@ -472,15 +429,13 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 ### 5-1. Supervisor → ⑤ (받는 것)
 
-| 필드 | 보장 사항 |
-|---|---|
-| `context` | 유효한 공통 호출 문맥. `store_id`는 가게 식별 완료값, null 불가 |
-| `ingredients` | ④ 출력은 `ingredient_id` / `source` / `depth` / `curated` / `observations`가 채워져 있음. ⑥ 출력은 필드 정합이 미확정이며(④ §8, #171), 빠진 필드는 §6 규칙으로 처리 |
-| `inherited_confirmations` | 보류. 받아도 쓰지 않는다 (③ §6) |
+⓪ §4-4 `BayesianRequest`. 보장 사항과 ⑤가 지킬 것은 §1-1.
 
 ### 5-2. ⑤ → Supervisor (돌려주는 것)
 
-| 필드 | 후속 판단 |
+형식은 ⓪ §4-4 `BayesianResponse`. ⑧이 이 값을 어떻게 쓰는지:
+
+| 값 | 후속 판단 |
 |---|---|
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
@@ -569,6 +524,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). 
 - [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
 - [ ] **KnowledgeBundle `priors` 정의 반영 (외부 의존)** — ⓪ §1-3·§4-4에 `priors.cluster`·`priors.global`은 항상 빈 배열, `priors.store` 근거 출처는 `web_search`·`ocr_variant_tag`만이라는 정의를 넣는다 (§1-1). ⓪ 담당자와 백엔드 확인 필요
+- [ ] **⓪ 반영 대기: ⑤ warning 코드** — `empty_ingredients`(재료 0개), `integrity_error`(`k_count > n_total`), `prior_global_ignored`(빈 배열이어야 할 `priors.global`에 값이 옴)를 ⓪ 경고 코드 목록에 추가 요청 (§1-1)
 
 ---
 
