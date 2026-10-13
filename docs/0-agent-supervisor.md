@@ -2347,7 +2347,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
   },
   "update_source_reliability": {
     "source_type": "web_search",
-    "source_key": "example.com",
     "correct_count_delta": 1,
     "comparison_count_delta": 1,
     "trigger_evidence_ref": "evidence-001"
@@ -2389,7 +2388,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `create_review_item.review_notes`는 ⑥ 응답을 그대로 보존한다. 검토 화면에만 사용하며 위험 판정이나 확률 계산에는 사용하지 않는다.
 - `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
-- `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다.
+- `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
 - `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. `expires_at`은 항상 `null`이다. ⑥은 캐시 유효기간을 두지 않고 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4). DB 스키마의 `web_search_cache.expires_at`은 nullable이어야 한다 (§8).
 - 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
 - 미확정 (⑦ §8): ① 사장님 2·3차 질문 연결 — 백엔드가 `record_owner_answer`를 처리하고 돌려주는 확인 상태(`confirmed` / `needs_second` / `needs_third`)를 다음 Judge 때 ⑧까지 전달하는 경로가 아직 없다. 없으면 1·2차 답이 달라도 3차 질문이 나가지 않는다. ② 이상 답변 판정용 레시피 확률 — 사장님 답은 스캔 밖에서 들어와 그 순간 ⑤ 결과가 없다. 질문 생성(`create_owner_verification_request`) 때 그 재료의 `posterior_mean`을 함께 저장해 답 확정 때 `flagged_anomaly` 판정에 쓰는 방안을 검토한다. 둘 다 ③·⑧·백엔드와 함께 정한다 (⑦ §8).

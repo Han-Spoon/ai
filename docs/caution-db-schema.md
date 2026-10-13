@@ -303,8 +303,9 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 |---|---|
 | `normalized_menu_name` UK | `normalize_food_name` 결과와 같아야 한다 |
 | `search_status` | `searched` / `unresolved` |
-| `payload` | 후보 URL별 추출 재료 |
-| `searched_at` | 검색 시각 |
+| `payload` | 후보 URL별 추출 재료 (출처 배열). **검색할 때마다 새 출처를 뒤에 붙인다. 덮어쓰지 않는다** |
+| `next_rank` 🔶 신규 | 다음 검색 시작 순위 (1 이상). 1번째 검색 뒤 11, 2번째 뒤 21 (⑥ §2-4) |
+| `searched_at` | 마지막 검색 시각 |
 | `expires_at` 🔶 | **NULL 허용, 항상 NULL** (지금 ERD는 NOT NULL). ⑥은 캐시 유효기간 없이 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4, ⓪ §4-6) |
 
 ⑥이 검색할 때마다 `save_web_search_cache` 명령으로 원본을 남긴다(관리자 게이트 없음). **실제 식당 레시피로 보지 않고, 판정을 낮추는 데 쓰지 않는다.** DB 반영은 관리자 승인을 거친 `knowledge_review_items`로만 한다.
@@ -323,7 +324,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~13은 2026-10-13 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~14는 2026-10-13 추가)
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -340,6 +341,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
 | 12 | `owner_flag_confirmations` | 없음 | 테이블 생성 (§3) | 플래그 답을 저장할 곳이 없으면 같은 질문을 매번 다시 묻고, 확인된 플래그가 판정에 반영되지 않음 |
 | 13 | `web_search_cache.expires_at` | NOT NULL, TTL | NULL 허용 | ⑥이 캐시 유효기간을 두지 않기로 함 |
+| 14 | `web_search_cache` | `payload` 갱신 시 덮어씀, 순위 컬럼 없음 | `next_rank` INT 추가 + `payload`는 기존 배열에 이어 붙임 (§5) | ⑥이 검색마다 다음 순위 10개를 더해 30개까지 모은다. 덮어쓰면 이전 레시피가 사라짐 |
 
 **시드 적재 순서** (FK): `menu_categories` → `menus` → `ingredients` → `ingredient_tags` · `recipe_ingredients` · `ingredient_compositions` · `ingredient_composition_tags` → `knowledge_import_batches` → `menu_recipe_corpora` → `menu_ingredient_priors`. 적재 뒤 영향받은 메뉴의 `knowledge_revision` +1. 재생성 절차는 `crawling/README.md` "DB 시드 재생성".
 
