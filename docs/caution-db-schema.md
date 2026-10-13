@@ -51,6 +51,8 @@ erDiagram
 
     stores ||..o{ owner_verification_requests : "질문 대상"
     ingredient_confirmations |o..o{ owner_verification_requests : "답변 반영"
+    stores ||..o{ owner_flag_confirmations : "플래그 확정값 (🔶 신규)"
+    owner_flag_confirmations |o..o{ owner_verification_requests : "플래그 답변 반영"
     owner_verification_requests |o..o| ingredient_evidence_log : "답변 증거"
     knowledge_review_items |o..o{ ingredient_evidence_log : "승인 증거"
     knowledge_review_items |o..o{ recipe_ingredients : "승인 출처"
@@ -215,16 +217,43 @@ erDiagram
 - **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
 
 ### `owner_verification_requests`
-⑧이 만든 사장님 질문과 답변.
+⑧이 만든 사장님 질문과 답변. 질문은 두 종류다 (⓪ §4-6 `create_owner_verification_request`).
+
+- **재료 질문**: "이 메뉴에 액젓이 들어가나요?" — `ingredient_id` 있음, `ambiguity_flag` 없음
+- **메뉴 애매함 플래그 질문** (2026-10-12, ③ §1-8): "이 메뉴의 젓갈에 생선이 들어가나요?" — `ingredient_id` 없음, `ambiguity_flag`와 물어본 태그 있음
 
 | 컬럼 | 설명 |
 |---|---|
 | `id` UUID PK | `question_id` |
-| `store_id`, `scan_session_id`, `menu_id`, `ingredient_id` | |
+| `store_id`, `scan_session_id`, `menu_id` | |
+| `ingredient_id` 🔶 | 재료 질문만. **플래그 질문은 NULL** (지금 ERD는 NOT NULL) |
+| `ambiguity_flag` 🔶 신규 | 플래그 질문만. `menus.ambiguity_flags` 값 하나 |
+| `asked_tags` 🔶 신규 | 플래그 질문에서 물어본 `is_*` 태그 배열 (정렬해서 저장). 재료 질문은 NULL |
 | `question_text` | 언어별 문구 (🔶 6개 언어, §6) |
 | `status` | `pending` / `answered` / `expired` |
 | `answer` | `present` / `absent` / `unknown` |
-| `resolved_confirmation_id` | 답변이 확정값으로 반영되면 채움 |
+| `resolved_confirmation_id` | 재료 답변이 확정값으로 반영되면 채움 |
+| `resolved_flag_confirmation_id` 🔶 신규 | 플래그 답변이 확정값으로 반영되면 채움 (`owner_flag_confirmations.id`) |
+
+- CHECK: `ingredient_id`와 `ambiguity_flag` 중 **정확히 하나**만 값이 있다. `ambiguity_flag`가 있으면 `asked_tags`는 비어 있지 않다.
+- 답변 이력은 이 테이블의 answered 행들이다. 확인 차례(⑦ §2-3) 계산도 이 행으로 한다.
+
+### `owner_flag_confirmations` 🔶 신규 (제안, 2026-10-13)
+메뉴 애매함 플래그 질문에 대한 사장님 **확정 답**. ③이 읽어 `flag_confirmations`로 넘긴다 (⓪ §4-2). 재료 확정값(`ingredient_confirmations`)과 따로 둔다 — 플래그 답은 특정 재료가 아니라 "그 메뉴의 젓갈·육수 등에 이 태그가 있는가"이기 때문이다. 테이블 이름은 ⓪ 예시(`source_ref: owner_flag_confirmations:…`)를 따랐고 최종 결정은 백엔드가 한다.
+
+| 컬럼 | 설명 |
+|---|---|
+| `id` BIGINT PK | |
+| `store_id`, `menu_id` | FK, `store_id NOT NULL` |
+| `ambiguity_flag` | 물어본 플래그 |
+| `asked_tags` | 물어본 태그 배열 (정렬) |
+| `present` | 물어본 태그 중 하나 이상 있음(`true`) / 전부 없음(`false`). 행이 없으면 `unknown` |
+| `confirmed_at` | 확정 시각. 3개월 유효 (재료 확정값과 같음) |
+| `created_at`, `updated_at` | |
+
+- UNIQUE `(store_id, menu_id, ambiguity_flag, asked_tags)`. 같은 플래그라도 다른 태그로 물은 답은 따로 저장한다 (③ §1-8).
+- **이상 답변 표시(`flagged_anomaly`) 없음.** 비교할 레시피 확률이 없다.
+- 확률 계산에 쓰지 않으므로 `ingredient_evidence_log`에 행을 남기지 않는다 (그 테이블은 `ingredient_id`가 필수이기도 하다). 이력은 `owner_verification_requests` answered 행으로 본다.
 
 ### `knowledge_review_items` (V9)
 웹서치 결과·변형 제안을 관리자가 검토하는 항목. ⑦의 `create_review_item`이 만든다. `status`는 `pending` / `approved` / `rejected`. 승인되면 `resolved_menu_id`가 채워진다.
@@ -275,7 +304,8 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | `normalized_menu_name` UK | `normalize_food_name` 결과와 같아야 한다 |
 | `search_status` | `searched` / `unresolved` |
 | `payload` | 후보 URL별 추출 재료 |
-| `expires_at` | TTL |
+| `searched_at` | 검색 시각 |
+| `expires_at` 🔶 | **NULL 허용, 항상 NULL** (지금 ERD는 NOT NULL). ⑥은 캐시 유효기간 없이 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4, ⓪ §4-6) |
 
 ⑥이 검색할 때마다 `save_web_search_cache` 명령으로 원본을 남긴다(관리자 게이트 없음). **실제 식당 레시피로 보지 않고, 판정을 낮추는 데 쓰지 않는다.** DB 반영은 관리자 승인을 거친 `knowledge_review_items`로만 한다.
 
@@ -293,7 +323,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~13은 2026-10-13 추가)
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -307,6 +337,9 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 8 | `record_owner_answer` 응답 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`) 포함 | ⑧이 2·3차 질문을 만든다 (⑦ §1-2) |
 | 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
 | 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT 가능한지 확인 | 시드 CSV의 FK가 id로 연결돼 있음 |
+| 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
+| 12 | `owner_flag_confirmations` | 없음 | 테이블 생성 (§3) | 플래그 답을 저장할 곳이 없으면 같은 질문을 매번 다시 묻고, 확인된 플래그가 판정에 반영되지 않음 |
+| 13 | `web_search_cache.expires_at` | NOT NULL, TTL | NULL 허용 | ⑥이 캐시 유효기간을 두지 않기로 함 |
 
 **시드 적재 순서** (FK): `menu_categories` → `menus` → `ingredients` → `ingredient_tags` · `recipe_ingredients` · `ingredient_compositions` · `ingredient_composition_tags` → `knowledge_import_batches` → `menu_recipe_corpora` → `menu_ingredient_priors`. 적재 뒤 영향받은 메뉴의 `knowledge_revision` +1. 재생성 절차는 `crawling/README.md` "DB 시드 재생성".
 
