@@ -215,7 +215,7 @@ flowchart TD
 3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `ambiguity_flag`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
-6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만든다. 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
+6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다 (캐시를 썼으면 `null`). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
 | 확인 상태 | 그 재료 자체 | 그 재료의 하위 재료 |
@@ -433,7 +433,7 @@ SELECT corpus, ingredient_id, k_count FROM menu_ingredient_priors WHERE menu_id 
 
 재귀 확장 쿼리는 쓰지 않는다. 구성 관계 전체가 `ingredient_graph`로 오므로 ④가 메모리에서 펼친다 (순환 차단·깊이 5·관측값 상속, §2-1·§1-5). `menu_ingredient_priors`에는 k ≥ 1인 행만 있으므로, 직접 재료의 "n개 중 0개" 채우기도 ④가 한다 (§1-5).
 
-**캐시 저장 명령** (④가 만들고 백엔드가 실행, `action: save_menu_ingredient_cache`. ⑦ §1-2의 허용 action 6종 중 하나)
+**캐시 저장 명령** (④가 만들어 응답 `cache_command`로 반환 → Supervisor가 `persistence_commands`에 추가 → 백엔드가 실행. `action: save_menu_ingredient_cache`, ⑦ §1-2의 허용 action 6종 중 하나. 명령 형식과 `idempotency_key` 규칙은 ⓪ §4-3·§4-6)
 
 ```sql
 INSERT INTO menu_ingredient_cache (store_id, menu_id, menu_revision, ingredients_snapshot)

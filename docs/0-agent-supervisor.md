@@ -1811,6 +1811,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
     }
   },
   "unmapped_tokens": [],
+  "cache_command": null,
   "warnings": [],
   "errors": []
 }
@@ -1829,6 +1830,24 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 `override_eligible: false`인 재료는 누락하지 않고 ⑤ 계산 대상에 남긴다. 단 `anomaly_locked: true`는 `flagged_anomaly: true`인 재료에만 부여한다. `expired: true` 또는 `confirmation_scope: inherited`라는 이유만으로 override가 거부된 재료에는 `anomaly_locked: false`를 유지한다.
 
 `anomaly_locked_ingredients`에도 `flagged_anomaly: true`인 재료만 넣는다. `not override_eligible` 전체를 이 배열로 복사하지 않는다. 원소는 `IngredientRef`다.
+
+`cache_command`는 ④가 만든 `save_menu_ingredient_cache` 저장 명령이다. 캐시를 쓰지 않고 새로 펼쳤을 때만 채우고, 캐시를 그대로 썼거나 `knowledge.menu`가 null이면 `null`이다. 형식은 §4-6 `DbUpdateResponse.commands[]` 원소와 같다 (`operation_id`는 ⑦ 요청이 없으므로 `null`). Supervisor는 이 명령을 ⑦ 명령과 함께 `persistence_commands`에 넣는다. 관리자 게이트를 거치지 않는 파생 캐시라 ⑦을 거치지 않는다 (AGENTS.md 예외).
+
+```json
+{
+  "command_id": "command-cache-001",
+  "operation_id": null,
+  "action": "save_menu_ingredient_cache",
+  "idempotency_key": "sha256:<action·store_id·menu_id·menu_revision 해시>",
+  "payload": {
+    "menu_id": 1001,
+    "menu_revision": 7,
+    "ingredients_snapshot": []
+  }
+}
+```
+
+`ingredients_snapshot`은 확인 재료를 빼기 전 전체 확장 목록(`ingredients[]`와 같은 원소, `anomaly_locked`·확인값 제외)이다. `store_id`는 `context.store_id`를 쓴다.
 
 ④가 내는 warning code는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조한 원본 메뉴가 없음)다. 앞의 네 개는 §1-2 표대로 `forces_caution: true`이고, `empty_recipe`·`broken_base_menu`도 재료를 놓칠 수 있는 상태라 `forces_caution: true`로 보낸다.
 
@@ -2444,7 +2463,7 @@ operation별 provenance 고정값은 다음과 같다.
       "command_id": "command-001",
       "operation_id": "operation-001",
       "action": "create_review_item",
-      "idempotency_key": "trace:item:operation-001",
+      "idempotency_key": "sha256:<action·내용 키 해시>",
       "payload": {
         "review_origin": "web_search",
         "menu": {
@@ -2496,7 +2515,16 @@ operation별 provenance 고정값은 다음과 같다.
 }
 ```
 
-각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. `idempotency_key`는 같은 operation에 대해 항상 같은 값이어야 한다. command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.
+각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. `idempotency_key`는 **내용 기준**으로 만든다: `"sha256:" + sha256_hex(action + "|" + 내용 키의 정규 JSON)`. `trace_id`·`operation_id`·시각은 넣지 않는다. 넣으면 같은 스캔의 Judge를 재시도하거나 백엔드가 응답을 다시 받을 때 키가 바뀌어 같은 명령이 두 번 저장된다. 질문 키에는 `scan_session_id`가 있으므로 새 스캔에서 같은 재료를 다시 묻는 것(2·3차 질문)은 별개 명령이다. 정규 JSON은 key 정렬·공백 없음이고, 배열 값은 정렬한다.
+
+| action | 내용 키 |
+|---|---|
+| `create_review_item` | `store_id`, `review_origin`, 메뉴(`normalized_menu_name` 또는 `variant_suggestion`의 `base_menu_id`·`remain_token`), 정렬한 `source_url` 목록 |
+| `create_owner_verification_request` | `store_id`, `scan_session_id`, `menu_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
+| `record_owner_answer` | `question_id` |
+| `update_source_reliability` | `source_type`, `trigger_evidence_ref` |
+| `save_web_search_cache` | `normalized_menu_name`, `next_rank` |
+| `save_menu_ingredient_cache` (④) | `store_id`, `menu_id`, `menu_revision` | command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.
 
 soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 백엔드가 검증할 기록 명령을 만든다. ⑦은 저장 완료를 가장하지 않으며 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다. 응답 `commands`는 Supervisor의 `persistence_commands`에 그대로 누적한다.
 
