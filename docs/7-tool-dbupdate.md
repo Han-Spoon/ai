@@ -85,93 +85,52 @@ graph LR
 
 ## 1. 입력 / 출력 스펙
 
-### 1-1. 입력 (⓪ Supervisor Agent로부터, 4가지 트리거)
+**JSON 형식은 [⓪ §4-6 "⑦ DB Update Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `DbUpdateRequest`, 응답 `DbUpdateResponse`, 공통 모델은 ⓪ §1-2). 이 문서에는 JSON을 다시 적지 않고, ⑦이 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-모든 트리거는 ⓪ §1-3 공통 호출 문맥(`context`)을 함께 받는다.
+### 1-1. 입력에서 ⑦이 지키는 것
 
-| 트리거 | 필드 | 신뢰도 |
+Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥은 ⓪ §1-2 `NodeContext`.
+
+| 트리거 | ⓪ operation | 증거 등급 |
 |---|---|---|
-| 웹서치 결과 | `{context, menu_name, candidates}` (⑥ 출력 그대로) | soft |
-| ④의 변형 태깅 제안 | `{context, base_menu_id, remain_token, suggested_ingredients}` | soft |
-| ⑧의 질문 생성 요청(`owner_card`) | ⓪ §4-6 `create_owner_verification_request`. 재료 카드(`ingredient`)와 메뉴 애매함 플래그 카드(`ambiguity_flag` + `constraint_tags`) 두 종류 | 신규 질문 |
-| 사장님 답변 | ⓪ §4-6 `record_owner_answer`. 질문과 같은 종류(재료 또는 플래그) | hard |
+| 웹서치 결과 | `create_review_item` (`review_origin: web_search`) + `save_web_search_cache` | soft |
+| ④의 변형 태깅 제안 | `create_review_item` (`review_origin: variant_suggestion`, ④ `variant_suggestion` 그대로) | soft |
+| ⑧의 질문 카드 | `create_owner_verification_request`. 재료 카드와 메뉴 애매함 플래그 카드 두 종류 (§2-2) | 신규 질문 |
+| 사장님 답변 | `record_owner_answer`. 질문과 같은 종류 (§2-3, §2-4) | hard |
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": "scan-123:0"
-  },
-  "base_menu_id": "str",
-  "remain_token": "차돌",
-  "suggested_ingredients": ["소고기"]
-}
-```
+- `db_registered` 변형은 이미 컨펌된 데이터라 ⑦ 대상이 아니다 (④ §5-2).
+- 사장님 답변은 스캔 흐름 밖에서 들어온다. `context.call_scope: out_of_band`, `item_id: null`이고, `scan_session_id`는 원래 질문이 생긴 스캔이다.
+- 질문 문구는 6개 언어 객체이고 `owner_verification_requests.question_text`(언어 키 JSONB)에 모두 저장한다.
+- 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09).
 
-- ④의 `variant_origin: runtime_tagged` 결과는 ④ 출력의 `variant_suggestion`(`base_menu_id`, `remain_token`, `suggested_ingredients`)을 그대로 받는다. `db_registered` 변형은 이미 컨펌된 데이터라 ⑦ 대상이 아니다 (④ §5-2).
-- 사장님 답변은 스캔 흐름 밖에서 들어온다. `context.scan_session_id`는 원래 질문이 생긴 스캔(`owner_verification_requests.scan_session_id`)을 쓰고, `item_id`는 `null`이다. ⓪ 공통 문맥 규칙과 맞는지 확인이 필요하다 (§8).
-- ⑧ `owner_card.question`은 6개 언어 객체(`ko`, `en`, `ja`, `zh_hans`, `zh_hant`, `es`)다. `owner_verification_requests.question_text`(언어 키 JSONB)에 6개 언어를 모두 저장한다 (§8, 2026-10-12).
-- 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보(③의 `user_hard`)는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09). 손님이 소통 카드로 물어본 결과도 사장님 답변으로 들어온다.
+### 1-2. 출력 값을 정하는 규칙
 
-### 1-2. 출력 (⓪ Supervisor Agent에게 반환)
+모든 출력은 **저장 명령**(`commands[]`)이다. 저장 완료 응답이 아니며, 백엔드가 커밋한 뒤 생성 ID(예: `question_id`)와 최종 상태를 응답한다.
 
-모든 출력은 같은 형태의 **저장 명령**이다. 저장 완료 응답이 아니며, 백엔드가 성공적으로 커밋한 뒤 생성 ID(예: `question_id`)와 최종 상태를 응답한다.
-
-| 트리거 | `action` |
+| ⑦이 만드는 `action` | 언제 |
 |---|---|
-| 웹서치 결과 / 변형 태깅 제안 | `create_review_item` |
-| ⑧ 질문 생성 요청 | `create_owner_verification_request` |
-| 사장님 답변 | `record_owner_answer` (이력 기록 + 확정 조건을 채우면 확정값 upsert, §2-3) |
-| 사장님 확정값이 생기거나 바뀜 | `update_source_reliability` (출처별 맞춘 수·비교 수 갱신, §3-1) |
-| ⑥ 웹서치 결과 원본 | `save_web_search_cache` (관리자 게이트 없이 원본 기록, §4) |
-| ④ 재료 확장 결과 캐시 | `save_menu_ingredient_cache` (④가 직접 만드는 명령. ⑦을 거치지 않음, ④ §2-8) |
+| `create_review_item` | 웹서치 결과 / 변형 태깅 제안 (§2-1) |
+| `create_owner_verification_request` | ⑧ 질문 카드 (§2-2) |
+| `record_owner_answer` | 사장님 답변. 이력 기록 + 확정 조건을 채우면 확정 (§2-3, §2-4) |
+| `update_source_reliability` | 사장님 확정값이 생기거나 바뀜 (§3-1) |
+| `save_web_search_cache` | ⑥ 웹서치 결과 원본 (관리자 게이트 없음, §4) |
 
-- 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`(`action` + `idempotency_key`가 PK)에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2). 위 6종이 `ai_command_receipts.action`의 허용값이다.
+- 허용 action은 위 5종 + ④가 직접 만드는 `save_menu_ingredient_cache`, 총 6종이다 (`ai_command_receipts.action`, `caution-db-schema.md` §4).
+- 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2).
+- `context`는 입력 값을 수정하지 않고 그대로 돌려준다. 메뉴·재료 ID는 정수, 질문 ID는 UUID다.
+- 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다.
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": null
-  },
-  "action": "record_owner_answer",
-  "idempotency_key": "str",
-  "payload": {
-    "store_id": 123456,
-    "menu_id": 101,
-    "ingredient_id": 212,
-    "present": false,
-    "question_id": "uuid",
-    "flagged_anomaly": false,
-    "provenance": {
-      "source_type": "owner_feedback",
-      "evidence_ref_table": "owner_verification_requests",
-      "evidence_ref_id": "str",
-      "verification_status": "owner_confirmed",
-      "reliability_weight": null
-    }
-  }
-}
-```
+**백엔드의 `record_owner_answer` 응답 — `confirmation_state`** (⑧이 다음 질문을 만든다, §2-3)
 
-- `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
-- 메뉴·재료 ID는 DB와 같은 정수(BIGINT)다. 질문 ID(`owner_verification_requests.id`)는 UUID다 (백엔드 ERD V10).
-- `record_owner_answer`를 처리한 백엔드는 확정 상태(`confirmation_state`)를 응답한다. ⑧은 이 값을 보고 다음 질문을 만든다 (§2-3).
-
-| `confirmation_state` | 뜻 | 다음 할 일 |
+| 값 | 뜻 | 다음 할 일 |
 |---|---|---|
 | `confirmed` | 이번 확인 차례로 확정값이 생기거나 바뀜 | 없음. 3개월 뒤 만료 |
 | `needs_second` | 확인 차례의 1차 답만 있음 | ⑧이 2차 질문 생성 |
 | `needs_third` | 1·2차 답이 다름 | ⑧이 3차 질문 생성 |
-- 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다 (⓪ §1-2).
 
----
+미확정 (§8, ⓪ §4-6에도 적어 둠):
+- **2·3차 질문 연결이 ⓪에 없다.** ⑧은 카드에 `round: 1 | 2 | 3`을 붙이지만, 몇 차 질문인지 알려 주는 값(`confirmation_state` 또는 확인 차례의 답변 수)이 ⑧까지 오는 경로가 ⓪에 없다. 백엔드가 이 값을 ③ 확인값과 함께 KnowledgeBundle에 넣어 ⑧까지 전달하는 방안을 요청한다.
+- **이상 답변 판정에 필요한 레시피 확률이 ⓪ `record_owner_answer`에 없다.** 이상 답변은 "레시피 확률 0.9 이상 + 없음"으로 판정하는데(§2-3), 사장님 답변은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 질문을 만들 때(`create_owner_verification_request`) 그 재료의 `posterior_mean`을 함께 저장하고, 답변을 확정할 때 그 값으로 `flagged_anomaly`를 정하는 방안을 요청한다. 이게 없으면 이상 답변이 걸러지지 않아 "돈가스에 돼지고기 없음" 같은 답이 그대로 확정된다 (FN).
 
 ## 2. 처리 로직
 
@@ -563,6 +522,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
+- [ ] **2·3차 질문 연결 (③·⑧·백엔드와 함께)** — 몇 차 질문인지(`confirmation_state` 또는 확인 차례 답변 수)를 ⑧까지 전달하는 경로 (§1-2)
+- [ ] **이상 답변 판정용 레시피 확률 (⑧·백엔드와 함께)** — 질문 생성 때 `posterior_mean`을 저장하고 답변 확정 때 `flagged_anomaly` 판정에 쓰기. 스키마에도 `owner_verification_requests.recipe_probability` 같은 컬럼이 필요 (§1-2, §2-3)
 
 ---
 

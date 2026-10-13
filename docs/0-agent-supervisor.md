@@ -1820,15 +1820,17 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 
 `menu_ambiguity_flags`는 `knowledge.menu.ambiguity_flags`를 그대로 옮긴 값이며, `knowledge.menu`가 null이면 `[]`다. ④는 값을 해석하지 않고 ⑧까지 전달되게 반환만 한다.
 
-`variant_origin`은 `db_registered | runtime_tagged | null`, 재료 `source`는 `recipe | expanded | variant_suggested | web_search`다. `variant_suggestion`은 `variant_origin: runtime_tagged`일 때 위 객체이고, 그 외에는 `null`이다. `evidence`에는 `ingredients[].evidence_refs`가 참조하는 모든 `EvidenceRef`를 넣는다. 재료 위험 속성은 `constraint_tags` 하나만 사용하며 ④가 `ingredient_graph.tags`와 `composition_tags`를 합쳐 중복 제거한 `is_*` 표준 태그 배열로 만든다. `curated`는 검수된 레시피·온톨로지 자료인지 표시하고, `observation_basis`는 `direct | inherited`다. `observations[]`는 출처별 `{corpus, k_count, n_total}`이며 `0 <= k_count <= n_total`을 만족한다. ⑤가 출처 신뢰도를 적용할 수 있도록 서로 다른 corpus의 관측치를 미리 합치지 않는다.
+`variant_origin`은 `db_registered | runtime_tagged | null`, 재료 `source`는 `recipe | expanded | variant_suggested | web_search`다. `variant_suggestion`은 `variant_origin: runtime_tagged`일 때 위 객체이고, 그 외에는 `null`이다. `evidence`에는 `ingredients[].evidence_refs`가 참조하는 모든 `EvidenceRef`를 넣는다. 재료 위험 속성은 `constraint_tags` 하나만 사용하며 ④가 `ingredient_graph.tags`와 `composition_tags`를 합쳐 중복 제거한 `is_*` 표준 태그 배열로 만든다. `curated`는 검수된 레시피·온톨로지 자료인지 표시하고, `observation_basis`는 `direct | inherited | none`이다. `none`은 관측값이 없는 재료(`observations: []`, 예: `variant_suggested`, 메뉴가 어느 코퍼스에도 없음)다. `observations[]`는 출처별 `{corpus, k_count, n_total}`이며 `0 <= k_count <= n_total`을 만족한다. ⑤가 출처 신뢰도를 적용할 수 있도록 서로 다른 corpus의 관측치를 미리 합치지 않는다.
 
 `role`은 `identity | component | hidden | null`이다. ④가 레시피·온톨로지 관계로 주재료(`identity`), 속재료(`component`), 양념·가공식품 안의 숨은 재료(`hidden`)를 구분하고 판단할 근거가 없으면 `null`을 반환한다. 이 값은 “빼기 어려울 수 있음” 안내에만 사용하며 위험도 판정에는 사용하지 않는다. ④ `lookup_tags`가 ③ 확인값을 보강할 때도 같은 재료의 `role`을 함께 채운다.
 
-③의 출력 중 `status != unknown` AND `override_eligible: true`인 재료만 `confirmed_ingredients`로 전달한다.
+③의 출력 중 `status != unknown` AND `override_eligible: true`인 재료만 `confirmed_ingredients`로 전달한다. 원소는 `{ingredient: IngredientRef, status: present | absent}`다.
 
 `override_eligible: false`인 재료는 누락하지 않고 ⑤ 계산 대상에 남긴다. 단 `anomaly_locked: true`는 `flagged_anomaly: true`인 재료에만 부여한다. `expired: true` 또는 `confirmation_scope: inherited`라는 이유만으로 override가 거부된 재료에는 `anomaly_locked: false`를 유지한다.
 
-`anomaly_locked_ingredients`에도 `flagged_anomaly: true`인 재료만 넣는다. `not override_eligible` 전체를 이 배열로 복사하지 않는다.
+`anomaly_locked_ingredients`에도 `flagged_anomaly: true`인 재료만 넣는다. `not override_eligible` 전체를 이 배열로 복사하지 않는다. 원소는 `IngredientRef`다.
+
+④가 내는 warning code는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조한 원본 메뉴가 없음)다. 앞의 네 개는 §1-2 표대로 `forces_caution: true`이고, `empty_recipe`·`broken_base_menu`도 재료를 놓칠 수 있는 상태라 `forces_caution: true`로 보낸다.
 
 ### 4-4. ⑤ Bayesian Tool
 
@@ -1950,6 +1952,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 `prior_source`는 `store | cluster | global | uninformative`다. `priors`와 `source_reliability`는 Supervisor가 선택된 후보의 KnowledgeBundle slice에서 그대로 조립한다. 현재 `priors.cluster`와 `priors.global`은 항상 `[]`이며, ⑤는 store prior가 없으면 ④의 corpus별 `observations`로 global prior를 계산하고 관측도 없으면 uninformative prior를 사용한다. `not_found`는 정의된 fallback으로 진행하고 `unavailable`은 warning과 SAFE 금지 신호를 유지한다.
 
 ⑤는 질문 후보를 확률이나 confidence 숫자로 거르지 않으므로 질문 후보용 확률 구간 필드를 계산하거나 반환하지 않는다. `inherited_confirmations`는 현재 보류 상태이므로 항상 `[]`이며 ⑤가 사장님 답변을 prior 보정에 사용하지 않는다. ⑤에는 확정 override 대상이 아닌 재료만 전달한다. ⑤는 `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`를 계산하거나 수정하지 않고 입력 그대로 각 probability에 복사한다. ⑤의 결과는 최종 판정이 아니며 ⑧이 사용자 프로필과 정책을 적용해 해석한다.
+
+⑤가 내는 warning code는 `empty_ingredients`(계산할 재료 0개), `integrity_error`(`k_count > n_total` 등 관측값 이상, 해당 재료는 무정보로 계산), `prior_global_ignored`(항상 빈 배열이어야 할 `priors.global`·`cluster`에 값이 와서 무시함)다. `empty_ingredients`와 `integrity_error`는 `forces_caution: true`다.
 
 `menu_category_id`는 category prior 조회에 사용하는 DB 정수 ID이며 없으면 `null`이다. null이면 ⑤는 category/cluster prior를 건너뛰고 정의된 다음 fallback 단계로 이동한다.
 
@@ -2388,6 +2392,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다.
 - `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. `expires_at`은 항상 `null`이다. ⑥은 캐시 유효기간을 두지 않고 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4). DB 스키마의 `web_search_cache.expires_at`은 nullable이어야 한다 (§8).
 - 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
+- 미확정 (⑦ §8): ① 사장님 2·3차 질문 연결 — 백엔드가 `record_owner_answer`를 처리하고 돌려주는 확인 상태(`confirmed` / `needs_second` / `needs_third`)를 다음 Judge 때 ⑧까지 전달하는 경로가 아직 없다. 없으면 1·2차 답이 달라도 3차 질문이 나가지 않는다. ② 이상 답변 판정용 레시피 확률 — 사장님 답은 스캔 밖에서 들어와 그 순간 ⑤ 결과가 없다. 질문 생성(`create_owner_verification_request`) 때 그 재료의 `posterior_mean`을 함께 저장해 답 확정 때 `flagged_anomaly` 판정에 쓰는 방안을 검토한다. 둘 다 ③·⑧·백엔드와 함께 정한다 (⑦ §8).
 - 스캔 중 생긴 작업은 원래 `item` context를 사용한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 `call_scope: out_of_band`, `item_id: null`로 별도 요청한다.
 
 ⑦이 command에 추가하는 `provenance`는 다음 closed schema다.

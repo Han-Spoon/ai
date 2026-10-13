@@ -104,98 +104,34 @@ graph TB
 
 ## 1. 입력 / 출력 스펙
 
-### 1-1. 입력 (Supervisor로부터, 메뉴 단위)
+**JSON 형식은 [⓪ §4-3 "④ DB / Ontology Tool"](0-agent-supervisor.md)에서만 정의한다** (요청 `OntologyRequest`, 응답 `OntologyResponse`, 공통 모델은 ⓪ §1-2, 지식 묶음은 ⓪ §1-3). 이 문서에는 JSON을 다시 적지 않고, ④가 값을 어떻게 정하는지만 적는다. 필드를 바꿀 때는 ⓪부터 고친다.
 
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `context` | object | **필수** | ⓪ §1-3 공통 호출 문맥. `schema_version`, `trace_id`, `scan_session_id`, `store_id`, `item_id`. `store_id`는 양의 정수만 허용하며 없으면 즉시 에러. 전역 조회 금지 |
-| `normalized_menu_name` | string | 필수 | ② Menu Normalization Agent 출력. ④는 재정규화하지 않음 |
-| `menu_id` | integer \| null | 선택 | ②-B가 고른 후보의 메뉴 ID. ③과 ④가 같은 메뉴를 보도록 하기 위함 |
-| `match_candidates` | object[] | 선택 | ② `normalization_status: ambiguous`일 때의 후보 목록 (`menu_id`, `name_ko`, `score`, `match_type`) |
-| `residual_tokens` | string[] | 선택 | ②가 보존한 재료 의미 토큰 (`치즈`, `차돌` 등). 변형 재료 태깅의 입력 |
-| `unconfirmed_only` | bool | 필수 | 미확인 재료만 처리할지 |
-| `confirmed_ingredients` | `{name, status}`[] | 선택 | ③ 출력 중 `status != unknown` **AND** `override_eligible: true` 인 재료만. `status`는 `present` / `absent` (§2-1) |
-| `anomaly_locked_ingredients` | string[] | 선택 | ③이 `flagged_anomaly: true`(이상 답변)로 반환한 재료만. Supervisor가 채운다. 3개월 만료(`expired: true`)로 `override_eligible: false`가 된 재료는 넣지 않는다 (③ §1-6) |
-| `knowledge` | object | 필수 | 고른 후보의 `ontology` 또는 `fallback_ontology` 원재료 행 (§0-0). Supervisor가 KnowledgeBundle에서 꺼내 그대로 넣는다 |
-| `ingredient_graph` | object | 필수 | KnowledgeBundle의 전체 재료 그래프 (§0-0) |
+### 1-1. 입력에서 ④가 지키는 것
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": "scan-123:0"
-  },
-  "normalized_menu_name": "김치찌개",
-  "menu_id": 101,
-  "match_candidates": [],
-  "residual_tokens": [],
-  "unconfirmed_only": true,
-  "confirmed_ingredients": [{"name": "돼지고기", "status": "present"}],
-  "anomaly_locked_ingredients": []
-}
-```
+공통 문맥은 ⓪ §1-2 `NodeContext`, 메뉴 지식은 ⓪ §1-3 KnowledgeBundle의 `ontology`·`fallback_ontology`와 `ingredient_graph`다. ④가 지켜야 할 것:
 
-> ⚠️ `override_eligible: false`인 재료는 `confirmed_ingredients`에 **포함되지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다. `override_eligible: false`가 되는 이유는 두 가지다 (③ §1-6): 이상 답변(`flagged_anomaly: true`)과 3개월 만료(`expired: true`).
-> Supervisor는 이 중 **이상 답변 재료만** `anomaly_locked_ingredients`에 담아 전달한다. 만료 재료는 확장·확률 계산 대상으로 남기되 잠그지 않는다. 잠그면 ⑧ 질문 카드 이유가 `expired` 대신 `anomaly`로 나가고 카드 순서·고위험 재검증 대상이 틀어진다. `anomaly_locked` 값을 부여하는 주체는 Supervisor이며, ④는 이 값을 가공하거나 재판단하지 않고 **그대로 보존**해서 출력의 해당 재료 노드에 `anomaly_locked: true`로 실어 반환한다 (§1-2). 이 값이 ④에서 끊기면 ⑤/⑧까지 전달이 안 돼 CAUTION 강제가 무력화된다.
->
-> `menu_id` / `match_candidates` / `residual_tokens`는 ② 문서 §1-2가 정의한 출력이다 (④ 승인, 2026-10-12).
+- `context.store_id`가 양의 정수가 아니면 즉시 에러. 전역 조회로 대신하지 않는다.
+- `knowledge`와 `ingredient_graph`만으로 동작한다. 판정 단계에서 DB를 조회하지 않는다 (§0-0).
+- `menu.normalized_menu_name`은 ②의 출력이며 ④는 다시 정규화하지 않는다. `menu.menu_id`·`match_candidates`·`residual_tokens`는 ②가 정의한 값이다 (④ 승인, 2026-10-12).
+- `confirmed_ingredients`는 ③ 출력 중 `status != unknown` **AND** `override_eligible: true`인 재료만이다. 확인 재료를 빼는 규칙은 §2-1 표.
+- `override_eligible: false`인 재료는 `confirmed_ingredients`에 **들어오지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다. false가 되는 이유는 두 가지다 (③ §1-6): 이상 답변(`flagged_anomaly: true`)과 3개월 만료(`expired: true`).
+- `anomaly_locked_ingredients`에는 **이상 답변 재료만** 들어온다. ④는 이 값을 가공하거나 다시 판단하지 않고 해당 노드에 `anomaly_locked: true`로 그대로 실어 보낸다. 만료 재료는 잠그지 않는다. 잘못 잠그면 ⑧ 질문 카드 이유가 `expired` 대신 `anomaly`로 나가고 카드 순서·고위험 재검증 대상이 틀어진다.
 
-### 1-2. 출력 (Supervisor에게 반환)
+### 1-2. 출력 값을 정하는 규칙
 
-```json
-{
-  "context": {
-    "schema_version": "1.0",
-    "trace_id": "0199...",
-    "scan_session_id": "scan-123",
-    "store_id": 123456,
-    "item_id": "scan-123:0"
-  },
-  "menu_id": 101,
-  "base_menu_id": null,
-  "remain_token": null,
-  "menu_category_id": 19,
-  "menu_category": "찌개",
-  "exists_in_db": true,
-  "is_variant": true,
-  "variant_origin": "db_registered",
-  "menu_ambiguity_flags": ["has_unclear_jeotgal", "has_unclear_seasoning"],
-  "ingredients": [
-    {
-      "ingredient_id": 212,
-      "canonical_name": "멸치액젓",
-      "taxonomy_category": "fermented",
-      "constraint_tags": ["is_fish"],
-      "role": "hidden",
-      "depth": 1,
-      "parent_ingredient_id": 87,
-      "ambiguity_flag": "has_unclear_jeotgal",
-      "source": "expanded",
-      "curated": false,
-      "observation_basis": "inherited",
-      "observations": [
-        {"corpus": "10000recipe", "k_count": 41, "n_total": 57},
-        {"corpus": "wtable", "k_count": 12, "n_total": 30}
-      ],
-      "anomaly_locked": false
-    }
-  ],
-  "variant_suggestion": null,
-  "unmapped_token": null,
-  "warnings": []
-}
-```
+④가 값을 정하는 방법:
 
-- `context`는 입력 값을 수정하지 않고 그대로 반환한다 (⓪ §4).
-- 메뉴·재료 ID는 DB와 같은 정수(BIGINT)다 (백엔드 ERD V7, 2026-10-10). 재료는 `ingredient_id`와 `canonical_name`(`ingredients.name_ko`)을 함께 보낸다.
-- `curated`는 그 재료가 큐레이션 레시피(`recipe_ingredients`)에 있는지다. ⑤가 출처 `curated` 근거로 쓴다 (⑤ §3-3).
-- `observations`는 출처(크롤링 사이트)별 관측값이다 (§1-5). `observation_basis`는 그 값이 이 재료를 직접 센 것(`direct`)인지, 상위 재료에서 물려받은 것(`inherited`)인지, 관측이 없는 것(`none`)인지다.
-- `menu_ambiguity_flags`는 메뉴의 애매함 플래그(`menus.ambiguity_flags`, 5종)를 그대로 보낸다. 재료의 `ambiguity_flag`는 그 재료를 펼친 구성 간선의 플래그(`ingredient_compositions.ambiguity_flag`, 4종)다. 예) 김치 → 멸치액젓 간선의 `has_unclear_jeotgal`. 지금 룰엔진은 이 플래그가 사용자 금지 태그와 관련 있으면 CAUTION으로 판정하고 사장님 질문 근거로 쓴다. ④가 빠뜨리면 이 신호가 끊긴다 (§8, ⑧ 반영 요청).
-- `warnings`는 판정에 영향을 주는 데이터 이상을 담는다. 값: `empty_recipe`(레시피 재료 0개), `cycle_detected`(순환 참조 차단), `max_depth_reached`, `broken_base_menu`(참조 메뉴 없음). ⑧이 CAUTION 이상을 유지하려면 이 신호가 ⑧까지 가야 한다 (§8).
-- `role`은 메뉴에서 이 재료의 역할이다 (아래 규칙). ⑧이 "빼기 어려운 재료" 안내에만 쓰고 판정에는 쓰지 않는다 (⑧ §1 `role`).
+- `context`는 입력 값을 수정하지 않고 그대로 돌려준다.
+- 재료는 ⓪ §1-2 `IngredientRef`(`ingredient_id` + `canonical_name`)로 보낸다. ID는 DB와 같은 정수다.
+- `curated`: 그 재료가 큐레이션 레시피(`knowledge.recipe_ingredients`)에 있으면 `true`. ⑤가 출처 `curated` 근거로 쓴다 (⑤ §3-3).
+- `observations`·`observation_basis`: §1-5 규칙으로 만든다. 관측이 없는 재료(`variant_suggested`, 메뉴가 어느 사이트에도 없음)는 `observations: []`다.
+- `constraint_tags`: `ingredient_graph.tags`와 그 경로의 `composition_tags`를 합쳐 중복을 뺀다 (§2-3, §3-3).
+- `menu_ambiguity_flags`: `knowledge.menu.ambiguity_flags`를 그대로 옮긴다. ④는 해석하지 않는다. 판정·질문 카드에서의 쓰임은 ⑧ §2-1 5-2.
+- `warnings`: 판정에 영향을 주는 데이터 이상. ⑧이 CAUTION 이상을 유지하려면 ⑧까지 가야 한다. ④가 내는 코드는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조 원본 메뉴 없음)다.
+- `variant_suggestion`: `variant_origin: runtime_tagged`일 때만 채운다 (§2-2). ⑦ 검토 명령에 그대로 들어간다 (⑦ §1-1).
+- `role`: 아래 규칙. ⑧이 "빼기 어려운 재료" 안내에만 쓰고 판정에는 쓰지 않는다 (⑧ §1 `role`).
+
+- 미확정: 노드별 `ambiguity_flag`(그 재료를 펼친 구성 간선의 플래그, 예: 김치 → 멸치액젓의 `has_unclear_jeotgal`)는 ⓪ 응답에 없다. 지금 ⑧은 메뉴 플래그(`menu_ambiguity_flags`)만 쓰므로 **④에서도 빼는 것을 추천**한다. 확인 필요 (§8).
 
 **`role` 정하는 규칙 (결정, 2026-10-12)** — LLM 없이, 같은 메뉴는 항상 같은 값
 
@@ -208,16 +144,6 @@ graph TB
 | 5 | 웹 재료(`source: web_search`)이고 1~3에 해당하지 않음, 또는 판단 근거 없음 | `null` |
 
 예) 참치김밥: 참치(메뉴명) → `identity`, 밥·김(거의 모든 레시피) → `identity`, 단무지·햄 → `component`, 마요네즈 속 달걀 → `hidden`. 0.9는 초기값이며 QA(#192)에서 다시 본다.
-
-- `variant_suggestion`은 `variant_origin: runtime_tagged`일 때만 채운다. 형태는 ⑦ DB Update Tool의 "변형 태깅 제안" 입력(⑦ §1-1)과 같다.
-
-```json
-{
-  "base_menu_id": "str",
-  "remain_token": "차돌",
-  "suggested_ingredients": ["소고기"]
-}
-```
 
 ### 1-3. `variant_origin` — 변형의 출처 (⑤ 신뢰도 차등의 핵심)
 
@@ -597,27 +523,21 @@ graph TB
 
 ### 5-1. Supervisor → ④ (받는 것)
 
-| 필드 | 보장 사항 |
-|---|---|
-| `context` | 유효한 공통 호출 문맥. `store_id`는 가게 식별 완료된 양의 정수, **null 불가** |
-| `normalized_menu_name` | ② Menu Normalization Agent 완료값. ④는 재정규화하지 않음 |
-| `confirmed_ingredients` | ③ 출력 중 `status != unknown` AND `override_eligible: true` 인 재료만. `status`(`present`/`absent`)를 함께 전달 |
-| `anomaly_locked_ingredients` | ③ 출력 중 `flagged_anomaly: true`인 재료만. 누락 금지. `expired: true`만으로 override가 거부된 재료는 넣지 않는다 |
-| `menu_id` / `match_candidates` / `residual_tokens` | ② 출력을 그대로 전달. 없으면 생략 가능 |
+⓪ §4-3 `OntologyRequest`. 보장 사항과 ④가 지킬 것은 §1-1.
 
 ### 5-2. ④ → Supervisor (돌려주는 것)
 
-| 필드 | Supervisor의 후속 판단 |
+형식은 ⓪ §4-3 `OntologyResponse`. Supervisor가 이 값을 어떻게 쓰는지:
+
+| 값 | Supervisor의 후속 판단 (⓪ §2) |
 |---|---|
-| `exists_in_db: false` | → ⑥ Web Search Agent 호출 |
-| `exists_in_db: true` | → ⑤ Bayesian 호출 |
-| `base_menu_id != null` | → **③을 2차 호출** (`scope_hint="inherited"`) |
-| `variant_origin: runtime_tagged` | → ⑤에 즉시 전달 **+** `variant_suggestion`을 ⑦에 관리자 검토 자료로 전달 |
-| `variant_origin: db_registered` | → ⑤에만 전달. ⑦ 검토 불필요 (이미 컨펌됨) |
-| `ingredients[].source` | → ⑤가 prior 신뢰도(scale)를 차등 적용 |
-| `ingredients[].observations` | → ⑤의 Beta-Binomial 관측값 (출처별) |
-| `ingredients[].curated` | → ⑤가 출처 `curated` 근거로 사용 |
-| `menu_ambiguity_flags`, `ingredients[].ambiguity_flag` | → ⑧이 사용자 금지 태그와 관련 있으면 CAUTION 유지, 사장님 질문 근거로 사용 |
+| `menu.exists_in_db: false` + `menu.base_menu_id: null` | → ⑥ Web Search Agent 호출 |
+| `menu.exists_in_db: false` + `menu.base_menu_id` 있음 | → 신규 변형. 웹서치하지 않고 ⑤로 (원본 메뉴 확정값 상속은 보류) |
+| `menu.exists_in_db: true` | → ⑤ Bayesian 호출 |
+| `menu.variant_origin: runtime_tagged` | → ⑤에 즉시 전달 **+** `variant_suggestion`을 ⑦에 관리자 검토 자료로 전달 |
+| `menu.variant_origin: db_registered` | → ⑤에만 전달. ⑦ 검토 불필요 (이미 컨펌됨) |
+| `ingredients[].source`, `observations`, `curated` | → ⑤의 scale·관측값·큐레이션 근거 |
+| `menu_ambiguity_flags` | → ⑧이 사용자 금지 태그와 관련 있으면 CAUTION 유지, 메뉴 플래그 질문 카드 근거 (⑧ §2-1 5-2) |
 | `warnings` | → ⑧까지 전달해 CAUTION 이상 유지 판단에 사용 (§1-2) |
 
 **④가 직접 호출하지 않는 것**: 어떤 Agent·Tool도 직접 호출하지 않는다. 웹서치 여부, DB 반영, 판정은 모두 Supervisor가 결정한다.
@@ -722,6 +642,10 @@ graph TB
 - [x] **taxonomy 코드 값** — 8종 + `unknown` (2026-10-12, §4, #182). 가공식품 `processed`를 추가하고 `기타`를 `base`·`unknown`으로 나눴다. ⓪ 예시 값(`발효_장류`)은 ⓪ 담당자가 `fermented`로 맞춰야 한다
 - [x] **`warnings` 전달** — ⑧ 입력 형식에 `warnings`가 들어감 (⑧ §1, 2026-10-12 확인)
 - [x] **캐시 내용 정의** — 확인 재료를 빼기 전 전체 확장 목록, `anomaly_locked` 제외. `caution-db-schema.md` v4 §5에 반영 (#241)
+- [x] **확인 재료·잠금 재료 형태** — `{ingredient: IngredientRef, status}`, `IngredientRef[]`. ⓪ §4-3에 반영 (2026-10-13)
+- [x] **`observation_basis: none`** — ⓪ §4-3에 반영 (2026-10-13)
+- [x] **④ warning 코드** — ⓪ §4-3에 ④ 코드 목록 반영, 모두 `forces_caution: true` (2026-10-13)
+- [ ] **노드별 `ambiguity_flag` 유지 여부** — ⓪ 응답에 없고 ⑧은 메뉴 플래그만 쓴다. 추천: ④에서도 뺀다. ④ 담당자 결정 필요 (§1-2)
 
 ---
 
