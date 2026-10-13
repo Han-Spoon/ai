@@ -202,7 +202,7 @@ flowchart TD
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
 - **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
 - **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 이번 확인 차례에서 **가장 최근에 답한 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
-- 답변 처리 완료 시 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
+- 답이 확정되면 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 (확정 보류인 1차 답 등은 NULL로 둔다, DB 스키마 §6 16번) — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 2-4. 메뉴 애매함 플래그 답 처리 (결정, 2026-10-13)
 
