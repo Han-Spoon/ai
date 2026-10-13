@@ -78,25 +78,25 @@ PPT 기준상 위험도 판정과 추천 로직은 분리한다. 따라서 ⑨�
 flowchart TD
     IN["⑧ 판정 결과 + 사용자 식단 프로필"] --> VALIDATE{"공통 문맥과 입력이 유효한가?"}
     VALIDATE -->|No| ERROR["구조화 오류 반환"]
-    VALIDATE -->|Yes| FILTER["risk_level: safe 후보만 필터링"]
+    VALIDATE -->|Yes| ORDER["전체 메뉴 menu_order 정렬 (§2-3)"]
+    ORDER --> FILTER["risk_level: safe AND\ninformation_status: complete 후보만"]
     FILTER --> EMPTY{"SAFE 후보가 있는가?"}
     EMPTY -->|No| NONE["recommendations: []"]
-    EMPTY -->|Yes| QUERY["입력 curation_contents에서
-메뉴별 검증된 콘텐츠 찾기"]
+    EMPTY -->|Yes| QUERY["입력 curation_contents에서\n메뉴별 검증된 콘텐츠 찾기"]
     QUERY --> FOUND{"검증된 결과가 있는가?"}
     FOUND -->|No| FALLBACK["문화 콘텐츠 없음\n모두 recommendation_score 0.5"]
     FOUND -->|Yes| SCORE["recommendation_score 계산\n문화 콘텐츠 있으면 1.0, 없으면 0.5"]
     FALLBACK --> SORT
     SCORE --> SORT["recommendation_score 높은 순\n같으면 menu_id 오름차순"]
     SORT --> LIMIT["중복 제거 + limit 적용"]
-    LIMIT --> OUT["Supervisor에 추천 결과 반환"]
+    LIMIT --> OUT["Supervisor에 menu_order + 추천 결과 반환"]
     NONE --> OUT
 ```
 
 ### 2-1. Step별 설명
 
 1. **입력 검증**: 공통 문맥과 메뉴별 최종 판정 형식을 검증한다.
-2. **안전 필터**: `risk_level == safe`인 항목만 남긴다. 이 단계는 랭킹보다 항상 먼저 실행한다.
+2. **안전 필터**: `risk_level == safe`이고 `information_status == complete`인 항목만 추천 후보로 남긴다 (⓪ §4-8). 이 단계는 랭킹보다 항상 먼저 실행한다. 전체 메뉴 순서(`menu_order`, §2-3)는 이 필터와 상관없이 모든 메뉴로 만든다.
 3. **콘텐츠 찾기**: 안전 후보의 `menu_id`와 사용자 언어(`locale`)로 입력 `curation_contents`에서 승인된 문화 콘텐츠를 찾는다. 인덱스를 직접 조회하지 않는다 (⓪ §4-8).
 4. **프로필 필터** (결정, 2026-10-12): 문화 콘텐츠의 재료 태그(`constraint_tags`, §3)가 사용자 금지 태그(⑧ §2-1 1단계와 같은 매핑)와 하나라도 겹치면 그 콘텐츠를 뺀다. 예: 술을 안 마시는 사용자에게 "막걸리와 함께 드세요"(`is_alcohol`) 콘텐츠는 보여주지 않는다. 규칙으로만 판단한다. 이 필터는 새로운 위험 판정이 아니라 이미 확정된 사용자 제약을 추천 결과에 다시 적용하는 방어 절차다.
 5. **점수 계산** (결정, 2026-10-12): 검증된 문화 콘텐츠가 있으면 `recommendation_score: 1.0`과 `reason_codes`에 `culture_match`, 없으면 `recommendation_score: 0.5`다. `recommendation_score`는 추천할 만한 정도이지 안전도가 아니다. 확률·위험도·스폰서 여부는 넣지 않는다. 규칙으로만 계산하고 LLM은 쓰지 않는다.

@@ -68,7 +68,7 @@
 
 ### 1-1. 입력에서 ⑧이 지키는 것
 
-> **`constraint_tags`는 모두 ④가 붙인 값이다** (결정, 2026-10-10 회의, ④ §2-7). ③·⑥은 태그 없이(`[]`) 반환하고, Supervisor가 ④를 불러 채운 뒤 ⑧에 넘긴다. ③ 확인값은 ④ `lookup_tags`, ⑥ 웹 재료는 ④ `map_ingredients`, ④ 확장 재료는 ④가 처음부터 붙여 ⑤를 거쳐 그대로 온다 (⓪ §1-2, §2-11). ⑧은 태그를 새로 붙이거나 재료 이름으로 추측하지 않는다. 태그 조회·매핑이 실패하면 ④가 붙인 warning(`forces_caution: true`)으로 SAFE를 막는다 (§2-1 3-3).
+> **`constraint_tags`는 모두 ④가 붙인 값이다** (결정, 2026-10-10 회의, ④ §2-7). ③·⑥은 태그 없이(`[]`) 반환하고, Supervisor가 ④를 불러 채운 뒤 ⑧에 넘긴다. ③ 확인값은 ④ `lookup_tags`, ⑥ 웹 재료는 ④ `map_ingredients`, ④ 확장 재료는 ④가 처음부터 붙여 ⑤를 거쳐 그대로 온다 (⓪ §1-2, §2-8). ⑧은 태그를 새로 붙이거나 재료 이름으로 추측하지 않는다. 태그 조회·매핑이 실패하면 ④가 붙인 warning(`forces_caution: true`)으로 SAFE를 막는다 (§2-1 3-3).
 
 **`confirmed_results` (③ 사장님 확인값, hard evidence)**
 - **`status`는 3값을 유지한다. `true/false` 2값으로 축약하지 않는다** (AGENTS.md 확정). 2값이면 "없다고 확인됨"과 "아직 안 물어봄"이 구분되지 않아, 안 물어본 재료가 "없음"으로 읽혀 SAFE가 될 수 있다 (FN).
@@ -186,7 +186,7 @@
 ```mermaid
 flowchart TD
     IN["입력 수신"] --> P1["Step 1: user_profile → forbidden_tags 매핑\n(religion/vegetarian/alcohol/allergy/spicy)"]
-    P1 --> P2{"confirmed_results 중\npresent + override_eligible 재료가\nforbidden_tags와 겹침?"}
+    P1 --> P2{"confirmed_results 중\npresent + override_eligible 재료가\nforbidden_tags와 겹침?\n(플래그 답 '들어 있음'도 §2-1 5-2)"}
     P2 -->|Yes| DANGER["risk_level: danger\nevidence_basis: confirmed\n즉시 확정"]
     P2 -->|No| P3{no_information?}
     P3 -->|Yes| CAUTION1["risk_level: caution 이상 강제\nevidence_basis: unknown\n(FN-minimization)"]
@@ -201,8 +201,8 @@ flowchart TD
     P7 --> MSG["다국어 메시지 생성"]
     DANGER --> MSG
     CAUTION1 --> MSG
-    MSG --> OC{사용자 태그와 겹치는\n미확인 재료 존재?}
-    OC -->|Yes| CARD["owner_cards 생성\n(사용자 태그와 관련된 재료마다 한 장)"]
+    MSG --> OC{"카드 대상 존재?\n(미확인·만료 재료, 풀리지 않은 플래그,\n정보 없는 메뉴)"}
+    OC -->|Yes| CARD["owner_cards 생성\n(재료·플래그마다 한 장, 정보 없는 메뉴는 화면 표시용 한 장)"]
     OC -->|No| DONE["owner_cards: []"]
     CARD --> OUT[Supervisor에 반환]
     DONE --> OUT
@@ -402,8 +402,9 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
-| `owner_cards`가 비어 있지 않음 | 카드마다 Supervisor가 ⑦에 전달 → ⑦이 저장 명령 생성 → **백엔드가 `owner_verification_requests`에 INSERT**. XAI와 ⑦은 DB 자격 증명을 갖지 않음 |
-| `risk_level` | 최종 사용자 응답에 그대로 포함, 추가 라우팅 없음 (파이프라인의 마지막 단계) |
+| `owner_cards`가 비어 있지 않음 | 카드마다 Supervisor가 ⑦에 전달 → ⑦이 저장 명령 생성 → **백엔드가 `owner_verification_requests`에 INSERT**. XAI와 ⑦은 DB 자격 증명을 갖지 않음. 정보 없는 메뉴의 화면 표시용 카드는 ⑦에 보내지 않음 (§1-3, ⓪ §4-6) |
+| `high_risk_review.required: true` | 메뉴판 전체 판정이 끝난 뒤 Supervisor가 후보 중 최대 3개를 골라 고가 모델로 재검증한다. 판정은 바꾸지 않고 질문 카드·설명만 보강한다 (§2-3, ⓪ §2-10) |
+| `risk_level` 등 판정 결과 | 바꾸지 않고 최종 응답에 넣는다. 모든 메뉴의 판정이 끝나면 ⑨가 표시 순서와 SAFE 추천을 만든다 (⓪ §2-10, §4-8) |
 
 ---
 
