@@ -88,7 +88,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 | ① OCR Tool | 기존 OCR Python/API adapter | 사용하지 않음 | 이미지 OCR 실행은 정해진 절차 |
 | ② Normalization Agent | 규칙·사전 우선 + 제한적 구조화 LLM | 필요할 때만 사용 | 다국어·오탈자·복수 후보의 문맥 판단 |
 | ③ Exact Feedback Tool | KnowledgeBundle read adapter (DB 조회 없음) | 사용하지 않음 | 확정값 조회는 결정론적이어야 함 |
-| ④ DB/Ontology Tool | DB 조회·재귀 확장 함수 | 사용하지 않음 | 온톨로지 관계를 임의 생성하면 안 됨 |
+| ④ DB/Ontology Tool | KnowledgeBundle read adapter + 재귀 확장 함수 (Judge 중 DB 조회 없음) | 사용하지 않음 | 전달받은 온톨로지 관계만 결정론적으로 확장해야 함 |
 | ⑤ Bayesian Tool | 수식 기반 Python 함수 | 사용하지 않음 | 같은 입력은 같은 확률을 내야 함 |
 | ⑥ Web Search Agent | 검색 전략·추출에 구조화 LLM + 검색 provider | 사용 | 검색어 구성과 문서 속 재료 추출에 언어 판단 필요 |
 | ⑦ DB Update Tool | 저장 명령 builder | 사용하지 않음 | 권한·근거·명령 형식은 고정 규칙 |
@@ -225,6 +225,10 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 
 ③ ExactFeedbackResponse.flag_confirmations[]
   → ⑧ DecisionRequest.flag_confirmations[]
+
+③ ExactFeedbackResponse.owner_question_states[]
+  → ⑧ DecisionRequest.owner_question_states[]
+  → needs_second는 2차, needs_third는 3차 owner_card 생성
 
 ④ OntologyResponse.menu_ambiguity_flags
   (④ 확장을 건너뛰는 exact complete 경로는 Bundle ontology.menu.ambiguity_flags)
@@ -568,7 +572,8 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
               "exact": {
                 "menu_id": 1001,
                 "confirmations": [],
-                "flag_confirmations": []
+                "flag_confirmations": [],
+                "owner_question_states": []
               },
               "inherited": null
             },
@@ -703,7 +708,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
 
-`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. `exact_feedback.inherited`는 기존 계약 호환을 위해 필드를 남기지만 현재는 보류 상태이므로 항상 `null`이고 백엔드는 기본 메뉴의 사장님 답변을 조회할 필요가 없다. `confirmations[]`·`flag_confirmations[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
+`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations, owner_question_states}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. `owner_question_states`는 이전 질문의 최신 처리 상태이며 진행 중인 질문이 없으면 `[]`다. `exact_feedback.inherited`는 기존 계약 호환을 위해 필드를 남기지만 현재는 보류 상태이므로 항상 `null`이고 백엔드는 기본 메뉴의 사장님 답변을 조회할 필요가 없다. `confirmations[]`·`flag_confirmations[]`·`owner_question_states[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
 
 `ingredient_graph`는 한 Bundle에 한 번만 보내는 공통 read-only 재료 그래프이며 `{status, ingredients, aliases, tags, compositions, composition_tags}`의 closed schema다. `ingredients[]`는 `{ingredient_id, canonical_name, name_normalized, taxonomy_category}`, `aliases[]`는 `{ingredient_id, alias_normalized}`, `tags[]`는 `{ingredient_id, tag_code}`, `compositions[]`는 `{parent_ingredient_id, child_ingredient_id, ambiguity_flag}`, `composition_tags[]`는 `{parent_ingredient_id, child_ingredient_id, tag_code}`다. `compositions[]`에는 `part_of` 관계만 넣는다. ④는 이 그래프로 재귀 확장·순환 차단·깊이 제한·태그와 `role` 부착을 수행하며 백엔드는 펼친 결과를 만들지 않는다.
 
@@ -721,7 +726,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 |---|---|---|---|
 | `ingredient_graph` | 다섯 배열을 모두 제공. 태그가 없는 표준 재료의 `tags` 행 부재는 정상 | 다섯 배열 모두 `[]`, 모든 메뉴 SAFE 금지 | 다섯 배열 모두 `[]`, 모든 메뉴 SAFE 금지 |
 | `candidate_lookup` | `candidates[]` 1개 이상, 각 후보와 같은 `candidate_knowledge` 정확히 1개 | 두 배열 모두 `[]`, `fallback_ontology`로 진행 | 두 배열 모두 `[]`, 해당 메뉴 SAFE 금지 |
-| `exact_feedback` | `exact` 필수(`confirmations`, `flag_confirmations` 포함), `inherited`는 항상 `null` | `exact: null`, heavy path로 진행 | `exact: null`, 확정값이 없다고 간주하지 않고 SAFE 금지 |
+| `exact_feedback` | `exact` 필수(`confirmations`, `flag_confirmations`, `owner_question_states` 포함), `inherited`는 항상 `null` | `exact: null`, heavy path로 진행 | `exact: null`, 확정값이 없다고 간주하지 않고 SAFE 금지 |
 | `ontology` / `fallback_ontology` | `menu`, 원재료 행 세 배열, `cache` 제공 | `menu: null`, 세 배열 `[]`, `cache: null` | 같은 빈 형태와 warning을 만들고 SAFE 금지 |
 | `priors` | `store[]`와 `evidence[]` 제공, `cluster`·`global`은 `[]` | 네 배열 모두 `[]`, ⑤가 관측값 또는 uninformative prior 사용 | 네 배열 모두 `[]`, 가능한 관측값으로 계산하되 SAFE 금지 |
 | `web_search_cache` | `cached_sources[]` 1개 이상, `next_rank`는 다음 양의 정수 | `cached_sources: []`, `next_rank: 1` | 캐시 없음으로 오인하지 않고 필요 시 새 검색하되 warning 유지 |
@@ -842,6 +847,7 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 | `risk_ingredients[].confidence` | number \| null | ⑤의 0~1 근거 충분도. 확정값이면 null |
 | `risk_ingredients[].prior_source` | `store \| cluster \| global \| uninformative \| null` | ⑤ prior의 fallback 출처. 확정값이면 null |
 | `owner_cards[].round` | `1 \| 2 \| 3` | 각 사장님 질문의 차수. 질문이 없으면 owner_cards는 빈 배열 |
+| `owner_cards[].previous_question_id` | string \| null | 1차는 null, 2·3차는 직전 질문 ID |
 | `owner_cards[].ingredient` | object \| null | 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 null (§4-7) |
 | `owner_cards[].ambiguity_flag` | string \| null | 메뉴 애매함 플래그 카드일 때만 플래그 이름 |
 | `high_risk_review.required` | boolean | 고가 모델 재검증 후보 여부 |
@@ -872,11 +878,11 @@ flowchart TD
     MATCH --> LOOP["메뉴별 Item Graph fan-out"]
     LOOP --> MID{"menu_id 후보 있음?"}
     MID -->|Yes| EXACT["③ Exact Feedback Tool 조회"]
-    MID -->|No| ONTO_UNKNOWN["④ DB / Ontology Tool<br/>unknown/longest-match"]
+    MID -->|No| ONTO_UNKNOWN["④ DB / Ontology Tool<br/>Bundle 기반 unknown/longest-match"]
     EXACT --> COMP{"completeness: complete<br/>AND override 불가 확인값 없음?"}
     COMP -->|Yes| TAG1["④ lookup_tags<br/>확인값 태그 조회"]
     TAG1 --> XAI1["⑧ Decision Policy / XAI Agent<br/>confirmed_results만 전달"]
-    COMP -->|No| ONTO["④ DB / Ontology Tool 조회"]
+    COMP -->|No| ONTO["④ DB / Ontology Tool<br/>Bundle 읽기·재귀 확장"]
 
     ONTO --> DBOK{"exists_in_db OR<br/>base_menu_id 있음?"}
     ONTO_UNKNOWN --> DBOK
@@ -1208,7 +1214,7 @@ Prepare와 Judge 사이 상태는 AI 메모리나 checkpoint로 공유하지 않
 | ① OCR | 읽기 요청에 한해 최대 1회 재시도 | `needs_retake` 또는 OCR error 응답 |
 | ② Normalization | LLM transient error 1회 | 규칙 기반 후보·원문 보존 |
 | ③ Exact | 재시도 없음 (Bundle만 읽음) | ④ heavy path |
-| ④ Ontology | DB read transient error 1회 | partial + ⑥/⑧ 보수 경로 |
+| ④ Ontology | 재시도 없음 (Bundle만 읽고 결정론적으로 확장) | 입력·확장 오류 시 partial + ⑥/⑧ 보수 경로 |
 | ⑤ Bayesian | 재시도 없음 | unknown + partial |
 | ⑥ Web Search | 전체 7초 안에서 provider transient error 1회 | 수집 결과나 캐시가 있으면 부분 결과 + `web_search_deadline_exceeded`; 둘 다 없을 때만 `found: false`, `no_information: true` |
 | ⑦ DB Update | Supervisor 자동 재시도 금지 | 판정 유지 + command 생성 error |
@@ -1616,6 +1622,19 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       "expired": false
     }
   ],
+  "owner_question_states": [
+    {
+      "question_id": "question-002",
+      "ingredient": {
+        "ingredient_id": 110,
+        "canonical_name": "액젓"
+      },
+      "ambiguity_flag": null,
+      "constraint_tags": [],
+      "answered_round": 2,
+      "confirmation_state": "needs_third"
+    }
+  ],
   "warnings": [],
   "errors": []
 }
@@ -1624,6 +1643,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 `scope_hint`와 `confirmation_scope`는 `exact | inherited`, `completeness`는 `complete | unknown`이다. `expired`는 사장님 확인값의 유효기간이 지났는지 여부다 (기준은 ③ 문서). `status`는 3-State를 유지한다. ③은 `constraint_tags: []`로 반환하며 `conflict`, `superseded` 같은 정의되지 않은 필드는 보내지 않는다.
 
 `flag_confirmations[]`는 메뉴 애매함 플래그 질문 카드(§4-7)에 대한 사장님 답이다. `ambiguity_flag`는 §1-3 `menu.ambiguity_flags`의 값 하나, `constraint_tags`는 그때 물어본 태그(질문에 들어 있던 값이며 ④가 붙이는 재료 태그가 아님), `status`는 3-State다. `absent`는 물어본 태그 **전부**가 없다는 뜻이고 `present`는 그중 **하나 이상**이 있다는 뜻이다. 비교할 확률이 없으므로 anomaly 표시는 없고, `override_eligible`은 `expired: false`일 때만 `true`다. 같은 플래그를 다른 태그로 물은 답은 따로 반환한다. `completeness`는 재료 확인값만 보고 정하며 `flag_confirmations`의 영향을 받지 않는다. 저장 테이블 이름(`source_ref`의 `owner_flag_confirmations`)은 백엔드가 정할 때까지 예시다. Supervisor는 경로와 관계없이 ⑧ 직전에 ④ 태그 조회(`tag_lookup` node)를 불러 모든 ③ 확인값의 태그를 채운다 (§2-8, ④ §2-7).
+
+`owner_question_states[]`는 백엔드가 `record_owner_answer`를 처리한 뒤 저장한 최신 질문 진행 상태다. 재료 질문은 `ingredient`를 채우고 `ambiguity_flag: null`, 플래그 질문은 `ingredient: null`과 `ambiguity_flag`를 사용한다. `answered_round`는 방금 답변한 차수인 `1 | 2 | 3`, `confirmation_state`는 `confirmed | needs_second | needs_third`다. `needs_second`는 `answered_round: 1`, `needs_third`는 `answered_round: 2`에서만 허용하고 3차 답변 뒤에는 반드시 `confirmed`여야 한다. ③은 이 배열을 계산하거나 변경하지 않고 ⑧까지 그대로 전달한다.
 
 첫 번째 호출은 대상 `menu_id`가 안정적으로 식별된 경우에만 `scope_hint="exact"`로 전달한다. `menu_id`가 없으면 ③을 호출하지 않는다.
 
@@ -2335,6 +2356,8 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
   },
   "create_owner_verification_request": {
     "menu_id": 1001,
+    "round": 1,
+    "previous_question_id": null,
     "ingredient": {
       "ingredient_id": 110,
       "canonical_name": "액젓"
@@ -2407,12 +2430,13 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `create_review_item.review_origin`은 `web_search | variant_suggestion`이다. `web_search`이면 `web_sources`가 비어 있지 않고 `variant_suggestion`은 `null`; `variant_suggestion`이면 `web_sources: []`이고 ④가 반환한 `variant_suggestion` 객체를 그대로 넣는다.
 - `create_review_item.review_notes`는 ⑥ 응답을 그대로 보존한다. 검토 화면에만 사용하며 위험 판정이나 확률 계산에는 사용하지 않는다.
 - `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
+- `create_owner_verification_request.round`는 `1 | 2 | 3`이며 `previous_question_id`는 1차 질문이면 `null`, 2·3차 질문이면 직전 질문 ID다. 백엔드는 두 값을 질문 행에 보존해 질문 사슬과 차수를 검증한다.
 - `create_owner_verification_request.recipe_probability`는 Supervisor가 같은 스캔의 ⑤ 결과에서 그 재료의 `posterior_mean`을 그대로 넣는다 (0~1). ⑧ 카드에는 이 필드가 없다. 플래그 카드는 `null`이다. 백엔드가 질문 행에 저장했다가, 사장님 답을 확정할 때 이상 답변(`flagged_anomaly`: 이 값 0.9 이상 + "없음") 판정에 쓴다 (⑦ §2-3).
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
 - `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. `expires_at`은 항상 `null`이다. ⑥은 캐시 유효기간을 두지 않고 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4). DB 스키마의 `web_search_cache.expires_at`은 nullable이어야 한다 (§8).
 - 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
-- 미확정 (⑦ §8): ① 사장님 2·3차 질문 연결 — 백엔드가 `record_owner_answer`를 처리하고 돌려주는 확인 상태(`confirmed` / `needs_second` / `needs_third`)를 다음 Judge 때 ⑧까지 전달하는 경로가 아직 없다. 없으면 1·2차 답이 달라도 3차 질문이 나가지 않는다. ③·⑧·백엔드와 함께 정한다 (⑦ §8).
+- 백엔드가 `record_owner_answer`를 처리한 결과는 `{question_id, answered_round, confirmation_state}`이며 `confirmation_state`는 `confirmed | needs_second | needs_third`다. 이 객체를 AI가 같은 호출에서 직접 받는 별도 endpoint는 만들지 않는다. 백엔드는 결과를 저장하고 다음 Judge의 `KnowledgeBundle.exact_feedback.exact.owner_question_states[]`에 대상 재료 또는 플래그 정보와 함께 넣는다. ③은 이를 `ExactFeedbackResponse.owner_question_states[]`로 보존하고, Supervisor는 ⑧ `DecisionRequest.owner_question_states[]`까지 전달한다. ⑧은 `needs_second`와 `needs_third`에만 후속 카드를 생성한다.
 - 스캔 중 생긴 작업은 원래 `item` context를 사용한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 `call_scope: out_of_band`, `item_id: null`로 별도 요청한다.
 
 ⑦이 command에 추가하는 `provenance`는 다음 closed schema다.
@@ -2515,12 +2539,12 @@ operation별 provenance 고정값은 다음과 같다.
 }
 ```
 
-각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. `idempotency_key`는 **내용 기준**으로 만든다: `"sha256:" + sha256_hex(action + "|" + 내용 키의 정규 JSON)`. `trace_id`·`operation_id`·시각은 넣지 않는다. 넣으면 같은 스캔의 Judge를 재시도하거나 백엔드가 응답을 다시 받을 때 키가 바뀌어 같은 명령이 두 번 저장된다. 질문 키에는 `scan_session_id`가 있으므로 새 스캔에서 같은 재료를 다시 묻는 것(2·3차 질문)은 별개 명령이다. 정규 JSON은 key 정렬·공백 없음이고, 배열 값은 정렬한다.
+각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. `idempotency_key`는 **내용 기준**으로 만든다: `"sha256:" + sha256_hex(action + "|" + 내용 키의 정규 JSON)`. `trace_id`·`operation_id`·시각은 넣지 않는다. 넣으면 같은 스캔의 Judge를 재시도하거나 백엔드가 응답을 다시 받을 때 키가 바뀌어 같은 명령이 두 번 저장된다. 질문 키에는 `round`와 `previous_question_id`를 포함하므로 같은 대상의 1·2·3차 질문은 서로 다른 명령이지만 동일 차수 재시도는 같은 명령이다. 정규 JSON은 key 정렬·공백 없음이고, 배열 값은 정렬한다.
 
 | action | 내용 키 |
 |---|---|
 | `create_review_item` | `store_id`, `review_origin`, 메뉴(`normalized_menu_name` 또는 `variant_suggestion`의 `base_menu_id`·`remain_token`), 정렬한 `source_url` 목록 |
-| `create_owner_verification_request` | `store_id`, `scan_session_id`, `menu_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
+| `create_owner_verification_request` | `store_id`, `scan_session_id`, `menu_id`, `round`, `previous_question_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
 | `record_owner_answer` | `question_id` |
 | `update_source_reliability` | `source_type`, `trigger_evidence_ref` |
 | `save_web_search_cache` | `normalized_menu_name`, `next_rank` |
@@ -2597,6 +2621,19 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   ],
   "menu_ambiguity_flags": ["has_unclear_jeotgal"],
   "flag_confirmations": [],
+  "owner_question_states": [
+    {
+      "question_id": "question-002",
+      "ingredient": {
+        "ingredient_id": 110,
+        "canonical_name": "액젓"
+      },
+      "ambiguity_flag": null,
+      "constraint_tags": [],
+      "answered_round": 2,
+      "confirmation_state": "needs_third"
+    }
+  ],
   "no_information": false,
   "information_status": "complete",
   "user_profile": {
@@ -2683,7 +2720,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 ```json
 {
   "menu_id": 1001,
-  "round": 1,
+  "round": 3,
+  "previous_question_id": "question-002",
   "ingredient": {
     "ingredient_id": 110,
     "canonical_name": "액젓"
@@ -2703,7 +2741,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 }
 ```
 
-`owner_cards[].round`는 `1 | 2 | 3`만 허용한다. 질문 차수는 각 카드의 이 필드에서만 관리하며 메뉴 결과에 `owner_question_round`를 중복해서 만들지 않는다. `ingredient`는 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 `null`이다. 플래그 카드는 `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(그 플래그에 걸릴 수 있는 태그 중 사용자 금지 태그와 겹친 것)를 넣는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
+`owner_cards[].round`는 `1 | 2 | 3`만 허용한다. 첫 질문은 `round: 1`, `previous_question_id: null`이다. ⑧은 `owner_question_states[].confirmation_state`가 `needs_second`이면 `round: 2`, `needs_third`이면 `round: 3`인 카드를 만들고, 직전 `question_id`를 `previous_question_id`로 복사한다. `confirmed`이면 같은 대상에 추가 카드를 만들지 않는다. 질문 차수는 각 카드의 이 필드에서만 관리하며 메뉴 결과에 `owner_question_round`를 중복해서 만들지 않는다. `ingredient`는 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 `null`이다. 플래그 카드는 `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(그 플래그에 걸릴 수 있는 태그 중 사용자 금지 태그와 겹친 것)를 넣는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
 
 정보 없는 메뉴(`no_information: true`)는 재료가 없으므로, 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다: `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 메뉴가 DB에 없으면 `menu_id`도 null이다. 이 카드는 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 답이 판정을 바꾸지 않고(무엇이 들어가는지 알 수 없음) 저장할 메뉴 행도 없으므로 ⑦ 저장 요청을 만들지 않는다.
 
@@ -2937,6 +2975,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 | 26 | 생선 알레르기 + 김치찌개 모든 재료 사장님 확인(exact complete) + `ontology.menu.ambiguity_flags: [has_unclear_jeotgal]` | ④ 확장을 건너뛰어도 ⑧에 `menu_ambiguity_flags` 전달, CAUTION + 플래그 질문 카드 + ⑦ 명령(`ingredient: null`) | 플래그가 빠져 SAFE로 새지 않음 |
 | 27 | 26번 + `flag_confirmations`에 `is_fish` `absent` 답 | ⑧ SAFE 가능 | 플래그 답이 Bundle→③→⑧에서 손실되지 않음 |
 | 28 | 할랄 사용자 + unknown 메뉴 + 웹서치 실패 | ⑧ CAUTION + 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`), ⑦ 명령 없음, `owner_request` node 건너뜀 | 화면 표시용 카드로 저장 요청을 만들지 않음 |
+| 29 | 같은 대상의 1차·2차 답변 불일치 후 Bundle에 `confirmation_state: needs_third` | Bundle → ③ → ⑧로 상태를 보존하고 `round: 3`, `previous_question_id`가 있는 카드·저장 명령 생성 | 3차 질문 누락 없음, 동일 Judge 재시도 시 명령 중복 없음 |
 
 ---
 
