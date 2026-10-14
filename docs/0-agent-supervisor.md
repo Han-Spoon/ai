@@ -424,7 +424,6 @@ Supervisor는 위 warning이 하나라도 있으면 해당 메뉴를 SAFE로 확
   "image": {
     "source": "camera",
     "storage_key": "scans/menu.jpg",
-    "image_url": null,
     "version_id": null,
     "expected_etag": null
   },
@@ -432,7 +431,7 @@ Supervisor는 위 warning이 하나라도 있으면 해당 메뉴를 SAFE로 확
 }
 ```
 
-`store_id`는 양의 정수이고, `image.storage_key`와 `image.image_url` 중 정확히 하나만 값이 있어야 한다. `source`는 `camera | upload`, `locale`은 `ko | en | ja | zh_hans | zh_hant | es` 중 응답 문구의 기본 언어다. `trace_id`는 요청 추적 ID, `scan_session_id`는 한 번의 메뉴판 스캔을 식별하는 ID이며 백엔드가 생성해 전달한다.
+`store_id`는 양의 정수이고, `image.storage_key`는 비어 있지 않은 문자열이어야 한다. 외부 계약에서 레거시 `image.image_url`은 사용하지 않는다. `source`는 `camera | upload`, `locale`은 `ko | en | ar | zh-CN | zh-TW | ja | es` 중 응답 문구의 언어다. `trace_id`는 요청 추적 ID, `scan_session_id`는 한 번의 메뉴판 스캔을 식별하는 ID이며 백엔드가 생성해 전달한다.
 
 #### `/v1/analyze/prepare` 응답 — `PrepareResponse`
 
@@ -448,9 +447,12 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
   "prepared_items_hash": "sha256:8d4f000000000000000000000000000000000000000000000000000000000001",
   "scan_quality": {
     "status": "usable",
-    "score": 0.94,
     "reasons": [],
     "retake_suggestions": []
+  },
+  "prepare_signals": {
+    "scan_quality_status": "usable",
+    "warnings": []
   },
   "prepared_items": [
     {
@@ -462,7 +464,6 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
       "description": null,
       "price_text": "8,000원",
       "price_options": [],
-      "ocr_confidence": 0.93,
       "locale_hint": "ko",
       "options": ["2인"],
       "residual_tokens": [],
@@ -477,8 +478,9 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 필드 규칙은 다음과 같다.
 
 - `prepare_id`는 Supervisor가 Prepare 요청마다 한 번 발급하는 UUID이며 재시도 추적과 Judge 연결에 사용한다. 백엔드는 값을 변경하지 않고 Prepare 결과·KnowledgeBundle과 함께 보존한다.
-- `prepared_items_hash`는 Supervisor가 `prepared_items`를 **RFC 8785 JSON Canonicalization Scheme(JCS)** 으로 직렬화한 뒤 계산한 SHA-256이다. 출력 형식은 `sha256:`과 소문자 64자리 hex를 연결한 문자열이다. 백엔드는 Judge 요청에 같은 값을 돌려보내며 AI가 다시 계산해 검증한다.
-- `scan_quality.status`는 `usable | low_confidence | needs_retake`, `score`는 0~1이다.
+- `prepared_items_hash`는 Supervisor가 `{prepared_items, prepare_signals}` 객체를 **RFC 8785 JSON Canonicalization Scheme(JCS)** 으로 직렬화한 뒤 계산한 SHA-256이다. 출력 형식은 `sha256:`과 소문자 64자리 hex를 연결한 문자열이다. 백엔드는 Judge 요청에 두 값과 hash를 그대로 돌려보내며 AI가 다시 계산해 검증한다.
+- `scan_quality.status`는 `usable | low_confidence | needs_retake`다. 수치형 품질 점수와 메뉴별 OCR confidence는 AI 내부 관측값이며 외부 계약에는 넣지 않는다.
+- `prepare_signals`는 Judge까지 보존해야 하는 Prepare 안전 신호다. `scan_quality_status`는 `scan_quality.status`와 같고, `warnings`에는 `forces_caution: true`인 warning만 넣는다. `prepared_items_hash`가 이 객체까지 보호하므로 백엔드는 값을 수정하거나 일부만 누락할 수 없다.
 - `prepared_items[]`는 기존 OCR 메뉴 필드에 `normalized_menu_name`, `display_name`, `options`, `residual_tokens`를 추가한 구조다.
 - `item_id`는 `{scan_session_id}:{source_index}` 형식으로 한 번만 만들고 Judge 최종 결과까지 유지한다.
 - Prepare에서는 DB 후보를 조회하거나 `menu_id`, `menu_category_id`를 확정하지 않으므로 두 필드를 응답에 넣지 않는다.
@@ -496,8 +498,11 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
   "scan_session_id": "scan-123",
   "store_id": 123456,
   "prepared_items_hash": "sha256:8d4f000000000000000000000000000000000000000000000000000000000001",
-  "bundle_hash": "sha256:74ab000000000000000000000000000000000000000000000000000000000002",
   "knowledge_revision": "2026-10-12T03:00:00Z",
+  "prepare_signals": {
+    "scan_quality_status": "usable",
+    "warnings": []
+  },
   "prepared_items": [
     {
       "item_id": "scan-123:0",
@@ -508,7 +513,6 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
       "description": null,
       "price_text": "8,000원",
       "price_options": [],
-      "ocr_confidence": 0.93,
       "locale_hint": "ko",
       "options": ["2인"],
       "residual_tokens": [],
@@ -574,8 +578,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
                 "confirmations": [],
                 "flag_confirmations": [],
                 "owner_question_states": []
-              },
-              "inherited": null
+              }
             },
             "ontology": {
               "status": "ok",
@@ -584,10 +587,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
                 "base_menu_id": null,
                 "remain_token": null,
                 "menu_category_id": 11,
-                "menu_category": "찌개",
-                "exists_in_db": true,
-                "is_variant": false,
-                "variant_origin": null,
+                "source": "curated",
                 "ambiguity_flags": ["has_unclear_jeotgal"],
                 "knowledge_revision": 7
               },
@@ -621,8 +621,6 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
                   "evidence_refs": ["evidence-prior-001"]
                 }
               ],
-              "cluster": [],
-              "global": [],
               "evidence": [
                 {
                   "evidence_id": "evidence-prior-001",
@@ -695,26 +693,23 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
     "allergies": [],
     "no_spicy": false
   },
-  "locale": "ko",
-  "curation_options": {
-    "limit": 5
-  }
+  "locale": "ko"
 }
 ```
 
-`user_profile`은 §1-2 `UserProfile`의 closed schema를 사용한다. `locale`은 `ko | en | ja | zh_hans | zh_hant | es` 중 하나다. `curation_options.limit`은 1~20의 integer이며 생략하지 않고 기본값 5를 보낸다.
+`user_profile`은 §1-2 `UserProfile`의 closed schema를 사용한다. `locale`은 `ko | en | ar | zh-CN | zh-TW | ja | es` 중 하나다. `curation_options`는 선택 객체이며, 보낼 경우 `limit`만 허용한다. `curation_options.limit`은 1~20의 integer이고 객체 또는 필드를 생략하면 Supervisor가 기본값 5를 사용한다.
 
-`prepared_items`에는 같은 `prepare_id`의 `PrepareResponse.prepared_items`를 수정 없이 다시 넣는다. `knowledge_bundle.items`와 `item_id`가 정확히 1:1로 대응해야 한다.
+`prepared_items`와 `prepare_signals`에는 같은 `prepare_id`의 `PrepareResponse` 값을 수정 없이 다시 넣는다. `knowledge_bundle.items`와 `item_id`가 정확히 1:1로 대응해야 한다. Supervisor는 `{prepared_items, prepare_signals}`로 `prepared_items_hash`를 다시 계산해 Prepare의 안전 신호까지 함께 검증한다.
 
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
 
-`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations, owner_question_states}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. `owner_question_states`는 이전 질문의 최신 처리 상태이며 진행 중인 질문이 없으면 `[]`다. `exact_feedback.inherited`는 기존 계약 호환을 위해 필드를 남기지만 현재는 보류 상태이므로 항상 `null`이고 백엔드는 기본 메뉴의 사장님 답변을 조회할 필요가 없다. `confirmations[]`·`flag_confirmations[]`·`owner_question_states[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
+`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations, owner_question_states}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. `owner_question_states`는 이전 질문의 최신 처리 상태이며 진행 중인 질문이 없으면 `[]`다. 사용하지 않는 `exact_feedback.inherited`는 외부 계약에 넣지 않고, 백엔드는 기본 메뉴의 사장님 답변을 조회하지 않는다. `confirmations[]`·`flag_confirmations[]`·`owner_question_states[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
 
 `ingredient_graph`는 한 Bundle에 한 번만 보내는 공통 read-only 재료 그래프이며 `{status, ingredients, aliases, tags, compositions, composition_tags}`의 closed schema다. `ingredients[]`는 `{ingredient_id, canonical_name, name_normalized, taxonomy_category}`, `aliases[]`는 `{ingredient_id, alias_normalized}`, `tags[]`는 `{ingredient_id, tag_code}`, `compositions[]`는 `{parent_ingredient_id, child_ingredient_id, ambiguity_flag}`, `composition_tags[]`는 `{parent_ingredient_id, child_ingredient_id, tag_code}`다. `compositions[]`에는 `part_of` 관계만 넣는다. ④는 이 그래프로 재귀 확장·순환 차단·깊이 제한·태그와 `role` 부착을 수행하며 백엔드는 펼친 결과를 만들지 않는다.
 
-`ontology`와 `fallback_ontology`는 펼친 재료 결과가 아니라 DB에서 가져온 원재료 행이다. `menu`와 함께 `recipe_ingredients[]`, `menu_recipe_corpora[]`, `menu_ingredient_priors[]`, `cache`를 항상 포함한다. `menu.ambiguity_flags`는 DB `menus.ambiguity_flags`(메뉴 애매함 플래그 `has_unclear_broth | has_unclear_seasoning | has_unclear_jeotgal | has_hidden_animal | has_variant`의 부분집합)를 그대로 넣고, 없으면 `[]`다. 레시피 목록 밖에 무엇이 더 들어갈지 불분명하다는 표시라 ⑧의 SAFE 판단에 쓰인다 (§4-7). `recipe_ingredients[]`는 `{ingredient_id}`, `menu_recipe_corpora[]`는 `{corpus, n_total}`, `menu_ingredient_priors[]`는 `{corpus, ingredient_id, k_count}`다. `cache`는 revision이 일치하는 스냅샷이 있으면 `{menu_revision: integer, ingredients_snapshot: object[]}`, 없으면 `null`이다. `ingredients_snapshot`은 확인 재료를 빼기 전의 전체 확장 목록이며 `anomaly_locked`와 가게 확정값을 포함하지 않는다. ④가 두 재료 목록의 합집합을 시작점으로 만들고, corpus별 0회 관측 채우기와 숨은 재료 관측값 상속까지 한 곳에서 수행한다.
+`ontology`와 `fallback_ontology`는 펼친 재료 결과가 아니라 DB에서 가져온 원재료 행이다. `menu`와 함께 `recipe_ingredients[]`, `menu_recipe_corpora[]`, `menu_ingredient_priors[]`, `cache`를 항상 포함한다. `menu`는 원본 컬럼인 `menu_id`, `base_menu_id`, `remain_token`, `menu_category_id`, `source`, `ambiguity_flags`, `knowledge_revision`만 전달한다. `source`는 DB의 `curated | web_search_generated | variant_generated` 값이다. `exists_in_db`, `is_variant`, `variant_origin`, `menu_category` 같은 파생값은 백엔드가 만들지 않고 Supervisor가 원본 컬럼으로 도출한다. `menu.ambiguity_flags`는 DB `menus.ambiguity_flags`(메뉴 애매함 플래그 `has_unclear_broth | has_unclear_seasoning | has_unclear_jeotgal | has_hidden_animal | has_variant`의 부분집합)를 그대로 넣고, 없으면 `[]`다. 레시피 목록 밖에 무엇이 더 들어갈지 불분명하다는 표시라 ⑧의 SAFE 판단에 쓰인다 (§4-7). `recipe_ingredients[]`는 `{ingredient_id}`, `menu_recipe_corpora[]`는 `{corpus, n_total}`, `menu_ingredient_priors[]`는 `{corpus, ingredient_id, k_count}`다. `cache`는 revision이 일치하는 스냅샷이 있으면 `{menu_revision: integer, ingredients_snapshot: object[]}`, 없으면 `null`이다. `ingredients_snapshot`은 확인 재료를 빼기 전의 전체 확장 목록이며 `anomaly_locked`와 가게 확정값을 포함하지 않는다. ④가 두 재료 목록의 합집합을 시작점으로 만들고, corpus별 0회 관측 채우기와 숨은 재료 관측값 상속까지 한 곳에서 수행한다.
 
-`priors.store[]`의 각 원소는 `{ingredient_id: integer, alpha: number, beta: number, evidence_refs: string[]}`이며 `alpha > 0`, `beta > 0`이어야 한다. 가게 prior에는 관리자 승인된 `web_search`와 `ocr_variant_tag` 근거만 포함하고 `owner_feedback`은 포함하지 않는다. `priors.cluster`와 `priors.global`은 현재 항상 `[]`다. 전역 prior는 ⑤가 ④의 corpus별 `observations`와 출처 신뢰도로 계산하므로 `global`에 α·β를 다시 보내 같은 레시피를 두 번 세지 않는다. `priors.evidence[]`는 `store[].evidence_refs`가 가리키는 `EvidenceRef`를 중복 없이 담는다.
+`priors.store[]`의 각 원소는 `{ingredient_id: integer, alpha: number, beta: number, evidence_refs: string[]}`이며 `alpha > 0`, `beta > 0`이어야 한다. 가게 prior에는 관리자 승인된 `web_search`와 `ocr_variant_tag` 근거만 포함하고 `owner_feedback`은 포함하지 않는다. 사용하지 않는 `priors.cluster`와 `priors.global`은 외부 계약에 넣지 않는다. ⑤의 논리적 fallback 순서 `store → cluster → global → uninformative`는 유지하되, cluster 데이터가 없는 현재 계약에서는 건너뛰고 global은 ④의 corpus별 `observations`와 출처 신뢰도로 계산한다. `priors.evidence[]`는 `store[].evidence_refs`가 가리키는 `EvidenceRef`를 중복 없이 담는다.
 
 `source_reliability.weights[]`는 `{source_key: string, weight: number}`이고 `weight` 범위는 0~1이다. `source_key`는 ④의 `observations[].corpus`와 연결할 때 `corpus:{corpus}` 형식을 사용하며, 큐레이션과 웹 관측치는 각각 `curated`, `web_search`를 사용한다. 같은 `source_key`는 한 번만 보낸다. 목록에 없는 신규 출처의 기본 weight는 0.5다. status가 `unavailable`이어도 계산을 계속해야 한다면 0.5를 적용하되 SAFE 금지 warning을 유지한다.
 
@@ -726,9 +721,9 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 |---|---|---|---|
 | `ingredient_graph` | 다섯 배열을 모두 제공. 태그가 없는 표준 재료의 `tags` 행 부재는 정상 | 다섯 배열 모두 `[]`, 모든 메뉴 SAFE 금지 | 다섯 배열 모두 `[]`, 모든 메뉴 SAFE 금지 |
 | `candidate_lookup` | `candidates[]` 1개 이상, 각 후보와 같은 `candidate_knowledge` 정확히 1개 | 두 배열 모두 `[]`, `fallback_ontology`로 진행 | 두 배열 모두 `[]`, 해당 메뉴 SAFE 금지 |
-| `exact_feedback` | `exact` 필수(`confirmations`, `flag_confirmations`, `owner_question_states` 포함), `inherited`는 항상 `null` | `exact: null`, heavy path로 진행 | `exact: null`, 확정값이 없다고 간주하지 않고 SAFE 금지 |
+| `exact_feedback` | `exact` 필수(`confirmations`, `flag_confirmations`, `owner_question_states` 포함) | `exact: null`, heavy path로 진행 | `exact: null`, 확정값이 없다고 간주하지 않고 SAFE 금지 |
 | `ontology` / `fallback_ontology` | `menu`, 원재료 행 세 배열, `cache` 제공 | `menu: null`, 세 배열 `[]`, `cache: null` | 같은 빈 형태와 warning을 만들고 SAFE 금지 |
-| `priors` | `store[]`와 `evidence[]` 제공, `cluster`·`global`은 `[]` | 네 배열 모두 `[]`, ⑤가 관측값 또는 uninformative prior 사용 | 네 배열 모두 `[]`, 가능한 관측값으로 계산하되 SAFE 금지 |
+| `priors` | `store[]`와 `evidence[]` 제공 | 두 배열 모두 `[]`, ⑤가 관측값 또는 uninformative prior 사용 | 두 배열 모두 `[]`, 가능한 관측값으로 계산하되 SAFE 금지 |
 | `web_search_cache` | `cached_sources[]` 1개 이상, `next_rank`는 다음 양의 정수 | `cached_sources: []`, `next_rank: 1` | 캐시 없음으로 오인하지 않고 필요 시 새 검색하되 warning 유지 |
 | `source_reliability` | `weights[]` 제공 | `weights: []`, 기본 신뢰도 정책 사용 | 관측치 가중 불가 상태로 SAFE 금지 |
 | `curation_index` | 승인된 `contents[]` 제공 | 추천·문화 콘텐츠만 빈 배열로 반환 | 위험 판정은 유지하고 추천·문화 콘텐츠만 비활성화 |
@@ -742,7 +737,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - `unavailable`: 장애·timeout 때문에 조회하지 못했다. `ingredient_graph`, `candidate_lookup`, `exact_feedback`, `ontology`, `priors`, `source_reliability`처럼 판정 근거에 직접 쓰이는 safety slice는 데이터 없음으로 해석하지 않고 `knowledge_slice_unavailable` warning(`forces_caution: true`)을 만든다. `web_search_cache`는 새 검색을 시도하고, `curation_index`는 추천만 비활성화하므로 두 영역의 장애 자체가 기존 위험 판정을 바꾸지는 않는다.
 - `bundle_miss`: 백엔드가 보내는 status 값이 아니라 Supervisor 검증 결과다. 해당 `item_id` 또는 실행에 필요한 영역 자체가 누락된 경우 만들며 HTTP 422로 Judge 요청을 거부한다.
 
-백엔드는 `knowledge_revision`을 동일 DB 스냅샷을 식별하는 변경 불가 문자열로 생성한다. 값은 ISO-8601 시각, DB transaction ID 또는 revision ID 중 백엔드가 일관되게 발급할 수 있는 형식을 사용하며 AI는 내용을 해석하지 않고 응답에 그대로 반환한다. `bundle_hash`는 `knowledge_bundle` 전체를 RFC 8785 JCS로 직렬화한 SHA-256이며 `sha256:<lowercase-64-hex>` 형식이다. Supervisor는 두 hash와 `prepare_id`, `scan_session_id`, `store_id`, 모든 `item_id`를 검증한다. 불일치하면 하위 Agent·Tool을 호출하지 않고 Judge 요청 전체를 종료한다.
+백엔드는 `knowledge_revision`을 동일 DB 스냅샷을 식별하는 변경 불가 문자열로 생성한다. 값은 ISO-8601 시각, DB transaction ID 또는 revision ID 중 백엔드가 일관되게 발급할 수 있는 형식을 사용하며 AI는 내용을 해석하지 않고 응답에 그대로 반환한다. 요청의 `knowledge_bundle`에는 백엔드가 계산한 `bundle_hash`를 받지 않는다. Supervisor가 수신한 `knowledge_bundle` 전체를 RFC 8785 JCS로 직렬화해 SHA-256을 계산하고 JudgeResponse에 수신 내용 식별자로 반환한다. Supervisor는 `prepared_items_hash`, `prepare_id`, `scan_session_id`, `store_id`, 모든 `item_id`를 검증하며, 불일치하면 하위 Agent·Tool을 호출하지 않고 Judge 요청 전체를 종료한다.
 
 #### 외부 API 오류 응답
 
@@ -753,11 +748,11 @@ Prepare/Judge가 노드를 호출하기 전에 요청을 거부하면 정상 응
   "schema_version": "2.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "error": {
-    "code": "bundle_hash_mismatch",
-    "message": "KnowledgeBundle hash가 요청 본문과 일치하지 않습니다.",
+    "code": "prepared_items_hash_mismatch",
+    "message": "Prepare 결과 또는 안전 신호가 변경되었습니다.",
     "retryable": false,
     "details": {
-      "field": "bundle_hash",
+      "field": "prepared_items_hash",
       "item_id": null
     }
   }
@@ -769,8 +764,7 @@ Prepare/Judge가 노드를 호출하기 전에 요청을 거부하면 정상 응
 | 422 | `request_validation_failed` | 필수 필드·타입·enum·closed schema 위반 |
 | 422 | `bundle_miss` | 필수 slice 또는 item/candidate 대응 누락 |
 | 409 | `prepare_context_mismatch` | `prepare_id`, `scan_session_id`, `store_id` 연결 불일치 |
-| 409 | `prepared_items_hash_mismatch` | Prepare 항목이 변경됨 |
-| 409 | `bundle_hash_mismatch` | Bundle 내용이 hash 생성 이후 변경됨 |
+| 409 | `prepared_items_hash_mismatch` | Prepare 항목 또는 안전 신호가 변경됨 |
 | 409 | `bundle_schema_version_mismatch` | 현재값 `2.0`과 Bundle schema version 불일치 |
 
 slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 HTTP 오류로 종료하지 않는다. safety slice이면 Judge를 계속 실행하되 해당 메뉴의 warning·`partial_failed` 상태를 남기고 SAFE를 금지한다. 웹 캐시·Curation 전용 slice이면 각각 새 웹검색·추천 비활성화 fallback을 사용하며, 그 장애만으로 이미 완료된 위험 판정을 낮추거나 실패 처리하지 않는다.
@@ -791,31 +785,37 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
     {
       "item_id": "scan-123:0",
       "source_index": 0,
-      "raw_menu_name": "■ 김치 찌개 2인",
-      "normalized_menu_name": "김치찌개",
       "menu_id": 1001,
       "menu_category_id": 11,
+      "normalization_status": "normalized",
+      "match_type": "canonical",
+      "selection_method": "deterministic",
       "status": "completed",
       "route": "exact_only",
       "risk_level": "danger",
       "evidence_basis": "confirmed",
       "information_status": "complete",
-      "risk_ingredients": [],
+      "risk_ingredients": [
+        {
+          "ingredient": {
+            "ingredient_id": 101,
+            "canonical_name": "돼지고기",
+            "localized_name": "돼지고기"
+          },
+          "constraint_tags": ["is_pork"],
+          "matched_tags": ["is_pork"],
+          "role": "identity",
+          "status": "present",
+          "posterior_mean": null,
+          "confidence": null,
+          "prior_source": null,
+          "evidence_refs": ["evidence-001"]
+        }
+      ],
       "matched_tags": ["is_pork"],
       "evidence_refs": ["evidence-001"],
-      "message": {
-        "ko": "돼지고기 성분이 포함되어 있어요.",
-        "en": "This menu contains pork.",
-        "ja": "このメニューには豚肉が含まれています。",
-        "zh_hans": "这道菜含有猪肉成分。",
-        "zh_hant": "這道菜含有豬肉成分。",
-        "es": "Este plato contiene cerdo."
-      },
+      "message": "돼지고기 성분이 포함되어 있어요.",
       "owner_cards": [],
-      "high_risk_review": {
-        "required": false,
-        "reason_code": null
-      },
       "warnings": [],
       "errors": []
     }
@@ -829,7 +829,9 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 }
 ```
 
-`items[]`는 `source_index` 순서로 반환하고, `menu_order`는 ⑨가 정한 표시 순서다. `evidence`에는 `items[].evidence_refs`와 저장 명령이 참조하는 모든 `EvidenceRef`를 중복 없이 넣는다. `persistence_commands`는 §4-6의 `DbUpdateResponse.commands[]`를 그대로 누적한 배열이며 실제 DB 저장 성공을 뜻하지 않는다.
+`items[]`는 `source_index` 순서로 반환하고, `menu_order`는 ⑨가 정한 표시 순서다. 백엔드는 보관한 Prepare 결과의 `display_name`, `description`, `price_text`, `price_options`를 `item_id`로 합쳐 화면 응답을 만든다. JudgeResponse는 `raw_menu_name`, `normalized_menu_name`과 이 표시용 필드를 중복 반환하지 않는다. `evidence`에는 `items[].evidence_refs`와 저장 명령이 참조하는 모든 `EvidenceRef`를 중복 없이 넣는다. `persistence_commands`는 §4-6의 `DbUpdateResponse.commands[]`를 누적한 배열이며 실제 DB 저장 성공을 뜻하지 않는다.
+
+⑨의 내부 결과 중 `recommendations[]`에는 외부 계약에 필요한 `rank`, `item_id`, `menu_id`, `reason_codes`, `culture_contents`만 넣는다. 내부 정렬용 `menu_name`, `recommendation_score`, 현재 기능이 없는 `sponsored`는 JudgeResponse에 노출하지 않는다.
 
 단일 `AnalyzeRequest`·`AnalyzeResponse` 모델은 만들지 않는다. 네 외부 모델과 KnowledgeBundle은 이 절을 기준으로 구현하고, §4의 내부 Agent·Tool 계약을 외부 API payload로 그대로 노출하지 않는다.
 
@@ -841,17 +843,26 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 |---|---|---|
 | `menu_id` | integer \| null | DB에 매핑된 메뉴는 정수 ID, 미등록·미매칭 메뉴는 null |
 | `menu_category_id` | integer \| null | DB 메뉴 분류가 있으면 정수 ID, 없거나 미매칭이면 null |
+| `normalization_status` | `normalized \| ambiguous \| unmatched \| invalid` | ②-B의 최종 정규화·매칭 상태 |
+| `match_type` | `canonical \| spacing \| synonym \| ocr_correction \| fuzzy \| null` | 선택 후보의 조회 방식. 최종 후보가 없으면 null |
+| `selection_method` | `deterministic \| llm \| none` | 최종 후보 선택 방식 |
 | `evidence_basis` | `confirmed \| estimated \| unknown` | 확정 근거, 추정 근거, 근거 부족을 구분 |
 | `risk_ingredients[].ingredient.ingredient_id` | integer \| null | 표준 재료 ID. 미매핑 재료는 null |
+| `risk_ingredients[].ingredient.canonical_name` | string | 한국어 표준 재료명 |
+| `risk_ingredients[].ingredient.localized_name` | string | 요청 `locale`의 재료명. `locale: ko`이면 `canonical_name`과 같은 값 |
 | `risk_ingredients[].role` | `identity \| component \| hidden \| null` | 주재료·속재료·숨은 재료 구분. 판정에는 사용하지 않음 |
 | `risk_ingredients[].confidence` | number \| null | ⑤의 0~1 근거 충분도. 확정값이면 null |
 | `risk_ingredients[].prior_source` | `store \| cluster \| global \| uninformative \| null` | ⑤ prior의 fallback 출처. 확정값이면 null |
 | `owner_cards[].round` | `1 \| 2 \| 3` | 각 사장님 질문의 차수. 질문이 없으면 owner_cards는 빈 배열 |
+| `owner_cards[].item_id` | string | 카드가 속한 Prepare 메뉴 항목 ID |
+| `owner_cards[].card_id` | string | 카드와 질문 저장 명령을 잇는 Supervisor 발급 ID |
 | `owner_cards[].previous_question_id` | string \| null | 1차는 null, 2·3차는 직전 질문 ID |
 | `owner_cards[].ingredient` | object \| null | 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 null (§4-7) |
 | `owner_cards[].ambiguity_flag` | string \| null | 메뉴 애매함 플래그 카드일 때만 플래그 이름 |
-| `high_risk_review.required` | boolean | 고가 모델 재검증 후보 여부 |
-| `high_risk_review.reason_code` | string \| null | 재검증 후보 사유. 후보가 아니면 null |
+
+`high_risk_review`와 `risk_ingredients[].anomaly_locked`는 Judge Graph 내부에서 재검증·SAFE 차단·질문 생성에 사용하지만 최종 JudgeResponse에는 노출하지 않는다. `risk_ingredients[].role`, `confidence`, `prior_source`는 사용자 설명에 필요하므로 외부 응답에 유지한다.
+
+`items[].message`는 요청 `locale`로 작성한 단일 string이다. 판정 결과에는 다른 언어 번역을 함께 넣지 않는다. 반면 `owner_cards[].question`은 가게에서 손님과 사장님이 함께 보는 문구이므로 한국어와 요청 `locale`만 담는다. 요청 언어가 한국어면 `ko` 하나만 담는다.
 
 `owner_question_round`는 `owner_cards[].round`와 중복되므로 만들지 않는다. `risk_ingredients[].confirmation`도 기존 `status`, `evidence_refs`, `EvidenceRef.observed_at`, ③의 `expired`와 중복되므로 만들지 않는다.
 
@@ -930,7 +941,7 @@ flowchart TD
 
 **Judge Graph**
 
-1. Prepare 결과와 백엔드가 제공한 지식 데이터의 `prepare_id`, `prepared_items_hash`, `bundle_hash`, `knowledge_revision`, item 대응 관계를 검증한다.
+1. Prepare 결과와 백엔드가 제공한 지식 데이터의 `prepare_id`, `prepared_items_hash`, `prepare_signals`, `knowledge_revision`, item 대응 관계를 검증하고, 수신한 KnowledgeBundle의 `bundle_hash`를 계산한다.
 2. ②-B가 허용된 메뉴 후보 안에서 최종 후보를 선택한다. 후보 밖 `menu_id`는 만들 수 없다.
 3. 메뉴마다 Item Graph를 fan-out한다. `menu_id`가 있으면 ③, 없으면 ④ unknown 경로에서 시작한다.
 4. ③이 `completeness: complete`이고 `override_eligible: false`가 없으면 확장·확률 계산은 건너뛴다. `unknown`이거나 override 불가 확인값이 있으면 ④→⑤ heavy path로 간다.
@@ -1540,7 +1551,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 
 후보의 `menu_id`와 `menu_category_id`는 백엔드 DB의 정수 ID다. 최종 매칭에 실패하면 `selected_candidate` 자체를 `null`로 두며, 최종 `ItemResult`의 두 ID도 `null`을 허용한다.
 
-Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매핑을 Judge와 최종 응답까지 유지한다. 최종 응답에서 사용자가 본 메뉴명과 내부 매칭 결과를 연결해야 하기 때문이다. ②-A와 ②-B는 `risk_tag_observations`를 해석하거나 수정하지 않고 입력 그대로 반환한다. `CandidateSelectionRequest`는 `KnowledgeBundle.items[].candidate_lookup`을 내부 최소 입력 view로 변환하며 후보는 §1-3에 따라 최대 5개다.
+Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 매핑을 Judge 처리 완료까지 내부적으로 유지한다. 외부 JudgeResponse에는 두 이름을 중복 반환하지 않고, 백엔드가 보관한 Prepare 결과를 `item_id`로 합쳐 사용자 표시명과 내부 매칭 결과를 연결한다. ②-A와 ②-B는 `risk_tag_observations`를 해석하거나 수정하지 않고 입력 그대로 반환한다. `CandidateSelectionRequest`는 `KnowledgeBundle.items[].candidate_lookup`을 내부 최소 입력 view로 변환하며 후보는 §1-3에 따라 최대 5개다.
 
 ### 4-2. ③ Exact Feedback Tool
 
@@ -1858,6 +1869,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 {
   "command_id": "command-cache-001",
   "operation_id": null,
+  "item_id": "scan-123:0",
+  "card_id": null,
   "action": "save_menu_ingredient_cache",
   "idempotency_key": "sha256:<action·store_id·menu_id·menu_revision 해시>",
   "payload": {
@@ -1989,7 +2002,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 }
 ```
 
-`prior_source`는 `store | cluster | global | uninformative`다. `priors`와 `source_reliability`는 Supervisor가 선택된 후보의 KnowledgeBundle slice에서 그대로 조립한다. 현재 `priors.cluster`와 `priors.global`은 항상 `[]`이며, ⑤는 store prior가 없으면 ④의 corpus별 `observations`로 global prior를 계산하고 관측도 없으면 uninformative prior를 사용한다. `not_found`는 정의된 fallback으로 진행하고 `unavailable`은 warning과 SAFE 금지 신호를 유지한다.
+`prior_source`는 `store | cluster | global | uninformative`다. Supervisor는 선택된 후보의 KnowledgeBundle에서 `priors.store`, `priors.evidence`, `source_reliability`를 읽고, 외부 계약에서 제거한 `priors.cluster`와 `priors.global`은 내부 ⑤ 요청을 조립할 때 빈 배열로 채운다. ⑤는 store prior가 없으면 빈 cluster 단계를 건너뛰고 ④의 corpus별 `observations`로 global prior를 계산하며, 관측도 없으면 uninformative prior를 사용한다. `not_found`는 정의된 fallback으로 진행하고 `unavailable`은 warning과 SAFE 금지 신호를 유지한다.
 
 ⑤는 질문 후보를 확률이나 confidence 숫자로 거르지 않으므로 질문 후보용 확률 구간 필드를 계산하거나 반환하지 않는다. `inherited_confirmations`는 현재 보류 상태이므로 항상 `[]`이며 ⑤가 사장님 답변을 prior 보정에 사용하지 않는다. ⑤에는 확정 override 대상이 아닌 재료만 전달한다. ⑤는 `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`를 계산하거나 수정하지 않고 입력 그대로 각 probability에 복사한다. ⑤의 결과는 최종 판정이 아니며 ⑧이 사용자 프로필과 정책을 적용해 해석한다.
 
@@ -2296,8 +2309,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
           }
         ],
         "next_rank": 11,
-        "searched_at": "2026-10-08T03:00:00Z",
-        "expires_at": null
+        "searched_at": "2026-10-08T03:00:00Z"
       }
     }
   ],
@@ -2355,6 +2367,8 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
     "variant_suggestion": null
   },
   "create_owner_verification_request": {
+    "item_id": "scan-123:0",
+    "card_id": "card-001",
     "menu_id": 1001,
     "round": 1,
     "previous_question_id": null,
@@ -2367,13 +2381,9 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
     "recipe_probability": 0.93,
     "question": {
       "ko": "이 메뉴에 액젓이 들어가나요?",
-      "en": "Does this menu contain fish sauce?",
-      "ja": "このメニューに魚醤は入っていますか？",
-      "zh_hans": "这道菜含鱼露吗？",
-      "zh_hant": "這道菜含魚露嗎？",
-      "es": "¿Este plato contiene salsa de pescado?"
+      "en": "Does this menu contain fish sauce?"
     },
-    "reason_codes": ["low_confidence"],
+    "reason_codes": ["insufficient_recipe_evidence"],
     "evidence_refs": ["evidence-010"]
   },
   "record_owner_answer": {
@@ -2421,22 +2431,22 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
       }
     ],
     "next_rank": 11,
-    "searched_at": "2026-10-08T03:00:00Z",
-    "expires_at": null
+    "searched_at": "2026-10-08T03:00:00Z"
   }
 }
 ```
 
 - `create_review_item.review_origin`은 `web_search | variant_suggestion`이다. `web_search`이면 `web_sources`가 비어 있지 않고 `variant_suggestion`은 `null`; `variant_suggestion`이면 `web_sources: []`이고 ④가 반환한 `variant_suggestion` 객체를 그대로 넣는다.
 - `create_review_item.review_notes`는 ⑥ 응답을 그대로 보존한다. 검토 화면에만 사용하며 위험 판정이나 확률 계산에는 사용하지 않는다.
-- `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
+- `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. `create_owner_verification_request.item_id`와 `card_id`는 원래 `owner_cards[]`의 같은 값을 보존해 화면 카드와 저장 명령을 잇는다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
+- `create_owner_verification_request.question`은 한국어 `ko`와 Judge 요청 `locale`의 문구만 보존한다. 요청 언어가 한국어면 `ko` 하나만 보낸다.
 - `create_owner_verification_request.round`는 `1 | 2 | 3`이며 `previous_question_id`는 1차 질문이면 `null`, 2·3차 질문이면 직전 질문 ID다. 백엔드는 두 값을 질문 행에 보존해 질문 사슬과 차수를 검증한다.
 - `create_owner_verification_request.recipe_probability`는 Supervisor가 같은 스캔의 ⑤ 결과에서 그 재료의 `posterior_mean`을 그대로 넣는다 (0~1). ⑧ 카드에는 이 필드가 없다. 플래그 카드는 `null`이다. 백엔드가 질문 행에 저장했다가, 사장님 답을 확정할 때 이상 답변(`flagged_anomaly`: 이 값 0.9 이상 + "없음") 판정에 쓴다 (⑦ §2-3).
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
-- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. `expires_at`은 항상 `null`이다. ⑥은 캐시 유효기간을 두지 않고 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4). DB 스키마의 `web_search_cache.expires_at`은 nullable이어야 한다 (§8).
+- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
 - 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
-- 백엔드가 `record_owner_answer`를 처리한 결과는 `{question_id, answered_round, confirmation_state}`이며 `confirmation_state`는 `confirmed | needs_second | needs_third`다. 이 객체를 AI가 같은 호출에서 직접 받는 별도 endpoint는 만들지 않는다. 백엔드는 결과를 저장하고 다음 Judge의 `KnowledgeBundle.exact_feedback.exact.owner_question_states[]`에 대상 재료 또는 플래그 정보와 함께 넣는다. ③은 이를 `ExactFeedbackResponse.owner_question_states[]`로 보존하고, Supervisor는 ⑧ `DecisionRequest.owner_question_states[]`까지 전달한다. ⑧은 `needs_second`와 `needs_third`에만 후속 카드를 생성한다.
+- 백엔드가 `record_owner_answer`를 처리한 결과는 `{question_id, answered_round, confirmation_state}`이며 `confirmation_state`는 `confirmed | needs_second | needs_third`다. 이 객체를 AI가 같은 호출에서 직접 받는 별도 endpoint는 만들지 않는다. 백엔드는 결과를 저장하고 다음 Judge의 `KnowledgeBundle.exact_feedback.exact.owner_question_states[]`에 대상 재료 또는 플래그 정보와 함께 넣는다. ③은 이를 `ExactFeedbackResponse.owner_question_states[]`로 보존하고, Supervisor는 ⑧ `DecisionRequest.owner_question_states[]`까지 전달한다. ⑧은 `needs_second`와 `needs_third`에 후속 카드를 생성한다. `confirmed`이면 보통 추가 카드를 만들지 않지만, 확정값이 만료된 경우에는 새 확인 회차의 `round: 1`, `previous_question_id: null` 카드부터 다시 만든다.
 - 스캔 중 생긴 작업은 원래 `item` context를 사용한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 `call_scope: out_of_band`, `item_id: null`로 별도 요청한다.
 
 ⑦이 command에 추가하는 `provenance`는 다음 closed schema다.
@@ -2446,8 +2456,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
   "origin_node": "web_search",
   "source_type": "web_search",
   "evidence_class": "soft",
-  "verification_status": "pending_review",
-  "reliability_weight": null,
   "evidence_refs": ["web:https://example.com/recipe/mala-tang"]
 }
 ```
@@ -2455,20 +2463,18 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `origin_node`: `ontology | web_search | decision | external_owner_answer | db_update`
 - `source_type`: `web_search | ocr_variant_tag | decision_policy | owner_feedback | system`
 - `evidence_class`: `hard | soft | null`. 아직 답변이 없는 질문이나 집계 명령은 `null`이다.
-- `verification_status`: `pending_review | pending_answer | owner_confirmed | approved | rejected`
-- `reliability_weight`: 0~1 또는 아직 산정하지 않은 경우 `null`
 - `evidence_refs`: 명령을 만들게 한 기존 근거 ID 목록. 백엔드가 저장 과정에서 새로 발급할 근거 ID는 미리 만들지 않는다.
 
-operation별 provenance 고정값은 다음과 같다.
+초기 `verification_status`는 백엔드가 action별 저장 정책으로 정하고, `reliability_weight`는 백엔드의 `source_reliability`에서 관리하므로 command provenance에 중복하지 않는다. operation별 provenance 고정값은 다음과 같다.
 
-| `action` | `origin_node` | `source_type` | `evidence_class` | `verification_status` |
-|---|---|---|---|---|
-| `create_review_item`(웹) | `web_search` | `web_search` | `soft` | `pending_review` |
-| `create_review_item`(변형) | `ontology` | `ocr_variant_tag` | `soft` | `pending_review` |
-| `create_owner_verification_request` | `decision` | `decision_policy` | `null` | `pending_answer` |
-| `record_owner_answer` | `external_owner_answer` | `owner_feedback` | `hard` | `owner_confirmed` |
-| `update_source_reliability` | `db_update` | `system` | `null` | `approved` |
-| `save_web_search_cache` | `web_search` | `web_search` | `soft` | `pending_review` |
+| `action` | `origin_node` | `source_type` | `evidence_class` |
+|---|---|---|---|
+| `create_review_item`(웹) | `web_search` | `web_search` | `soft` |
+| `create_review_item`(변형) | `ontology` | `ocr_variant_tag` | `soft` |
+| `create_owner_verification_request` | `decision` | `decision_policy` | `null` |
+| `record_owner_answer` | `external_owner_answer` | `owner_feedback` | `hard` |
+| `update_source_reliability` | `db_update` | `system` | `null` |
+| `save_web_search_cache` | `web_search` | `web_search` | `soft` |
 
 #### 응답 — `DbUpdateResponse`
 
@@ -2486,6 +2492,8 @@ operation별 provenance 고정값은 다음과 같다.
     {
       "command_id": "command-001",
       "operation_id": "operation-001",
+      "item_id": "scan-123:0",
+      "card_id": null,
       "action": "create_review_item",
       "idempotency_key": "sha256:<action·내용 키 해시>",
       "payload": {
@@ -2527,8 +2535,6 @@ operation별 provenance 고정값은 다음과 같다.
           "origin_node": "web_search",
           "source_type": "web_search",
           "evidence_class": "soft",
-          "verification_status": "pending_review",
-          "reliability_weight": null,
           "evidence_refs": ["web:https://example.com/recipe/mala-tang"]
         }
       }
@@ -2539,16 +2545,18 @@ operation별 provenance 고정값은 다음과 같다.
 }
 ```
 
-각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. `idempotency_key`는 **내용 기준**으로 만든다: `"sha256:" + sha256_hex(action + "|" + 내용 키의 정규 JSON)`. `trace_id`·`operation_id`·시각은 넣지 않는다. 넣으면 같은 스캔의 Judge를 재시도하거나 백엔드가 응답을 다시 받을 때 키가 바뀌어 같은 명령이 두 번 저장된다. 질문 키에는 `round`와 `previous_question_id`를 포함하므로 같은 대상의 1·2·3차 질문은 서로 다른 명령이지만 동일 차수 재시도는 같은 명령이다. 정규 JSON은 key 정렬·공백 없음이고, 배열 값은 정렬한다.
+각 command의 `action`은 입력 `operation_type`과 같고 `operation_id`를 보존한다. 스캔 중 명령의 `item_id`는 원래 item context 값을 보존하고, `card_id`는 `create_owner_verification_request`일 때 해당 카드 ID, 그 외에는 `null`이다. `idempotency_key`는 **내용 기준**으로 만든다: `"sha256:" + sha256_hex(action + "|" + 내용 키의 정규 JSON)`. `trace_id`·`operation_id`·시각은 넣지 않는다. 넣으면 같은 스캔의 Judge를 재시도하거나 백엔드가 응답을 다시 받을 때 키가 바뀌어 같은 명령이 두 번 저장된다. 질문 키에는 `card_id`, `round`, `previous_question_id`를 포함하므로 같은 대상의 1·2·3차 질문은 서로 다른 명령이지만 동일 차수 재시도는 같은 명령이다. 정규 JSON은 key 정렬·공백 없음이고, 배열 값은 정렬한다.
 
 | action | 내용 키 |
 |---|---|
 | `create_review_item` | `store_id`, `review_origin`, 메뉴(`normalized_menu_name` 또는 `variant_suggestion`의 `base_menu_id`·`remain_token`), 정렬한 `source_url` 목록 |
-| `create_owner_verification_request` | `store_id`, `scan_session_id`, `menu_id`, `round`, `previous_question_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
+| `create_owner_verification_request` | `store_id`, `scan_session_id`, `item_id`, `card_id`, `menu_id`, `round`, `previous_question_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
 | `record_owner_answer` | `question_id` |
 | `update_source_reliability` | `source_type`, `trigger_evidence_ref` |
 | `save_web_search_cache` | `normalized_menu_name`, `next_rank` |
-| `save_menu_ingredient_cache` (④) | `store_id`, `menu_id`, `menu_revision` | command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.
+| `save_menu_ingredient_cache` (④) | `store_id`, `menu_id`, `menu_revision` |
+
+command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.
 
 soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 백엔드가 검증할 기록 명령을 만든다. ⑦은 저장 완료를 가장하지 않으며 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다. 응답 `commands`는 Supervisor의 `persistence_commands`에 그대로 누적한다.
 
@@ -2644,7 +2652,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
     "allergies": ["is_fish"],
     "no_spicy": false
   },
-  "locale": "ko",
+  "locale": "en",
   "warnings": [],
   "errors": []
 }
@@ -2674,7 +2682,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
     {
       "ingredient": {
         "ingredient_id": 101,
-        "canonical_name": "돼지고기"
+        "canonical_name": "돼지고기",
+        "localized_name": "pork"
       },
       "constraint_tags": ["is_pork"],
       "matched_tags": ["is_pork"],
@@ -2689,14 +2698,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   ],
   "matched_tags": ["is_pork"],
   "evidence_refs": ["evidence-001"],
-  "message": {
-    "ko": "돼지고기 성분이 포함되어 있어요.",
-    "en": "This menu contains pork.",
-    "ja": "このメニューには豚肉が含まれています。",
-    "zh_hans": "这道菜含有猪肉成分。",
-    "zh_hant": "這道菜含有豬肉成分。",
-    "es": "Este plato contiene cerdo."
-  },
+  "message": "This menu contains pork.",
   "owner_cards": [],
   "high_risk_review": {
     "required": false,
@@ -2709,6 +2711,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
 
+`message`는 요청 `locale`로 작성한 단일 string이다. `risk_ingredients[].ingredient.canonical_name`은 한국어 표준명을 유지하고 `localized_name`에는 요청 `locale`의 이름을 넣는다. `locale: ko`이면 두 이름은 같은 값이다.
+
 ⑧은 사용자 제한 태그와 겹치고 유효한 사장님 확인값이 없는 재료를 질문 후보로 다루며 확률이나 confidence 숫자로 후보를 제거하지 않는다. `risk_ingredients[].confidence`와 `prior_source`는 ⑤ 결과에서 온 추정 재료라면 그대로 보존한다. ③의 확정값처럼 prior 계산을 사용하지 않은 재료는 두 필드를 모두 `null`로 보낸다. `role`은 ④가 정한 값을 입력 세 목록과 최종 `risk_ingredients[]`까지 그대로 보존하며 위험도 계산에는 사용하지 않는다.
 
 `constraint_tags`는 해당 재료가 가진 전체 제한 태그, `matched_tags`는 그중 현재 `user_profile`과 실제로 충돌한 태그다. 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 충돌한 태그를 중복 제거한 목록이다. ⑧은 이름 문자열로 위험을 추측하지 않고 이 태그들로 판정한다.
@@ -2719,6 +2723,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 ```json
 {
+  "item_id": "scan-123:0",
+  "card_id": "card-001",
   "menu_id": 1001,
   "round": 3,
   "previous_question_id": "question-002",
@@ -2730,22 +2736,18 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   "constraint_tags": [],
   "question": {
     "ko": "이 메뉴에 액젓이 들어가나요?",
-    "en": "Does this menu contain fish sauce?",
-    "ja": "このメニューに魚醤は入っていますか？",
-    "zh_hans": "这道菜含鱼露吗？",
-    "zh_hant": "這道菜含魚露嗎？",
-    "es": "¿Este plato contiene salsa de pescado?"
+    "en": "Does this menu contain fish sauce?"
   },
-  "reason_codes": ["low_confidence"],
+  "reason_codes": ["insufficient_recipe_evidence"],
   "evidence_refs": ["evidence-010"]
 }
 ```
 
-`owner_cards[].round`는 `1 | 2 | 3`만 허용한다. 첫 질문은 `round: 1`, `previous_question_id: null`이다. ⑧은 `owner_question_states[].confirmation_state`가 `needs_second`이면 `round: 2`, `needs_third`이면 `round: 3`인 카드를 만들고, 직전 `question_id`를 `previous_question_id`로 복사한다. `confirmed`이면 같은 대상에 추가 카드를 만들지 않는다. 질문 차수는 각 카드의 이 필드에서만 관리하며 메뉴 결과에 `owner_question_round`를 중복해서 만들지 않는다. `ingredient`는 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 `null`이다. 플래그 카드는 `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(그 플래그에 걸릴 수 있는 태그 중 사용자 금지 태그와 겹친 것)를 넣는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
+`owner_cards[].item_id`는 현재 메뉴의 `item_id`이고, `card_id`는 Supervisor가 카드마다 한 번 발급해 같은 카드의 `create_owner_verification_request`에 복사한다. `question`은 한국어 `ko`와 요청 `locale` 두 문구만 담으며, `locale: ko`이면 `ko` 하나만 담는다. `owner_cards[].round`는 `1 | 2 | 3`만 허용한다. 첫 질문은 `round: 1`, `previous_question_id: null`이다. ⑧은 `owner_question_states[].confirmation_state`가 `needs_second`이면 `round: 2`, `needs_third`이면 `round: 3`인 카드를 만들고, 직전 `question_id`를 `previous_question_id`로 복사한다. `confirmed`이면 같은 대상에 추가 카드를 만들지 않는다. 단, 해당 확정값이 만료(`expired: true`)되면 새 확인 회차로 보고 `round: 1`, `previous_question_id: null`부터 다시 묻는다. 질문 차수는 각 카드의 이 필드에서만 관리하며 메뉴 결과에 `owner_question_round`를 중복해서 만들지 않는다. `ingredient`는 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 `null`이다. 플래그 카드는 `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(그 플래그에 걸릴 수 있는 태그 중 사용자 금지 태그와 겹친 것)를 넣는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
 
 정보 없는 메뉴(`no_information: true`)는 재료가 없으므로, 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다: `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 메뉴가 DB에 없으면 `menu_id`도 null이다. 이 카드는 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 답이 판정을 바꾸지 않고(무엇이 들어가는지 알 수 없음) 저장할 메뉴 행도 없으므로 ⑦ 저장 요청을 만들지 않는다.
 
-`reason_codes` 허용값은 `low_confidence`(확률 근거 부족: 실질 레시피 근거 5개 미만), `anomaly`(이상 답변), `no_information`(정보 없음), `unknown_tag`(태그 모름), `expired`(3개월 만료), `high_risk_review`(재검증 발견), `ambiguous_menu`(메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음), `unconfirmed`(사장님 확인값 없음. 다른 이유가 하나도 없을 때만)이며 한 카드에 여러 값을 넣을 수 있다. 모든 카드에는 이유가 하나 이상 있다. 카드 정렬 우선순위는 `anomaly → expired → unknown_tag → ambiguous_menu → high_risk_review → low_confidence → no_information → unconfirmed`이다.
+`reason_codes` 허용값은 `insufficient_recipe_evidence`(확률 근거 부족: 실질 레시피 근거 5개 미만), `anomaly`(이상 답변), `no_information`(정보 없음), `unknown_tag`(태그 모름), `expired`(3개월 만료), `high_risk_review`(재검증 발견), `ambiguous_menu`(메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음), `unconfirmed`(사장님 확인값 없음. 다른 이유가 하나도 없을 때만)이며 한 카드에 여러 값을 넣을 수 있다. 모든 카드에는 이유가 하나 이상 있다. 카드 정렬 우선순위는 `anomaly → expired → unknown_tag → ambiguous_menu → high_risk_review → insufficient_recipe_evidence → no_information → unconfirmed`이다. 사진 품질 신호인 `scan_quality.status: low_confidence`와 레시피 근거 부족 이유 코드를 혼동하지 않는다.
 
 `high_risk_review.required`는 해당 메뉴가 고가 모델 재검증 후보인지 나타낸다. `reason_code`는 `anomaly | unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
 
@@ -2968,7 +2970,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 | 19 | 숨은 재료 액젓 | ④의 `role: hidden`이 ⑤·⑧·최종 결과까지 유지 | 안내용 역할 정보 손실 없음 |
 | 20 | 재검증 후보 메뉴 5개 | 우선순위와 `source_index`로 최대 3개만 재검증 | 판정값은 유지하고 카드·문구만 보강 |
 | 21 | runtime 변형에 `base_menu_id` 존재 | `exact_inherited` 보류 node 통과, ③ 재호출 없음, `inherited_confirmations: []` | 사장님 답변을 확률 계산에 사용하지 않음 |
-| 22 | `prepared_items_hash` 또는 `bundle_hash` 불일치 | HTTP 409로 Judge 거부 | ②~⑨ 호출 없음 |
+| 22 | `prepared_items_hash` 불일치 | HTTP 409로 Judge 거부 | ②~⑨ 호출 없음 |
 | 23 | 필수 Bundle slice 또는 candidate 대응 누락 | `bundle_miss`, HTTP 422 | 누락 자료를 추측해 판정하지 않음 |
 | 24 | safety slice `unavailable` | 가능한 경로는 계속 실행하되 `partial_failed`, SAFE 금지 | 장애를 데이터 없음으로 오인하지 않음 |
 | 25 | 여러 corpus 관측치와 신뢰도 weight | ⑤가 corpus별 가중 후 posterior와 90% 신용구간 반환 | 관측치가 Bundle→④→⑤에서 손실되지 않음 |
@@ -2976,6 +2978,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 | 27 | 26번 + `flag_confirmations`에 `is_fish` `absent` 답 | ⑧ SAFE 가능 | 플래그 답이 Bundle→③→⑧에서 손실되지 않음 |
 | 28 | 할랄 사용자 + unknown 메뉴 + 웹서치 실패 | ⑧ CAUTION + 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`), ⑦ 명령 없음, `owner_request` node 건너뜀 | 화면 표시용 카드로 저장 요청을 만들지 않음 |
 | 29 | 같은 대상의 1차·2차 답변 불일치 후 Bundle에 `confirmation_state: needs_third` | Bundle → ③ → ⑧로 상태를 보존하고 `round: 3`, `previous_question_id`가 있는 카드·저장 명령 생성 | 3차 질문 누락 없음, 동일 Judge 재시도 시 명령 중복 없음 |
+| 30 | 3개월 지난 확정값(`expired: true`) + `confirmation_state: confirmed` | 새 확인 회차의 `round: 1`, `previous_question_id: null`, `reason_codes: [expired]` 카드·저장 명령 생성 | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없음 |
 
 ---
 
@@ -2988,7 +2991,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - `persistence_commands` 적용 시점과 저장 실패 명령의 보관·재처리 방식
 - 메뉴판 단위 ③④⑤⑧ batch 최적화 여부와 동시성 상한
 - 메뉴별 부분 실패를 사용자 화면에 표시할 문구
-- 메뉴 애매함 플래그 사장님 답(`flag_confirmations`)의 저장 테이블과 `web_search_cache.expires_at` nullable 변경 (백엔드·DB 스키마)
+- 메뉴 애매함 플래그 사장님 답(`flag_confirmations`)의 저장 테이블 (백엔드·DB 스키마)
 - 큐레이션 탭(메뉴판을 찍지 않고 들어오는 화면)에서 ⑨를 부르는 진입 경로 — 이 문서의 Prepare/Judge 밖 별도 API인지 (⑨ §8)
 
 ---
