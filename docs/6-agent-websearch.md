@@ -171,7 +171,7 @@ DB에 없는 메뉴는 **없음 → 웹 캐시 → DB** 세 단계를 거친다.
 
 | 단계 | 상태 | 판정 (⑧) | 다음 단계로 가는 조건 |
 |---|---|---|---|
-| **없음** | DB에도 `web_search_cache`에도 없음 | CAUTION (`evidence_basis: unknown`) | ⑥ 웹서치 실행 → 메뉴판 분석이 끝난 뒤 결과가 `web_search_cache`에 저장됨 |
+| **없음** | DB에도 `web_search_cache`에도 없음 | 이번 스캔에서 바로 웹서치한다. 성공하면 CAUTION + 확률 (`evidence_basis: estimated`), 실패하면 정보 부족으로 CAUTION (`found: false` → `evidence_basis: unknown`, §3-2) | 웹서치에 성공하면 메뉴판 분석이 끝난 뒤 결과가 `web_search_cache`에 저장됨 |
 | **웹 캐시** | 웹서치 결과가 쌓이는 중 | CAUTION + 확률 (`evidence_basis: estimated`) | 웹서치할 때마다 관리자 페이지에 올라감. 관리자가 통과시킨 레시피가 **30개 이상** → DB 등록 |
 | **DB** | 관리자가 통과시킨 레시피 30개 이상으로 `menus`/`recipe_ingredients`에 정식 등록 | 사장님 확인값이 없으면 CAUTION + 확률, 있으면 DANGER/SAFE (⑧ §3, PPT 8쪽 6) | — |
 

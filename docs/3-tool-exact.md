@@ -8,7 +8,7 @@
 
 **③은 순수 조회기다. 판단하지 않는다.**
 
-- 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답도 함께 반환한다 (§1-8)
+- 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답(§1-8)과 이전 질문의 진행 상태(§1-9)도 함께 반환한다
 - **DB는 부르지 않는다** (10/10 회의 결정 1). 백엔드가 Judge 요청을 만들 때 `store_id + menu_id`로 `ingredient_confirmations`를 미리 조회해 묶음에 담는다 (⓪ §1-3). ③은 Item Graph에 들어온 같은 `item_id`의 자료만 읽는다 (⓪ §2-6)
 - 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
 - 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-8 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
@@ -76,6 +76,7 @@
 | `confirmations[].override_eligible` | §1-6 표 |
 | `confirmations[].expired` | 확인 후 3개월 경과 여부 (§1-7) |
 | `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8) |
+| `owner_question_states` | 묶음 값을 그대로 넘긴다. 계산하거나 바꾸지 않는다 (§1-9) |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
 
@@ -147,6 +148,15 @@
 - 2번 연속 같은 답이면 확정하는 규칙(10/10 회의)은 재료 확인값과 같이 ⑦이 저장할 때 적용한다. ③은 확정된 답만 읽는다.
 - `completeness`(§2)에는 영향을 주지 않는다. `completeness`는 재료 확인값만 본다.
 
+### 1-9. 이전 질문의 진행 상태 — `owner_question_states` (⓪ 반영, #269)
+
+사장님 답은 2번 연속 같아야 확정된다 (⑦ §2-3). 확정 전이면 다음 스캔에서 같은 대상을 2차·3차로 다시 물어야 하는데, 그러려면 ⑧이 "지금 몇 차까지 물었는지"를 알아야 한다. 백엔드가 사장님 답을 처리한 뒤 진행 상태를 저장해 Judge 요청 묶음(`exact_feedback.exact.owner_question_states`)에 넣고, ③은 이를 그대로 넘긴다. 형식은 [⓪ §4-2 `owner_question_states`](0-agent-supervisor.md)다.
+
+- `confirmation_state`는 `confirmed`(확정됨) / `needs_second`(2차 질문 필요) / `needs_third`(1·2차 답이 달라 3차 필요)다. 이 값은 백엔드가 정한다. ③은 계산·변경하지 않는다.
+- 3개월 만료(§1-7)를 붙이지 않는다. 확정된 답의 만료는 `confirmations`·`flag_confirmations`의 `expired`로 따로 나간다.
+- `completeness`(§2)에는 영향을 주지 않는다.
+- ⑧이 이 값으로 질문 카드의 차수(`round`)와 직전 질문(`previous_question_id`)을 정한다 (⑧ §1-3).
+
 ---
 
 ## 2. 처리 로직
@@ -186,7 +196,7 @@ def query_exact_confirmations(
 def check_completeness(
     confirmations: list[Confirmation],
     store_id: int,
-    menu_id: str,
+    menu_id: int,
 ) -> Literal["complete", "unknown"]:
     """menu_ingredient_cache가 있고, 전 재료가 확인됐고, anomaly·만료가 0건일 때만 complete.
     캐시가 없으면 항상 unknown (④ 호출 유도)."""
@@ -214,6 +224,7 @@ exact = knowledge.exact_feedback.exact               # not_found·unavailable이
                                                      # (unavailable warning은 Supervisor가 이미 붙임)
 rows = exact.confirmations if exact else []
 flag_rows = exact.flag_confirmations if exact else []
+question_states = exact.owner_question_states if exact else []   # §1-9. 그대로 넘긴다
 
 confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 금지
 flag_confirmations = [to_flag_confirmation(r) for r in flag_rows]   # §1-8
@@ -247,6 +258,7 @@ return ExactFeedbackResponse(
     completeness        = completeness,
     confirmations       = confirmations,            # evidence.observed_at = confirmed_at
     flag_confirmations  = flag_confirmations,
+    owner_question_states = question_states,
     warnings            = warnings,
     errors              = list(request.errors),
 )
@@ -330,6 +342,7 @@ return ExactFeedbackResponse(
 | 14 | 일부만 확인된 메뉴(④⑤ 경로) + 돼지고기 `status: present` | ③은 `constraint_tags: []`로 반환, Supervisor가 ④ `lookup_tags`로 `is_pork`를 채운 뒤 ⑧에 전달 | ④⑤를 거치는 경로에서도 확인값 태그가 빠지지 않을 것 (§0) |
 | 15 | 김치찌개에 젓갈 플래그 답 1건(`is_fish`, `absent`) | `flag_confirmations`에 1건, `confirmations`·`completeness`는 그대로 | 플래그 답이 재료 확인값과 섞이지 않을 것 |
 | 16 | 4개월 전 젓갈 플래그 답 | `expired: true`, `override_eligible: false` + 답 유지 | 만료 규칙이 플래그 답에도 적용될 것 |
+| 17 | 묶음에 액젓 질문 상태 1건(`answered_round: 2`, `needs_third`) | `owner_question_states`에 같은 값 그대로, `confirmations`·`completeness`는 그대로 | 진행 상태를 바꾸거나 빠뜨리지 않을 것 (⓪ 테스트 29) |
 
 ---
 
@@ -346,6 +359,7 @@ return ExactFeedbackResponse(
 - [x] **판정 중 DB 조회** — 하지 않는다. 확인값·캐시는 백엔드가 Judge 요청에 담아 주고 ③은 읽기만 한다 (10/10 회의 결정 1, §0·§2, 2026-10-13)
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
 - [x] **⓪ 반영 요청** — ⓪ §4-2 응답과 §1-3 Judge 요청 `exact_feedback.exact`에 `flag_confirmations` 추가, §1-8은 ⓪ 링크로 바꿈 (2026-10-13)
+- [x] **2·3차 질문 진행 상태 전달** — 백엔드가 사장님 답 처리 결과(`owner_question_states`)를 Judge 요청 묶음에 넣고, ③이 그대로 ⑧까지 넘긴다 (⓪ 반영 #269, §1-9)
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리. ⑦·DB 스키마 문서에는 반영됨: 새 테이블 `owner_flag_confirmations` 제안, ⑦이 저장 (#259, ⑦ §2-4, `caution-db-schema.md` §6 11·12번). 남은 것: 백엔드가 테이블을 확정
 - [ ] **가게 없는 스캔 (팀 결정 필요)** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 지금 ③은 `store_id`가 없으면 에러를 내고(§1-1), ⓪도 ①~⑨를 호출하지 않는다. 바꾸려면 AGENTS.md 확정 결정("⓪은 확정된 `store_id`만 입력받는다")과 PPT 8쪽 1을 건드리므로 이슈로 정한다. 백엔드 제안: 가게 단위 자료(확인값, 가게 prior)는 `not_found`, 모든 메뉴는 최대 CAUTION, 질문 카드는 보여 주되 저장 명령은 만들지 않음
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)

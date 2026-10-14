@@ -121,6 +121,19 @@
 
 - `absent`는 **물어본 태그 전부**가 없다는 뜻이고, `present`는 그중 **하나 이상**이 있다는 뜻이다. 그래서 다른 사용자에게 쓸 때 규칙이 다르다 (§2-1 5-2).
 
+#### `owner_question_states` — 이전 질문의 진행 상태 (⓪ 반영, #269)
+
+사장님 답은 2번 연속 같아야 확정된다 (⑦ §2-3). 그래서 1차 답만 있거나 1·2차 답이 다르면 다음 스캔에서 같은 대상을 다시 물어야 한다. 이 값은 그 진행 상태다. 백엔드가 사장님 답을 처리한 뒤 저장하고, ③이 바꾸지 않고 넘긴다 (③ §1-9). 형식은 [⓪ §4-2 `owner_question_states`](0-agent-supervisor.md)다.
+
+| 필드 | 뜻 |
+|---|---|
+| `question_id` | 직전 질문의 번호. 다음 카드의 `previous_question_id`가 된다 |
+| `ingredient` / `ambiguity_flag` / `constraint_tags` | 무엇을 물었는지. 재료 질문이면 `ingredient`, 플래그 질문이면 `ambiguity_flag`와 물어본 태그 |
+| `answered_round` | 사장님이 방금 답한 차수 (1·2·3) |
+| `confirmation_state` | `confirmed`(확정됨) / `needs_second`(2차 질문 필요) / `needs_third`(1·2차 답이 달라 3차 질문 필요) |
+
+- 판정에는 쓰지 않는다. 확정된 답은 `confirmed_results`·`flag_confirmations`로 따로 들어온다. 이 값은 질문 카드의 차수(`round`)를 정하는 데만 쓴다 (§1-3).
+
 ### 1-2. 출력 값을 정하는 규칙
 
 - `context`·`menu`는 입력 값을 그대로 반환한다.
@@ -157,9 +170,15 @@
 
 ### 1-3. `owner_cards` — 질문 카드
 
-형식은 ⓪ §4-7 `owner_cards[]`다 (`menu_id`, `round`, `ingredient`, `question` 6개 언어, `reason_codes`, `evidence_refs`). ⑧이 정하는 것:
+형식은 ⓪ §4-7 `owner_cards[]`다 (`menu_id`, `round`, `previous_question_id`, `ingredient`, `ambiguity_flag`, `constraint_tags`, `question`, `reason_codes`, `evidence_refs`). ⑧이 정하는 것:
 
 - 카드 하나에 재료 하나다. 어떤 재료에 카드를 만드는지는 §2-1 7단계.
+- **질문 차수(`round`)와 직전 질문(`previous_question_id`)** (⓪ §4-7, #269): 카드를 만들기로 정한 뒤(§2-1 7단계), 같은 대상의 `owner_question_states`(§1-1)를 찾아 차수를 정한다. 카드를 만들지 말지는 바꾸지 않는다.
+  - 같은 대상: 재료 카드는 같은 `ingredient_id`, 플래그 카드는 같은 `ambiguity_flag`이고 `constraint_tags`가 같은 것
+  - 상태가 없음 → `round: 1`, `previous_question_id: null`
+  - `needs_second` → `round: 2`, `needs_third` → `round: 3`. `previous_question_id`에 그 상태의 `question_id`를 넣는다
+  - `confirmed` → 확정된 답이 들어 있으므로 보통 카드 대상이 아니다. 그 답이 3개월 지나 다시 묻는 경우(`expired`)는 새 질문으로 보고 `round: 1`, `previous_question_id: null`이다
+  - 정보 없는 메뉴 카드는 저장하지 않으므로 항상 `round: 1`, `previous_question_id: null`이다
 - **메뉴 애매함 플래그 카드** (2026-10-12, §2-1 5-2): 재료가 아니라 메뉴 단위로 묻는 카드다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" `ingredient: null`, `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(§1-1 `menu_ambiguity_flags` 표에서 사용자 금지 태그와 겹친 것)를 넣는다. 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
 - **정보 없는 메뉴 카드** (결정, 2026-10-13): `no_information: true`인 메뉴는 재료 목록이 없어 재료 카드를 만들 수 없다. 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다. 예) 할랄 사용자 → "이 메뉴에 돼지고기나 술이 들어가나요?" `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 사장님이 "예"라고 해도 둘 중 무엇이 들어가는지 알 수 없어 판정을 바꾸지 않고(DANGER로 올리지 않음), 메뉴가 DB에 없어 저장할 곳도 없으므로 ⑦ 저장 요청을 만들지 않는다 (⓪ §4-6·§4-7).
 
@@ -231,7 +250,7 @@ flowchart TD
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 "빼기 어려울 수 있어요" 안내를 덧붙인다 (§4-1). 판정은 바꾸지 않는다.
-7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
+7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
 
@@ -306,7 +325,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
   - 재료 단위 신호(`anomaly_locked`): 그 재료의 `constraint_tags`가 사용자의 금지 태그와 겹칠 때만 대상이다.
   - **예외 — 태그를 모르는 재료**(`unmapped_constraint_tags`, `constraint_tags_lookup_failed`)는 사용자 제한과 상관없이 항상 대상이다. 원래 어떤 태그가 붙을지 모르는 재료라 관련 여부를 판단할 수 없다.
 - **대상에서 뺀 것**: ⑤ 확신도(`confidence`)가 낮은 재료(초기에는 대부분이 낮아 PPT의 5~10%를 넘음), 변형 메뉴 추정 재료, 숨은 재료 확장 중단(`max_depth_reached`, `cycle_detected`), 사장님 확인값과 확률이 반대지만 이상 답변 기준(0.9) 미만인 경우, 사이트별 레시피가 엇갈리는 경우.
-- 웹 결과와 DB 값이 다른 경우는 #170에서 정의되면 다시 검토한다.
+- 웹 결과와 DB 값이 다른 경우는 대상에 넣지 않는다. ⑥은 DB에 없는 메뉴에만 불려 한 메뉴에 두 값이 함께 쓰이지 않는다 (#170, ⑥ §5).
 - 실제 대상 비율이 PPT의 5~10%에 맞는지는 구현 후 측정한다.
 
 ---
@@ -448,11 +467,13 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 21 | 18번 + 같은 플래그 답 `present`, `constraint_tags: ["is_fish"]` | `danger`, `evidence_basis: confirmed`, 최상위 `matched_tags`에 `is_fish` | "들어 있다" 답을 hard evidence로 쓸 것 |
 | 22 | 새우 알레르기(`is_shrimp`) + 18번 메뉴 + 답 `absent`, `constraint_tags: ["is_fish"]` | `caution`, 플래그 카드(`constraint_tags: ["is_shrimp"]`) | 다른 태그에 대한 답으로 플래그를 풀지 않을 것 |
 | 23 | 생선 알레르기 + 18번 메뉴 + 답 `present`, `constraint_tags: ["is_fish", "is_shrimp"]` | `caution` (DANGER 아님) | 어느 태그가 들어 있는지 모르는 답으로 DANGER를 내지 않을 것 |
-| 24 | 할랄 사용자 + `probability_results`: 돈까스 돼지고기 `posterior_mean: 0.05`, `anomaly_locked: true` (사장님 "없음" 답이 이상 답변으로 잠김) | `caution`, `evidence_basis: estimated`, 돼지고기가 `risk_ingredients`에 남음, `owner_cards`에 돼지고기 카드 `reason_codes`에 `anomaly`(맨 앞), `high_risk_review.required: true`·`reason_code: anomaly` | 이상 답변 재료가 확률이 낮아도 SAFE로 새지 않을 것 |
+| 24 | 할랄 사용자 + `probability_results`: 돈까스 돼지고기 `posterior_mean: 0.95`, `anomaly_locked: true` (레시피 확률 0.9 이상인데 사장님이 "없음"이라고 해 이상 답변으로 잠김, ③ §1-6) | `caution`, `evidence_basis: estimated`, 돼지고기가 `risk_ingredients`에 남음, `owner_cards`에 돼지고기 카드 `reason_codes`에 `anomaly`(맨 앞), `high_risk_review.required: true`·`reason_code: anomaly` | 사장님이 "없음"이라고 해도 이상 답변 재료는 SAFE로 새지 않을 것 |
 | 25 | 생선 알레르기 사용자 + `anomaly_locked: true`인 재료가 돼지고기(`is_pork`)뿐 | `caution`(SAFE 금지 조건), 고위험 재검증 대상 아님 (`required: false`) | 이상 답변 잠금은 SAFE를 막되, 재검증은 사용자 금지 태그와 겹칠 때만일 것 (§2-3) |
 | 26 | 할랄 사용자 + 4개월 전 돼지고기 `absent` 확인값(`expired: true`, 이상 답변 아님) + `probability_results`의 같은 재료 `anomaly_locked: false` | `caution`, 카드 `reason_codes`에 `expired`만 (`anomaly` 없음) | 만료를 이상 답변으로 설명하지 않을 것 |
 | 27 | 할랄 사용자 + `no_information: true` (DB에 없고 웹서치도 실패) | `caution`, `evidence_basis: unknown`, `owner_cards`에 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`, `constraint_tags: ["is_pork", "is_alcohol"]`, `reason_codes: ["no_information"]`) | 정보가 없어도 사장님께 물을 수 있는 카드가 나올 것 |
 | 28 | 금지 태그가 없는 사용자 + `no_information: true` | `caution`, `owner_cards: []` | 물을 것이 없으면 카드를 만들지 않을 것 |
+| 29 | 생선 알레르기 + 액젓(`is_fish`) 확인값 없음 + `owner_question_states`: 액젓 `question_id: question-002`, `answered_round: 2`, `needs_third` | 액젓 카드 `round: 3`, `previous_question_id: question-002` | 1·2차 답이 달랐던 재료에 3차 질문이 나갈 것 (⓪ 테스트 29) |
+| 30 | 할랄 사용자 + 4개월 전 확정된 돼지고기 `absent`(`expired: true`) + `owner_question_states`: 돼지고기 `confirmed` | 돼지고기 카드 `round: 1`, `previous_question_id: null`, `reason_codes`에 `expired` | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없을 것 |
 
 ---
 
@@ -497,7 +518,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
     - ⑧ §0-2·§1-2·§4 (`message` 설명, LLM 실패 처리, 자동 검수 대상은 `reason`만)
     - DB 스키마 `menu_analyses.message` 저장 형식 (백엔드)
   - `reason`을 몇 개 언어로 만들지는 위 "언어" 결정과 함께 정한다
-- [ ] **질문 카드와 질문 행 연결 (외부 의존)** — 백엔드 지적: `owner_cards[]`에 메뉴 칸 번호(`item_id`)와 카드 번호(`card_id`)가 없어, 사장님 답을 어느 질문 행에 기록할지 정할 수 없다. 같은 메뉴가 두 번 나오거나 `menu_id`가 null이면 구분이 안 된다. ⓪ `owner_cards[]`와 `create_owner_verification_request`에 같은 키가 필요하다. 질문 차수 `round`도 ⑧ 입력에 이전 답 상태가 없어 지금은 1만 낼 수 있다 (⓪ §4-6 미확정 "2·3차 질문 연결"과 같은 문제)
+- [ ] **질문 카드와 질문 행 연결 (외부 의존)** — 백엔드 지적: `owner_cards[]`에 메뉴 칸 번호(`item_id`)와 카드 번호(`card_id`)가 없어, 사장님 답을 어느 질문 행에 기록할지 정할 수 없다. 같은 메뉴가 두 번 나오거나 `menu_id`가 null이면 구분이 안 된다. ⓪ `owner_cards[]`와 `create_owner_verification_request`에 같은 키가 필요하다. 질문 차수 `round`는 ⓪에 이전 답 상태(`owner_question_states`)가 생겨 해결됨 (#269, §1-1·§1-3)
+- [ ] **만료된 확정값 재질문과 `confirmed` 상태 (⓪ 고칠 항목)** — ⓪ §4-7은 "`confirmation_state`가 `confirmed`이면 같은 대상에 추가 카드를 만들지 않는다"고 적었다. 그대로면 3개월이 지난 확정값(`expired`)을 다시 묻지 못해 PPT 8쪽 6 "n개월마다 재확인"과 ③ §1-7이 막힌다. ⑧은 만료된 경우 새 질문(`round: 1`)으로 만든다 (§1-3, 테스트 30). ⓪ 문장에 "확정값이 만료되면 1차 질문부터 다시"를 더해야 한다
 - [ ] **질문 카드에 재료를 묶어 묻는 화면 (프론트·⑦·백엔드와)** — 결과 화면 시안과 시연판 프론트는 "달걀 지단, 어묵이 들어가 있나요?"처럼 재료 여러 개를 한 장으로 묻고, 답은 "네 / 아니요 / 잘 모르겠어요" 세 개다. ⑧은 카드 하나에 재료 하나다 (§1-3). 묶어서 물으면 "네"가 어느 재료인지 몰라 재료별 확인값으로 저장할 수 없다. "잘 모르겠어요"는 ⓪ `record_owner_answer.present`(boolean)에 담을 수 없다
 - [ ] **결과 화면에 쓰는 값 유지 (백엔드 회신)** — 백엔드가 최종 응답 `risk_ingredients[]`의 `role`·`confidence`·`prior_source`·`anomaly_locked`와 `high_risk_review` 삭제를 요청했다. 결과 화면 시안의 "재료별 근거"(일반 조리법 참고 · 근거 제한적)는 `confidence`·`prior_source`, "주의 재료가 숨어 있는 곳"(김밥 속재료)은 `role`을 쓰므로 빼면 안 된다. `anomaly_locked`·`high_risk_review`는 ⑧ → Supervisor 내부 신호라 최종 응답에서는 빼도 된다. 근거 출처(레시피·웹 등)는 `evidence_refs` → 최종 응답 `evidence[].source_type`으로 찾을 수 있지만, 경로(김밥 속재료 → 달걀 지단)를 그릴 상위 재료는 ⑧ 출력에 없다. 추가할지 정해야 한다
 - [ ] **재료 이름 번역 (외부 의존)** — 백엔드 지적: `risk_ingredients[].ingredient.canonical_name`이 한국어뿐이라, 프론트가 재료 목록을 사용자 언어로 보여 줄 수 없다. 번역 이름은 지금 `message` 문장 안에만 있다. §4 번역 사전 값을 출력 칸으로 줄지 정해야 한다
