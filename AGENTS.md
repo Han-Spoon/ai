@@ -48,7 +48,6 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - **doc2의 `α=5 / β=1` 규칙은 폐기됨.** 옛 문서를 참조하지 말 것.
 - scale은 α·β를 **동일 비율로** 축소한다 (mean 보존, 분산 증가). α 단독 축소 금지.
 - `variant_suggested`는 scale 0.5, `db_registered` 변형은 1.0.
-- prior fallback 순서: `store → cluster → global → uninformative`. 전역 prior는 최후의 수단.
 
 ### 확정 정보 처리
 - `status`는 **3값** `present` / `absent` / `unknown`. 2값으로 축약 금지.
