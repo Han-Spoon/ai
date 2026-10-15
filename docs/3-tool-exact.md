@@ -102,7 +102,7 @@
 |---|---|---|
 | `exact` | 이 menu_id에 직접 확인됨 | **override** — ⑤ 스킵 가능 (단 `override_eligible: true`일 때만) |
 
-- 기본 메뉴에서 물려받는 `inherited`는 삭제했다 (2026-10-13). 10/10 회의에서 사장님 답변을 확률 계산에 쓰지 않기로 해 쓸 곳이 없어졌다. ⓪에서 값을 지울 때까지는 `exact`만 온다 (§6).
+- 기본 메뉴에서 물려받는 `inherited`는 삭제했다 (2026-10-13). 10/10 회의에서 사장님 답변을 확률 계산에 쓰지 않기로 해 쓸 곳이 없어졌다. ⓪에서도 지워 `scope_hint`·`confirmation_scope`는 `exact` 한 값만 쓴다 (⓪ §4-2).
 
 ### 1-6. `override_eligible` — anomaly 정책 반영 (확정)
 
@@ -195,11 +195,10 @@ def query_exact_confirmations(
 
 def check_completeness(
     confirmations: list[Confirmation],
-    store_id: int,
-    menu_id: int,
+    cache: MenuIngredientCache | None,              # Judge 요청 묶음의 ontology.cache
 ) -> Literal["complete", "unknown"]:
-    """menu_ingredient_cache가 있고, 전 재료가 확인됐고, anomaly·만료가 0건일 때만 complete.
-    캐시가 없으면 항상 unknown (④ 호출 유도)."""
+    """cache가 있고, 전 재료가 확인됐고, anomaly·만료가 0건일 때만 complete.
+    cache가 없으면(None) 항상 unknown (④ 호출 유도)."""
 
 
 def resolve_override_eligibility(c: Confirmation) -> bool:
@@ -318,7 +317,7 @@ return ExactFeedbackResponse(
 | 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 1·2·3차 사장님 답변은 질문·답변 기록(`owner_verification_requests`)에 따로 쌓이고, 확정 규칙은 ⑦이 센다 (⑦ §2-3, #167). ③은 확정값 표만 읽는다 |
 | 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
-| 캐시와 실제 재료 목록 불일치 | 캐시 무효로 간주 → `unknown` 반환 (안전 방향) |
+| 메뉴 레시피가 바뀌어 캐시가 오래됨 | 백엔드가 지식 버전(`menus.knowledge_revision`)이 같은 캐시만 묶음에 담으므로 `cache: null`로 온다 → `unknown` 반환 (안전 방향, §6 캐시 무효화) |
 
 ---
 
@@ -329,7 +328,7 @@ return ExactFeedbackResponse(
 | 1 | 확인 레코드 0건 | 빈 배열 + `unknown` | 에러 발생하지 않을 것 |
 | 2 | 5개 중 2개만 확인 | 2건 반환 + `unknown` | **메뉴 단위 이분법 없을 것** (부분 확인 지원) |
 | 3 | `status: absent` 레코드 | `absent`로 반환 | `unknown`과 구분될 것 (3값 검증) |
-| 4 | 차돌된장찌개 1차 호출 | 빈 배열 + `scope: exact` | base 정보를 ③이 스스로 끌어오지 않을 것 |
+| 4 | 차돌된장찌개 호출 | 빈 배열 + `scope: exact` | base 정보를 ③이 스스로 끌어오지 않을 것 |
 | 5 | 차돌된장찌개의 기본 메뉴(된장찌개) 확인값 | ③을 다시 부르지 않음, `inherited` 응답 없음 (2차 호출 삭제) | 기본 메뉴의 사장님 답이 판정·확률 계산에 쓰이지 않을 것 (⓪ §7 #21) |
 | 6 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
@@ -353,7 +352,7 @@ return ExactFeedbackResponse(
 - [x] **만료된 재료 재질문 경로** — ⑧이 만료된 확인값(`expired: true`) 중 사용자 태그와 관련 있는 재료를 다시 묻는 질문 카드를 만든다(이유 `expired`). ⓪ §4-7이 ⑧에 `expired`를 넘겨야 한다 (2026-10-12, ⑧ §2-1 7단계)
 - [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
 - [x] **2차 호출(`inherited`)** — 삭제 (2026-10-13). 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해 쓸 곳이 없고, 백엔드도 항상 `null`인 `exact_feedback.inherited`를 지우자고 요청함 (§3-1)
-- [ ] **2차 호출 삭제 ⓪·⑤ 반영 (외부 의존)** — ⓪: JudgeRequest `exact_feedback.inherited`, `scope_hint`·`confirmation_scope`의 `inherited` 값, `exact_inherited` 보류 node(§2-8 라우터, §5 `db_variant_bayes` 경로), ⑤ 요청 `inherited_confirmations` 삭제. ⑤: §1-1·§5·§6의 `inherited_confirmations` 정리 (윤지님)
+- [ ] **2차 호출 삭제 ⑤ 반영 (외부 의존)** — ⓪은 반영됨: Bundle `exact_feedback.inherited`(#274), `scope_hint`·`confirmation_scope`의 `inherited` 값, `exact_inherited` 보류 node, ⑤ 요청 `inherited_confirmations` 삭제. 남은 것: ⑤ §1-1·§2·§5·§6의 `inherited_confirmations` 정리 (윤지님)
 - [ ] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ⓪은 반영됨: 모든 경로가 ⑧ 직전에 `tag_lookup`을 거친다 (⓪ §2-8 라우터 `bayesian → tag_lookup → decision`, §4-2, 테스트 12-a, 2026-10-13 확인). 남은 것: ④ 문서 §3의 `lookup_tags` 설명이 아직 "③만 거치는 경로"로 적혀 있어 윤지님께 수정 요청. 안 맞추면 일부만 확인된 메뉴에서 확인값 태그가 비어 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않을 수 있다 (FN)
 - [x] **`completeness` 계산 주체** — ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산한다. 같은 규칙을 백엔드에도 두면 둘이 어긋나 만료값으로 ④⑤를 건너뛸 수 있어서, 백엔드는 Judge 요청에 `completeness`를 넣지 않는다 (2026-10-13, ⓪ §1-3)
 - [x] **판정 중 DB 조회** — 하지 않는다. 확인값·캐시는 백엔드가 Judge 요청에 담아 주고 ③은 읽기만 한다 (10/10 회의 결정 1, §0·§2, 2026-10-13)
