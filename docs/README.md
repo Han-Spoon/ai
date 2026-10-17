@@ -13,11 +13,11 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 
 ## Agent · Tool 스펙
 
-명칭은 [`ppt-baseline.md`](ppt-baseline.md) 7쪽 표기를 따릅니다. 기준 문서에는 Supervisor가 번호 없이 적혀 있지만, 10/2 회의 결정("0: supervisor / 1(ocr tool) ~ 9(curation tool)")에 따라 **⓪를 부여해 ⓪~⑨로 통일**합니다. 파일명 앞자리도 번호와 맞춥니다.
+명칭은 [`ppt-baseline.md`](ppt-baseline.md) 7쪽 표기를 따릅니다. 기준 문서에는 Supervisor가 번호 없이 적혀 있지만 ⓪를 부여합니다. AI Supervisor의 실행 범위는 ⓪~⑧이며, PPT의 기존 ⑨ Curation 기능은 백엔드가 처리합니다. 기존 파일 번호는 이력과 링크 안정성을 위해 유지합니다.
 
 | 문서 | Agent / Tool | 역할 |
 |---|---|---|
-| [0-agent-supervisor.md](0-agent-supervisor.md) | ⓪ Supervisor Agent | `store_id` 검증 + 전체 오케스트레이션 |
+| [0-agent-supervisor.md](0-agent-supervisor.md) | ⓪ Supervisor Agent | Prepare 처리 + Judge `store_id` 검증·위험 판정 오케스트레이션 |
 | — | ① OCR Tool | 메뉴판 이미지에서 메뉴명·가격·설명 텍스트를 구조화하여 추출 |
 | [2-agent-normalization.md](2-agent-normalization.md) | ② Menu Normalization Agent | OCR 오탈자·표기 변형·다국어 메뉴명을 표준명으로 해석 |
 | [3-tool-exact.md](3-tool-exact.md) | ③ Exact Feedback Tool | 재료 단위 확정 근거(Hard Evidence) 조회 |
@@ -26,7 +26,7 @@ Caution AI 설계 문서 모음입니다. 아래 순서대로 읽으면 전체 �
 | [6-agent-websearch.md](6-agent-websearch.md) | ⑥ Web Search Agent | DB 미등록 메뉴의 외부 재료 근거 수집 (soft evidence) |
 | [7-tool-dbupdate.md](7-tool-dbupdate.md) | ⑦ DB Update Tool | 저장 명령 생성 · 관리자 컨펌 게이트 |
 | [8-agent-xai.md](8-agent-xai.md) | ⑧ Decision Policy / XAI Agent | 최종 판정(Danger/Caution/Safe)과 근거 설명 생성 |
-| [9-tool-curation.md](9-tool-curation.md) | ⑨ Curation Tool | 판정 완료 후 안전 후보 랭킹 · 메뉴/한식 문화 콘텐츠 추천 |
+| [9-tool-curation.md](9-tool-curation.md) | 백엔드 큐레이션 참고 문서(기존 ⑨) | 판정 완료 후 백엔드가 수행하는 안전 후보 랭킹·메뉴/한식 문화 콘텐츠 추천 |
 
 > **스펙 문서가 아직 없는 노드**
 > - ① OCR Tool — 구현은 [`../ai_ocr/README.md`](../ai_ocr/README.md)에 있고, 별도 스펙 문서는 없습니다.

@@ -1,6 +1,6 @@
 # Agent·Tool 공통 구현 가이드
 
-⓪~⑨를 구현할 때 **노드마다 똑같이 반복되는 결정**을 한곳에 모으는 문서입니다. 프레임워크, 공통 데이터 계약, 오류 규격, LLM 호출 규칙, 테스트 위치처럼 "어느 Agent를 만들든 먼저 알아야 하는 것"이 여기 들어갑니다.
+⓪~⑧ AI 노드를 구현할 때 **노드마다 똑같이 반복되는 결정**을 한곳에 모으는 문서입니다. 프레임워크, 공통 데이터 계약, 오류 규격, LLM 호출 규칙, 테스트 위치처럼 "어느 Agent를 만들든 먼저 알아야 하는 것"이 여기 들어갑니다. 큐레이션은 백엔드 구현 범위다.
 
 > **현재 상태: 틀만 있는 문서입니다.**
 > 각 절은 **"현재 알려진 내용"** 과 **"여기에 적을 것"** 으로 나뉩니다. "현재 알려진 내용"은 다른 문서에 이미 적혀 있어 옮겨온 것이고 출처를 함께 적었습니다. 비어 있는 항목은 아직 팀이 정하지 않은 것이며, **이 문서를 채우는 사람이 임의로 결정하지 않습니다** (→ [§1](#1-이-문서를-채울-때의-규칙)).
@@ -14,7 +14,7 @@
 | 내용 | 적는 곳 |
 |---|---|
 | 프레임워크, 공통 계약, 공통 오류, 로깅, 테스트 배치, 디렉터리 구조 | **이 문서** |
-| ①~⑨와 Supervisor 사이의 canonical 요청·응답 JSON | [`0-agent-supervisor.md`](0-agent-supervisor.md) §1·§4 |
+| ①~⑧과 Supervisor 사이의 canonical 요청·응답 JSON | [`0-agent-supervisor.md`](0-agent-supervisor.md) §1·§4 |
 | 특정 노드의 내부 처리 로직, 도메인 규칙, 그 노드만의 예외·테스트 | 해당 `agent-N-*.md` |
 | 전체 흐름도, 라우팅, 케이스별 시나리오 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) |
 | 테이블·컬럼·제약 | [`caution-db-schema.md`](caution-db-schema.md) |
@@ -55,7 +55,7 @@
 - Supervisor는 LangChain 생태계 + LangGraph `StateGraph`로 구현한다.
 - 라우팅은 LLM에 맡기지 않고 명시적 conditional edge로 구현한다.
 - LLM 추론은 ②·⑥·⑧처럼 판단이 필요한 Agent 내부로 제한한다.
-- ①·③·④·⑤·⑦·⑨ Tool은 결정론적 Python 함수 또는 API adapter로 연결한다.
+- ①·③·④·⑤·⑦ Tool은 결정론적 Python 함수 또는 API adapter로 연결한다.
 - 각 node는 공용 state를 읽고 자신이 담당하는 필드만 갱신한다.
 - `store_id`처럼 실행 중 바뀌면 안 되는 값은 run-scoped context로 분리한다.
 - 초기 버전은 요청 단위 휘발성 state를 쓴다. 영속 checkpoint는 보존 기간·재실행 요구가 확정된 뒤 도입한다.
@@ -107,7 +107,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 ### 여기에 적을 것
 
-- [x] ①~⑨ 요청·응답 canonical JSON — Supervisor 문서 §4로 확정
+- [x] ①~⑧ 요청·응답 canonical JSON — Supervisor 문서 §4로 확정
 - [ ] Supervisor 문서 §1·§4를 그대로 구현하는 Pydantic 모델 작성
 - [ ] 공통 모델이 사는 모듈 경로와 누가 import하는지
 - [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
@@ -131,11 +131,11 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | [`../ai_web_search_agent/`](../ai_web_search_agent/README.md) | ⑥ 재료 후보 수집 |
 | [`../crawling/`](../crawling/README.md) | 메뉴·재료 데이터 수집·전처리 |
 
-현재 디렉터리는 **⓪~⑨ 번호와 1:1로 대응하지 않습니다.** 한 패키지가 여러 노드를 담고 있고, ⓪·③·⑦·⑨에 해당하는 자리가 없습니다.
+현재 디렉터리는 **⓪~⑧ 번호와 1:1로 대응하지 않습니다.** 한 패키지가 여러 노드를 담고 있고, ⓪·③·⑦에 해당하는 자리가 없습니다.
 
 ### 여기에 적을 것
 
-- [ ] ⓪~⑨ ↔ 디렉터리 대응 표 (지금 없는 노드를 어디에 만들지)
+- [ ] ⓪~⑧ ↔ 디렉터리 대응 표 (지금 없는 노드를 어디에 만들지)
 - [ ] 기존 패키지를 쪼갤지 유지할지 — 쪼갠다면 전환 순서
 - [ ] 노드 간 직접 import를 막는 코드 규약 — 호출 경계 자체는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4가 정하고, 여기서는 그걸 어떻게 강제할지만 정한다 (패키지 분리, lint 규칙 등)
 - [ ] 새 노드를 추가할 때 만들어야 하는 파일 목록 (`__init__.py`, models, adapter, tests, README)
@@ -161,7 +161,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 ## 6. 결정론적 Tool 구현 규칙
 
-①·③·④·⑤·⑦·⑨는 LLM 없이 정해진 절차만 수행합니다.
+①·③·④·⑤·⑦은 LLM 없이 정해진 절차만 수행합니다.
 
 ### 현재 알려진 내용
 
@@ -299,7 +299,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 - [ ] 오류 `code` 체계와 전체 목록
 - [ ] 로그 마스킹 정책 구체화
 - [ ] 테스트 배치 규칙 (패키지 내부 vs 루트 `tests/`)
-- [ ] ⓪~⑨ ↔ 디렉터리 대응과 기존 패키지 재배치 여부
+- [ ] ⓪~⑧ ↔ 디렉터리 대응과 기존 패키지 재배치 여부
 - [ ] 이 문서를 [`README.md`](README.md) 읽는 순서 표의 어느 위치에 넣을지
 
 여기에는 **구현 방식에 관한 미확정 항목만** 둡니다. 판정 로직·계약에 관한 미확정 항목은 이미 각 문서에 등록되어 있으므로 옮겨 적지 않습니다.
