@@ -137,7 +137,7 @@
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
 
-메뉴에는 "젓갈 종류가 불분명" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다. 형식은 [⓪ §4-2 `flag_confirmations`](0-agent-supervisor.md)다 (원본은 Judge 요청의 `exact_feedback.exact.flag_confirmations`, ⓪ §1-3). ③이 지키는 것:
+메뉴에는 "젓갈이 들어갈 수 있음" 같은 애매함 플래그가 붙어 있다 (④ §1-2 `menu_ambiguity_flags`). 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있다는 뜻이라, ⑧은 사장님에게 메뉴 단위로 묻는다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" (⑧ §2-1 5-2). 그 답을 ③이 조회해 넘긴다. 형식은 [⓪ §4-2 `flag_confirmations`](0-agent-supervisor.md)다 (원본은 Judge 요청의 `exact_feedback.exact.flag_confirmations`, ⓪ §1-3). ③이 지키는 것:
 
 - `constraint_tags`는 사장님에게 물어본 태그다. 질문에 들어 있던 값을 저장한 것이라 ③이 붙이는 태그가 아니다 (§0의 "태그는 ④만"은 재료 태그 이야기).
 - `status`는 §1-3과 같은 3값이다.
