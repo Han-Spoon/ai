@@ -57,7 +57,7 @@
 - `context.store_id`가 양의 정수가 아니면 에러. prior는 가게 스코프다.
 - `menu_category_id`가 `null`이면 `cluster` 단계를 건너뛴다 (지금은 `cluster`가 항상 비어 있다).
 - `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다. `anomaly_locked`는 Supervisor가 붙이고 ④가 보존한 값이다.
-- `inherited_confirmations`는 **쓰지 않는다(보류)**. 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의, ③ §6).
+- 원본 메뉴 확인값(`inherited_confirmations`)은 입력에서 **삭제됐다** (2026-10-13, ③ §3-1). 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의).
 - `source_reliability.weights[]`에 없는 출처는 0.5로 본다 (⑦ §3-1).
 - ⑤가 내는 warning 코드(`empty_ingredients`, `integrity_error`, `prior_global_ignored`)는 ⓪ §4-4에 있다.
 
@@ -69,7 +69,7 @@
 | `cluster` | **항상 `[]`** | 메뉴 분류 prior는 #200으로 연기 |
 | `global` | **항상 `[]`** | 전역 prior는 ⑤가 ④의 `observations` × 출처 신뢰도 + 큐레이션으로 계산한다 (§3-3). 여기에 α·β를 또 받으면 같은 크롤링 레시피를 두 번 센다 |
 
-- 필드는 ⓪ 계약 호환을 위해 남기되 `cluster`·`global`은 빈 배열로 정의한다. 값이 들어오면 무시하고 `prior_global_ignored` warning을 남긴다.
+- `cluster`·`global`은 백엔드가 보내는 KnowledgeBundle 계약에서 빠졌다 (⓪ §1-3·§4-4). Supervisor가 ⑤ 요청을 만들 때 빈 배열로 채운다. 그래도 값이 들어오면 무시하고 `prior_global_ignored` warning을 남긴다.
 - `priors.status`가 `unavailable`이면 `store`가 비어도 "가게 증거 없음"으로 보지 않는다. ⓪ 규칙대로 SAFE 금지 warning을 유지한다.
 
 **⑤에 오는 재료 / 오지 않는 재료**
@@ -228,7 +228,6 @@ def estimate_probabilities(
     menu_id: int | None,
     menu_category_id: int | None,
     ingredients: list[IngredientNode],
-    inherited_confirmations: list[Confirmation] | None = None,
 ) -> BayesianResult:
     """재료별 존재 확률(posterior mean) 산출. 판정하지 않음."""
 
@@ -288,8 +287,6 @@ for ing in ingredients:
 
     prior_src = decide_prior_source(store, ing.observations, ing.curated, menu_category_id)
     # store → cluster(#200 연기) → global → uninformative
-
-    # inherited_confirmations는 쓰지 않는다 (보류, 10/10 회의: 사장님 답변은 확률 계산에 쓰지 않음)
 
     alpha, beta = apply_source_scale(alpha, beta, ing.source, ing.depth, ing.observation_basis)   # 최종 α·β 동일 비율
 
@@ -404,7 +401,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - 신뢰도가 낮은 출처는 근거가 작게 반영된다. 그만큼 확률이 0.5(모름) 쪽으로 가고 `confidence`가 낮아진다. 확률을 0 쪽으로 끌어내리지 않으므로 SAFE로 기울지 않는다.
 - 사장님 확정값은 이 식에 들어가지 않는다. 확률 계산 없이 override로 쓰인다 (③).
 
-**원본 메뉴 확정값 (`inherited_confirmations`)은 쓰지 않는다 (보류).** 10/10 회의에서 사장님 답변은 확률 계산에 넣지 않기로 했다. 원본 메뉴의 답은 override도, prior 보정도 하지 않는다 (③ §6).
+**원본 메뉴 확정값 (`inherited_confirmations`)은 입력에서 삭제됐다** (2026-10-13, ③ §3-1). 10/10 회의에서 사장님 답변은 확률 계산에 넣지 않기로 했다. 원본 메뉴의 답은 override도, prior 보정도 하지 않는다.
 
 ---
 
@@ -510,7 +507,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 - [x] **depth 감쇠 함수** — 최종 α·β에 `max(0.5^depth, 0.125)` 동일 비율 적용, mean 보존. `observation_basis: direct`는 1.0 (2026-10-10, §2-1). 값 조정은 QA #192
 - [x] **`variant_suggested` scale 0.5의 적정성** — 0.5 유지 (2026-10-06, #187). F2 튜닝 시 재조정은 QA #192
-- [x] **`inherited_confirmations` 사용** — 쓰지 않음(보류). 사장님 답변은 확률 계산에 넣지 않는다 (10/10 회의, ③ §6)
+- [x] **`inherited_confirmations` 사용** — 쓰지 않음. ③ 두 번째 호출과 함께 입력에서 삭제 (2026-10-13, ③ §3-1)
 - [x] **클러스터 축 확장 여부** — 이번에는 하지 않음. 데이터가 생기면 구현 백로그 #200에서 진행 (2026-10-06, #187)
 - [x] **F2 최적화 threshold를 누가 계산하는가** — 판정용 threshold는 쓰지 않는다. ⑧ §3에서 확률은 판정 기준선이 아니라고 정했다. F2는 QA(#192)에서 scale·애매 기준 같은 값을 맞추는 데 쓴다 (2026-10-12 확인)
 - [x] **`confidence` 계산식** — `1 − 1/√(ν+1)`, ν = 실질 근거 수. "낮음"은 ν < 5 (2026-10-12, §1-2-1)
@@ -523,7 +520,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 - [x] **`web_search` 출처의 scale** — 1.0. 출처 신뢰도로 이미 할인하므로 추가로 줄이지 않는다 (2026-10-12, §2-1)
 - [x] **⑧ 전달 필드** — `prior_source`, `confidence`, `warnings`가 ⑧ 입력 형식에 들어감 (⑧ §1, 2026-10-12 확인). 
 - [x] **재료 공통 식별자** — 입출력 모두 정수 `ingredient_id` + `canonical_name` (2026-10-10, 백엔드 ERD 기준). ⓪ §4 공통 계약(#103)도 같이 고쳐야 함
-- [ ] **KnowledgeBundle `priors` 정의 반영 (외부 의존)** — ⓪ §1-3·§4-4에 `priors.cluster`·`priors.global`은 항상 빈 배열, `priors.store` 근거 출처는 `web_search`·`ocr_variant_tag`만이라는 정의를 넣는다 (§1-1). ⓪ 담당자와 백엔드 확인 필요
+- [x] **KnowledgeBundle `priors` 정의 반영** — ⓪ 반영됨 (#274): Bundle에는 `priors.store`·`priors.evidence`만 오고, `cluster`·`global`은 Supervisor가 내부 ⑤ 요청에 빈 배열로 채운다. `store` 근거는 `web_search`·`ocr_variant_tag`만 (§1-1)
 - [x] **⑤ warning 코드** — `empty_ingredients`, `integrity_error`, `prior_global_ignored`. ⓪ §4-4에 반영 (2026-10-13)
 
 ---
@@ -548,7 +545,7 @@ prior와 관측치를 그대로 더하면 같은 레시피 데이터가 두 번 
 
 - [x] prior와 관측치 결합 방식 결정
 - [x] `confidence` 0~1 계산식과 "낮음" 기준값 결정 (§1-2-1)
-- [x] `inherited_confirmations` 사용 여부 결정 (보류)
+- [x] `inherited_confirmations` 사용 여부 결정 (삭제)
 - [x] depth 감쇠 방식 결정 (§2-1)
 - [x] `web_search` scale 결정
 - [x] `prior_source`·`confidence`를 ⑧ 입력에 넣는 안을 ⓪·⑧ 담당자와 확정

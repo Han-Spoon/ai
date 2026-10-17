@@ -229,6 +229,10 @@ erDiagram
 | `ingredient_id` 🔶 | 재료 질문만. **플래그 질문은 NULL** (지금 ERD는 NOT NULL) |
 | `ambiguity_flag` 🔶 신규 | 플래그 질문만. `menus.ambiguity_flags` 값 하나 |
 | `asked_tags` 🔶 신규 | 플래그 질문에서 물어본 `is_*` 태그 배열 (정렬해서 저장). 재료 질문은 NULL |
+| `card_id` 🔶 신규 | 화면 카드와 질문 행을 잇는 ID (`card:{item_id}:{대상}:r{round}`, ⓪ §4-7). 같은 스캔 안에서 유일 |
+| `round` 🔶 신규 | 질문 차수 `1` / `2` / `3` |
+| `previous_question_id` 🔶 신규 | 직전 질문 `id` (같은 테이블 FK). 1차 질문은 NULL |
+| `confirmation_state` 🔶 신규 | 답을 처리한 결과 `confirmed` / `needs_second` / `needs_third`. 답 전에는 NULL. 다음 Judge의 `owner_question_states[]` 원천 (⓪ §4-2) |
 | `recipe_probability` 🔶 신규 | 질문을 만들 때의 ⑤ `posterior_mean` (0~1). 재료 질문만, 플래그 질문은 NULL. 답을 확정할 때 이상 답변 판정에 쓴다 (⑦ §2-3) |
 | `question_text` | 언어별 문구 (🔶 6개 언어, §6) |
 | `status` | `pending` / `answered` / `expired` |
@@ -239,6 +243,8 @@ erDiagram
 - CHECK: `ingredient_id`와 `ambiguity_flag` 중 **정확히 하나**만 값이 있다. `ambiguity_flag`가 있으면 `asked_tags`는 비어 있지 않다.
 - UNIQUE 🔶: 재료 질문은 `(scan_session_id, menu_id, ingredient_id) WHERE ingredient_id IS NOT NULL`, 플래그 질문은 `(scan_session_id, menu_id, ambiguity_flag, asked_tags) WHERE ambiguity_flag IS NOT NULL`로 나눈다. ERD의 `(scan_session_id, menu_id, ingredient_id)` 하나로는 `ingredient_id`가 NULL인 플래그 질문의 중복을 막지 못한다.
 - 답변 이력은 이 테이블의 answered 행들이다. 확인 차례(⑦ §2-3) 계산도 이 행으로 한다.
+- **다음 Judge에 넣을 질문 진행 상태**: 대상(재료 또는 플래그+태그)마다 가장 최근 answered 행의 `{id → question_id, round → answered_round, confirmation_state}`를 KnowledgeBundle `exact_feedback.exact.owner_question_states[]`로 보낸다 (⓪ §4-2).
+- CHECK: `round = 1`이면 `previous_question_id IS NULL`, `round > 1`이면 NOT NULL. `confirmation_state`가 `needs_second`이면 `round = 1`, `needs_third`이면 `round = 2`.
 
 ### `owner_flag_confirmations` 🔶 신규 (제안, 2026-10-13)
 메뉴 애매함 플래그 질문에 대한 사장님 **확정 답**. ③이 읽어 `flag_confirmations`로 넘긴다 (⓪ §4-2). 재료 확정값(`ingredient_confirmations`)과 따로 둔다 — 플래그 답은 특정 재료가 아니라 "그 메뉴의 젓갈·육수 등에 이 태그가 있는가"이기 때문이다. 테이블 이름은 ⓪ 예시(`source_ref: owner_flag_confirmations:…`)를 따랐고 최종 결정은 백엔드가 한다.
@@ -326,7 +332,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20은 2026-10-17 추가)
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -337,7 +343,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 5 | `ingredient_compositions.relation_type` | `part_of` / `is_a` | `part_of`만 | 분류는 `taxonomy_category`에 둠 |
 | 6 | `ingredients.taxonomy_category` | 7종 code | 9종 (§2) | 가공식품 추가, 기타를 `base`·`unknown`으로 분리 (#182) |
 | 7 | 다국어 JSONB 키 (`menus.name_i18n`, `ingredients.name_i18n`, `menu_analyses.message`, `saved_cards.text`, `owner_verification_requests.question_text`) | `ko` / `en` / `ar` | `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` (`ar` 삭제) | 팀 확정 6개 언어 |
-| 8 | `record_owner_answer` 응답 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`) 포함 | ⑧이 2·3차 질문을 만든다 (⑦ §1-2) |
+| 8 | `record_owner_answer` 처리 결과 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`)를 질문 행에 저장하고, 다음 Judge Bundle `owner_question_states[]`로 보냄 (20번 컬럼) | ⑧이 2·3차 질문을 만든다 (⑦ §1-2, ⓪ §4-6) |
 | 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
 | 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT (IDENTITY 컬럼은 `OVERRIDING SYSTEM VALUE`). 안 되면 AI에 알림 → 이름 기준 매핑으로 바꿈 | 시드 CSV의 FK가 id로 연결돼 있음 |
 | 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
@@ -349,6 +355,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | 부분 UNIQUE 2개로 분리: 재료 질문 / 플래그 질문 (§3) | 플래그 질문은 `ingredient_id`가 NULL이라 지금 UNIQUE로 중복을 막지 못한다 |
 | 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 확정(upsert)된 시각. 확정되지 않은 답으로는 갱신하지 않음 (§3) | 확정 뒤 다른 답이 1번만 와도 3개월 유효기간이 다시 시작된다 |
 | 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(7), 7번의 6개 값 | `zh_hans`·`zh_hant`가 7자라 지금 길이에 안 들어간다 |
+| 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 없음 | `card_id` VARCHAR(200) NULL, `round` SMALLINT NOT NULL DEFAULT 1 (1~3), `previous_question_id` UUID NULL FK→같은 테이블, `confirmation_state` VARCHAR(20) NULL 추가 + CHECK (§3) | ⓪이 "백엔드는 `round`·`previous_question_id`를 질문 행에 보존해 질문 사슬과 차수를 검증한다"로 정함. 저장할 곳이 없으면 2·3차 질문을 만들 수 없다 |
 
 **값 매핑 (스키마 변경 없음)**: ⓪ `create_review_item.review_origin`의 `web_search` → `knowledge_review_items.item_type` `web_search_menu`, `variant_suggestion` → `runtime_variant`.
 
