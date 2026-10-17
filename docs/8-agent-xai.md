@@ -105,9 +105,9 @@
 
 | 플래그 | 뜻 | 걸릴 수 있는 태그 |
 |---|---|---|
-| `has_unclear_broth` | 육수 재료가 불분명 | `is_pork`·`is_beef`·`is_chicken`·`is_shrimp`·`is_crab`·`is_shellfish` |
-| `has_unclear_seasoning` | 양념(술 등)이 불분명 | `is_alcohol` |
-| `has_unclear_jeotgal` | 젓갈 종류가 불분명 | `is_fish`·`is_shrimp`·`is_crab`·`is_squid`·`is_shellfish`·`is_mackerel` |
+| `has_unclear_broth` | 육수에 레시피 밖 재료(고기·해산물)가 들어갈 수 있음 (육수 재료 불명) | `is_pork`·`is_beef`·`is_chicken`·`is_shrimp`·`is_crab`·`is_shellfish` |
+| `has_unclear_seasoning` | 양념에 레시피 밖 재료(술 등)가 들어갈 수 있음 | `is_alcohol` |
+| `has_unclear_jeotgal` | 젓갈이 들어갈 수 있음 (젓갈 종류 불명) | `is_fish`·`is_shrimp`·`is_crab`·`is_squid`·`is_shellfish`·`is_mackerel` |
 | `has_hidden_animal` | 동물성 재료가 숨어 있을 수 있음 | `is_pork`·`is_beef`·`is_chicken`·`is_duck`·`is_fish`·`is_shrimp`·`is_crab`·`is_squid`·`is_shellfish`·`is_mackerel` |
 | `has_variant` | 변형 메뉴라 재료가 불확실 | 모든 태그 (사용자 금지 태그 전부) |
 
