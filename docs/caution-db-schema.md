@@ -107,7 +107,7 @@ erDiagram
 ### `ingredient_tags`
 | 컬럼 | 설명 |
 |---|---|
-| `ingredient_id` PK·FK, `tag_code` PK | 재료 자체의 위험 태그 |
+| `ingredient_id` PK·FK, `tag_code` PK 🔶 | 재료 자체의 위험 태그 (`is_*` 형식, §6 21번) |
 
 `tag_code`는 `is_*` 22종이다: 식약처 알레르기 19종 + `is_fish`, `is_duck`, `is_alcohol`. 원천은 `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS`. 사용자 알레르기(`user_allergies.allergy_code`)와 같은 어휘를 쓴다. 태그를 붙이는 쪽은 ④ 하나다 (④ §2-6).
 
@@ -234,7 +234,7 @@ erDiagram
 | `previous_question_id` 🔶 신규 | 직전 질문 `id` (같은 테이블 FK). 1차 질문은 NULL |
 | `confirmation_state` 🔶 신규 | 답을 처리한 결과 `confirmed` / `needs_second` / `needs_third`. 답 전에는 NULL. 다음 Judge의 `owner_question_states[]` 원천 (⓪ §4-2) |
 | `recipe_probability` 🔶 신규 | 질문을 만들 때의 ⑤ `posterior_mean` (0~1). 재료 질문만, 플래그 질문은 NULL. 답을 확정할 때 이상 답변 판정에 쓴다 (⑦ §2-3) |
-| `question_text` | 언어별 문구 (🔶 6개 언어, §6) |
+| `question_text` | 언어별 문구 (🔶 7개 언어, §6 7번) |
 | `status` | `pending` / `answered` / `expired` |
 | `answer` | `present` / `absent` / `unknown` |
 | `resolved_confirmation_id` 🔶 | 재료 답변이 확정값으로 반영되면 채움. 1차 답처럼 아직 확정되지 않은 답은 NULL (ERD의 "present/absent면 필수" 삭제 요청) |
@@ -299,7 +299,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 - `menu_analyses.menu_id`, `menu_match_type`(V11): `exact` / `alias` / `fuzzy` / `runtime_variant` / `unmatched`
 - `menu_analyses.owner_card`: ⑧이 만든 사장님 질문 카드
-- `user_allergies.allergy_code`: `ingredient_tags.tag_code`와 같은 어휘
+- `user_allergies.allergy_code` 🔶: `ingredient_tags.tag_code`와 같은 `is_*` 22종 어휘 (ERD는 "19종", §6 21번)
 - `user_profiles`: `religion_type`, `vegetarian_type`, `no_alcohol`, `no_spicy` → ⑧이 금지 태그로 바꾼다
 
 ---
@@ -332,7 +332,9 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20은 2026-10-17 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17 추가)
+
+🔴 **우선: 16·20번.** 이 두 개가 없으면 사장님 질문 흐름(1차 답 저장 → 2·3차 질문)이 동작하지 않는다.
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -342,7 +344,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 4 | `knowledge_import_batches.source` | 6종 | + `10000recipe_prior` | 시드 배치 출처 |
 | 5 | `ingredient_compositions.relation_type` | `part_of` / `is_a` | `part_of`만 | 분류는 `taxonomy_category`에 둠 |
 | 6 | `ingredients.taxonomy_category` | 7종 code | 9종 (§2) | 가공식품 추가, 기타를 `base`·`unknown`으로 분리 (#182) |
-| 7 | 다국어 JSONB 키 (`menus.name_i18n`, `ingredients.name_i18n`, `menu_analyses.message`, `saved_cards.text`, `owner_verification_requests.question_text`) | `ko` / `en` / `ar` | `ko` / `en` / `ja` / `zh_hans` / `zh_hant` / `es` (`ar` 삭제) | 팀 확정 6개 언어 |
+| 7 | 다국어 JSONB 키 (`menus.name_i18n`, `ingredients.name_i18n`, `menu_analyses.message`, `saved_cards.text`, `owner_verification_requests.question_text`) | `ko` / `en` / `ar` | `ko` / `en` / `ar` / `zh-CN` / `zh-TW` / `ja` / `es` (7개, `ar` 유지) | 팀 결정 (2026-10-13, ⑧ §4): 아랍어 포함 7개 언어, 코드는 프론트 표기와 같음 |
 | 8 | `record_owner_answer` 처리 결과 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`)를 질문 행에 저장하고, 다음 Judge Bundle `owner_question_states[]`로 보냄 (20번 컬럼) | ⑧이 2·3차 질문을 만든다 (⑦ §1-2, ⓪ §4-6) |
 | 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
 | 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT (IDENTITY 컬럼은 `OVERRIDING SYSTEM VALUE`). 안 되면 AI에 알림 → 이름 기준 매핑으로 바꿈 | 시드 CSV의 FK가 id로 연결돼 있음 |
@@ -354,8 +356,12 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 16 | `owner_verification_requests.resolved_confirmation_id` | present/absent 답이면 필수 | 필수 조건 삭제. 확정값이 만들어진 때만 채움 (§3) | 1차 답은 확정하지 않는다(`needs_second`). 지금 제약이면 1차 답 저장이 실패해 2·3차 질문 흐름 전체가 막힌다 |
 | 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | 부분 UNIQUE 2개로 분리: 재료 질문 / 플래그 질문 (§3) | 플래그 질문은 `ingredient_id`가 NULL이라 지금 UNIQUE로 중복을 막지 못한다 |
 | 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 확정(upsert)된 시각. 확정되지 않은 답으로는 갱신하지 않음 (§3) | 확정 뒤 다른 답이 1번만 와도 3개월 유효기간이 다시 시작된다 |
-| 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(7), 7번의 6개 값 | `zh_hans`·`zh_hant`가 7자라 지금 길이에 안 들어간다 |
+| 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(5), 7번의 7개 값 | `zh-CN`·`zh-TW`가 5자라 지금 길이에 안 들어간다 |
 | 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 없음 | `card_id` VARCHAR(200) NULL, `round` SMALLINT NOT NULL DEFAULT 1 (1~3), `previous_question_id` UUID NULL FK→같은 테이블, `confirmation_state` VARCHAR(20) NULL 추가 + CHECK (§3) | ⓪이 "백엔드는 `round`·`previous_question_id`를 질문 행에 보존해 질문 사슬과 차수를 검증한다"로 정함. 저장할 곳이 없으면 2·3차 질문을 만들 수 없다 |
+| 21 | `ingredient_tags.tag_code`, `ingredient_composition_tags.tag_code`, `user_allergies.allergy_code` | 알레르기 19종 + fish/duck/alcohol (이름 형식 미정), `allergy_code`는 "19종" | `is_*` 형식 22종으로 통일: 식약처 알레르기 19종 + `is_fish` / `is_duck` / `is_alcohol` (원천 `ai_ruleengine/constants.py`) | 재료 태그와 사용자 알레르기 코드의 이름이 다르면 매칭이 안 돼 알레르겐을 놓친다 |
+
+- `corpus`·배치 `source`에 `etc` 같은 기타 값은 넣지 않는다 (3·4번 값만).
+- 메뉴·재료 ID는 정수(BIGINT)를 유지한다.
 
 **값 매핑 (스키마 변경 없음)**: ⓪ `create_review_item.review_origin`의 `web_search` → `knowledge_review_items.item_type` `web_search_menu`, `variant_suggestion` → `runtime_variant`.
 
