@@ -46,13 +46,15 @@
 | 일 | 담당 |
 |---|---|
 | `risk_level`, `evidence_basis`, `matched_tags`, `risk_ingredients` 결정 | **코드(정책 함수).** 같은 입력은 같은 판정을 낸다. LLM은 판정을 만들거나 바꿀 수 없다 |
-| 설명 문장(`message`, 사용자 언어) | 기본은 고정 템플릿, 템플릿으로 표현하기 어려울 때 LLM (아래 원칙). LLM은 코드가 확정한 판정 JSON을 바꿀 수 없는 입력으로 받아 문장만 만든다 |
-| LLM 실패·시간 초과 | 판정은 그대로 두고 `risk_level + evidence_basis`별 고정 문장 템플릿을 쓴다. 문장 LLM 재시도는 1회 |
+| 설명 문장(`message`, 사용자 언어) | 판정 한 줄(`verdict`)과 안내(`notes`)는 코드가 고르는 고정 템플릿, 이유 설명(`reason`)만 LLM (아래 원칙, §4). LLM은 코드가 확정한 판정 JSON을 바꿀 수 없는 입력으로 받아 문장만 만든다 |
+| LLM 실패·시간 초과 | 판정은 그대로 두고 `reason: null`. `verdict`·`notes`는 템플릿이라 그대로 나간다. 문장 LLM 재시도는 1회 |
 
 **설명 문장을 나누는 방식 (결정, 2026-10-12)**
 - **판정 한 줄은 템플릿**으로 쓴다. 예: "돼지고기가 들어있을 수 있어요 (약 62%)." 늘 같은 문장이라 믿을 수 있다.
 - **그 뒤의 이유 설명은 필요할 때 LLM**이 쓴다. 예: "김치에 들어가는 액젓 때문에 새우가 포함될 수 있어요."
+- **판정을 바꾸지 않는 안내(빼기 어려움·메뉴 애매함)는 코드가 고르는 템플릿**으로 쓴다 (§4-1, §2-1 5-2).
 - **틀리면 안 되는 내용은 코드가 넣은 값을 그대로** 쓴다. 판정(`risk_level`), 확률 수치, 재료 이름은 LLM이 바꾸거나 새로 만들지 못한다. LLM은 말투와 문장 연결만 맡는다.
+- 세 부분은 이어 붙이지 않고 `message`의 칸으로 나눠 준다: 판정 한 줄 → `verdict`, 이유 설명 → `reason`, 안내 → `notes[]` (결정, 2026-10-14 프론트 요청, §4 "`message` 칸").
 
 **LLM 사용 원칙 (결정, 2026-10-11)**
 - **같은 입력에 같은 결과가 나와야 하는 항목은 LLM을 쓰지 않는다.** `risk_level`, `evidence_basis`, `matched_tags`, `risk_ingredients`(재료 역할 `role` 포함), `information_status`, 금지 태그 매핑(§2-1 1단계), SAFE 금지 조건 판단(§2-2)이 여기에 해당한다. 같은 메뉴를 다시 찍었는데 판정이 바뀌면 사용자가 결과를 믿을 수 없다.
@@ -147,7 +149,7 @@
   - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없는 재료(번역 이름이 없거나 `ingredient_id: null`인 웹 재료)는 한국어 `canonical_name`을 그대로 쓴다. 틀린 번역보다 원문이 안전하다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274)
 - 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
 - `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
-- `message`는 요청 `locale`로 쓴 문자열 하나다 (§0-2, §4).
+- `message`는 `{verdict, reason, notes[]}` object이고, 세 칸 모두 요청 `locale` 하나로 쓴다 (§0-2, §4 "`message` 칸", ⓪ §4-7).
 - `owner_cards`는 질문이 필요 없으면 `[]`다. **한 메뉴에서 여러 장이 나올 수 있다** (§1-3, §2-1 7단계).
 - `high_risk_review`는 이 메뉴가 고위험 재검증 후보인지와 그 이유를 표시한다 (§2-3). 재검증 결과도 판정을 바꾸지 않는다 (§2-3, #234).
 
@@ -249,10 +251,10 @@ flowchart TD
 5-2. **메뉴 애매함 플래그 반영** (결정, 2026-10-12): `menu_ambiguity_flags`의 플래그마다 물을 태그(§1-1 표에서 사용자 금지 태그와 겹친 것)를 구한다. 비어 있으면 그 플래그는 건너뛴다. 아니면 `flag_confirmations` 중 같은 플래그이고 `override_eligible: true`인 답을 보고 아래처럼 한다.
    - `absent`이고 답의 `constraint_tags`에 물을 태그가 **모두** 들어 있음 → 플래그가 풀린다. 판정에 영향 없음
    - `present`이고 답의 `constraint_tags`가 **모두** 사용자 금지 태그 → `danger`, `evidence_basis: confirmed`, 그 태그를 최상위 `matched_tags`에 넣는다. 사장님이 "들어 있다"고 확인한 hard evidence다
-   - 그 밖(답이 없음, `unknown`, 만료, 물은 태그가 달라 판단할 수 없음) → `safe`를 내지 않고 `caution` 이상으로 둔다. 설명 문장에 이유를 쓰고 (예: "젓갈 종류가 가게마다 달라 확인이 필요해요"), 7단계에서 질문 카드를 만든다
+   - 그 밖(답이 없음, `unknown`, 만료, 물은 태그가 달라 판단할 수 없음) → `safe`를 내지 않고 `caution` 이상으로 둔다. `message.notes`에 `ambiguous_menu` 안내를 넣고 (예: "젓갈이 들어갈 수 있어 확인이 필요해요"), 7단계에서 질문 카드를 만든다
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
-6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 문구 템플릿 분기 (§4).
-6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 "빼기 어려울 수 있어요" 안내를 덧붙인다 (§4-1). 판정은 바꾸지 않는다.
+6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 판정 한 줄 템플릿을 골라 `message.verdict`에 넣고, 필요하면 LLM 이유 설명을 `message.reason`에 넣는다 (§4).
+6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 `message.notes`에 `hard_to_remove` 안내를 넣는다 (§4-1). 판정은 바꾸지 않는다.
 7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
@@ -280,7 +282,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 시간 제한 | 재검증만의 값을 따로 두지 않고 **판정(judge) 단계 전체 시간 제한 안에 맞춘다** (결정, 2026-10-11). 남은 시간 안에 끝나지 않으면 기본 결과를 낸다. judge 단계 전체 값은 ⓪·백엔드가 정한다 (⓪ §8 "Prepare/Judge timeout", 스캔 전체 목표 30초) |
 | 판정을 바꿀 수 있는지 | **바꾸지 않는다** (결정, 2026-10-13, #234). 재검증 대상(정보 부족·충돌)은 이미 SAFE가 금지된 메뉴라 SAFE→CAUTION으로 낮출 경우가 없고, DANGER는 사장님 확인값으로만 나온다 (§3, PPT 8쪽 6). 그래서 질문 카드와 설명만 보강한다 |
 | 하는 일 | 고가 모델 LLM이 아래 세 가지를 한다 (결정, 2026-10-11) |
-| 결과를 쓰는 곳 | **사장님 질문(`owner_cards`)과 사용자 설명(`message`) 두 곳.** 관리자 검토에는 쓰지 않는다 (결정, 2026-10-11). 재검증이 더하거나 다듬은 카드도 저장되도록, Supervisor는 질문 저장 명령을 재검증이 끝난 뒤에 만든다 (⓪ §2-10) |
+| 결과를 쓰는 곳 | **사장님 질문(`owner_cards`)과 사용자 이유 설명(`message.reason`) 두 곳.** 관리자 검토에는 쓰지 않는다 (결정, 2026-10-11). 재검증이 더하거나 다듬은 카드도 저장되도록, Supervisor는 질문 저장 명령을 재검증이 끝난 뒤에 만든다 (⓪ §2-10) |
 
 **재검증이 하는 일 (결정, 2026-10-11)**
 
@@ -292,7 +294,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 - 재검증 LLM이 찾은 재료는 **질문과 설명에만** 쓴다. `risk_ingredients`, `matched_tags` 같은 판정 값에는 넣지 않는다 (§0-2, #234).
 - 사용자 설명은 확인되지 않은 내용이므로 "~가 들어갈 수 있어요"처럼 **가능성 말투**로만 쓴다.
-- 결과는 `owner_cards`와 `message`에 담으므로 재검증 전용 필드는 필요 없다.
+- 결과는 `owner_cards`와 `message.reason`에 담으므로 재검증 전용 필드는 필요 없다. 판정 한 줄(`verdict`)과 안내(`notes`)는 재검증이 바꾸지 않는다.
 - **재검증 LLM은 표준 재료 목록(`ingredients`) 안에서만 재료를 고른다** (결정, 2026-10-11). 목록을 선택지로 주고 그 밖의 이름은 받지 않는다. 그래야 사장님 답을 재료 번호(`ingredient_id`)로 저장할 수 있고(⑦), 재료 태그로 이 사용자와 관련 있는지 규칙으로 판단할 수 있다. 예: "사차장"이 아니라 표준 재료 "땅콩"을 고른다.
 - 시간 제한을 넘기거나 LLM이 실패하면 재검증 없이 기본 결과(규칙으로 만든 판정·질문·템플릿 문장)를 낸다.
 
@@ -301,10 +303,10 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 구분 | 내용 |
 |---|---|
 | 넘기는 것 | 메뉴명, 메뉴판 설명 문구, 지금까지 찾은 재료 목록과 태그, 사용자 금지 태그, 재검증을 하게 된 이유(아래 대상 기준의 신호), 표준 재료 목록 |
-| 받는 것 | 놓친 재료 목록(표준 재료 목록 안에서만), 사용자에게 보여줄 설명 한 줄, 다듬은 질문 |
+| 받는 것 | 놓친 재료 목록(표준 재료 목록 안에서만), 보강한 이유 설명(`reason`), 다듬은 질문 |
 
 - 정해진 칸 외에는 받지 않는다 (Pydantic 구조화 출력, ⓪ §2-13). 형식이 맞지 않으면 버리고 기본 결과를 낸다.
-- JSON 형식은 ⓪ §4-7 `HighRiskReviewRequest`·`HighRiskReviewResponse`다. Supervisor가 넘기는 것: 메뉴명·원문·메뉴판 설명 문구(`menu`), 재검증 이유(`reason_code`), 이 메뉴의 원래 판정·문장·카드(`decision`), 찾은 재료(`found_ingredients`), 표준 재료 선택지(`ingredient_choices`), 사용자 프로필, 언어. ⑧이 돌려주는 것: 놓친 재료(`missed_ingredients`, 추적용), 보강한 문장 전체(`message`), 보강한 카드 전체(`owner_cards`). 판정 값은 돌려주지 않으므로 바꿀 수 없다.
+- JSON 형식은 ⓪ §4-7 `HighRiskReviewRequest`·`HighRiskReviewResponse`다. Supervisor가 넘기는 것: 메뉴명·원문·메뉴판 설명 문구(`menu`), 재검증 이유(`reason_code`), 이 메뉴의 원래 판정·문장·카드(`decision`), 찾은 재료(`found_ingredients`), 표준 재료 선택지(`ingredient_choices`), 사용자 프로필, 언어. ⑧이 돌려주는 것: 놓친 재료(`missed_ingredients`, 추적용), 보강한 이유 설명 전체(`reason`), 보강한 카드 전체(`owner_cards`). 판정 값은 돌려주지 않으므로 바꿀 수 없다.
 - 놓친 재료는 사용자 금지 태그와 겹칠 때만 카드(`reason_codes: ["high_risk_review"]`)를 만든다 (§6 "관련 없는 질문 금지"와 같은 원칙).
 
 **한 스캔당 개수 (결정, 2026-10-12)**
@@ -382,14 +384,29 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 | 항목 | 규칙 |
 |---|---|
-| 결과 설명(`message`) | 사용자 언어로만 쓴다. 재료 이름도 사용자 언어로 쓴다 (예: "pork") |
+| 결과 설명(`message`) | 세 칸(`verdict`·`reason`·`notes[].text`) 모두 사용자 언어로만 쓴다. 재료 이름도 사용자 언어로 쓴다 (예: "pork") |
 | 사장님 질문 카드(`owner_cards[].question`) | **한국어와 사용자 언어를 함께** 보여준다. 손님이 화면을 사장님께 보여주고 소통하는 카드라 한국어가 있어야 바로 통한다. `question`에는 `ko`와 사용자 언어 두 문구만 넣는다. 사용자 언어가 `ko`면 하나다 (⓪ §4-7) |
 | 판정 한 줄 템플릿 | 사람이 7개 언어로 미리 써 두고 한 번 검수한다. 판정마다 사용자 언어 것 하나를 쓴다 |
 | 재료 이름 번역 | 번역 사전(DB `ingredients.name_i18n` → 입력 `localized_names`)에서 가져온다. 없으면 한국어 이름 그대로 쓴다. LLM이 번역하지 않는다 (§0-2 "틀리면 안 되는 내용"). 결과 문장 안에 쓰고, 재료 목록용으로 `risk_ingredients[].ingredient.localized_name`에도 넣는다 (§1-2) |
 | 이유 설명 | LLM이 사용자 언어로 쓴다 |
 | 언어 선택 | `locale`은 7개 중 하나만 들어온다. 앱이 이 7개 중에서만 고르게 하므로 다른 언어를 요청하는 경로는 없다 |
-| LLM 실패 | 이유 설명 없이 판정 한 줄 템플릿만 보여준다 |
+| LLM 실패 | `reason: null`. 판정 한 줄(`verdict`)과 안내(`notes`)는 템플릿이라 그대로 보여준다 |
 | 언어 설정을 바꾼 뒤 기록 열기 | 스캔 기록을 열 때 실시간으로 번역한다 (2026-10-14 회의). 번역 주체와 경로는 백엔드와 정한다 (§8) |
+
+**`message` 칸 (결정, 2026-10-17, 프론트 요청 2026-10-14)** — 판정 한 줄·이유 설명·안내를 이어 붙이지 않고 칸으로 나눠 준다. 화면이 부분별로 따로 배치하고, 다른 언어로 기록을 열 때 LLM이 만든 `reason`만 숨기거나 다시 만들 수 있게 하기 위해서다. 세 칸 모두 사용자 언어 하나다.
+
+| 칸 | 내용 | 만드는 방식 | 없을 때 |
+|---|---|---|---|
+| `verdict` | 판정 한 줄 | `risk_level + evidence_basis`별 고정 템플릿 (아래 예시) | 없음. 항상 채운다 (⑧ 판정 실패 때도 "확인하지 못했어요" 템플릿, ⓪ §6) |
+| `reason` | 이유 설명 | LLM. 자동 검수를 통과한 문장만 (아래). 고위험 재검증이 보강한다 (§2-3) | 필요 없거나 LLM 실패·검수 탈락이면 `null` |
+| `notes[]` | 판정을 바꾸지 않는 안내 `{code, text}` | 코드가 고르는 고정 템플릿 | `[]` |
+
+`notes[].code`는 두 가지다. 순서는 `ambiguous_menu` → `hard_to_remove`이고, 같은 코드끼리는 `risk_ingredients` 순서를 따른다.
+
+| `code` | 언제 | `text` (ko 예시) |
+|---|---|---|
+| `ambiguous_menu` | 사용자와 관련 있고 사장님 답으로 풀리지 않은 메뉴 애매함 플래그 (§2-1 5-2). 플래그마다 하나 | "젓갈이 들어갈 수 있어 확인이 필요해요." |
+| `hard_to_remove` | 판정에 걸린 재료의 `role`이 `identity`·`hidden` (§4-1). 재료마다 하나 | "참치는 이 메뉴의 주재료라 빼기 어려울 수 있어요." |
 
 **판정 한 줄 템플릿 예시 (초안, 2026-10-13, #174)** — 톤을 맞추기 위한 예시다. 7개 언어 전체 템플릿은 구현 때 작성하고(#135), `ko`·`en` 외 언어는 원어민 확인을 거친다. `{재료}`·`{확률}`은 코드 값을 그대로 넣는다.
 
@@ -403,12 +420,12 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 **LLM 이유 설명 자동 검수 (결정, 2026-10-13, #174)** — 이유 설명은 스캔마다 실시간으로 만들어져 사람이 하나하나 볼 수 없다. 사람 대신 코드가 바로 확인한다.
 - LLM 문장에 나온 숫자(확률)·재료 이름·판정 단어가 ⑧이 넘긴 값과 다르면 버린다.
 - 판정과 반대되는 표현이 있으면 버린다. 예: CAUTION인데 "안전해요", 확률을 "100%"·"0%"로 쓴 경우.
-- 버리면 그 언어는 판정 한 줄 템플릿만 보여 준다 (LLM 실패와 같은 처리).
+- 버리면 `reason: null`로 두고 판정 한 줄과 안내만 보여 준다 (LLM 실패와 같은 처리). 검수 대상은 LLM이 쓴 `reason`뿐이다.
 - 사람이 검수하는 것은 미리 쓰는 판정 한 줄 템플릿뿐이다.
 
 ### 4-1. 빼기 어려움 안내 (결정, 2026-10-12)
 
-'빼고 요청' 버튼은 그대로 두고, 판정에 걸린 재료가 빼기 어려운 재료이면 설명에 안내 한 줄을 덧붙인다. 재료 역할(`role`, §1-2)로 정한다.
+'빼고 요청' 버튼은 그대로 두고, 판정에 걸린 재료가 빼기 어려운 재료이면 `message.notes`에 `hard_to_remove` 안내를 재료마다 하나 넣는다. 재료 역할(`role`, §1-2)로 정한다.
 
 | `role` | 안내 (ko 예시) |
 |---|---|
@@ -464,12 +481,12 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 10 | 할랄 사용자 + 돼지고기 `constraint_tags: []` + 입력 `warnings`에 ④가 붙인 `constraint_tags_lookup_failed`(`forces_caution: true`) | `caution` 이상, 입력 warning을 출력에 보존 | 태그가 빠져도 SAFE가 나오지 않을 것 |
 | 11 | 할랄 사용자 + `probability_results`: 돼지고기 `posterior_mean: 0.95`만 있음 | `caution`, `evidence_basis: estimated`, 확률 0.95 표시 | 확률만으로 DANGER를 내지 않을 것 (PPT 8쪽 6) |
 | 12 | 할랄 사용자 + `confirmed_results`만 있음: 모든 재료 사장님 확인, 돼지고기 `absent`(`override_eligible: true`) + `probability_results: []` + SAFE 금지 조건 없음 | `safe`, `evidence_basis: confirmed` | SAFE는 사장님 확인값으로만 나올 것 |
-| 13 | 해산물 알레르기 + 참치김밥, 참치 `role: identity`, 사장님 확인 `present` | `danger`, `risk_ingredients`의 참치 `role: identity`, 설명에 "주재료라 빼기 어려울 수 있어요" | 안내가 붙어도 판정은 그대로일 것 |
-| 14 | 새우 알레르기 + 김치찌개, 새우 `role: hidden`, 확률 근거 | `caution`, 새우 `role: hidden`, 설명에 "양념 안에 들어 있어 빼기 어려울 수 있어요" | 숨은 재료 안내가 붙을 것 |
+| 13 | 해산물 알레르기 + 참치김밥, 참치 `role: identity`, 사장님 확인 `present` | `danger`, `risk_ingredients`의 참치 `role: identity`, `message.notes`에 `hard_to_remove` "주재료라 빼기 어려울 수 있어요" | 안내가 붙어도 판정은 그대로일 것 |
+| 14 | 새우 알레르기 + 김치찌개, 새우 `role: hidden`, 확률 근거 | `caution`, 새우 `role: hidden`, `message.notes`에 `hard_to_remove` "양념 안에 들어 있어 빼기 어려울 수 있어요" | 숨은 재료 안내가 붙을 것 |
 | 15 | 위험 재료 `role: component` 또는 `null` | 빼기 어려움 안내 없음 | 역할을 모를 때 안내를 지어내지 않을 것 |
 | 16 | `no_spicy` 사용자 + 모든 재료 사장님 확인(금지 태그 없음) + `risk_tag_observations`: `is_spicy` | `caution`, 최상위 `matched_tags`에 `is_spicy`, `risk_ingredients`에는 없음 | 매운 메뉴가 SAFE로 나가지 않고, OCR 관측만으로 DANGER를 내지 않을 것 |
 | 17 | 할랄 사용자 + 4개월 전 확인한 돼지고기 `absent` (`expired: true`) | `owner_cards`에 돼지고기 카드, `reason_codes: ["expired"]` | 만료된 확인값을 다시 물을 것 |
-| 18 | 생선 알레르기(`is_fish`) + 김치찌개 모든 재료 사장님 확인(금지 태그 없음) + `menu_ambiguity_flags: ["has_unclear_jeotgal"]` + `flag_confirmations: []` | `caution`, `evidence_basis: unknown`, 설명에 젓갈 안내, `owner_cards`에 플래그 카드(`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: ["is_fish"]`, `reason_codes: ["ambiguous_menu"]`) | 목록 밖 젓갈 때문에 SAFE가 나가지 않고, 사장님에게 물을 것 |
+| 18 | 생선 알레르기(`is_fish`) + 김치찌개 모든 재료 사장님 확인(금지 태그 없음) + `menu_ambiguity_flags: ["has_unclear_jeotgal"]` + `flag_confirmations: []` | `caution`, `evidence_basis: unknown`, `message.notes`에 `ambiguous_menu` 젓갈 안내, `owner_cards`에 플래그 카드(`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: ["is_fish"]`, `reason_codes: ["ambiguous_menu"]`) | 목록 밖 젓갈 때문에 SAFE가 나가지 않고, 사장님에게 물을 것 |
 | 19 | 할랄 사용자(`is_pork`·`is_alcohol`) + 같은 메뉴 + `menu_ambiguity_flags: ["has_unclear_jeotgal"]` | 플래그로는 판정이 바뀌지 않음 (다른 조건이 없으면 `safe`) | 관련 없는 플래그로 CAUTION을 내지 않을 것 |
 | 20 | 18번 + `flag_confirmations`: `has_unclear_jeotgal`, `constraint_tags: ["is_fish", "is_shrimp"]`, `absent`, `override_eligible: true` | `safe`, `evidence_basis: confirmed`, 플래그 카드 없음 | 사장님 답으로 플래그가 풀릴 것 |
 | 21 | 18번 + 같은 플래그 답 `present`, `constraint_tags: ["is_fish"]` | `danger`, `evidence_basis: confirmed`, 최상위 `matched_tags`에 `is_fish` | "들어 있다" 답을 hard evidence로 쓸 것 |
@@ -482,6 +499,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 28 | 금지 태그가 없는 사용자 + `no_information: true` | `caution`, `owner_cards: []` | 물을 것이 없으면 카드를 만들지 않을 것 |
 | 29 | 생선 알레르기 + 액젓(`is_fish`) 확인값 없음 + `owner_question_states`: 액젓 `question_id: question-002`, `answered_round: 2`, `needs_third` | 액젓 카드 `round: 3`, `previous_question_id: question-002` | 1·2차 답이 달랐던 재료에 3차 질문이 나갈 것 (⓪ 테스트 29) |
 | 30 | 할랄 사용자 + 4개월 전 확정된 돼지고기 `absent`(`expired: true`) + `owner_question_states`: 돼지고기 `confirmed` | 돼지고기 카드 `round: 1`, `previous_question_id: null`, `reason_codes`에 `expired` | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없을 것 |
+| 31 | 해산물 알레르기 + 참치김밥(참치 `role: identity`, 사장님 확인 `present`) + 이유 설명 LLM 시간 초과 | `danger`, `message.verdict`는 DANGER 템플릿, `message.reason: null`, `message.notes`에 `hard_to_remove` | LLM이 실패해도 판정 한 줄과 안내는 빠지지 않을 것 |
 
 ---
 
@@ -516,16 +534,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [ ] **재료 번역 사전 데이터 (외부 의존)** — `localized_name`은 DB `ingredients.name_i18n` 값을 쓰는데(⓪ §1-3·§4-7), 채울 번역이 아직 없다 (팀 재료 목록은 한국어만, 약 324개). 없으면 한국어 이름이 그대로 나간다. 6개 언어 번역 사전을 만들고 사람이 검수해야 한다 (재료명 오역은 알레르기 정보 손실). 담당을 정해야 한다
 - [ ] **표준 재료로 못 맞춘 웹 재료의 번역 표시** — `ingredient_id: null`인 재료는 번역 이름이 없어 지금은 한국어 그대로다 (§1-2). LLM 번역을 한국어 원문과 함께 "자동 번역"으로 보여 줄지 정해야 한다. 그렇게 하면 §0-2 "재료 이름은 LLM이 바꾸지 못한다"에 화면 표시용 예외를 적는다. 이 재료는 이미 SAFE가 막혀 있어 판정에는 영향이 없다
 - [ ] **기록 실시간 번역 경로 (백엔드와)** — 언어 설정을 바꾼 뒤 스캔 기록을 열 때 번역한다 (2026-10-14 회의). 누가 번역할지(백엔드·AI), 별도 API를 둘지 정해야 한다
-- [ ] **결과 문장 `message` 나누기 (⓪ 고칠 항목)** — 지금 `message`는 판정 한 줄·이유 설명·안내를 이어 붙인 문자열 하나다. 프론트 요청으로 나눠서 준다 (2026-10-14). 나눠야 화면에서 따로 배치하고, 다른 언어로 기록을 열 때 LLM 이유 설명만 숨길 수 있다
-  - 모양 (안): `message: {verdict, reason, notes[]}`. 셋 다 사용자 언어 하나다 (2026-10-14 회의). `verdict`(판정 한 줄, 템플릿), `reason`(이유 설명, LLM)은 실패하면 `null`, `notes[]`(빼기 어려움·애매함 안내)는 `{code, text}`. 지금 ⓪은 사용자 언어 단일 문자열이다 (#274)
-  - 고칠 곳:
-    - ⓪ §1-3 JudgeResponse 예시, 필드 표에 `message` 형식 추가
-    - ⓪ §4-7 DecisionResponse `message` 예시와 설명
-    - ⓪ §2-13 ⑧ 실패 처리 "고정 문장 템플릿" → `verdict`는 템플릿, `reason`은 `null`
-    - ⓪ §6 ⑧ 판정 실패의 "확인하지 못했어요" 문구 → `verdict`에 넣음
-    - ⓪ §6 고위험 재검증이 보강하는 문구 → `reason`
-    - ⑧ §0-2·§1-2·§4 (`message` 설명, LLM 실패 처리, 자동 검수 대상은 `reason`만)
-    - DB 스키마 `menu_analyses.message` 저장 형식 (백엔드)
+- [x] **결과 문장 `message` 나누기** — 프론트 요청(2026-10-14)으로 판정 한 줄·이유 설명·안내를 `message: {verdict, reason, notes[]}`로 나눴다 (§4 "`message` 칸"). ⓪ §1-3·§2-10·§2-13·§4-7·§6·테스트 20, ⑧ §0-2·§1-2·§2·§4에 반영 (2026-10-17). 고위험 재검증은 `reason`만 보강한다. 남은 것: 프론트가 이 모양으로 화면을 그릴 수 있는지 확인, DB 스키마 `menu_analyses.message` 저장 형식 (지금은 언어별 다국어 JSONB, §6 7번) 반영과 백엔드 확정
 - [x] **질문 카드와 질문 행 연결** — 백엔드 지적: 사장님 답을 어느 질문 행에 기록할지 정할 번호가 없었다. ⓪에 `owner_cards[]`·질문 저장 명령의 `item_id`·`card_id`(#274), 질문 차수 `round`·`previous_question_id`(#269)가 생겨 해결됨 (§1-3)
 - [x] **만료된 확정값 재질문과 `confirmed` 상태** — `confirmed`여도 확정값이 3개월 지나면 `round: 1`부터 다시 묻는다. ⓪ §4-7에 반영됨 (#274, §1-3, 테스트 30)
 - [ ] **질문 카드에 재료를 묶어 묻는 화면 (프론트·⑦·백엔드와)** — 결과 화면 시안과 시연판 프론트는 "달걀 지단, 어묵이 들어가 있나요?"처럼 재료 여러 개를 한 장으로 묻고, 답은 "네 / 아니요 / 잘 모르겠어요" 세 개다. ⑧은 카드 하나에 재료 하나다 (§1-3). 묶어서 물으면 "네"가 어느 재료인지 몰라 재료별 확인값으로 저장할 수 없다. "잘 모르겠어요"는 ⓪ `record_owner_answer.present`(boolean)에 담을 수 없다

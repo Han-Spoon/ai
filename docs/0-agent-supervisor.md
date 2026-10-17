@@ -816,7 +816,16 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
       ],
       "matched_tags": ["is_pork"],
       "evidence_refs": ["evidence-001"],
-      "message": "돼지고기 성분이 포함되어 있어요.",
+      "message": {
+        "verdict": "돼지고기가 들어 있어요.",
+        "reason": null,
+        "notes": [
+          {
+            "code": "hard_to_remove",
+            "text": "돼지고기는 이 메뉴의 주재료라 빼기 어려울 수 있어요."
+          }
+        ]
+      },
       "owner_cards": [],
       "warnings": [],
       "errors": []
@@ -855,6 +864,9 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 | `risk_ingredients[].role` | `identity \| component \| hidden \| null` | 주재료·속재료·숨은 재료 구분. 판정에는 사용하지 않음 |
 | `risk_ingredients[].confidence` | number \| null | ⑤의 0~1 근거 충분도. 확정값이면 null |
 | `risk_ingredients[].prior_source` | `store \| cluster \| global \| uninformative \| null` | ⑤ prior의 fallback 출처. 확정값이면 null |
+| `message.verdict` | string | 판정 한 줄. 요청 `locale`의 고정 템플릿이며 항상 채운다 |
+| `message.reason` | string \| null | 이유 설명. ⑧ LLM이 요청 `locale`로 쓴다. 필요 없거나 LLM 실패·자동 검수 탈락이면 null |
+| `message.notes[]` | `{code, text}` 배열 | 판정을 바꾸지 않는 안내. `code`는 `hard_to_remove \| ambiguous_menu`, `text`는 요청 `locale`의 고정 템플릿. 없으면 빈 배열 |
 | `owner_cards[].round` | `1 \| 2 \| 3` | 각 사장님 질문의 차수. 질문이 없으면 owner_cards는 빈 배열 |
 | `owner_cards[].item_id` | string | 카드가 속한 Prepare 메뉴 항목 ID |
 | `owner_cards[].card_id` | string | 카드와 질문 저장 명령을 잇는 ID. Supervisor가 내용으로 만든다 (§4-7) |
@@ -864,7 +876,7 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 
 `high_risk_review`와 `risk_ingredients[].anomaly_locked`는 Judge Graph 내부에서 재검증·SAFE 차단·질문 생성에 사용하지만 최종 JudgeResponse에는 노출하지 않는다. `risk_ingredients[].role`, `confidence`, `prior_source`는 사용자 설명에 필요하므로 외부 응답에 유지한다.
 
-`items[].message`는 요청 `locale`로 작성한 단일 string이다. 판정 결과에는 다른 언어 번역을 함께 넣지 않는다. 반면 `owner_cards[].question`은 가게에서 손님과 사장님이 함께 보는 문구이므로 한국어와 요청 `locale`만 담는다. 요청 언어가 한국어면 `ko` 하나만 담는다.
+`items[].message`는 판정 한 줄(`verdict`)·이유 설명(`reason`)·안내(`notes[]`)를 나눈 object이고, 세 칸 모두 요청 `locale` 하나로 작성한다 (⑧ §4). 화면이 부분별로 따로 배치하고, LLM이 만든 `reason`만 숨기거나 다시 만들 수 있게 나눈다. 판정 결과에는 다른 언어 번역을 함께 넣지 않는다. 반면 `owner_cards[].question`은 가게에서 손님과 사장님이 함께 보는 문구이므로 한국어와 요청 `locale`만 담는다. 요청 언어가 한국어면 `ko` 하나만 담는다.
 
 `owner_question_round`는 `owner_cards[].round`와 중복되므로 만들지 않는다. `risk_ingredients[].confirmation`도 기존 `status`, `evidence_refs`, `EvidenceRef.observed_at`, ③의 `expired`와 중복되므로 만들지 않는다.
 
@@ -1184,7 +1196,7 @@ START → prepare_item → §2-8의 조건 분기
 
 `validate_knowledge`는 DB를 조회하지 않고 §1-3의 ID·status·hash·item/candidate 대응만 검사한다. graph는 애플리케이션 시작 때 한 번 compile하고 초기 버전은 영속 checkpointer를 쓰지 않는다.
 
-collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anomaly → unknown_tag → no_information → partial_information → insufficient_web_sources → source_index` 순으로 고른다. 재검증은 판정을 바꾸지 않고 질문 카드와 문구만 보강한다. 재검증 대상은 이미 SAFE가 금지된 메뉴이고 DANGER는 사장님 확인값으로만 나오므로 판정을 바꿀 경우가 없다 (⑧ §2-3, #234). timeout이면 기존 결과를 유지한다.
+collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anomaly → unknown_tag → no_information → partial_information → insufficient_web_sources → source_index` 순으로 고른다. 재검증은 판정을 바꾸지 않고 질문 카드와 이유 설명(`message.reason`)만 보강한다. 재검증 대상은 이미 SAFE가 금지된 메뉴이고 DANGER는 사장님 확인값으로만 나오므로 판정을 바꿀 경우가 없다 (⑧ §2-3, #234). timeout이면 기존 결과를 유지한다.
 
 `owner_request`는 재검증이 끝난 뒤 모든 메뉴의 저장 대상 카드마다 질문 저장 명령(`create_owner_verification_request`)을 만든다. 재검증이 더한 카드도 포함하고, 재검증이 다듬은 질문은 다듬은 문구로 저장한다. 정보 없는 메뉴의 화면 표시용 카드는 저장하지 않는다. ⑦ 호출의 `context`는 카드가 속한 메뉴의 `item` context(`item_id` 포함)를 쓴다.
 
@@ -1223,7 +1235,7 @@ Prepare와 Judge 사이 상태는 AI 메모리나 checkpoint로 공유하지 않
 | ⑤ Bayesian | 재시도 없음 | unknown + partial |
 | ⑥ Web Search | 전체 7초 안에서 provider transient error 1회 | 수집 결과나 캐시가 있으면 부분 결과 + `web_search_deadline_exceeded`; 둘 다 없을 때만 `found: false`, `no_information: true` |
 | ⑦ DB Update | Supervisor 자동 재시도 금지 | 판정 유지 + command 생성 error |
-| ⑧ Decision | 정책 함수 재시도 없음, 문장 LLM 1회 | 보수 판정 유지 + 고정 문장 템플릿 |
+| ⑧ Decision | 정책 함수 재시도 없음, 문장 LLM 1회 | 보수 판정 유지 + `message.verdict`는 고정 템플릿, `message.reason`은 `null` |
 | ⑨ Curation | 재시도 없음 (넘겨받은 `curation_contents`만 사용) | `recommendations: []` |
 
 SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 재시도 책임은 adapter 한 곳에만 둔다. 예상한 timeout·validation 오류는 `NodeError`로 변환하고, 프로그래밍 오류나 invariant 위반은 숨기지 말고 요청 전체를 실패시켜 로그에서 바로 발견할 수 있게 한다.
@@ -2701,7 +2713,16 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   ],
   "matched_tags": ["is_pork"],
   "evidence_refs": ["evidence-001"],
-  "message": "This menu contains pork.",
+  "message": {
+    "verdict": "This dish contains pork.",
+    "reason": null,
+    "notes": [
+      {
+        "code": "hard_to_remove",
+        "text": "Pork is the main ingredient of this dish, so it may be hard to leave out."
+      }
+    ]
+  },
   "owner_cards": [],
   "high_risk_review": {
     "required": false,
@@ -2714,7 +2735,13 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
 
-`message`는 요청 `locale`로 작성한 단일 string이다. `risk_ingredients[].ingredient.canonical_name`은 한국어 표준명을 유지하고 `localized_name`에는 요청 `locale`의 이름을 넣는다. `locale: ko`이면 두 이름은 같은 값이다. 번역 이름은 요청 `localized_names`에서 가져온다. Supervisor가 Bundle `ingredient_graph.ingredients[].localized_name`에서 이 메뉴의 세 재료 목록(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`)에 나오는 재료만 골라 `{ingredient_id, localized_name}`으로 넣고, 값이 `null`인 재료는 넣지 않는다. 목록에 없는 재료(번역 이름이 없거나 `ingredient_id: null`인 웹 재료)는 `localized_name`에 한국어 `canonical_name`을 그대로 쓴다. 틀린 번역보다 원문이 안전하므로 ⑧은 재료 이름을 LLM으로 번역하지 않는다.
+`message`는 `{verdict, reason, notes[]}` object이고 세 칸 모두 요청 `locale`로 쓴다 (§1-3 필드 표, ⑧ §4).
+
+- `verdict`: `risk_level + evidence_basis`별 판정 한 줄 고정 템플릿. 재료 이름·확률은 코드 값을 넣는다. 항상 채운다.
+- `reason`: 이유 설명. ⑧ LLM이 쓰고 자동 검수(⑧ §4)를 통과한 문장만 넣는다. 필요 없거나 LLM 실패·검수 탈락이면 `null`이다.
+- `notes[]`: 판정을 바꾸지 않는 안내 `{code, text}`. `hard_to_remove`(판정에 걸린 재료의 `role`이 `identity`·`hidden`, 재료마다 하나), `ambiguous_menu`(사용자와 관련 있고 사장님 답으로 풀리지 않은 메뉴 애매함 플래그, 플래그마다 하나)다. `text`는 코드가 고르는 고정 템플릿이라 LLM 실패와 관계없이 나간다. 없으면 `[]`.
+
+`risk_ingredients[].ingredient.canonical_name`은 한국어 표준명을 유지하고 `localized_name`에는 요청 `locale`의 이름을 넣는다. `locale: ko`이면 두 이름은 같은 값이다. 번역 이름은 요청 `localized_names`에서 가져온다. Supervisor가 Bundle `ingredient_graph.ingredients[].localized_name`에서 이 메뉴의 세 재료 목록(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`)에 나오는 재료만 골라 `{ingredient_id, localized_name}`으로 넣고, 값이 `null`인 재료는 넣지 않는다. 목록에 없는 재료(번역 이름이 없거나 `ingredient_id: null`인 웹 재료)는 `localized_name`에 한국어 `canonical_name`을 그대로 쓴다. 틀린 번역보다 원문이 안전하므로 ⑧은 재료 이름을 LLM으로 번역하지 않는다.
 
 ⑧은 사용자 제한 태그와 겹치고 유효한 사장님 확인값이 없는 재료를 질문 후보로 다루며 확률이나 confidence 숫자로 후보를 제거하지 않는다. `risk_ingredients[].confidence`와 `prior_source`는 ⑤ 결과에서 온 추정 재료라면 그대로 보존한다. ③의 확정값처럼 prior 계산을 사용하지 않은 재료는 두 필드를 모두 `null`로 보낸다. `role`은 ④가 정한 값을 입력 세 목록과 최종 `risk_ingredients[]`까지 그대로 보존하며 위험도 계산에는 사용하지 않는다.
 
@@ -2797,7 +2824,11 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
   "decision": {
     "risk_level": "caution",
     "evidence_basis": "estimated",
-    "message": "This dish may contain beef (about 40%).",
+    "message": {
+      "verdict": "This dish may contain beef (about 40%).",
+      "reason": null,
+      "notes": []
+    },
     "owner_cards": []
   },
   "found_ingredients": [
@@ -2856,7 +2887,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
       "canonical_name": "땅콩"
     }
   ],
-  "message": "This dish may contain beef (about 40%). Mala tang is often served with a peanut sauce, so it may contain peanut.",
+  "reason": "Mala tang is often served with a peanut sauce, so it may contain peanut.",
   "owner_cards": [
     {
       "item_id": "scan-123:2",
@@ -2884,9 +2915,9 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 ```
 
 - `missed_ingredients`는 LLM이 `ingredient_choices` 안에서 고른 재료다. 추적용이며 `risk_ingredients`·`matched_tags` 같은 판정 값에는 넣지 않는다.
-- `message`는 보강한 뒤의 이 메뉴 문장 전체다. 확인되지 않은 내용이라 "~수 있어요" 말투로만 덧붙인다. 자동 검수(⑧ §4)를 통과하지 못하면 원래 `decision.message`를 그대로 돌려준다.
+- `reason`은 보강한 뒤의 이유 설명 전체다. 원래 `decision.message.reason`이 있으면 이어서 쓰고, `null`이면 새로 쓴다. 확인되지 않은 내용이라 "~수 있어요" 말투로만 쓴다. 자동 검수(⑧ §4)를 통과하지 못하면 원래 `decision.message.reason`을 그대로 돌려준다. 판정 한 줄(`verdict`)과 안내(`notes`)는 재검증이 다루지 않으므로 응답에 없다.
 - `owner_cards`는 보강한 뒤의 이 메뉴 카드 전체다. 원래 카드와 다듬은 질문, 놓친 재료 중 사용자 금지 태그와 겹치는 재료의 새 카드(`reason_codes`에 `high_risk_review`)를 담는다. 카드 순서는 ⑧ §1-3 규칙을 따른다. 새 카드의 `item_id`·`card_id`도 원래 카드와 같은 내용 기반 규칙(§4-7)으로 만든다.
-- Supervisor는 이 메뉴의 `message`·`owner_cards`만 응답 값으로 바꾼다. `risk_level`·`evidence_basis`·`risk_ingredients`·`matched_tags`는 바꾸지 않는다. 그 뒤 `owner_request`가 바뀐 카드까지 질문 저장 명령을 만든다 (§2-10).
+- Supervisor는 이 메뉴의 `message.reason`·`owner_cards`만 응답 값으로 바꾼다. `message.verdict`·`message.notes`는 그대로 둔다. `risk_level`·`evidence_basis`·`risk_ingredients`·`matched_tags`는 바꾸지 않는다. 그 뒤 `owner_request`가 바뀐 카드까지 질문 저장 명령을 만든다 (§2-10).
 - timeout·LLM 오류·형식 오류면 Supervisor는 원래 ⑧ 결과를 그대로 쓴다 (§6).
 
 ### 4-8. ⑨ Curation Tool
@@ -3053,7 +3084,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | ⑤ 계산 실패 | 해당 재료를 `unknown`, `information_status: partial`로 ⑧에 전달 |
 | ⑥ deadline 초과 | 수집 결과나 캐시가 있으면 모은 결과를 반환하고 `web_search_deadline_exceeded`; 둘 다 없을 때만 `found: false`, `no_information: true` |
 | ⑦ 명령 생성 실패 | 판정은 반환하되 저장 명령 누락을 error에 기록, 자동 재시도 금지 |
-| ⑧ 판정 실패 | 해당 메뉴 `status: partial_failed`, `risk_level: caution`, `evidence_basis: unknown`, `information_status: partial`로 채우고 "확인하지 못했어요" fallback 문구 사용 |
+| ⑧ 판정 실패 | 해당 메뉴 `status: partial_failed`, `risk_level: caution`, `evidence_basis: unknown`, `information_status: partial`로 채우고 `message.verdict`에 "확인하지 못했어요" fallback 템플릿, `reason: null`, `notes: []` |
 | 고위험 재검증 timeout/error | 기존 판정·질문·문구를 그대로 반환하고 다음 메뉴 처리 계속 |
 | ⑨ timeout/error | 추천은 빈 배열, `menu_order`는 `source_index` 순 fallback, 기존 판정 결과는 정상 반환 |
 | 일부 메뉴만 실패 | 실패 메뉴는 CAUTION 이상, 나머지 메뉴는 정상 결과 반환 |
@@ -3087,7 +3118,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 17 | ⑧ 판정 실패 | `partial_failed`, CAUTION, unknown, partial | ⑨ 정렬 가능한 보수 fallback |
 | 18 | 웹서치 대상 메뉴 7개 | 동시에 최대 5개 실행, 나머지는 완료 순서대로 시작 | 검색·LLM 동시성 상한 유지 |
 | 19 | 숨은 재료 액젓 | ④의 `role: hidden`이 ⑤·⑧·최종 결과까지 유지 | 안내용 역할 정보 손실 없음 |
-| 20 | 재검증 후보 메뉴 5개 | 우선순위와 `source_index`로 최대 3개만 재검증 | 판정값은 유지하고 카드·문구만 보강 |
+| 20 | 재검증 후보 메뉴 5개 | 우선순위와 `source_index`로 최대 3개만 재검증 | 판정값·`message.verdict`·`message.notes`는 유지하고 카드·`message.reason`만 보강 |
 | 21 | runtime 변형에 `base_menu_id` 존재 | ④ base 레시피 확장 → ⑤, ③ 재호출 없음, ⑤ 요청에 기본 메뉴 사장님 답변 없음 | 사장님 답변을 확률 계산에 사용하지 않음 |
 | 22 | `prepared_items_hash` 불일치 | HTTP 409로 Judge 거부 | ②~⑨ 호출 없음 |
 | 23 | 필수 Bundle slice 또는 candidate 대응 누락 | `bundle_miss`, HTTP 422 | 누락 자료를 추측해 판정하지 않음 |
