@@ -64,7 +64,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - **물리 DB 쓰기는 백엔드만 수행한다.** ⑦ DB Update Tool은 저장할 명령과 근거를 반환할 뿐이고, 권한·FK·멱등성 검증과 트랜잭션은 백엔드 몫이다.
 - `ingredient_risk_scores`는 직접 UPDATE 금지. 항상 `ingredient_evidence_log` INSERT → 재계산 순서.
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다 (파생 캐시이므로 ⑦ 승인 대상 아님).
-- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. ⓪ Supervisor Agent는 확정된 `store_id`만 입력받는다.
+- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. Prepare는 `store_id`를 받지 않으며, ⓪ Supervisor Agent의 Judge는 백엔드가 확정한 `store_id`만 입력받는다.
 
 ## 용어
 
@@ -75,7 +75,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
 | `prior_source` | prior를 어느 단계에서 가져왔는지 (`store` / `cluster` / `global` / `uninformative`) |
-| Agent / Tool | **기준 문서(PPT) 표기**를 따른다. ⓪ Supervisor Agent · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent · ⑨ Curation Tool |
+| Agent / Tool | **기준 문서(PPT) 표기**를 따른다. AI 실행 범위는 ⓪ Supervisor Agent · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent다. 기존 ⑨ Curation 기능은 백엔드가 담당한다. |
 | Agent vs Tool | **Agent는 판단하고 Tool은 수행한다.** Agent = LLM 추론이 필요한 판단 노드, Tool = 정해진 절차를 수행하는 실행 노드 |
 
 ## 커밋 규칙
