@@ -117,11 +117,13 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 
 - 허용 action은 위 5종 + ④가 직접 만드는 `save_menu_ingredient_cache`, 총 6종이다 (`ai_command_receipts.action`, `caution-db-schema.md` §4).
 - 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2).
-- `idempotency_key`는 **내용 기준**이다: action과 내용 키(예: 질문은 가게·스캔·메뉴·재료 또는 플래그, 답은 `question_id`)의 해시. `trace_id`·`operation_id`는 넣지 않는다. 넣으면 같은 스캔을 재시도할 때 같은 질문이 또 저장된다. action별 내용 키는 ⓪ §4-6 표를 따른다.
+- `idempotency_key`는 **내용 기준**이다: action과 내용 키(예: 질문은 가게·스캔·`item_id`·`card_id`·메뉴·`round`·`previous_question_id`·재료 또는 플래그, 답은 `question_id`)의 해시. `trace_id`·`operation_id`는 넣지 않는다. 넣으면 같은 스캔을 재시도할 때 같은 질문이 또 저장된다. action별 내용 키는 ⓪ §4-6 표를 따른다.
 - `context`는 입력 값을 수정하지 않고 그대로 돌려준다. 메뉴·재료 ID는 정수, 질문 ID는 UUID다.
 - 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다.
 
-**백엔드의 `record_owner_answer` 응답 — `confirmation_state`** (⑧이 다음 질문을 만든다, §2-3)
+**백엔드의 `record_owner_answer` 처리 결과 — `confirmation_state`** (⑧이 다음 질문을 만든다, §2-3)
+
+백엔드는 처리 결과 `{question_id, answered_round, confirmation_state}`를 질문 행에 저장하고, 다음 Judge의 KnowledgeBundle `exact_feedback.exact.owner_question_states[]`에 넣는다. ③이 그대로 넘기고 Supervisor가 ⑧까지 전달하면, ⑧이 `round`와 `previous_question_id`(직전 질문 ID)를 붙여 다음 카드를 만든다 (⓪ §4-2·§4-6). AI가 같은 호출에서 이 값을 받는 별도 endpoint는 없다.
 
 | 값 | 뜻 | 다음 할 일 |
 |---|---|---|
@@ -129,8 +131,8 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 | `needs_second` | 확인 차례의 1차 답만 있음 | ⑧이 2차 질문 생성 |
 | `needs_third` | 1·2차 답이 다름 | ⑧이 3차 질문 생성 |
 
-미확정 (§8, ⓪ §4-6에도 적어 둠):
-- **2·3차 질문 연결이 ⓪에 없다.** ⑧은 카드에 `round: 1 | 2 | 3`을 붙이지만, 몇 차 질문인지 알려 주는 값(`confirmation_state` 또는 확인 차례의 답변 수)이 ⑧까지 오는 경로가 ⓪에 없다. 백엔드가 이 값을 ③ 확인값과 함께 KnowledgeBundle에 넣어 ⑧까지 전달하는 방안을 요청한다.
+- `needs_second`는 `answered_round: 1`, `needs_third`는 `answered_round: 2`에서만 나온다. 3차 답 뒤에는 항상 `confirmed`다.
+- 확정값이 3개월 지나 만료되면 상태가 `confirmed`여도 ⑧이 새 확인 차례의 1차 카드(`round: 1`, `previous_question_id: null`)를 만든다.
 
 ## 2. 처리 로직
 
@@ -227,17 +229,15 @@ flowchart TD
 
 ## 3. 출처·검증 상태 관리 (Provenance)
 
-PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"을 모든 명령의 `payload.provenance`로 표현한다.
+PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"은 세 곳으로 나눠 표현한다. 명령 형식은 ⓪ §4-6에서만 정의한다.
 
-| 필드 | 값 | 의미 |
+| 무엇 | 어디에 | 누가 정함 |
 |---|---|---|
-| `source_type` | `web_search` \| `ocr_variant_tag` \| `owner_feedback` | 출처. `ingredient_evidence_log.source_type`과 같은 값. 관광객 피드백은 출처로 쓰지 않는다 (③ 결정) |
-| `evidence_ref_table` / `evidence_ref_id` | `web_search_cache` / `menu_analyses` / `owner_verification_requests` | 원본 근거 행 |
-| `verification_status` | `pending_review` → `approved` \| `rejected` (soft), `owner_confirmed` (hard) | 검증 상태 |
-| `reliability_weight` | float, 0~1 | 이 근거를 낸 출처의 현재 신뢰도. 가장 믿을 만하면 1. 계산은 §3-1, 사용은 ⑤ §2-3. 아직 비교 기록이 없는 출처는 0.5 |
+| 출처 | 명령 `payload.provenance`의 `origin_node`·`source_type`·`evidence_class`·`evidence_refs` (action별 고정값은 ⓪ §4-6 표) | ⑦ |
+| 검증 상태 | `knowledge_review_items.status`(`pending` / `approved` / `rejected`), `ingredient_confirmations.source`(`owner_confirmed`) | 백엔드가 action별 저장 정책으로 정함. 명령에 넣지 않는다 |
+| 신뢰도 | `source_reliability` 테이블 (§3-1). 가게 증거는 `delta_alpha`에 곱해 넣는다 | ⑦이 `update_source_reliability`로 갱신 명령을 만들고 백엔드가 저장. 명령 provenance에 넣지 않는다 |
 
-- ④ `runtime_tagged` 변형 제안은 `source_type: ocr_variant_tag`로 기록한다.
-- 저장 위치 (백엔드 ERD V9·V10 기준): `verification_status`는 `knowledge_review_items.status`(`pending` / `approved` / `rejected`)와 `ingredient_confirmations.source`(`owner_confirmed`)에 있다. `reliability_weight`는 증거 행에 따로 두지 않고 `delta_alpha`에 곱해 넣으며, 출처별 누적값은 `source_reliability`에 둔다 (§3-1).
+- ④ `runtime_tagged` 변형 제안은 `source_type: ocr_variant_tag`로 기록한다. 관광객 피드백은 출처로 쓰지 않는다 (③ 결정).
 
 ### 3-1. 출처 신뢰도 계산 (결정, 2026-10-06, #194)
 
@@ -317,8 +317,10 @@ RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아�
 -- 플래그 질문: :ingredient_id NULL, :ambiguity_flag·:asked_tags 값 (asked_tags는 정렬)
 -- :recipe_probability = 질문 시점 ⑤ posterior_mean (재료 질문만, 플래그 질문은 NULL)
 INSERT INTO owner_verification_requests
-       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, recipe_probability, question_text, status)
-VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :recipe_probability, :question_text, 'pending')
+       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, recipe_probability,
+        card_id, round, previous_question_id, question_text, status)
+VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :recipe_probability,
+        :card_id, :round, :previous_question_id, :question_text, 'pending')
 ON CONFLICT DO NOTHING;
 ```
 
@@ -354,6 +356,11 @@ ON CONFLICT (store_id, menu_id, ingredient_id)
 DO UPDATE SET present = EXCLUDED.present, flagged_anomaly = EXCLUDED.flagged_anomaly,
               confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_confirmation_id에 기록
+
+-- 처리 결과 저장 → 다음 Judge Bundle의 owner_question_states[]
+UPDATE owner_verification_requests
+SET confirmation_state = :confirmation_state        -- confirmed / needs_second / needs_third
+WHERE id = :question_id;
 ```
 
 **`record_owner_answer` — 플래그 답** (§2-4). 증거 로그·신뢰도 갱신 없음
@@ -382,6 +389,9 @@ VALUES (:store_id, :menu_id, :ambiguity_flag, :asked_tags, :present, now())
 ON CONFLICT (store_id, menu_id, ambiguity_flag, asked_tags)
 DO UPDATE SET present = EXCLUDED.present, confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_flag_confirmation_id에 기록
+
+-- 처리 결과 저장 (재료 답과 같음)
+UPDATE owner_verification_requests SET confirmation_state = :confirmation_state WHERE id = :question_id;
 ```
 
 **`create_review_item` 승인 후 soft 증거 반영** — 로그 INSERT 후 재계산 (직접 UPDATE 금지)
@@ -497,7 +507,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 4 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장, ③이 `override_eligible: false` 반환 | **확률 값과 무관하게** ⑧에서 CAUTION 이상 유지될 것 |
 | 5 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 | 6 | ⑧ 질문 생성 요청 | `create_owner_verification_request` 명령만 반환 | ⑦ 출력에 `question_id`·저장 완료 표시가 없을 것 (백엔드가 발급) |
-| 7 | 모든 명령 | `payload.provenance` 포함 | `source_type`·`verification_status`가 빠지지 않을 것 |
+| 7 | 모든 명령 | `payload.provenance` 포함 | `origin_node`·`source_type`·`evidence_class`·`evidence_refs`만 있고 `verification_status`·`reliability_weight`는 없을 것 (⓪ §4-6) |
 | 8 | 같은 명령 2회 전달 | 한 번만 반영 | `idempotency_key`가 같을 것 |
 | 8-b | 같은 스캔(`scan_session_id`)의 Judge를 다른 `trace_id`로 재시도 | 같은 질문 명령의 `idempotency_key`가 같음 | 질문 행이 하나만 생길 것 |
 | 8-c | 같은 재료 질문에 1차·2차 답 (`question_id` 다름) | `record_owner_answer` 키가 서로 다름 | 두 답이 모두 기록될 것 |
@@ -535,7 +545,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
-- [ ] **2·3차 질문 연결 (③·⑧·백엔드와 함께)** — 몇 차 질문인지(`confirmation_state` 또는 확인 차례 답변 수)를 ⑧까지 전달하는 경로 (§1-2)
+- [x] **2·3차 질문 연결** — 백엔드가 처리 결과를 저장해 다음 Judge Bundle의 `owner_question_states[]`로 넣고 ③ → ⑧로 전달 (⓪ #269·#274, §1-2)
+- [ ] **질문 사슬 컬럼 (외부 의존)** — `owner_verification_requests`에 `card_id`·`round`·`previous_question_id`·`confirmation_state` 추가 요청 (`caution-db-schema.md` §6 20번)
 - [x] **이상 답변 판정용 레시피 확률** — 질문 생성 때 ⑤ `posterior_mean`을 `recipe_probability`로 저장하고, 답 확정 때 이번 확인 차례의 가장 최근 질문 값으로 판정 (2026-10-13, §2-3). ⑧은 바뀌지 않는다 (Supervisor가 ⑤ 결과에서 채움)
 - [ ] **`owner_verification_requests.recipe_probability` 컬럼 (외부 의존)** — `caution-db-schema.md` §6 15번으로 백엔드에 요청
 
@@ -628,7 +639,6 @@ soft evidence가 사람 승인 없이 DB에 들어가면 한 번의 잘못된 �
 - [ ] 저장 명령 Pydantic 모델과 `context` 검증 구현
 - [ ] `idempotency_key` 생성 규칙 구현
 - [ ] `create_review_item` 명령 생성 구현 (웹서치·변형 제안)
-- [ ] `verification_status: pending_review` 부여
 - [ ] DB 쓰기 코드가 없음을 확인하는 테스트 작성
 
 **관련 서비스**
