@@ -64,7 +64,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - **물리 DB 쓰기는 백엔드만 수행한다.** ⑦ DB Update Tool은 저장할 명령과 근거를 반환할 뿐이고, 권한·FK·멱등성 검증과 트랜잭션은 백엔드 몫이다.
 - `ingredient_risk_scores`는 직접 UPDATE 금지. 항상 `ingredient_evidence_log` INSERT → 재계산 순서.
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다 (파생 캐시이므로 ⑦ 승인 대상 아님).
-- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. Prepare는 `store_id`를 받지 않으며, ⓪ Supervisor Agent의 Judge는 백엔드가 확정한 `store_id`만 입력받는다.
+- 가게 검색·선택·공공데이터 매칭은 백엔드 책임. Prepare는 `store_id`를 받지 않는다. Judge는 백엔드가 확정한 양의 정수 `store_id` 또는 가게 없는 스캔을 뜻하는 `null`을 받는다. `store_id: null`이면 가게별 확정값·store prior·가게 캐시를 사용하지 않고, 사장님 질문·답변과 저장 명령을 만들지 않으며 SAFE 판정을 금지한다.
 
 ## 용어
 

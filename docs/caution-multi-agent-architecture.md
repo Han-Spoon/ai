@@ -194,16 +194,28 @@ graph TB
 
 ## 3. Agent / Tool 역할 정의
 
-### ⓪ Supervisor Agent (Judge `store_id` 검증 + AI 판정 오케스트레이션)
+### ⓪ Supervisor Agent (Judge 가게 스코프 검증 + AI 판정 오케스트레이션)
 - **역할 개요**: Prepare의 OCR·이름 정제와 Judge의 위험 판정을 지휘하는 AI 진입점. ①~⑧은 독립적으로 움직이지 않고 전부 Supervisor의 호출을 받아 실행되며, 결과도 Supervisor에게만 반환한다(2번 섹션 참고). 큐레이션은 백엔드가 담당한다.
-- **입력**: Prepare는 이미지와 실행 문맥을 받고 `store_id`를 받지 않는다. Judge는 백엔드가 검색·선택·존재/활성 검증을 마친 양의 정수 `store_id`와 Prepare 결과·지식 데이터를 받는다.
+- **입력**: Prepare는 이미지와 실행 문맥을 받고 `store_id`를 받지 않는다. Judge는 백엔드가 검색·선택·존재/활성 검증을 마친 양의 정수 `store_id` 또는 가게 없는 스캔을 뜻하는 `null`과 Prepare 결과·지식 데이터를 받는다.
 - **처리**:
   1. **정규화 위임**: OCR 메뉴명 리스트를 ② Menu Normalization Agent에 배치로 통째로 전달 → 정규화된 리스트를 받아 이후 단계에 사용. 아이템 하나마다 왕복하지 않는 이유는 메뉴판 1장당 수십 개 항목이 나올 수 있어 매번 왕복하면 느려지기 때문(5번 섹션 배치/캐싱 이슈 참고).
-  2. **가게 컨텍스트 검증**: Judge에서 `store_id`가 JSON 정수이며 0보다 큰지 검증하고 ②-B~⑧ 호출에 같은 값을 전달. Prepare의 ①·②-A 호출에는 `store_id`를 넣지 않는다. 가게 검색·Kakao fallback·사용자 선택·기존 공공데이터 매칭·스캔 연결은 백엔드 책임이며 AI는 가게 마스터를 변경하지 않음.
+  2. **가게 컨텍스트 검증**: Judge에서 `store_id`가 양의 JSON 정수 또는 `null`인지 검증한다. 양의 정수는 ②-B~⑧ 호출에 전파한다. `null`이면 가게별 확정값·store prior·가게 캐시 없이 분석하고 ③·⑦·사장님 질문 경로를 건너뛴다. Prepare의 ①·②-A 호출에는 `store_id`를 넣지 않는다. 가게 검색·Kakao fallback·사용자 선택·기존 공공데이터 매칭·스캔 연결은 백엔드 책임이며 AI는 가게 마스터를 변경하지 않음.
   3. **메뉴 아이템별 라우팅**: 정규화된 메뉴명마다 ③ Exact Feedback Tool을 먼저 호출. 재료가 전부 확인되면(hard evidence 존재) 곧바로 ⑧ Decision Policy / XAI Agent로 넘어가는 **가벼운 경로**로 처리 종료, 일부/전부 미확인이면 ④ DB / Ontology Tool → (필요시) ⑤ Bayesian Tool / ⑥ Web Search Agent를 순서대로 호출하는 **무거운 경로**로 위임.
   4. **결과 취합**: 메뉴판에 있는 모든 아이템의 ⑧ 결과가 모이면 하나의 응답으로 묶어 사용자에게 반환.
-- **출력**: Prepare는 `store_id` 없이 정제된 메뉴 목록을 반환한다. Judge는 입력과 동일한 `store_id`와 메뉴별 판정·근거·저장 명령을 반환한다.
-- **주의**: Judge의 `store_id`가 없으면 ③ Exact Feedback Tool과 ⑤ Bayesian Tool의 prior가 전역으로 섞일 수 있으므로 ②-B~⑧의 모든 가게별 저장·조회 문맥에 필수로 강제한다.
+- **출력**: Prepare는 `store_id` 없이 정제된 메뉴 목록을 반환한다. Judge는 입력과 동일한 `store_id`와 메뉴별 판정·근거·저장 명령을 반환한다. `store_id: null`이면 `owner_cards`와 `persistence_commands`는 빈 배열이다.
+- **주의**: `store_id: null`인 가게 없는 스캔은 가게별 확정값·store prior·가게 캐시를 사용하지 않고, 사장님 질문·답변과 모든 저장 명령을 만들지 않으며 SAFE를 금지한다. 양의 정수인 경우에만 가게별 데이터를 사용한다.
+
+#### 가게 없는 스캔
+
+```text
+Prepare(store_id 없음)
+  → Judge(store_id: null)
+  → 메뉴 정규화·전역 레시피/온톨로지·global/uninformative prior·웹 검색
+  → CAUTION 결과 반환
+  → 사장님 카드 없음, 저장 명령 없음
+```
+
+백엔드는 `store_id: null`인 Judge의 KnowledgeBundle에 exact feedback, store prior, 가게 캐시를 넣지 않는다. Supervisor는 ③ Exact Feedback Tool과 ⑦ DB Update Tool을 호출하지 않고, ⑧에 사장님 상호작용 비허용 신호를 전달한다. 가게가 없다는 사실을 데이터 조회 실패로 해석하지 않는다.
 
 ### ① OCR Tool
 - **역할 개요**: 메뉴판 이미지에서 메뉴명·가격·설명 텍스트를 구조화하여 추출하는 입구. ⓪ Supervisor Agent보다 앞단에서 동작하며, 이후 모든 단계는 여기서 나온 메뉴명 리스트를 입력으로 받는다.
@@ -226,7 +238,7 @@ graph TB
 
 ### ③ Exact Feedback Tool (재료 단위로 재설계)
 - **역할 개요**: 확률로 추정하기 전에 "이미 사람이 확인해준 확실한 값이 있는지"부터 재료 단위로 체크하는 1차 관문. 여기서 확인되면 Bayesian 계산 자체가 불필요해 비용·속도 면에서 이득이고, 무엇보다 사람이 확인한 값이 확률 추정치보다 신뢰도가 높음.
-- **입력**: store_id, 메뉴명 (Supervisor로부터 전달받음)
+- **입력**: 양의 정수 store_id, 메뉴명 (Supervisor로부터 전달받음). 가게 없는 스캔에서는 ③을 호출하지 않음
 - **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 확정으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`caution-db-schema.md` 참고)
 - **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면(anomaly 예외 포함) 나머지 재료만 ⓪ Supervisor Agent가 다음 노드로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법(전부 확인 vs 전부 미확인) 금지 — 부분 확인을 지원해야 "새우젓만 사장님이 확인해줬고 나머지는 아직 모름" 같은 현실적인 상황을 표현할 수 있음.
@@ -242,8 +254,8 @@ graph TB
 
 ### ⑤ Bayesian Tool
 - **역할 개요**: ③ Exact Feedback Tool로 확인되지 않은 재료에 대해 "이 가게 이 메뉴에 얼마나 있을 것 같은지"를 가게별 과거 데이터로 추정하는 확률 엔진. 확정값이 아니라 추정치이기 때문에, 이 결과는 항상 ⑧이 임계값과 함께 해석해서 DANGER/CAUTION/SAFE로 변환한다.
-- **입력**: store_id, 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
-- **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **5-tool-Statistics.md 확정 공식**(doc2 갱신 완료). store_id 스코프 prior를 `store → cluster(menu_category) → global → uninformative` 순으로 fallback해서 사용하고, 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
+- **입력**: store_id(가게 없는 스캔은 null), 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
+- **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **5-tool-Statistics.md 확정 공식**(doc2 갱신 완료). 가게가 있으면 `store → cluster(menu_category) → global → uninformative` 순으로 fallback하고, 가게가 없으면 store 단계를 건너뛰어 global 또는 uninformative prior만 사용한다. 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
 - **출력**: 재료별 존재 확률 (posterior mean) → **Supervisor에게 반환**
 - **주의**: 전역 prior는 최후의 수단(`uninformative`). ③에서 override 거부된 anomaly 재료는 `anomaly_locked: true`로 표시되어, 확률 값과 무관하게 ⑧이 CAUTION 이상을 강제하도록 함.
 

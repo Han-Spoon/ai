@@ -170,7 +170,9 @@ erDiagram
 ## 3. 가게 스코프 테이블 (`store_id` 필수, V10)
 
 ### `stores` (백엔드 소유)
-이 문서에서 다시 정의하지 않는다. AI의 `store_id`는 `stores.id BIGINT`(JSON 정수, Python `int`)다. 가게 검색·선택·공공데이터 매칭은 백엔드 책임이다. Prepare는 `store_id`를 받지 않고 OCR·메뉴명 정제까지만 수행하며, Judge는 백엔드가 존재·활성 검증을 마친 확정된 `store_id`만 받는다. AI는 GPS·지도 검색, 가게 후보 생성, `stores` INSERT/UPDATE를 하지 않는다.
+이 문서에서 다시 정의하지 않는다. AI의 `store_id`는 `stores.id BIGINT`에 대응하는 양의 JSON 정수 또는 가게 없는 스캔을 뜻하는 `null`이다. 가게 검색·선택·공공데이터 매칭은 백엔드 책임이다. Prepare는 `store_id`를 받지 않고 OCR·메뉴명 정제까지만 수행한다. Judge는 백엔드가 존재·활성 검증을 마친 양의 정수 `store_id` 또는 `null`을 받는다. `store_id: null`이면 가게별 확정값·store prior·가게 캐시를 조회하지 않고, 사장님 질문·답변과 저장 명령을 만들지 않으며 SAFE를 금지한다. AI는 GPS·지도 검색, 가게 후보 생성, `stores` INSERT/UPDATE를 하지 않는다.
+
+`store_id: null`은 API 실행 문맥에서만 허용한다. 아래 가게 스코프 테이블의 `store_id NOT NULL` 제약은 그대로 유지하며, 가게 없는 Judge 결과를 이 테이블들에 저장하지 않는다.
 
 ### `ingredient_risk_scores`
 "이 가게, 이 메뉴에 이 재료가 들어 있을 확률" — 현재 값. ⑤의 `store` prior.
