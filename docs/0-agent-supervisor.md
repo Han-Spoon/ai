@@ -289,7 +289,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "scan_session_id": "scan-123",
   "store_id": 123456,
@@ -300,7 +300,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 
 | 필드 | 타입 | 규칙 |
 |---|---|---|
-| `schema_version` | string | 현재값 `2.0`. breaking change는 major 증가 |
+| `schema_version` | string | 현재값 `3.0`. breaking change는 major 증가 |
 | `trace_id` | UUID string | 요청 전체에서 동일. 없으면 Supervisor가 최초 1회 발급 |
 | `scan_session_id` | string | 요청 전체에서 동일 |
 | `store_id` | integer \| null | Judge에서 양의 정수는 백엔드가 존재·활성 검증을 마친 가게, null은 가게 없는 스캔. Prepare 하위 호출에서는 필드 자체를 생략 |
@@ -417,7 +417,7 @@ Supervisor는 위 warning이 하나라도 있으면 해당 메뉴를 SAFE로 확
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "scan_session_id": "scan-123",
   "image": {
@@ -438,7 +438,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "prepare_id": "0199a2f0-0000-7000-8000-000000000101",
   "scan_session_id": "scan-123",
@@ -490,7 +490,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "prepare_id": "0199a2f0-0000-7000-8000-000000000101",
   "scan_session_id": "scan-123",
@@ -518,7 +518,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
     }
   ],
   "knowledge_bundle": {
-    "bundle_schema_version": "2.0",
+    "bundle_schema_version": "3.0",
     "ingredient_graph": {
       "status": "ok",
       "ingredients": [
@@ -737,7 +737,7 @@ Prepare/Judge가 노드를 호출하기 전에 요청을 거부하면 정상 응
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "error": {
     "code": "prepared_items_hash_mismatch",
@@ -758,7 +758,7 @@ Prepare/Judge가 노드를 호출하기 전에 요청을 거부하면 정상 응
 | 422 | `storeless_scope_violation` | `store_id: null`인데 가게별 exact·store prior·가게 캐시가 포함됨 |
 | 409 | `prepare_context_mismatch` | `prepare_id`, `scan_session_id` 연결 불일치 |
 | 409 | `prepared_items_hash_mismatch` | Prepare 항목 또는 안전 신호가 변경됨 |
-| 409 | `bundle_schema_version_mismatch` | 현재값 `2.0`과 Bundle schema version 불일치 |
+| 409 | `bundle_schema_version_mismatch` | 현재값 `3.0`과 Bundle schema version 불일치 |
 
 slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 HTTP 오류로 종료하지 않는다. safety slice이면 Judge를 계속 실행하되 해당 메뉴의 warning·`partial_failed` 상태를 남기고 SAFE를 금지한다. 웹 캐시는 새 웹검색 fallback을 사용하며, 그 장애만으로 이미 완료된 위험 판정을 낮추거나 실패 처리하지 않는다.
 
@@ -766,7 +766,7 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "prepare_id": "0199a2f0-0000-7000-8000-000000000101",
   "scan_session_id": "scan-123",
@@ -912,7 +912,9 @@ flowchart TD
     subgraph J["Judge Graph — AI 내부 확정"]
     JUDGE_IN["Judge 입력 검증<br/>prepared_items + 지식 데이터"] --> MATCH["②-B 후보 해석·최종 선택"]
     MATCH --> LOOP["메뉴별 Item Graph fan-out"]
-    LOOP --> MID{"menu_id 후보 있음?"}
+    LOOP --> STORE_SCOPE{"store_id 있음?"}
+    STORE_SCOPE -->|Yes| MID{"menu_id 후보 있음?"}
+    STORE_SCOPE -->|No| ONTO_UNKNOWN
     MID -->|Yes| EXACT["③ Exact Feedback Tool 조회"]
     MID -->|No| ONTO_UNKNOWN["④ DB / Ontology Tool<br/>Bundle 기반 unknown/longest-match"]
     EXACT --> COMP{"completeness: complete<br/>AND override 불가 확인값 없음?"}
@@ -930,14 +932,16 @@ flowchart TD
     WEB --> FOUND{"수집·캐시 결과가 있는가?"}
     FOUND -->|Yes| MAP["④ map_ingredients<br/>표준 재료·태그 매핑"]
     MAP --> WAGG["⑥ Web Search Agent 2단계<br/>표준 재료 기준 집계"]
-    WAGG --> DBUP2["⑦ DB Update Tool<br/>관리자 검토 명령 생성"]
+    WAGG --> STORE_WRITE{"store_id 있음?"}
+    STORE_WRITE -->|Yes| DBUP2["⑦ DB Update Tool<br/>관리자 검토 명령 생성"]
+    STORE_WRITE -->|No| BAYES2
     DBUP2 --> BAYES2["⑤ Bayesian Tool<br/>웹서치 후보 기반"]
     BAYES2 --> TAG3["④ lookup_tags<br/>확인값 태그 조회"]
     TAG3 --> XAI3["⑧ Decision Policy / XAI Agent"]
     FOUND -->|No| XAI4["⑧ Decision Policy / XAI Agent<br/>no_information: true"]
 
-    ONTO -.soft evidence.-> DBUP1["⑦ DB Update Tool<br/>관리자 검토 항목 생성"]
-    WEB -.soft evidence.-> DBUP1
+    ONTO -. "soft evidence + store_id 있음" .-> DBUP1["⑦ DB Update Tool<br/>관리자 검토 항목 생성"]
+    WEB -. "soft evidence + store_id 있음" .-> DBUP1
     XAI1 --> OUT["메뉴별 결과 취합"]
     XAI2 --> OUT
     XAI3 --> OUT
@@ -990,7 +994,7 @@ LangGraph 구현에서는 Judge Graph가 메뉴 항목을 fan-out해 독립 처�
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "trace_id": "0199a2f0-0000-7000-8000-000000000001",
   "scan_session_id": "scan-123",
   "store_id": 123456
@@ -1022,7 +1026,7 @@ Judge Graph의 누적 state는 다음 모양이다. `knowledge_bundle`은 §1-3 
 {
   "prepared_items": [],
   "knowledge_bundle": {
-    "bundle_schema_version": "2.0",
+    "bundle_schema_version": "3.0",
     "items": [],
     "source_reliability": {
       "status": "not_found",
@@ -1307,7 +1311,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -1330,7 +1334,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -1387,7 +1391,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -1416,7 +1420,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -1450,7 +1454,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1494,7 +1498,7 @@ Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_k
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1564,7 +1568,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1587,7 +1591,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1672,7 +1676,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1766,7 +1770,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1896,7 +1900,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -1974,7 +1978,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2020,7 +2024,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2045,7 +2049,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2112,7 +2116,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2151,7 +2155,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2234,7 +2238,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2484,7 +2488,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2572,7 +2576,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2679,7 +2683,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2811,7 +2815,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -2878,7 +2882,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
