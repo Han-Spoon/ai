@@ -33,7 +33,7 @@ Supervisor는 사용자 스캔 요청의 **유일한 AI 진입점**이며, ① O
 
 핵심 책임은 세 가지다.
 
-1. **Judge에서 백엔드가 확정한 `store_id` 검증과 스코프 강제**
+1. **Judge의 확정 `store_id` 또는 가게 없는 스캔 스코프 검증**
 2. **하위 Agent·Tool 호출 순서 결정과 결과 취합**
 3. **요청 상태·근거·오류·실행 로그의 중앙 관리**
 
@@ -55,7 +55,7 @@ Supervisor는 사용자 스캔 요청의 **유일한 AI 진입점**이며, ① O
 
 `store_id`가 빠지면 가게별 확정값과 prior가 전역으로 섞인다. 이 경우 다른 식당의 사장님 답변이나 웹서치 기반 추정이 현재 식당의 위험도에 영향을 줄 수 있어 FN(false negative) 위험이 커진다.
 
-→ Prepare는 가게 정보를 사용하지 않으므로 `store_id`를 받거나 반환하지 않는다. Judge는 가게별 확정값과 prior를 사용하므로 모든 Judge 하위 호출에 `store_id`를 필수로 실어 보내고, `store_id`가 없거나 유효하지 않으면 ②-B~⑧을 호출하지 않는다.
+→ Prepare는 가게 정보를 사용하지 않으므로 `store_id`를 받거나 반환하지 않는다. Judge의 `store_id`는 백엔드가 확정한 양의 정수 또는 가게 없는 스캔을 뜻하는 `null`이다. 양의 정수이면 같은 값을 Judge 하위 호출에 전파한다. `null`이면 가게별 확정값·store prior·가게 캐시를 사용하지 않고 ③과 저장 명령 생성 경로를 건너뛰며, 사장님 카드와 SAFE 판정을 금지한다.
 
 ### 0-2. 구현 프레임워크 — LangChain + LangGraph
 
@@ -102,7 +102,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 - FastAPI 경계에서는 동기 `invoke()`가 아니라 비동기 `ainvoke()`를 사용한다.
 - graph node는 `async def node(state, runtime) -> dict` 형태로 만들고 **전체 state가 아니라 변경 필드만** 반환한다.
 - 외부 API·DB·LLM client는 node 안에서 매번 생성하지 않고 FastAPI lifespan에서 만든 뒤 adapter에 주입한다.
-- `trace_id`, `scan_session_id`, `schema_version`은 모든 LangGraph run-scoped context의 immutable 값으로 둔다. `store_id`는 Judge run에서만 immutable 값으로 둔다.
+- `trace_id`, `scan_session_id`, `schema_version`은 모든 LangGraph run-scoped context의 immutable 값으로 둔다. `store_id`는 Judge run에서 `integer | null`인 immutable 값으로 둔다.
 - `call_scope`와 `item_id`는 각 node가 공통 context에서 호출 대상에 맞게 조립한다.
 - 여러 메뉴의 결과는 reducer로 모으고, 최종 출력 전에 `source_index`로 다시 정렬한다. 병렬 완료 순서를 사용자 출력 순서로 사용하지 않는다.
 - 초기 버전은 `compile(checkpointer=False)` 또는 checkpointer 없이 요청 단위 휘발성 state로 실행한다. checkpoint 도입은 §8 결정 뒤에 한다.
@@ -274,7 +274,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 
 - 필드명은 `snake_case`, enum 값은 소문자 `snake_case`를 사용한다. 예외로 언어 코드(`locale`, `question`의 언어 키)는 프론트 표기 `ko | en | ar | zh-CN | zh-TW | ja | es`를 그대로 쓴다.
 - 시간은 UTC ISO-8601 문자열을 사용한다. 예: `2026-10-08T03:00:00Z`.
-- 실행 식별자(`trace_id`, `scan_session_id`, `item_id`, `evidence_id`)는 문자열을 사용한다. DB 식별자인 `store_id`, `menu_id`, `menu_category_id`, `ingredient_id`는 JSON 정수를 사용하며, 아직 DB에 매핑되지 않은 메뉴·재료 ID만 `null`을 허용한다.
+- 실행 식별자(`trace_id`, `scan_session_id`, `item_id`, `evidence_id`)는 문자열을 사용한다. DB 식별자인 `menu_id`, `menu_category_id`, `ingredient_id`는 JSON 정수를 사용하며 아직 DB에 매핑되지 않은 메뉴·재료 ID만 `null`을 허용한다. `store_id`는 양의 JSON 정수 또는 가게 없는 Judge를 뜻하는 `null`이다.
 - 목록은 값이 없을 때 `[]`, 객체형 결과가 없을 때 `null`을 사용한다. 목록에 `null`을 넣지 않는다.
 - 0~1 점수는 JSON number이며 범위를 벗어나면 validation error다.
 - 재료 상태는 `present | absent | unknown`만 허용한다. boolean으로 축약하지 않는다.
@@ -303,7 +303,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 | `schema_version` | string | 현재값 `2.0`. breaking change는 major 증가 |
 | `trace_id` | UUID string | 요청 전체에서 동일. 없으면 Supervisor가 최초 1회 발급 |
 | `scan_session_id` | string | 요청 전체에서 동일 |
-| `store_id` | integer | Judge 하위 호출에서만 양수 필수. 백엔드가 존재·활성 검증을 마친 값. Prepare 하위 호출에서는 필드 자체를 생략 |
+| `store_id` | integer \| null | Judge에서 양의 정수는 백엔드가 존재·활성 검증을 마친 가게, null은 가게 없는 스캔. Prepare 하위 호출에서는 필드 자체를 생략 |
 | `call_scope` | `scan | item | out_of_band` | 메뉴판 배치, 메뉴 단위, 스캔 외 피드백 호출 구분 |
 | `item_id` | string \| null | `item`이면 필수, `scan`·`out_of_band`이면 null 허용 |
 
@@ -387,6 +387,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 | `constraint_tags_lookup_failed` | ④ 표준 재료의 제한 태그를 조회하지 못함 |
 | `unmapped_constraint_tags` | 웹 등에서 찾은 재료를 표준 재료나 제한 태그에 매핑하지 못함 |
 | `knowledge_slice_unavailable` | 후보·확정값·온톨로지·prior·출처 신뢰도 중 판정 필수 조회가 실패함 |
+| `store_context_missing` | 가게 없는 Judge라 가게별 확정값·prior·질문 기능을 사용할 수 없음 |
 
 Supervisor는 위 warning이 하나라도 있으면 해당 메뉴를 SAFE로 확정하지 않는다.
 
@@ -681,6 +682,16 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `user_profile`은 §1-2 `UserProfile`의 closed schema를 사용한다. `locale`은 `ko | en | ar | zh-CN | zh-TW | ja | es` 중 하나다. 큐레이션 옵션과 콘텐츠는 JudgeRequest에 넣지 않으며 백엔드가 별도 처리한다.
 
+`store_id`는 양의 정수 또는 `null`이다. 양의 정수이면 백엔드가 해당 가게의 존재·활성을 검증한 값이어야 한다. `null`은 가게 정보 없이 진행하는 스캔이며 다음 규칙을 모두 적용한다.
+
+- 모든 `knowledge_bundle.items[].candidate_knowledge[].exact_feedback`은 `{status: "not_found", exact: null}`이어야 한다.
+- 모든 `priors`는 `{status: "not_found", store: [], evidence: []}`이어야 하며 가게별 확정값·store prior를 다른 fallback 이름으로 넣지 않는다.
+- `ontology.cache`와 `fallback_ontology.cache`는 `null`이어야 하며 가게별 `menu_ingredient_cache`를 읽지 않는다.
+- Supervisor는 ③ Exact Feedback Tool, ⑦ DB Update Tool, `owner_request`, `high_risk_review`를 호출하지 않는다.
+- ⑧에는 `owner_interaction_allowed: false`를 전달하고 최종 `owner_cards`는 항상 `[]`로 만든다.
+- 최종 `persistence_commands`는 항상 `[]`이며 가게별·전역 저장을 모두 수행하지 않는다.
+- 모든 메뉴에 `store_context_missing` warning(`forces_caution: true`)을 추가해 SAFE를 금지한다. 현재 DANGER는 사장님 hard evidence로만 확정하므로 가게 없는 스캔의 최종 판정은 CAUTION이다.
+
 `prepared_items`와 `prepare_signals`에는 같은 `prepare_id`의 `PrepareResponse` 값을 수정 없이 다시 넣는다. `knowledge_bundle.items`와 `item_id`가 정확히 1:1로 대응해야 한다. Supervisor는 `{prepared_items, prepare_signals}`로 `prepared_items_hash`를 다시 계산해 Prepare의 안전 신호까지 함께 검증한다.
 
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
@@ -709,6 +720,8 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `bundle_schema_version`, `ingredient_graph`, `items`, `source_reliability`는 항상 존재해야 한다. `knowledge_bundle.items[]`의 `item_id` 집합은 `prepared_items[]`와 중복 없이 정확히 같아야 한다. status와 무관하게 표에 정한 객체·배열 필드는 생략하지 않는다. 구조 또는 필수 slice가 빠진 `bundle_miss`는 부분 판정으로 넘기지 않고 Judge 요청 자체를 거부한다.
 
+`store_id: null`인데 exact feedback, store prior 또는 가게 캐시가 위의 빈 형태가 아니면 `storeless_scope_violation`으로 Judge 요청을 거부한다. 가게 없는 경로를 가게 데이터가 단순히 없는 `not_found` 경로와 구분하는 기준은 최상위 `store_id: null`이다.
+
 각 조회 영역의 `status`는 `ok | not_found | unavailable`이다.
 
 - `ok`: 조회 성공. 결과가 필요한 영역은 배열에 값을 넣는다.
@@ -716,7 +729,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - `unavailable`: 장애·timeout 때문에 조회하지 못했다. `ingredient_graph`, `candidate_lookup`, `exact_feedback`, `ontology`, `priors`, `source_reliability`처럼 판정 근거에 직접 쓰이는 safety slice는 데이터 없음으로 해석하지 않고 `knowledge_slice_unavailable` warning(`forces_caution: true`)을 만든다. `web_search_cache`는 새 검색을 시도한다.
 - `bundle_miss`: 백엔드가 보내는 status 값이 아니라 Supervisor 검증 결과다. 해당 `item_id` 또는 실행에 필요한 영역 자체가 누락된 경우 만들며 HTTP 422로 Judge 요청을 거부한다.
 
-백엔드는 `knowledge_revision`을 동일 DB 스냅샷을 식별하는 변경 불가 문자열로 생성한다. 값은 ISO-8601 시각, DB transaction ID 또는 revision ID 중 백엔드가 일관되게 발급할 수 있는 형식을 사용하며 AI는 내용을 해석하지 않고 응답에 그대로 반환한다. 요청의 `knowledge_bundle`에는 백엔드가 계산한 `bundle_hash`를 받지 않는다. Supervisor가 수신한 `knowledge_bundle` 전체를 RFC 8785 JCS로 직렬화해 SHA-256을 계산하고 JudgeResponse에 수신 내용 식별자로 반환한다. Supervisor는 Prepare 연결값인 `prepared_items_hash`, `prepare_id`, `scan_session_id`, 모든 `item_id`를 검증하고, 별도로 Judge의 `store_id` 형식과 유효성을 검증한다. 불일치하면 하위 Agent·Tool을 호출하지 않고 Judge 요청 전체를 종료한다.
+백엔드는 `knowledge_revision`을 동일 DB 스냅샷을 식별하는 변경 불가 문자열로 생성한다. 값은 ISO-8601 시각, DB transaction ID 또는 revision ID 중 백엔드가 일관되게 발급할 수 있는 형식을 사용하며 AI는 내용을 해석하지 않고 응답에 그대로 반환한다. 요청의 `knowledge_bundle`에는 백엔드가 계산한 `bundle_hash`를 받지 않는다. Supervisor가 수신한 `knowledge_bundle` 전체를 RFC 8785 JCS로 직렬화해 SHA-256을 계산하고 JudgeResponse에 수신 내용 식별자로 반환한다. Supervisor는 Prepare 연결값인 `prepared_items_hash`, `prepare_id`, `scan_session_id`, 모든 `item_id`를 검증하고, 별도로 Judge의 `store_id`가 양의 정수 또는 null인지와 스코프별 Bundle 규칙을 검증한다. 불일치하면 하위 Agent·Tool을 호출하지 않고 Judge 요청 전체를 종료한다.
 
 #### 외부 API 오류 응답
 
@@ -742,6 +755,7 @@ Prepare/Judge가 노드를 호출하기 전에 요청을 거부하면 정상 응
 |---|---|---|
 | 422 | `request_validation_failed` | 필수 필드·타입·enum·closed schema 위반 |
 | 422 | `bundle_miss` | 필수 slice 또는 item/candidate 대응 누락 |
+| 422 | `storeless_scope_violation` | `store_id: null`인데 가게별 exact·store prior·가게 캐시가 포함됨 |
 | 409 | `prepare_context_mismatch` | `prepare_id`, `scan_session_id` 연결 불일치 |
 | 409 | `prepared_items_hash_mismatch` | Prepare 항목 또는 안전 신호가 변경됨 |
 | 409 | `bundle_schema_version_mismatch` | 현재값 `2.0`과 Bundle schema version 불일치 |
@@ -827,6 +841,8 @@ slice의 status가 `unavailable`인 것은 요청 형식 오류가 아니므로 
 
 `items[]`는 `source_index` 순서로 반환한다. 백엔드는 보관한 Prepare 결과의 `display_name`, `description`, `price_text`, `price_options`를 `item_id`로 합쳐 화면 응답을 만들고, 필요한 추천과 표시 순서를 별도로 계산한다. JudgeResponse는 `raw_menu_name`, `normalized_menu_name`과 이 표시용 필드를 중복 반환하지 않는다. `evidence`에는 `items[].evidence_refs`와 저장 명령이 참조하는 모든 `EvidenceRef`를 중복 없이 넣는다. `persistence_commands`는 §4-6의 `DbUpdateResponse.commands[]`를 누적한 배열이며 실제 DB 저장 성공을 뜻하지 않는다.
 
+JudgeResponse의 `store_id`는 JudgeRequest 값을 그대로 반환한다. `store_id: null`이면 모든 `items[].owner_cards`와 최상위 `persistence_commands`는 빈 배열이어야 하고, 모든 메뉴는 `store_context_missing` warning을 포함하며 `risk_level: safe`가 될 수 없다.
+
 Supervisor는 JudgeResponse를 반환하기 직전에 다음 참조 정합성을 검증한다. 하나라도 어긋나면 불완전한 정상 응답을 만들지 않고 invariant 오류로 종료한다.
 
 - `items[].item_id`는 중복 없이 JudgeRequest `prepared_items[]`의 `item_id`와 정확히 1:1로 대응한다.
@@ -835,8 +851,9 @@ Supervisor는 JudgeResponse를 반환하기 직전에 다음 참조 정합성을
 - 최상위 `evidence[].evidence_id`는 중복되지 않는다.
 - `owner_cards[].item_id`는 자신이 속한 `items[].item_id`와 같고, `card_id`는 응답 전체에서 중복되지 않는다.
 - `create_owner_verification_request` 명령의 `item_id`·`card_id`는 대응하는 `owner_cards[]` 값과 같으며, 화면 표시용으로만 만든 정보 없는 메뉴 카드는 예외적으로 저장 명령을 만들지 않는다.
-- `prepared_items_hash`, `prepare_id`, `scan_session_id`는 검증한 JudgeRequest 값과 같고, `store_id`는 JudgeRequest의 양의 정수 값을 그대로 반환한다.
+- `prepared_items_hash`, `prepare_id`, `scan_session_id`는 검증한 JudgeRequest 값과 같고, `store_id`는 JudgeRequest의 양의 정수 또는 null 값을 그대로 반환한다.
 - `bundle_hash`는 Supervisor가 실제 수신한 `knowledge_bundle` 전체로 계산한 값이고, `knowledge_revision`은 요청 값을 그대로 반환한다.
+- `store_id: null`이면 `owner_cards`, `persistence_commands`, SAFE 판정이 없는지 확인한다.
 
 단일 `AnalyzeRequest`·`AnalyzeResponse` 모델은 만들지 않는다. 네 외부 모델과 KnowledgeBundle은 이 절을 기준으로 구현하고, §4의 내부 Agent·Tool 계약을 외부 API payload로 그대로 노출하지 않는다.
 
@@ -945,16 +962,17 @@ flowchart TD
 
 **Judge Graph**
 
-1. Prepare 결과와 백엔드가 제공한 지식 데이터의 `prepare_id`, `prepared_items_hash`, `prepare_signals`, `knowledge_revision`, item 대응 관계를 검증하고, 수신한 KnowledgeBundle의 `bundle_hash`를 계산한다.
+1. Prepare 결과와 백엔드가 제공한 지식 데이터의 `prepare_id`, `prepared_items_hash`, `prepare_signals`, `knowledge_revision`, item 대응 관계를 검증하고, 수신한 KnowledgeBundle의 `bundle_hash`를 계산한다. `store_id: null`이면 §1-3의 storeless Bundle 규칙도 함께 검증한다.
 2. ②-B가 허용된 메뉴 후보 안에서 최종 후보를 선택한다. 후보 밖 `menu_id`는 만들 수 없다.
-3. 메뉴마다 Item Graph를 fan-out한다. `menu_id`가 있으면 ③, 없으면 ④ unknown 경로에서 시작한다. `prepare_signals.warnings` 중 `item_id`가 있는 경고(예: ②-A의 `low_ocr_confidence`)는 그 메뉴의 Item Graph `warnings`에 넣어 ⑧까지 보낸다. 메뉴 전체에 걸리는 사진 품질 경고(`item_id: null`)를 메뉴마다 어떻게 반영할지는 아직 정하지 않았다 (§8).
+3. 메뉴마다 Item Graph를 fan-out한다. 가게가 있고 `menu_id`가 있으면 ③, 가게가 없거나 `menu_id`가 없으면 ④ unknown/ontology 경로에서 시작한다. 가게 없는 경로에는 `store_context_missing` warning을 넣고 ③을 호출하지 않는다. `prepare_signals.warnings` 중 `item_id`가 있는 경고(예: ②-A의 `low_ocr_confidence`)는 그 메뉴의 Item Graph `warnings`에 넣어 ⑧까지 보낸다. 메뉴 전체에 걸리는 사진 품질 경고(`item_id: null`)를 메뉴마다 어떻게 반영할지는 아직 정하지 않았다 (§8).
 4. ③이 `completeness: complete`이고 `override_eligible: false`가 없으면 확장·확률 계산은 건너뛴다. `unknown`이거나 override 불가 확인값이 있으면 ④→⑤ heavy path로 간다.
 5. ④가 exact DB 메뉴 또는 `base_menu_id`를 찾으면 ⑤로 간다. 변형 메뉴도 기본 메뉴의 사장님 답변은 가져오지 않는다. ③을 다시 호출하지 않고 사장님 답변을 ⑤에 전달하지 않는다 (③ §3-1). 둘 다 찾지 못하면 ⑥으로 간다.
 6. ⑥ 1단계가 출처별 재료명을 수집하면 ④가 표준 재료·태그로 매핑하고, ⑥ 2단계가 표준 재료 기준으로 집계한다. 수집 결과와 캐시가 모두 없을 때만 ⑧에 `no_information: true`를 전달한다.
 7. ⑧을 호출하기 직전에 모든 경로가 ④ `lookup_tags`를 거친다. ③ 확인값이 없으면 no-op이고, 있으면 `confirmed_results[].constraint_tags`를 채운다.
 8. 각 Item Graph의 오류는 해당 메뉴를 `partial_failed` 또는 `failed`로 만들고 SAFE를 금지한다. 다른 메뉴의 실행은 취소하지 않는다.
-9. 결과를 `source_index`로 정렬하고 근거·경고·저장 명령을 중복 제거한다.
-10. 판정, 근거, 위험 재료, 확인 질문, 저장 명령, 오류를 Judge 결과로 반환한다. 추천과 표시 순서는 백엔드가 별도로 계산한다.
+9. 가게가 있는 경로만 고위험 재검증과 `owner_request`를 실행한다. 가게 없는 경로는 두 node와 ⑦을 건너뛰고 모든 `owner_cards`·`persistence_commands`를 빈 배열로 확정한다.
+10. 결과를 `source_index`로 정렬하고 근거·경고·저장 명령을 중복 제거한다.
+11. 판정, 근거, 위험 재료, 확인 질문, 저장 명령, 오류를 Judge 결과로 반환한다. 추천과 표시 순서는 백엔드가 별도로 계산한다.
 
 ### 2-2. 배치 처리 원칙
 
@@ -1081,7 +1099,7 @@ ai_supervisor/
 
 - 외부 API와 ①~⑧ wire JSON은 Pydantic `extra="forbid"` 모델을 사용한다.
 - graph 누적 state는 `TypedDict`를 사용하고 node는 변경한 필드만 반환한다.
-- `RunContext`는 frozen 타입이며 `schema_version`, `trace_id`, `scan_session_id`, `store_id`를 보관한다.
+- `RunContext`는 frozen 타입이며 `schema_version`, `trace_id`, `scan_session_id`, `store_id`를 보관한다. Judge의 `store_id`는 `int | None`이고 실행 중 바뀌지 않는다.
 - node 호출 때만 `RunContext + call_scope + item_id`로 `NodeContext`를 만든다.
 - Prepare/Judge는 별도 HTTP 호출이지만 같은 trace·scan·store 식별자를 사용한다.
 
@@ -1233,7 +1251,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 - 한 Item Graph가 timeout이어도 다른 Item Graph 결과가 사라지지 않는다.
 - ②·⑥·⑧ LLM이 schema 밖 필드를 반환하면 Pydantic validation으로 거부된다.
 - LLM을 전부 실패시키는 fake를 넣어도 SAFE 쪽으로 fallback하지 않는다.
-- 모든 node 전후의 `trace_id`, `scan_session_id`가 동일하고, Judge node 전후의 `store_id`도 동일하다.
+- 모든 node 전후의 `trace_id`, `scan_session_id`가 동일하고, Judge node 전후의 양의 정수 또는 null `store_id`도 동일하다.
 - Prepare가 끝난 뒤 process memory를 비워도 저장된 `prepared_items`로 Judge를 다시 실행할 수 있다.
 - `prepared_items`의 `item_id`·`source_index`가 Judge 최종 결과까지 유지된다.
 - `evidence_refs`가 evidence registry에 없는 ID를 가리키면 finalize가 응답을 만들지 않는다.
@@ -1255,9 +1273,9 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 | 주체 | 책임 |
 |---|---|
 | 백엔드 | GPS 동의/입력 처리, 공공데이터 후보 조회, Kakao fallback, 사용자 선택, 기존 공공데이터 가게 매칭, `scan_sessions` 연결 및 스냅샷 저장 |
-| AI Supervisor | Judge에서 전달받은 `store_id` 형식 검증, 동일 값을 ②-B~⑧ 호출에 전파, Judge 결과에 그대로 반환 |
+| AI Supervisor | Judge의 `store_id`가 양의 정수 또는 null인지 검증. 양의 정수는 ②-B~⑧에 전파하고, null은 storeless 제한 경로로 실행해 Judge 결과에 그대로 반환 |
 
-백엔드는 Judge 호출 전에 `stores.id`의 존재와 `status='active'`를 검증한다. AI는 가게 마스터 DB를 조회·생성·수정하지 않는다. 가게가 선택되지 않은 Judge 요청은 백엔드가 거절하므로 AI에는 GPS, 검색어, 가게 후보 목록 계약을 두지 않는다.
+백엔드는 양의 정수 `store_id`로 Judge를 호출하기 전에 `stores.id`의 존재와 `status='active'`를 검증한다. 가게를 선택하지 않은 스캔은 `store_id: null`로 호출한다. AI는 가게 마스터 DB를 조회·생성·수정하지 않으며 GPS, 검색어, 가게 후보 목록 계약을 두지 않는다.
 
 ### 3-2. 타입 계약
 
@@ -2545,6 +2563,8 @@ command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 
 
 soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 백엔드가 검증할 기록 명령을 만든다. ⑦은 저장 완료를 가장하지 않으며 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다. 응답 `commands`는 Supervisor의 `persistence_commands`에 그대로 누적한다.
 
+`store_id: null`인 Judge에서는 ⑦을 호출하지 않고 ④의 `cache_command`도 버리며, 전역 캐시를 포함한 어떤 저장 명령도 최종 `persistence_commands`에 넣지 않는다.
+
 ### 4-7. ⑧ Decision Policy / XAI Agent
 
 #### 요청 — `DecisionRequest`
@@ -2629,6 +2649,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
   ],
   "no_information": false,
   "information_status": "complete",
+  "owner_interaction_allowed": true,
   "user_profile": {
     "religion_type": "halal",
     "is_vegetarian": false,
@@ -2715,6 +2736,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
 
+`owner_interaction_allowed`는 Supervisor가 `store_id != null`로 계산해 전달한다. false이면 ⑧은 `owner_cards: []`, `high_risk_review.required: false`를 반환하고 `store_context_missing` warning 때문에 SAFE를 만들지 않는다. LLM이 이 값을 바꾸거나 질문을 생성할 수 없다.
+
 `message`는 `{verdict, reason, notes[]}` object이고 세 칸 모두 요청 `locale`로 쓴다 (§1-3 필드 표, ⑧ §4).
 
 - `verdict`: `risk_level + evidence_basis`별 판정 한 줄 고정 템플릿. 재료 이름·확률은 코드 값을 넣는다. 항상 채운다.
@@ -2729,7 +2752,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `evidence_refs`는 판정에 사용한 `confirmed_results`, `probability_results`, `proposed_variant_ingredients`, `risk_tag_observations`의 근거 ID를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 부재 확정 근거가 있으면 이 목록에 보존한다.
 
-`owner_cards`는 질문이 필요 없으면 `[]`이고, 필요하면 다음 closed schema의 카드를 재료별 또는 메뉴 애매함 플래그별로 하나씩 담는다. 한 메뉴에서 여러 장을 반환할 수 있다.
+`owner_cards`는 `owner_interaction_allowed: false`이거나 질문이 필요 없으면 `[]`이고, 그 외에는 다음 closed schema의 카드를 재료별 또는 메뉴 애매함 플래그별로 하나씩 담는다. 한 메뉴에서 여러 장을 반환할 수 있다.
 
 ```json
 {
@@ -2770,6 +2793,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - `information_status != complete`
 - `anomaly_locked: true`
 - `probability_results`가 비어 있지 않음
+- `owner_interaction_allowed: false`
 - `proposed_variant_ingredients`가 비어 있지 않음
 - `risk_tag_observations`가 사용자 금지 태그와 겹침
 - `menu_ambiguity_flags`에 사용자와 관련 있고 사장님 답(`flag_confirmations`)으로 풀리지 않은 플래그가 있음
@@ -2936,7 +2960,8 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 
 | 상황 | 처리 |
 |---|---|
-| Judge의 `store_id` 누락·null·문자열·0 이하 | `store_id_required`, ②-B~⑧ 호출 금지 |
+| Judge의 `store_id` 필드 누락·문자열·0 이하 | `store_id_invalid`, ②-B~⑧ 호출 금지. 명시적 null은 storeless 경로로 허용 |
+| `store_id: null`인데 exact·store prior·가게 캐시 포함 | `storeless_scope_violation`, 하위 호출 금지 |
 | ② Menu Normalization Agent 실패 | 원본 메뉴명을 보존하고 ④ longest-match/unknown 경로로 넘김 |
 | ③ 조회 에러 | 해당 메뉴는 ④⑤⑧ heavy path로 보내되 로그 남김 |
 | ④ cycle 감지 | `forces_caution: true` warning과 확장 가능한 재료를 ⑤·⑧에 전달 |
@@ -2955,7 +2980,9 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
 | 1 | 이미지 + 실행 문맥 | Prepare ①→②-A | Prepare 요청·응답과 ①·②-A 호출에 `store_id` 없음 |
-| 2 | Judge의 `store_id` 누락/문자열/0 이하 | 즉시 검증 실패 | ②-B~⑧ 호출 없음 |
+| 2 | Judge의 `store_id` 누락/문자열/0 이하 | 즉시 검증 실패 | ②-B~⑧ 호출 없음. 명시적 null과 누락을 구분 |
+| 2-a | `store_id: null` + storeless Bundle | ③·⑦·고위험 재검증·owner_request를 건너뛰고 ④⑤⑥⑧ 분석 | 모든 메뉴 CAUTION, `owner_cards: []`, `persistence_commands: []`, `store_context_missing` |
+| 2-b | `store_id: null` + exact/store prior/가게 캐시 포함 | HTTP 422 `storeless_scope_violation` | 가게 없는 스캔에 다른 가게 데이터가 섞이지 않음 |
 | 3 | Exact complete 메뉴 | 확장·⑤는 스킵하고 ④ tag lookup 후 ⑧ | confirmed 기반 판정과 태그 유지 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
 | 5 | `flagged_anomaly` 포함 | override 금지, ⑤와 ⑧까지 anomaly 신호 유지 | SAFE로 내려가지 않음 |
@@ -2990,6 +3017,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 32 | 고위험 재검증이 놓친 재료(땅콩) 카드를 더함 | 재검증 뒤 `owner_request`가 땅콩 카드의 질문 저장 명령도 만듦, 카드와 명령의 `card_id`가 같음 | 화면 카드에 답을 기록할 질문 행이 없는 일이 없음 |
 | 33 | `locale: en` + 번역 이름이 없는 재료(웹 재료, `ingredient_id: null`) | 그 재료의 `localized_name`은 한국어 `canonical_name` 그대로 | LLM으로 재료 이름을 번역하지 않음 |
 | 34 | 최종 응답의 근거·카드·명령이 존재하지 않는 ID를 참조 | finalize에서 invariant 오류로 종료 | 끊어진 `evidence_refs`, `item_id`, `card_id`를 정상 응답으로 반환하지 않음 |
+| 35 | `store_id: null`인데 ⑧ 또는 adapter가 카드·명령·SAFE를 반환 | finalize에서 invariant 오류로 종료 | 가게 없는 결과에 사장님 기능·저장·SAFE가 노출되지 않음 |
 
 ---
 
