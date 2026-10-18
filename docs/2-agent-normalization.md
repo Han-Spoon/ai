@@ -42,7 +42,7 @@ JudgeRequest → ②-B 후보 선택 → ③~⑧ → JudgeResponse
 
 - **②-A Name Cleaning**: DB를 조회하지 않는다. OCR 원문을 정리하고 옵션과 위험 가능 토큰을 보존한다.
 - **백엔드 후보 조회**: 정제된 이름으로 `menus`·`menu_aliases`를 조회해 메뉴별 최대 5개 후보와 KnowledgeBundle을 만든다.
-- **②-B Candidate Selection**: 백엔드가 준 후보만 비교한다. 후보 밖 `menu_id`를 만들거나 선택하지 않는다.
+- **②-B Candidate Selection**: 백엔드가 준 후보만 비교한다. 후보 밖 `menu_id`를 만들거나 선택하지 않는다. Judge의 `store_id`가 양의 정수 또는 null이어도 동일하게 후보를 선택하며, ②는 이 값을 해석하거나 변경하지 않고 응답 context에 그대로 반환한다.
 - **④ DB/Ontology Tool**: 선택된 메뉴의 재료 조회와 base/remain 변형 판정을 담당한다. ②는 `차돌된장찌개`를 임의로 `된장찌개`로 잘라 확정하지 않는다.
 
 ### 0-2. 하지 않는 일
@@ -78,7 +78,7 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -107,7 +107,7 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "call_scope": "scan",
@@ -152,7 +152,7 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -196,7 +196,7 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 ```json
 {
   "context": {
-    "schema_version": "2.0",
+    "schema_version": "3.0",
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
@@ -575,7 +575,7 @@ normalization/
 - exact·alias·점수 기준을 먼저 쓰고 LLM은 문맥이 있는 모호한 경우에만 쓴다.
 - v1 판정값은 `candidate_floor=0.65`, `accept_threshold=0.92`, `ambiguity_margin=0.08`, `llm_accept_confidence=0.90`이다.
 - 후보 조회 실패와 모호성은 SAFE 금지 신호로 보존한다.
-- schema 2.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
+- schema 3.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
 
 ### 구현 전 저장소에서 고정할 값
 
