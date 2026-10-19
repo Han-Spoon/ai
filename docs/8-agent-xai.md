@@ -195,14 +195,14 @@
 | `insufficient_recipe_evidence` | 확률 근거가 부족함 | ⑤ `confidence`가 낮은 재료. "낮음"은 실질 레시피 근거 5개 미만, 즉 `confidence < 0.59`다 (⑤ §1-2-1, 2026-10-12). 카드를 만들지 말지 정하는 조건이 아니라 이유 표시로만 쓴다 (§2-1 7단계) |
 | `anomaly` | 사장님 답이 레시피와 크게 어긋나 다시 확인 필요 | `anomaly_locked: true` |
 | `no_information` | 메뉴 정보가 없음 | `no_information: true` 또는 `information_status: none` |
-| `unknown_tag` | 어떤 제한에 걸리는 재료인지 모름 | ④ warning `unmapped_constraint_tags`, `constraint_tags_lookup_failed` |
 | `expired` | 확인한 지 3개월이 지나 다시 확인 필요 | `confirmed_results[].expired: true` |
 | `high_risk_review` | 고위험 재검증이 찾은 재료 | §2-3 |
 | `unconfirmed` | 사장님 확인값이 없음. 위 이유가 하나도 없을 때만 쓴다 | 사용자 태그와 겹치고 `override_eligible: true` 확인값이 없는 재료 (2026-10-12). 예) 레시피 54개로 근거는 충분하지만 확인 안 된 설렁탕 새우젓 |
 | `ambiguous_menu` | 메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음 | 사용자와 관련 있는 `menu_ambiguity_flags` (2026-10-12) |
 
 - 한 카드에 이유가 여럿이면 모두 넣는다. 모든 카드에 이유가 하나 이상 있다 (다른 이유가 없으면 `unconfirmed`).
-- **카드 순서** (결정, 2026-10-12): 사장님 답이 판정을 바꿀 가능성이 큰 이유부터 둔다. `anomaly` → `expired` → `unknown_tag` → `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 이유가 여럿인 카드는 가장 앞선 이유로 순서를 정하고, 같은 이유끼리는 확률(`posterior_mean`)이 높은 재료가 먼저다 (확률이 없으면 `ingredient_id` 순, 플래그 카드는 플래그 이름 순). 장수는 제한하지 않는다.
+- **태그를 모르는 재료(`unknown_tag`)는 카드를 만들지 않는다** (결정, 2026-10-19). ④가 태그를 붙이지 못한 재료(`unmapped_constraint_tags`, `constraint_tags_lookup_failed`)는 사용자 금지 태그와 겹치는지 알 수 없어 7단계 카드 대상이 아니다. 재료 이름으로 물어도 답으로 알레르겐을 알 수 없어 판정이 바뀌지 않는다. 대신 SAFE를 막고(§2-1 3-3) 고위험 재검증 이유로 쓴다 (§2-3). 그래서 `unknown_tag`는 카드 이유 코드가 아니다
+- **카드 순서** (결정, 2026-10-12): 사장님 답이 판정을 바꿀 가능성이 큰 이유부터 둔다. `anomaly` → `expired` → `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 이유가 여럿인 카드는 가장 앞선 이유로 순서를 정하고, 같은 이유끼리는 확률(`posterior_mean`)이 높은 재료가 먼저다 (확률이 없으면 `ingredient_id` 순, 플래그 카드는 플래그 이름 순). 장수는 제한하지 않는다.
 
 ---
 
@@ -258,7 +258,7 @@ flowchart TD
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 `message.notes`에 `hard_to_remove` 안내를 넣는다 (§4-1). 판정은 바꾸지 않는다.
 7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
-### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
+### 2-2. SAFE 금지 조건 (⓪ §4-7 + 재료 0개 조건, §9)
 
 아래 중 하나라도 해당하면 확률이 아무리 낮아도 `risk_level`을 `safe`로 내지 않는다.
 
@@ -522,7 +522,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **LLM 이유 설명 검수 방법** — 사람 대신 코드가 확인: 숫자·재료 이름·판정 단어가 입력과 다르거나 판정과 반대되는 표현이 있으면 버리고 템플릿만 보여 줌 (2026-10-13, §4, #174)
 - [x] **판정 한 줄 예시 문장** — `ko`·`en` 예시를 §4에 둠. 7개 언어 전체 템플릿은 구현 때 작성하고 원어민 확인 (2026-10-13, #174, #135)
 - [x] **'빼고 요청' 안내** — 버튼은 유지하고, 판정에 걸린 재료가 주재료(`identity`)나 숨은 재료(`hidden`)면 설명에 "빼기 어려울 수 있어요" 안내를 덧붙인다 (2026-10-12, §1-2 `role`, §4-1)
-- [ ] **재료 역할(`role`)을 정하는 규칙 (외부 의존)** — ④ 담당. `hidden`은 ④가 펼친 하위 재료(depth 1 이상), `identity` 중 메뉴명에 들어간 재료는 이름 맞추기로 정할 수 있다. 메뉴명에 없는 "기본 재료"(참치김밥의 밥·김, 국수의 면)는 지금 DB에 정보가 없어 메뉴별 데이터가 필요하다. ③ 확인값·⑥ 웹 재료에도 Supervisor가 ④를 부를 때 함께 받아야 한다
+- [x] **재료 역할(`role`)을 정하는 규칙** — ④가 정했다 (④ §1-2, ④ §8). 펼친 하위 재료(depth 1 이상)는 `hidden`, 변형 토큰 재료·메뉴명에 들어간 재료·레시피 90% 이상에 나오는 재료는 `identity`, 그 밖의 depth 0 재료는 `component`다. 메뉴명에 없는 기본 재료(참치김밥의 밥·김)도 90% 규칙으로 `identity`가 된다. ③ 확인값·⑥ 웹 재료는 Supervisor가 ④를 부를 때 함께 받는다 (⓪ §4-3)
 - [x] **⓪ 반영 요청 (`role`)** — ⓪ §4-7 입력 세 목록·`risk_ingredients`, ④⑤ 응답에 `role` 반영됨 (2026-10-12 확인)
 - [x] **메뉴 애매함 플래그 사용** — 사용자와 관련 있는 플래그면 SAFE 금지 (2026-10-12, §1-1 `menu_ambiguity_flags`, §2-1 5-2). ④ §8 요청 반영
 - [x] **메뉴 애매함 플래그 질문 카드** — 메뉴 단위로 묻는다: 플래그와 사용자 금지 태그로 "이 메뉴의 젓갈에 생선이 들어가나요?"를 만들고, "아니오"면 플래그가 풀린다 (2026-10-12, §1-1 `flag_confirmations`, §2-1 5-2·7단계, 이유 `ambiguous_menu`)
@@ -530,7 +530,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **⓪ 반영 요청** — ⓪에 반영함 (2026-10-13: §1-3 Bundle `ontology.menu.ambiguity_flags`·`exact_feedback.exact.flag_confirmations`, §4-2, §4-3 `menu_ambiguity_flags`, §4-6 질문·답 명령, §4-7, 테스트 26·27). 원래 요청: ⓪ §4-7 ⑧ 입력에 `menu_ambiguity_flags`·`flag_confirmations`, SAFE 금지 조건(§2-2), `owner_cards`에 `ambiguity_flag`·`constraint_tags`, `reason_codes`에 `ambiguous_menu`·`unconfirmed` 추가. ③ 결과만으로 끝나는 경로(전 재료 확인 + 캐시, ④⑤ 생략)에서도 메뉴 플래그를 ⑧에 넘겨야 한다. 안 넘기면 그 경로에서 SAFE가 나간다 (FN)
 - [x] **정보 없는 메뉴의 질문 카드** — 사용자 금지 태그로 메뉴 전체를 묻는 화면 표시용 카드 한 장. 답은 판정을 바꾸지 않고(무엇이 들어가는지 모름), ⑦ 저장 요청도 없음 (2026-10-13, §1-3)
 - [x] **만료된 확인값 재질문** — 3개월 지난 확인값은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다(이유 `expired`). ⓪ §4-7 `confirmed_results`에 `expired` 필드가 필요하다 (2026-10-12, §2-1 7단계)
-- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 8개 (2026-10-12, §1-3. `ambiguous_menu`, `unconfirmed` 추가). `insufficient_recipe_evidence`(원래 이름 `low_confidence`, 사진 품질 `scan_quality.status: low_confidence`와 겹쳐 ⓪ #274에서 변경) 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
+- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 7개 (2026-10-12, §1-3. `ambiguous_menu`, `unconfirmed` 추가. 2026-10-19 `unknown_tag` 삭제: 태그를 모르는 재료는 카드 대상이 아니고 고위험 재검증 이유로만 쓴다). `insufficient_recipe_evidence`(원래 이름 `low_confidence`, 사진 품질 `scan_quality.status: low_confidence`와 겹쳐 ⓪ #274에서 변경) 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
+- [ ] **⑤ 문서 맞추기 (외부 의존)** — ⑤ §1-2-1 "⑧은 `low_confidence`를 카드 이유 표시로만 쓴다"의 이유 코드 이름을 `insufficient_recipe_evidence`로 바꿔야 한다 (⓪ #274에서 변경, §1-3). `low_confidence`는 이제 사진 품질(`scan_quality.status`) 값이라 그대로 두면 둘이 헷갈린다 (2026-10-19 확인) — ⑤ 담당자 요청
 
 아래는 백엔드의 Judge 계약 검토(2026-10-13)와 결과 화면 시안에서 나온 항목이다.
 
@@ -561,3 +562,4 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **⑨ Curation Tool 삭제** (2026-10-17 회의) — ⑧은 ⑨ 언급을 뺐다 (§0-1, §2-1 1단계, §5, §8). ⓪도 ⑨ node·추천·표시 순서를 지웠다 (#281). 큐레이션은 백엔드가 맡는다
 - [ ] **기록 번역은 백엔드** (2026-10-17 회의) — ⑧ §4·§8에 반영했다. ⓪ §8 "남은 협의"의 "스캔 기록을 새 언어로 번역하는 경로 — 번역 주체(AI 문장 재생성 / 백엔드 번역 API)" 항목을 "백엔드"로 닫아야 한다
 - [ ] **흐린 사진은 분석 실패** (2026-10-17 회의) — ⑧ §8 "촬영 품질 신호"에 반영했다. 지금 ⓪은 `scan_quality.status: low_confidence`면 분석을 계속하고 SAFE만 막는다 (§1-3 `scan_quality` 규칙, §2-1 Prepare 5단계). 회의 결정대로면 `needs_retake`처럼 '분석 실패'(재촬영)로 끝내야 한다. ⓪ §8 "남은 협의"의 사진 품질 항목도 닫는다
+- [ ] **카드 이유 코드에서 `unknown_tag` 삭제** (2026-10-19) — ⑧ §1-3에서 뺐다 (태그를 모르는 재료는 카드를 만들지 않음). ⓪ §4-7 `reason_codes` 허용값과 카드 정렬 우선순위에서 `unknown_tag`를 지워야 한다. 고위험 재검증의 `high_risk_review.reason_code` `unknown_tag`는 그대로 둔다

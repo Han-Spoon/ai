@@ -113,6 +113,7 @@
 
 - **"있음"(`present`) 답변은 anomaly가 아니다.** "있음"을 믿는 쪽이 더 조심하는 방향이라 위험을 놓치지 않는다. "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려간다.
 - 표시를 붙이는 주체는 ⑦이다 (사장님 답변 저장 시). ③은 판정하지 않고 묶음에 담긴 `flagged_anomaly`를 그대로 읽는다.
+- 이 재료는 ④⑤를 거쳐 ⑧에 **`anomaly_locked: true`**로 간다 (이름이 바뀐다, ⑧ §2-1 3-1). ⑧은 이 값을 보고 확률과 무관하게 CAUTION 이상을 유지한다.
 - DB 스키마의 예외 규칙(`flagged_anomaly: true` + `present: false`, `caution-db-schema.md` §3 `ingredient_confirmations`)과 같은 방향이다.
 
 | 조건 | `override_eligible` | Supervisor 동작 |
