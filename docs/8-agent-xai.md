@@ -30,7 +30,7 @@
 | 8쪽 4: 정보 부족 → 보수적 판정 (NO_INFORMATION, 안전으로 단정하지 않음) | §2-1 3단계, §3. `no_information`이면 CAUTION, `evidence_basis: unknown` |
 | 8쪽 흐름: 확정값과 미확인 재료의 확률값 통합 → ⑧ 최종 판정 생성 | ⓪이 ③ 확정값과 ⑤ 확률을 모아 넘기고(§5), ⑧이 합쳐 판정한다 (§2) |
 | 8쪽 6: Hard Evidence 있음(사장님 확인 n건↑) → DANGER / SAFE 확정 | §3. n건 확정 규칙은 ⑦ §2-3 |
-| 8쪽 6: Hard Evidence 없음 → DANGER / SAFE 판정 불가, CAUTION + 확률 수치 제공 | §2-1 4단계, §3 |
+| 8쪽 6: Hard Evidence 없음 → DANGER / SAFE 판정 불가, CAUTION + 확률 수치 제공 | §2-1 4단계, §3. 가게 없는 스캔은 사장님 확인값이 없으므로 모든 메뉴가 여기에 해당한다 (§1-1 `owner_interaction_allowed`, #281) |
 | 8쪽 6: n개월마다 재확인 | ③ §1-7(3개월 만료). 만료된 재료는 다시 묻는 질문 카드를 만든다 (§2-1 7단계, 이유 `expired`) |
 | 8쪽 6·흐름: 정보 부족·충돌 케이스만(5~10%) → 고가 모델 재검증 (`고위험 재검증`) | §2-3. 대상 기준·하는 일·결과 사용처 결정. 판정은 바꾸지 않고 질문 카드·설명만 보강 (#234) |
 | 10쪽 모델: Decision / XAI Agent(고위험 시 선택 호출) — 저가~중가 모델, 고위험 재검증은 고가 모델 | §0-2. 설명 문장은 기본 템플릿이고 필요할 때 LLM을 쓴다. 판정 값에는 LLM을 쓰지 않는다. 고위험 재검증은 §2-3 |
@@ -96,6 +96,7 @@
 - `no_information: true`(메뉴·재료 정보 자체가 없음, 엣지 케이스 4)면 CAUTION 이상 (§2-1 3단계).
 - `information_status`가 `complete`가 아니면 SAFE 금지 (§2-1 3-2).
 - `locale`은 사용자 언어다. 결과 문장은 이 언어로만, 질문 카드는 한국어와 이 언어로 만든다 (§4).
+- `owner_interaction_allowed`는 사장님에게 물어볼 수 있는 스캔인지다. Supervisor가 `store_id != null`로 정해 넘긴다 (⓪ §4-7, #281). 가게 없는 스캔이면 `false`다. 가게가 없으면 물어볼 사장님도, 답을 저장할 곳도 없기 때문이다. `false`면 ⑧은 질문 카드를 만들지 않고(§2-1 7단계), 고위험 재검증 대상으로도 표시하지 않으며(§2-3), SAFE를 내지 않는다(§2-2). 이 값은 코드가 그대로 쓰고 LLM이 바꾸지 못한다.
 - `localized_names`는 재료 번역 이름 목록(`{ingredient_id, localized_name}`)이다. Supervisor가 백엔드 DB의 번역 이름에서 이 메뉴 재료만 골라 넣는다 (⓪ §4-7). 결과 문장과 `localized_name`에 쓴다.
 - 입력 `warnings`·`errors`는 그대로 보존하고 ⑧의 신호를 덧붙인다.
 
@@ -150,7 +151,7 @@
 - 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
 - `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
 - `message`는 `{verdict, reason, notes[]}` object이고, 세 칸 모두 요청 `locale` 하나로 쓴다 (§0-2, §4 "`message` 칸", ⓪ §4-7).
-- `owner_cards`는 질문이 필요 없으면 `[]`다. **한 메뉴에서 여러 장이 나올 수 있다** (§1-3, §2-1 7단계).
+- `owner_cards`는 질문이 필요 없거나 `owner_interaction_allowed: false`(가게 없는 스캔)면 `[]`다. **한 메뉴에서 여러 장이 나올 수 있다** (§1-3, §2-1 7단계).
 - `high_risk_review`는 이 메뉴가 고위험 재검증 후보인지와 그 이유를 표시한다 (§2-3). 재검증 결과도 판정을 바꾸지 않는다 (§2-3, #234).
 
 #### `role` — 재료 역할 (결정, 2026-10-12)
@@ -174,7 +175,7 @@
 
 ### 1-3. `owner_cards` — 질문 카드
 
-형식은 ⓪ §4-7 `owner_cards[]`다 (`item_id`, `card_id`, `menu_id`, `round`, `previous_question_id`, `ingredient`, `ambiguity_flag`, `constraint_tags`, `question`, `reason_codes`, `evidence_refs`). ⑧이 정하는 것:
+형식은 ⓪ §4-7 `owner_cards[]`다 (`item_id`, `card_id`, `menu_id`, `round`, `previous_question_id`, `ingredient`, `ambiguity_flag`, `constraint_tags`, `question`, `reason_codes`, `evidence_refs`). 가게 없는 스캔(`owner_interaction_allowed: false`)이면 카드를 한 장도 만들지 않는다 (§1-1, ⓪ §4-7). ⑧이 정하는 것:
 
 - `item_id`(메뉴 칸 번호)와 `card_id`(카드 번호)는 카드 내용(메뉴 칸·물어볼 대상·차수)으로 정해지는 값이다 (⓪ §4-7 규칙, 예: `card:scan-123:0:ingredient-110:r3`). 같은 카드의 질문 저장 명령에도 복사한다. 같은 카드는 몇 번을 다시 돌려도 같은 번호다. 사장님 답을 어느 질문 행에 기록할지 잇는 번호다 (⓪ §4-7, #274).
 - 카드 하나에 재료 하나다. 어떤 재료에 카드를 만드는지는 §2-1 7단계.
@@ -185,7 +186,7 @@
   - `confirmed` → 확정된 답이 들어 있으므로 보통 카드 대상이 아니다. 그 답이 3개월 지나 다시 묻는 경우(`expired`)는 새 질문으로 보고 `round: 1`, `previous_question_id: null`이다
   - 정보 없는 메뉴 카드는 저장하지 않으므로 항상 `round: 1`, `previous_question_id: null`이다
 - **메뉴 애매함 플래그 카드** (2026-10-12, §2-1 5-2): 재료가 아니라 메뉴 단위로 묻는 카드다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" `ingredient: null`, `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(§1-1 `menu_ambiguity_flags` 표에서 사용자 금지 태그와 겹친 것)를 넣는다. 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
-- **정보 없는 메뉴 카드** (결정, 2026-10-13): `no_information: true`인 메뉴는 재료 목록이 없어 재료 카드를 만들 수 없다. 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다. 예) 할랄 사용자 → "이 메뉴에 돼지고기나 술이 들어가나요?" `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 사장님이 "예"라고 해도 둘 중 무엇이 들어가는지 알 수 없어 판정을 바꾸지 않고(DANGER로 올리지 않음), 메뉴가 DB에 없어 저장할 곳도 없으므로 ⑦ 저장 요청을 만들지 않는다 (⓪ §4-6·§4-7).
+- **정보 없는 메뉴 카드** (결정, 2026-10-13): `no_information: true`인 메뉴는 재료 목록이 없어 재료 카드를 만들 수 없다. 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다. 예) 할랄 사용자 → "이 메뉴에 돼지고기나 술이 들어가나요?" `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 사장님이 "예"라고 해도 둘 중 무엇이 들어가는지 알 수 없어 판정을 바꾸지 않고(DANGER로 올리지 않음), 메뉴가 DB에 없어 저장할 곳도 없으므로 ⑦ 저장 요청을 만들지 않는다 (⓪ §4-6·§4-7). 가게 없는 스캔이면 보여 줄 사장님이 없으므로 이 카드도 만들지 않는다 (#281).
 
 **`reason_codes` 허용값 (결정, 2026-10-12)** — 모두 ⑧ 입력에 이미 있는 신호에서 정해진다.
 
@@ -225,7 +226,7 @@ flowchart TD
     P7 --> MSG["다국어 메시지 생성"]
     DANGER --> MSG
     CAUTION1 --> MSG
-    MSG --> OC{"카드 대상 존재?\n(미확인·만료 재료, 풀리지 않은 플래그,\n정보 없는 메뉴)"}
+    MSG --> OC{"owner_interaction_allowed: true이고\n카드 대상 존재?\n(미확인·만료 재료, 풀리지 않은 플래그,\n정보 없는 메뉴)"}
     OC -->|Yes| CARD["owner_cards 생성\n(재료·플래그마다 한 장, 정보 없는 메뉴는 화면 표시용 한 장)"]
     OC -->|No| DONE["owner_cards: []"]
     CARD --> OUT[Supervisor에 반환]
@@ -255,7 +256,7 @@ flowchart TD
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 판정 한 줄 템플릿을 골라 `message.verdict`에 넣고, 필요하면 LLM 이유 설명을 `message.reason`에 넣는다 (§4).
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 `message.notes`에 `hard_to_remove` 안내를 넣는다 (§4-1). 판정은 바꾸지 않는다.
-7. **사장님 질문 생성**: 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
+7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
 
@@ -268,6 +269,7 @@ flowchart TD
 | `probability_results`에 `anomaly_locked: true` 재료 존재 | ③이 override를 거부한 이상 답변 재료 | 3-1 |
 | `information_status`가 `partial` 또는 `none` | 앞 단계 조회·계산이 일부 또는 전부 실패 | 3-2 |
 | `warnings`에 `forces_caution: true` 존재 | 앞 단계가 "SAFE 금지" 신호를 보냄 | 3-3 |
+| `owner_interaction_allowed: false` | 가게 없는 스캔. 사장님 확인값이 없어 SAFE를 낼 근거가 없다. Supervisor가 붙이는 `store_context_missing` warning(`forces_caution: true`)으로도 막힌다 (⓪ §4-7, #281) | 3-3 |
 | `probability_results` 또는 `proposed_variant_ingredients`가 비어 있지 않음 | 사장님 확인값이 아닌 근거(확률·변형 추정)에 기대는 재료가 있음 | 4 |
 | `risk_tag_observations`에 forbidden_tags와 겹치는 태그 존재 | OCR이 감지한 메뉴 속성(예: 매운맛)이 사용자 제한과 겹침 | 5-1 |
 | `menu_ambiguity_flags`에 사용자와 관련 있고 사장님 답으로 풀리지 않은 플래그 존재 | 레시피 목록 밖 재료가 사용자 제한에 걸릴 수 있음 (§1-1 표) | 5-2 |
@@ -330,6 +332,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 `high_risk_review.reason_code`는 하나만 낸다. 신호가 여럿이면 `anomaly` → `unknown_tag` → `no_information` → `partial_information` → `insufficient_web_sources` 순서로 가장 앞의 것을 쓴다 (위 "한 스캔당 개수"의 순서와 같음, ⓪ §4-7).
 
+- **가게 없는 스캔(`owner_interaction_allowed: false`)은 재검증하지 않는다** (⓪ §4-7, #281). 재검증 결과를 쓰는 곳이 사장님 질문과 설명인데 사장님 질문을 만들 수 없기 때문이다. `high_risk_review.required: false`, `reason_code: null`로 낸다.
 - **"고위험" — 이 사용자와 관련 있을 때만 재검증한다.**
   - 메뉴 단위 신호: 사용자에게 금지 태그(§2-1 1단계)가 하나라도 있으면 대상이다. 정보가 없으면 어떤 재료든 들어 있을 수 있기 때문이다.
   - 재료 단위 신호(`anomaly_locked`): 그 재료의 `constraint_tags`가 사용자의 금지 태그와 겹칠 때만 대상이다.
@@ -353,6 +356,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 판정에 쓴 재료가 모두 사장님 확인값이고 금지 태그 재료가 없으며, SAFE 금지 조건(§2-2)에 해당하지 않음 | `safe` | `confirmed` |
 | 확률·변형 추정에 기대는 재료가 있음 | `caution` + 금지 태그와 겹치는 재료의 확률 수치 | `estimated` |
 | 정보 자체가 없음 (`no_information`) | `caution` | `unknown` |
+| 가게 없는 스캔 (`owner_interaction_allowed: false`) | `caution` (SAFE·DANGER 없음) | 확률 근거면 `estimated`, 정보가 없으면 `unknown`. 사장님 확인값이 없으므로 `confirmed`는 나오지 않는다 (#281) |
 | 재료는 모두 사장님 확인값인데 SAFE가 막힘 (§2-1 4-2) | `caution` | 정보가 빠진 이유면 `unknown`, 추정 근거 때문이면 `estimated` |
 
 - **확률(`posterior_mean`)은 판정 기준선이 아니다.** 확률이 0.95여도 DANGER가 아니고, 0.01이어도 SAFE가 아니다. 확률은 사용자에게 보여줄 수치와 사장님 질문(`owner_cards`) 우선순위에 쓴다.
@@ -446,11 +450,12 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 |---|---|
 | `confirmed_results`/`probability_results` | Supervisor가 ③/⑤ 호출을 마친 뒤에만 전달 — 부분적으로만 채워질 수 있음(둘 다 없을 수도 있음. `proposed_variant_ingredients`까지 셋 다 비면 `no_information`과 같이 처리, §2-1 3단계) |
 | `user_profile` | 온보딩 단계에서 필수로 수집되므로 항상 존재함이 보장됨 (비로그인/미입력 케이스 없음) |
+| `owner_interaction_allowed` | Supervisor가 `store_id != null`로 계산해 넘긴다. 가게 없는 스캔이면 `false`이고, 이때 `confirmed_results`·`flag_confirmations`·`owner_question_states`는 비어 있다 (③을 부르지 않음, ⓪ §1-3·§4-7) |
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
 | `owner_cards`가 비어 있지 않음 | 모든 메뉴 판정과 고위험 재검증이 끝난 뒤 카드마다 Supervisor가 ⑦에 전달 → ⑦이 저장 명령 생성 → **백엔드가 `owner_verification_requests`에 INSERT**. XAI와 ⑦은 DB 자격 증명을 갖지 않음. 정보 없는 메뉴의 화면 표시용 카드는 ⑦에 보내지 않음 (§1-3, ⓪ §4-6) |
-| `high_risk_review.required: true` | 메뉴판 전체 판정이 끝난 뒤 Supervisor가 후보 중 최대 3개를 골라 고가 모델로 재검증한다. 판정은 바꾸지 않고 질문 카드·설명만 보강한다 (§2-3, ⓪ §2-10) |
+| `high_risk_review.required: true` | 가게 있는 스캔에서만 나온다 (§2-3). 메뉴판 전체 판정이 끝난 뒤 Supervisor가 후보 중 최대 3개를 골라 고가 모델로 재검증한다. 판정은 바꾸지 않고 질문 카드·설명만 보강한다 (§2-3, ⓪ §2-10) |
 | `risk_level` 등 판정 결과 | 바꾸지 않고 최종 응답에 넣는다 |
 
 ---
@@ -502,6 +507,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 30 | 할랄 사용자 + 4개월 전 확정된 돼지고기 `absent`(`expired: true`) + `owner_question_states`: 돼지고기 `confirmed` | 돼지고기 카드 `round: 1`, `previous_question_id: null`, `reason_codes`에 `expired` | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없을 것 |
 | 31 | 해산물 알레르기 + 참치김밥(참치 `role: identity`, 사장님 확인 `present`) + 이유 설명 LLM 시간 초과 | `danger`, `message.verdict`는 DANGER 템플릿, `message.reason: null`, `message.notes`에 `hard_to_remove` | LLM이 실패해도 판정 한 줄과 안내는 빠지지 않을 것 |
 | 32 | 할랄 사용자 + `no_information: false` + `confirmed_results: []` + `probability_results: []` + `proposed_variant_ingredients: []` + SAFE 금지 조건 없음 | `caution`, `evidence_basis: unknown` | 재료가 0개일 때 "모두 확인값" 조건이 저절로 참이 되어 SAFE가 나가지 않을 것 |
+| 33 | 할랄 사용자 + 가게 없는 스캔(`owner_interaction_allowed: false`, `store_context_missing` warning) + 돼지고기 확률 0.8 + `no_information: false` | `caution`, `owner_cards: []`, `high_risk_review.required: false` | 가게 없는 스캔에서 질문 카드·재검증·SAFE가 나오지 않을 것 (⓪ 테스트 2-a·35) |
+| 34 | 할랄 사용자 + 가게 없는 스캔 + `no_information: true` | `caution`, `owner_cards: []` | 정보 없는 메뉴의 화면 표시용 카드도 만들지 않을 것 |
 
 ---
 
@@ -542,6 +549,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **결과 화면에 쓰는 값 유지** — 최종 응답 `risk_ingredients[]`의 `role`·`confidence`·`prior_source`는 결과 화면에 쓰므로 유지하고(백엔드 확인), ⑧ → Supervisor 내부 신호인 `anomaly_locked`·`high_risk_review`는 최종 응답에서만 뺀다 (⓪ #274). 남은 것: 경로(김밥 속재료 → 달걀 지단)를 그릴 상위 재료는 ⑧ 출력에 없다. 화면에 필요하면 추가를 정한다
 - [x] **재료 이름 번역** — 최종 응답 `risk_ingredients[].ingredient.localized_name`에 사용자 언어 재료 이름을 넣는다 (2026-10-14 회의, ⓪ #274, §1-2·§4)
 - [x] **촬영 품질 신호** — 백엔드 지적: Prepare의 `low_confidence`(사진이 흐림) 경고가 Judge 요청에 실릴 칸이 없었다. ⓪에 `prepare_signals`가 생겨 칸은 해결됐다. 그리고 흐린 사진·메뉴판 인식 실패는 모두 '분석 실패' 화면으로 보내 다시 찍게 하기로 했다 (2026-10-17 회의, 실패 이유 설명은 붙이지 않음). 그래서 흐린 사진은 ⑧까지 오지 않는다. §2-1 3-3(앞 단계 경고가 있으면 SAFE 금지)은 안전장치로 그대로 둔다. ⓪ Prepare 변경은 §9
+- [x] **가게 없는 스캔** — 결정 (#281, AGENTS.md 갱신): Judge가 `store_id: null`을 받으면 Supervisor가 ⑧에 `owner_interaction_allowed: false`를 넘긴다. ⑧은 질문 카드를 만들지 않고(정보 없는 메뉴 카드 포함), 고위험 재검증 대상으로 표시하지 않으며, SAFE를 내지 않는다 (§1-1, §2-1 7단계, §2-2, §2-3, 테스트 33·34)
 
 ---
 
