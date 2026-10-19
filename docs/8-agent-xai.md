@@ -1,7 +1,7 @@
 # ⑧ Decision Policy / XAI Agent 스펙
 
 담당: 정유진
-상태: 초안 (미확정 항목은 §8 참조)
+상태: 설계 정리됨, 구현 전 (남은 항목은 §8 참조)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ---
@@ -13,7 +13,7 @@
 1. **판정**: 확정값(hard evidence)과 확률(soft evidence)을 사용자 개인의 알레르기·식이 제약과 대조해 DANGER/CAUTION/SAFE를 결정
 2. **설명**: 판정 근거를 사람이 이해할 수 있는 문장으로 바꾸고, 정보가 부족한 재료에 대해 사장님에게 물어볼 질문을 만듦
 
-판정 로직과 설명 로직을 분리하지 않고 ⑧ 하나에 묶은 이유는 반대로 **"둘 다 사용자 프로필과 재료 데이터를 같은 순간에 대조해야" 자연스럽기 때문**이다. 대신 ⑧을 확률 계산(⑤)이나 하드 오버라이드 조회(③)로부터는 분리해둬서, 판정 기준이나 문구·언어가 바뀔 때 이 문서/⑧만 고치면 되게 했다.
+판정과 설명을 ⑧ 하나에 묶은 이유는 **둘 다 사용자 프로필과 재료 데이터를 같은 순간에 대조해야** 하기 때문이다. 대신 확률 계산(⑤)과 사장님 확인값 조회(③)는 ⑧ 밖에 두어, 판정 기준이나 문구·언어가 바뀔 때 이 문서와 ⑧만 고치면 되게 했다.
 
 ### 0-1. 기준 문서(PPT) 대응
 
@@ -36,7 +36,7 @@
 | 10쪽 모델: Decision / XAI Agent(고위험 시 선택 호출) — 저가~중가 모델, 고위험 재검증은 고가 모델 | §0-2. 설명 문장은 기본 템플릿이고 필요할 때 LLM을 쓴다. 판정 값에는 LLM을 쓰지 않는다. 고위험 재검증은 §2-3 |
 | 10쪽 RAI 01 공정성: 언어·알레르기·종교가 달라도 같은 알고리즘 | §2-1 1단계에서 모든 제약을 금지 태그 하나로 바꿔 같은 규칙으로 판정. 언어는 문구에만 영향 (§4) |
 | 10쪽 RAI 02 책임성: 결론을 강요하지 않고 근거 확인·직접 선택 경로 제공 | 판정과 함께 위험 재료·확률 수치·근거를 준다 (§1, §3) |
-| 10쪽 RAI 03 투명성: 판단 결과와 판단 근거, 대체 메뉴 설명 | 결과·근거는 ⑧. 대체 메뉴는 ⑨ Curation Tool |
+| 10쪽 RAI 03 투명성: 판단 결과와 판단 근거, 대체 메뉴 설명 | 결과·근거는 ⑧. 대체 메뉴(추천)는 ⑧ 범위 밖이다. ⑨ Curation Tool은 삭제하고 큐레이션은 백엔드가 맡는다 (2026-10-17 회의) |
 | 10쪽 RAI 04 안전성: 불확실할 때 안전으로 단정하지 않음 | §2-2 SAFE 금지 조건 |
 
 ### 0-2. LLM이 맡는 일과 코드가 맡는 일
@@ -168,7 +168,7 @@
 - **판정에는 쓰지 않는다.** 주재료라고 더 위험하게 보지 않는다. `risk_level`, `evidence_basis`는 role과 무관하다.
 - **LLM으로 정하지 않는다.** 같은 메뉴는 항상 같은 role이어야 한다 (§0-2).
 
-`evidence_basis` 필드가 핵심이다 — 같은 `risk_level: danger`라도 **확정값 기반인지 확률 추정 기반인지**를 사용자에게 다른 톤으로 전달해야 한다 (§4 참고).
+`evidence_basis` 필드가 핵심이다 — DANGER·SAFE는 항상 사장님 확인값(`confirmed`)이지만, 같은 `risk_level: caution`이라도 **확률 추정(`estimated`)인지 정보 부족(`unknown`)인지**를 사용자에게 다른 톤으로 전달해야 한다 (§3, §4 참고).
 
 > 이름: 원래 `confidence`였으나 ⑤가 계산하는 0~1 숫자 `confidence`(재료별 근거 충분도)와 이름이 겹쳐 `evidence_basis`(판정 근거 종류)로 바꿨다 (2026-10-08). 값은 그대로 `confirmed | estimated | unknown`이다.
 
@@ -234,9 +234,9 @@ flowchart TD
 
 ### 2-1. Step별 설명
 
-1. **forbidden_tags 매핑**: `religion_type`(halal→is_pork/is_alcohol 등), `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy`를 하나의 금지 태그 집합으로 변환. 종교·채식 유형별 태그 목록은 룰엔진 `ai_ruleengine/profile_mapper.py`를 원본으로 쓴다 (예: kosher → `is_pork`·`is_crab`·`is_shrimp`·`is_shellfish`·`is_squid`, hindu → `is_beef`). ⑨ 프로필 필터도 같은 매핑을 쓴다.
+1. **forbidden_tags 매핑**: `religion_type`(halal→is_pork/is_alcohol 등), `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy`를 하나의 금지 태그 집합으로 변환. 종교·채식 유형별 태그 목록은 룰엔진 `ai_ruleengine/profile_mapper.py`를 원본으로 쓴다 (예: kosher → `is_pork`·`is_crab`·`is_shrimp`·`is_shellfish`·`is_squid`, hindu → `is_beef`).
 2. **hard evidence 우선 체크**: `confirmed_results` 중 `status: present`이고 `override_eligible: true`인 재료의 `constraint_tags`가 forbidden_tags와 겹치면 다른 계산 없이 즉시 `danger` + `evidence_basis: confirmed`. `status: absent`이고 `override_eligible: true`인 재료는 확률과 무관하게 "없음"으로 확정한다. `unknown`이나 `override_eligible: false`인 항목은 이 단계에서 쓰지 않는다.
-3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙).
+3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙). **판정에 쓸 재료가 하나도 없을 때**(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음)도 `no_information: true`와 같이 처리한다 (결정, 2026-10-18). 재료가 0개면 4-1단계의 "모두 사장님 확인값" 조건이 저절로 참이 되어 SAFE가 나갈 수 있기 때문이다 (FN).
 3-1. **anomaly_locked 강제**: `probability_results`에서 `anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `evidence_basis: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
 3-2. **정보 부족 시 SAFE 금지**: `information_status`가 `partial` 또는 `none`이면 확률이 낮게 나와도 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계 조회·계산이 일부 실패한 상태에서 남은 재료만 보고 SAFE를 내면 빠진 재료를 놓친다 (FN).
 3-3. **앞 단계 경고 시 SAFE 금지**: 입력 `warnings` 중 `forces_caution: true`가 하나라도 있으면 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계가 문제를 발견했다는 신호다 (예: ④ 태그 조회 실패 `constraint_tags_lookup_failed`, ④ 순환 참조 `cycle_detected`, ④ 웹 재료 매핑 실패 `unmapped_constraint_tags`). 예를 들어 Supervisor가 ③ 확인값의 태그를 ④에 조회했는데 실패해 돼지고기에 `is_pork`가 안 붙으면, 이 단계가 없을 때 할랄 사용자에게 SAFE가 나갈 수 있다 (FN).
@@ -264,6 +264,7 @@ flowchart TD
 | 조건 | 뜻 | 처리 단계 |
 |---|---|---|
 | `no_information: true` | 메뉴·재료 정보 자체가 없음 | 3 |
+| `confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음 | 판정에 쓸 재료가 하나도 없음. "모두 확인값" 조건이 저절로 참이 되는 것을 막는다 (2026-10-18) | 3 |
 | `probability_results`에 `anomaly_locked: true` 재료 존재 | ③이 override를 거부한 이상 답변 재료 | 3-1 |
 | `information_status`가 `partial` 또는 `none` | 앞 단계 조회·계산이 일부 또는 전부 실패 | 3-2 |
 | `warnings`에 `forces_caution: true` 존재 | 앞 단계가 "SAFE 금지" 신호를 보냄 | 3-3 |
@@ -391,7 +392,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 이유 설명 | LLM이 사용자 언어로 쓴다 |
 | 언어 선택 | `locale`은 7개 중 하나만 들어온다. 앱이 이 7개 중에서만 고르게 하므로 다른 언어를 요청하는 경로는 없다 |
 | LLM 실패 | `reason: null`. 판정 한 줄(`verdict`)과 안내(`notes`)는 템플릿이라 그대로 보여준다 |
-| 언어 설정을 바꾼 뒤 기록 열기 | 스캔 기록을 열 때 실시간으로 번역한다 (2026-10-14 회의). 번역 주체와 경로는 백엔드와 정한다 (§8) |
+| 언어 설정을 바꾼 뒤 기록 열기 | 스캔 기록을 열 때 실시간으로 번역한다 (2026-10-14 회의). **번역은 백엔드가 한다** (2026-10-17 회의). ⑧은 다시 부르지 않는다 |
 
 **`message` 칸 (결정, 2026-10-17, 프론트 요청 2026-10-14)** — 판정 한 줄·이유 설명·안내를 이어 붙이지 않고 칸으로 나눠 준다. 화면이 부분별로 따로 배치하고, 다른 언어로 기록을 열 때 LLM이 만든 `reason`만 숨기거나 다시 만들 수 있게 하기 위해서다. 세 칸 모두 사용자 언어 하나다.
 
@@ -443,14 +444,14 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 | ⑧이 받는 것 | 보장 사항 |
 |---|---|
-| `confirmed_results`/`probability_results` | Supervisor가 ③/⑤ 호출을 마친 뒤에만 전달 — 부분적으로만 채워질 수 있음(둘 다 없을 수도 있음, 그 경우 `no_information` 처리) |
+| `confirmed_results`/`probability_results` | Supervisor가 ③/⑤ 호출을 마친 뒤에만 전달 — 부분적으로만 채워질 수 있음(둘 다 없을 수도 있음. `proposed_variant_ingredients`까지 셋 다 비면 `no_information`과 같이 처리, §2-1 3단계) |
 | `user_profile` | 온보딩 단계에서 필수로 수집되므로 항상 존재함이 보장됨 (비로그인/미입력 케이스 없음) |
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
 | `owner_cards`가 비어 있지 않음 | 모든 메뉴 판정과 고위험 재검증이 끝난 뒤 카드마다 Supervisor가 ⑦에 전달 → ⑦이 저장 명령 생성 → **백엔드가 `owner_verification_requests`에 INSERT**. XAI와 ⑦은 DB 자격 증명을 갖지 않음. 정보 없는 메뉴의 화면 표시용 카드는 ⑦에 보내지 않음 (§1-3, ⓪ §4-6) |
 | `high_risk_review.required: true` | 메뉴판 전체 판정이 끝난 뒤 Supervisor가 후보 중 최대 3개를 골라 고가 모델로 재검증한다. 판정은 바꾸지 않고 질문 카드·설명만 보강한다 (§2-3, ⓪ §2-10) |
-| `risk_level` 등 판정 결과 | 바꾸지 않고 최종 응답에 넣는다. 모든 메뉴의 판정이 끝나면 ⑨가 표시 순서와 SAFE 추천을 만든다 (⓪ §2-10, §4-8) |
+| `risk_level` 등 판정 결과 | 바꾸지 않고 최종 응답에 넣는다 |
 
 ---
 
@@ -500,6 +501,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 29 | 생선 알레르기 + 액젓(`is_fish`) 확인값 없음 + `owner_question_states`: 액젓 `question_id: question-002`, `answered_round: 2`, `needs_third` | 액젓 카드 `round: 3`, `previous_question_id: question-002` | 1·2차 답이 달랐던 재료에 3차 질문이 나갈 것 (⓪ 테스트 29) |
 | 30 | 할랄 사용자 + 4개월 전 확정된 돼지고기 `absent`(`expired: true`) + `owner_question_states`: 돼지고기 `confirmed` | 돼지고기 카드 `round: 1`, `previous_question_id: null`, `reason_codes`에 `expired` | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없을 것 |
 | 31 | 해산물 알레르기 + 참치김밥(참치 `role: identity`, 사장님 확인 `present`) + 이유 설명 LLM 시간 초과 | `danger`, `message.verdict`는 DANGER 템플릿, `message.reason: null`, `message.notes`에 `hard_to_remove` | LLM이 실패해도 판정 한 줄과 안내는 빠지지 않을 것 |
+| 32 | 할랄 사용자 + `no_information: false` + `confirmed_results: []` + `probability_results: []` + `proposed_variant_ingredients: []` + SAFE 금지 조건 없음 | `caution`, `evidence_basis: unknown` | 재료가 0개일 때 "모두 확인값" 조건이 저절로 참이 되어 SAFE가 나가지 않을 것 |
 
 ---
 
@@ -528,16 +530,26 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **설명 문장 언어 범위** — 결과 문장은 사용자 언어만, 질문 카드는 한국어 + 사용자 언어로 만든다. 사용자가 언어 설정을 바꾸면 스캔 기록을 열 때 실시간으로 번역한다 (2026-10-14 회의, ⓪ #274 반영, §4)
 - [x] **지원 언어와 코드** — 아랍어를 넣어 7개 언어, 코드는 프론트에 맞춘다: `ko` / `en` / `ar` / `zh-CN` / `zh-TW` / `ja` / `es` (2026-10-13). 원래 ⑧은 `ar` 없이 6개, 중국어는 `zh_hans`·`zh_hant`였다
 - [ ] **언어 코드·범위 나머지 문서 반영 (외부 의존)** — ⓪(#274)과 ⑧은 반영됨 (7개 코드, 결과 문장은 사용자 언어만, 질문 카드는 `ko` + 사용자 언어). 남은 곳:
-  - ⑨: "6개 언어" 표현
   - ⑦: §1-1 "질문 문구는 6개 언어 객체" → `ko` + 사용자 언어, §8 "사장님 질문 저장 언어"
   - DB 스키마: `question_text`(6개 언어 표기), §6 요청 7·19번(지금 "`ar` 삭제, `zh_hans`·`zh_hant`"로 반대 방향. 7개 코드로 고치고 `users.language_code` 길이는 `zh-CN` 5자가 들어가게)
 - [ ] **재료 번역 사전 데이터 (외부 의존)** — `localized_name`은 DB `ingredients.name_i18n` 값을 쓰는데(⓪ §1-3·§4-7), 채울 번역이 아직 없다 (팀 재료 목록은 한국어만, 약 324개). 없으면 한국어 이름이 그대로 나간다. 6개 언어 번역 사전을 만들고 사람이 검수해야 한다 (재료명 오역은 알레르기 정보 손실). 담당을 정해야 한다
 - [ ] **표준 재료로 못 맞춘 웹 재료의 번역 표시** — `ingredient_id: null`인 재료는 번역 이름이 없어 지금은 한국어 그대로다 (§1-2). LLM 번역을 한국어 원문과 함께 "자동 번역"으로 보여 줄지 정해야 한다. 그렇게 하면 §0-2 "재료 이름은 LLM이 바꾸지 못한다"에 화면 표시용 예외를 적는다. 이 재료는 이미 SAFE가 막혀 있어 판정에는 영향이 없다
-- [ ] **기록 실시간 번역 경로 (백엔드와)** — 언어 설정을 바꾼 뒤 스캔 기록을 열 때 번역한다 (2026-10-14 회의). 누가 번역할지(백엔드·AI), 별도 API를 둘지 정해야 한다
+- [x] **기록 실시간 번역 경로** — 언어 설정을 바꾼 뒤 스캔 기록을 열 때 번역한다 (2026-10-14 회의). **번역은 백엔드가 한다** (2026-10-17 회의). AI는 다시 부르지 않는다 (§4). ⓪ 정리는 §9
 - [x] **결과 문장 `message` 나누기** — 프론트 요청(2026-10-14)으로 판정 한 줄·이유 설명·안내를 `message: {verdict, reason, notes[]}`로 나눴다 (§4 "`message` 칸"). ⓪ §1-3·§2-10·§2-13·§4-7·§6·테스트 20, ⑧ §0-2·§1-2·§2·§4에 반영 (2026-10-17). 고위험 재검증은 `reason`만 보강한다. 남은 것: 프론트가 이 모양으로 화면을 그릴 수 있는지 확인, DB 스키마 `menu_analyses.message` 저장 형식 (지금은 언어별 다국어 JSONB, §6 7번) 반영과 백엔드 확정
 - [x] **질문 카드와 질문 행 연결** — 백엔드 지적: 사장님 답을 어느 질문 행에 기록할지 정할 번호가 없었다. ⓪에 `owner_cards[]`·질문 저장 명령의 `item_id`·`card_id`(#274), 질문 차수 `round`·`previous_question_id`(#269)가 생겨 해결됨 (§1-3)
 - [x] **만료된 확정값 재질문과 `confirmed` 상태** — `confirmed`여도 확정값이 3개월 지나면 `round: 1`부터 다시 묻는다. ⓪ §4-7에 반영됨 (#274, §1-3, 테스트 30)
 - [ ] **질문 카드에 재료를 묶어 묻는 화면 (프론트·⑦·백엔드와)** — 결과 화면 시안과 시연판 프론트는 "달걀 지단, 어묵이 들어가 있나요?"처럼 재료 여러 개를 한 장으로 묻고, 답은 "네 / 아니요 / 잘 모르겠어요" 세 개다. ⑧은 카드 하나에 재료 하나다 (§1-3). 묶어서 물으면 "네"가 어느 재료인지 몰라 재료별 확인값으로 저장할 수 없다. "잘 모르겠어요"는 ⓪ `record_owner_answer.present`(boolean)에 담을 수 없다
 - [x] **결과 화면에 쓰는 값 유지** — 최종 응답 `risk_ingredients[]`의 `role`·`confidence`·`prior_source`는 결과 화면에 쓰므로 유지하고(백엔드 확인), ⑧ → Supervisor 내부 신호인 `anomaly_locked`·`high_risk_review`는 최종 응답에서만 뺀다 (⓪ #274). 남은 것: 경로(김밥 속재료 → 달걀 지단)를 그릴 상위 재료는 ⑧ 출력에 없다. 화면에 필요하면 추가를 정한다
 - [x] **재료 이름 번역** — 최종 응답 `risk_ingredients[].ingredient.localized_name`에 사용자 언어 재료 이름을 넣는다 (2026-10-14 회의, ⓪ #274, §1-2·§4)
-- [ ] **촬영 품질 신호 (외부 의존)** — 백엔드 지적: Prepare의 `low_confidence`(사진이 흐림) 경고가 Judge 요청에 실릴 칸이 없다. 이대로면 §2-1 3-3 "SAFE 금지 경고"가 동작하지 않아 흐린 사진으로도 SAFE가 나갈 수 있다. ⓪·백엔드 수정 필요 (백엔드 제안: `prepared_items[]` 항목 안에 넣어 해시로 보호)
+- [x] **촬영 품질 신호** — 백엔드 지적: Prepare의 `low_confidence`(사진이 흐림) 경고가 Judge 요청에 실릴 칸이 없었다. ⓪에 `prepare_signals`가 생겨 칸은 해결됐다. 그리고 흐린 사진·메뉴판 인식 실패는 모두 '분석 실패' 화면으로 보내 다시 찍게 하기로 했다 (2026-10-17 회의, 실패 이유 설명은 붙이지 않음). 그래서 흐린 사진은 ⑧까지 오지 않는다. §2-1 3-3(앞 단계 경고가 있으면 SAFE 금지)은 안전장치로 그대로 둔다. ⓪ Prepare 변경은 §9
+
+---
+
+## 9. ⓪에 미반영 항목
+
+이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
+
+- [ ] **재료가 하나도 없으면 SAFE 금지** (2026-10-18) — ⑧ §2-1 3단계·§2-2·테스트 32에 넣었다. ⓪ §4-7 SAFE 금지 목록에 "`confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음"을 추가해야 한다. 안 넣으면 `no_information` 표시 없이 재료 목록만 빈 메뉴에서 "모두 사장님 확인값" 조건이 저절로 참이 되어 SAFE가 나갈 수 있다 (FN)
+- [x] **⑨ Curation Tool 삭제** (2026-10-17 회의) — ⑧은 ⑨ 언급을 뺐다 (§0-1, §2-1 1단계, §5, §8). ⓪도 ⑨ node·추천·표시 순서를 지웠다 (#281). 큐레이션은 백엔드가 맡는다
+- [ ] **기록 번역은 백엔드** (2026-10-17 회의) — ⑧ §4·§8에 반영했다. ⓪ §8 "남은 협의"의 "스캔 기록을 새 언어로 번역하는 경로 — 번역 주체(AI 문장 재생성 / 백엔드 번역 API)" 항목을 "백엔드"로 닫아야 한다
+- [ ] **흐린 사진은 분석 실패** (2026-10-17 회의) — ⑧ §8 "촬영 품질 신호"에 반영했다. 지금 ⓪은 `scan_quality.status: low_confidence`면 분석을 계속하고 SAFE만 막는다 (§1-3 `scan_quality` 규칙, §2-1 Prepare 5단계). 회의 결정대로면 `needs_retake`처럼 '분석 실패'(재촬영)로 끝내야 한다. ⓪ §8 "남은 협의"의 사진 품질 항목도 닫는다
