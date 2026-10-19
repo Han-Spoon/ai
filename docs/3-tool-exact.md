@@ -9,7 +9,7 @@
 **③은 순수 조회기다. 판단하지 않는다.**
 
 - 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답(§1-8)과 이전 질문의 진행 상태(§1-9)도 함께 반환한다
-- **DB는 부르지 않는다** (10/10 회의 결정 1). 백엔드가 Judge 요청을 만들 때 `store_id + menu_id`로 `ingredient_confirmations`를 미리 조회해 묶음에 담는다 (⓪ §1-3). ③은 Item Graph에 들어온 같은 `item_id`의 자료만 읽는다 (⓪ §2-6)
+- **DB는 부르지 않는다** (10/10 회의 결정 1). 백엔드가 Judge 요청을 만들 때 `store_id + menu_id`로 `ingredient_confirmations`를 미리 조회해 묶음에 담는다 (⓪ §1-3). 가게 없는 스캔(`store_id: null`)이면 담지 않고(`exact_feedback.status: not_found`) ③도 불리지 않는다 (§1-1). ③은 Item Graph에 들어온 같은 `item_id`의 자료만 읽는다 (⓪ §2-6)
 - 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
 - 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-8 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
 - 설계 원칙: **메뉴 단위 이분법 금지.** 부분 확인을 반드시 지원한다.
@@ -38,7 +38,7 @@
 | 7쪽: 존재 / 부재 / 미확인 상태를 반환 (`3-State`) | §1-3. `present` / `absent` / `unknown` |
 | 7쪽: Agent는 판단하고 Tool은 수행한다 | §0. ③은 조회기다. 만료·override 가능 여부·완전성 표시는 정해진 규칙으로 계산한다 (§1-6, §1-7, §2) |
 | 3쪽 외부 연결: 가게 직원 — 질문, 답변 | §1-4. 확정 근거의 출처 |
-| 8쪽 1: 모든 호출에 `store_id`를 유지해 가게별 확정 재료가 섞이지 않게 | §1-1, §4-2. `store_id` 필수, 없으면 에러, 전역 조회 금지 |
+| 8쪽 1: 모든 호출에 `store_id`를 유지해 가게별 확정 재료가 섞이지 않게 | §1-1, §4-2. `store_id` 필수, 없으면 에러, 전역 조회 금지. 가게 없는 스캔은 ③을 부르지 않아 다른 가게 확정값이 섞일 수 없다 (§4-1 6번, #281) |
 | 8쪽 2: 확인된 재료는 그대로 유지, 미확인 재료만 확장·추정, 전부 확인되면 확률 계산 생략 | §0(부분 확인 지원), §2(`completeness`), §3-2(`complete`면 ④⑤ 생략) |
 | 8쪽 흐름: ③ 확정 재료 조회 (가게에서 제공 재료 정보 · 사용자 피드백 우선 반영) | §3 호출 시점. "사용자 피드백"은 손님 화면의 확인 질문으로 받은 **사장님 답변**으로 해석한다 (§1-4) |
 | 8쪽 흐름: 미확정 재료가 없으면 확정 재료로 바로 판정 | §3-2. `completeness: complete` → ⑧ 직행 |
@@ -59,6 +59,7 @@
 ### 1-1. 입력에서 ③이 지키는 것
 
 - `context.store_id`는 양수 필수다. 없거나 0 이하면 즉시 에러를 낸다. 전역 조회는 하지 않는다. `context`는 수정하지 않고 그대로 반환한다.
+- 가게 없는 스캔(Judge `store_id: null`)이면 Supervisor가 ③을 **부르지 않는다** (⓪ §1-3, AGENTS.md). 가게가 없으면 가게별 사장님 확인값도 없기 때문이다. 그래서 ③에 `null`이 들어오면 계약 위반이므로 위 규칙대로 에러를 낸다.
 - `menu.menu_id` 하나만 본다. 변형/base 구분은 하지 않는다. `menu_id`가 없으면 Supervisor가 ③을 부르지 않는다.
 - `menu.normalized_menu_name`은 조회에 쓰지 않는다 (로그·추적용).
 - `scope_hint`는 항상 `exact`다. 해석하지 않고 응답 `confirmation_scope`로 그대로 돌려준다 (§1-5).
@@ -269,7 +270,7 @@ return ExactFeedbackResponse(
 
 ## 3. Supervisor와의 계약 (Contract)
 
-**호출 시점**: ② Menu Normalization Agent 직후, ④보다 **먼저**. 가벼운 경로 조기 종료를 위해.
+**호출 시점**: ② Menu Normalization Agent 직후, ④보다 **먼저**. 가벼운 경로 조기 종료를 위해. 가게가 있고(`store_id` 양수) `menu_id`가 있을 때만 불린다. 가게 없는 스캔이나 `menu_id`가 없는 메뉴는 ④ 경로에서 시작한다 (⓪ §2-1 Judge 3단계).
 
 ### 3-1. 호출 횟수: 메뉴당 1회
 
@@ -305,12 +306,13 @@ return ExactFeedbackResponse(
 | **3) 변형 메뉴** | DB에 등록된 변형은 변형 `menu_id`의 확인값만 반환. 기본 메뉴 확인값은 가져오지 않는다 (§3-1). DB에 없는 런타임 변형은 `menu_id`가 없어 호출되지 않음 | `exact` |
 | **4) DB에 없는 unknown 메뉴** | **호출되지 않음.** `menu_id`가 없어 Supervisor가 ④ unknown 경로로 바로 보낸다 (§1-1) | — |
 | **5) 웹서치까지 실패 (엣지)** | **관여 없음** | 4번과 같이 호출되지 않음 |
+| **6) 가게 없는 스캔** (`store_id: null`) | **호출되지 않음.** Supervisor가 ④ 경로로 바로 보낸다 (⓪ §1-3, §2-1 Judge 3단계) | — |
 
 ### 4-2. 예외 처리
 
 | 상황 | 처리 |
 |---|---|
-| `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
+| `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지**. 가게 없는 스캔의 `null`은 Supervisor가 ③을 부르지 않으므로 여기까지 오면 계약 위반이다 (§1-1) |
 | 묶음에 이 메뉴의 확인값이 없음 (`exact_feedback.status: not_found`) | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
 | 묶음의 확인값을 백엔드가 못 가져옴 (`exact_feedback.status: unavailable`) | 빈 배열 + `unknown`. "확인값 없음"으로 믿지 않고 SAFE 금지 warning(`knowledge_slice_unavailable`)이 남는다 (⓪ §1-3) |
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
@@ -331,6 +333,7 @@ return ExactFeedbackResponse(
 | 4 | 차돌된장찌개 호출 | 빈 배열 + `scope: exact` | base 정보를 ③이 스스로 끌어오지 않을 것 |
 | 5 | 차돌된장찌개의 기본 메뉴(된장찌개) 확인값 | ③을 다시 부르지 않음, `inherited` 응답 없음 (2차 호출 삭제) | 기본 메뉴의 사장님 답이 판정·확률 계산에 쓰이지 않을 것 (⓪ §7 #21) |
 | 6 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
+| 6-a | 가게 없는 스캔 (Judge `store_id: null`) | ③ 호출 없음 | Supervisor가 ③을 건너뛰고 ④ 경로로 갈 것 (⓪ 테스트 2-a) |
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
 | 8 | 전 재료 확인 + anomaly 1건 | `completeness: unknown` | anomaly가 `complete`를 막을 것 |
 | 9 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
@@ -360,7 +363,7 @@ return ExactFeedbackResponse(
 - [x] **⓪ 반영 요청** — ⓪ §4-2 응답과 §1-3 Judge 요청 `exact_feedback.exact`에 `flag_confirmations` 추가, §1-8은 ⓪ 링크로 바꿈 (2026-10-13)
 - [x] **2·3차 질문 진행 상태 전달** — 백엔드가 사장님 답 처리 결과(`owner_question_states`)를 Judge 요청 묶음에 넣고, ③이 그대로 ⑧까지 넘긴다 (⓪ 반영 #269, §1-9)
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리. ⑦·DB 스키마 문서에는 반영됨: 새 테이블 `owner_flag_confirmations` 제안, ⑦이 저장 (#259, ⑦ §2-4, `caution-db-schema.md` §6 11·12번). 남은 것: 백엔드가 테이블을 확정
-- [ ] **가게 없는 스캔 (팀 결정 필요)** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 지금 ③은 `store_id`가 없으면 에러를 내고(§1-1), ⓪도 ①~⑨를 호출하지 않는다. 바꾸려면 AGENTS.md 확정 결정("⓪은 확정된 `store_id`만 입력받는다")과 PPT 8쪽 1을 건드리므로 이슈로 정한다. 백엔드 제안: 가게 단위 자료(확인값, 가게 prior)는 `not_found`, 모든 메뉴는 최대 CAUTION, 질문 카드는 보여 주되 저장 명령은 만들지 않음
+- [x] **가게 없는 스캔** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 결정 (#281, AGENTS.md 갱신): Prepare는 `store_id`를 받지 않고, Judge는 `store_id: null`을 가게 없는 스캔으로 받는다. 이때 Supervisor는 ③을 부르지 않고, 사장님 질문·저장 명령을 만들지 않으며, 모든 메뉴는 SAFE 금지다 (⓪ §1-3). ③의 규칙(§1-1 `store_id` 필수)은 그대로다 (§4-1 6번)
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
 
 ## 7. 확정된 결정 (변경 금지)
@@ -374,6 +377,7 @@ return ExactFeedbackResponse(
 - **확정값은 재료당 1행**: 1·2·3차 답변은 질문·답변 기록에 따로 쌓이고 확정 규칙은 ⑦이 센다. ③은 확정값 표만 읽는다 (#167)
 - **태그는 ④만 붙인다**: ③은 `constraint_tags: []`로 반환하고 Supervisor가 ④ `lookup_tags`로 채운다 (2026-10-10 회의)
 - **확인값 유효기간 3개월**: 등록(확인)한 날짜부터 달력 기준 3개월. 만료되면 override 거부, 드롭 금지 (2026-10-06·10-10 회의)
+- **가게 없는 스캔은 ③을 부르지 않는다**: Judge `store_id: null`이면 가게별 확인값이 없으므로 Supervisor가 ③을 건너뛴다. ③의 `store_id` 필수 규칙은 그대로다 (#281, AGENTS.md)
 
 ---
 
