@@ -49,7 +49,7 @@
 
 ### 0-1. 설계 원칙
 
-- **가게 스코프를 지킨다.** 모든 호출은 공통 호출 문맥의 `store_id`를 필수로 받고, 없으면 즉시 실패한다. 전역 조회로 대신하지 않는다.
+- **가게 스코프를 지킨다.** `store_id`는 양의 정수 또는 가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)의 `null`만 받는다. 그 외 값(누락·문자열·0 이하)은 즉시 실패한다. 다른 가게나 전역 데이터로 대신하지 않는다.
 - **재료를 버리지 않는다.** 미등록 재료, 매핑 실패 토큰, anomaly 재료 모두 결과에 남긴다. 재료 누락은 곧 FN이다.
 - **변형 판별은 DB 컬럼이 먼저다.** 문자열 파싱은 DB에 메뉴가 없을 때만 한다.
 - **관측 불가능한 위험은 추정하지 않는다.** 교차오염은 확률 모델 범위 밖이며 사장님 질문 경로로 넘긴다.
@@ -110,7 +110,8 @@ graph TB
 
 공통 문맥은 ⓪ §1-2 `NodeContext`, 메뉴 지식은 ⓪ §1-3 KnowledgeBundle의 `ontology`·`fallback_ontology`와 `ingredient_graph`다. ④가 지켜야 할 것:
 
-- `context.store_id`가 양의 정수가 아니면 즉시 에러. 전역 조회로 대신하지 않는다.
+- `context.store_id`는 양의 정수 또는 `null`. 필드 누락·문자열·0 이하면 즉시 에러.
+- **가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)**: 재료 펼치기는 그대로 한다(메뉴·재료·레시피는 가게와 무관한 전역 데이터). 가게 캐시는 읽지 않고(`knowledge.cache`는 `null`로 옴), 캐시 저장 명령도 만들지 않는다(`cache_command: null`). SAFE 금지 경고(`store_context_missing`)는 Supervisor가 붙인다.
 - `knowledge`와 `ingredient_graph`만으로 동작한다. 판정 단계에서 DB를 조회하지 않는다 (§0-0).
 - `menu.normalized_menu_name`은 ②의 출력이며 ④는 다시 정규화하지 않는다. `menu.menu_id`·`match_candidates`·`residual_tokens`는 ②가 정의한 값이다 (④ 승인, 2026-10-12).
 - `confirmed_ingredients`는 ③ 출력 중 `status != unknown` **AND** `override_eligible: true`인 재료만이다. 확인 재료를 빼는 규칙은 §2-1 표.
@@ -184,7 +185,7 @@ graph TB
 
 ```mermaid
 flowchart TD
-    S[Supervisor 호출] --> V{"context.store_id가<br/>양의 정수?"}
+    S[Supervisor 호출] --> V{"context.store_id가<br/>양의 정수 또는 null?"}
     V -->|No| ERR[StoreIdRequiredError]
     V -->|Yes| Q["knowledge.menu 확인<br/>(②-B가 고른 후보 또는 fallback)"]
 
@@ -210,12 +211,12 @@ flowchart TD
 
 ### 2-1. 기본 조회 + 재귀 확장
 
-1. `context.store_id` 검증 → 없으면 즉시 에러 (전역 prior 오염 방지)
+1. `context.store_id` 검증 → 양의 정수 또는 `null`이 아니면 즉시 에러 (다른 가게 데이터가 섞이는 것 방지). `null`이면 가게 없는 스캔이라 캐시를 쓰지 않는다
 2. `knowledge.menu`를 쓴다. 메뉴 후보 조회는 백엔드가 묶음을 만들 때 했고 ②-B가 골랐다 (§0-0). `knowledge.cache`가 있고 `menu_revision`이 `knowledge.menu.knowledge_revision`과 같으면 3~6을 건너뛰고 캐시의 전체 확장 목록을 쓴다
 3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
-6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다 (캐시를 썼으면 `null`). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
+6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다 (캐시를 썼거나 `store_id: null`이면 `null`. 캐시 테이블이 가게 단위라 가게 없는 스캔은 저장할 곳이 없다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
 | 확인 상태 | 그 재료 자체 | 그 재료의 하위 재료 |
@@ -254,7 +255,7 @@ flowchart TD
 
 ```python
 def query_ontology(
-    context: RequestContext,                # 필수. context.store_id None/0 이하 → StoreIdRequiredError
+    context: RequestContext,                # 필수. context.store_id는 양수 또는 None(가게 없는 스캔). 0 이하·누락 → StoreIdRequiredError
     normalized_menu_name: str,
     menu_id: int | None = None,             # ②-B가 고른 후보
     match_candidates: list[MatchCandidate] | None = None,
@@ -561,7 +562,8 @@ graph TB
 
 | 상황 | 처리 |
 |---|---|
-| `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. **전역 조회 fallback 금지** |
+| `context.store_id` 누락/문자열/0 이하 | `StoreIdRequiredError`. **다른 가게·전역 데이터 fallback 금지** |
+| `context.store_id: null` (가게 없는 스캔) | 에러 아님. 캐시 없이 펼치고 `cache_command: null` |
 | 순환 참조 (A→B→A) | `visited`로 차단, 경고 로그, 확장분까지 반환. `warnings`에 `cycle_detected`. Supervisor는 이를 보고 ⓪ §6대로 해당 재료를 낮은 신뢰도로 다룬다 |
 | 재귀 깊이 과다 | `max_depth` = 5에서 확장을 멈추고 `warnings`에 `max_depth_reached`를 붙인다. ⑧은 이 경고가 있으면 CAUTION 이상을 유지한다. 그 아래 재료를 몰라서 SAFE로 새는 것을 막기 위함 |
 | `base_menu_id`는 있으나 참조 메뉴가 없음 | 일반 메뉴로 처리 + 무결성 오류 로그. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
@@ -582,7 +584,8 @@ graph TB
 | 2 | `차돌된장찌개` (DB 등록 변형) | 컬럼 조회 → `db_registered` | **longest-match 실행되지 않을 것**, `source: recipe` |
 | 3 | `트러플된장찌개` (DB 없음) | longest-match → `runtime_tagged` | **DB INSERT 없을 것**, `source: variant_suggested` |
 | 4 | `듣도보도못한메뉴` | `exists_in_db: false` | ④가 웹서치를 직접 호출하지 않을 것 |
-| 5 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
+| 5 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
+| 5-b | `context.store_id: null` + 김치찌개 | 정상 확장, `cache_command: null` | 에러가 나지 않고, 캐시를 읽거나 저장하지 않을 것 |
 | 6 | 순환 참조 재료 | cycle detection 작동 | 무한루프 없을 것 |
 | 7 | ③에서 일부 확인됨 | 확인 재료는 반환에서 제외 | 확인 재료가 다시 계산 대상이 되지 않을 것 |
 | 7-b | `김치: present` 확인 | 김치는 제외, 액젓·새우는 반환 | **확인된 복합 재료의 하위 재료가 빠지지 않을 것** |

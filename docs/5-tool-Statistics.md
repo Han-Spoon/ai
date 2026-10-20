@@ -54,7 +54,8 @@
 
 공통 문맥은 ⓪ §1-2 `NodeContext`, `priors`·`source_reliability`는 ⓪ §1-3 KnowledgeBundle 슬라이스다. ⑤가 지켜야 할 것:
 
-- `context.store_id`가 양의 정수가 아니면 에러. prior는 가게 스코프다.
+- `context.store_id`는 양의 정수 또는 `null`. 필드 누락·문자열·0 이하면 에러. store prior는 가게 스코프다.
+- **가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)**: 에러가 아니다. `priors`는 `{status: not_found, store: [], evidence: []}`로 오므로 store prior 없이 ④의 `observations`(레시피 통계)로 전역 prior를 계산한다. SAFE 금지 경고(`store_context_missing`)는 Supervisor가 붙인다.
 - `menu_category_id`가 `null`이면 `cluster` 단계를 건너뛴다 (지금은 `cluster`가 항상 비어 있다).
 - `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다. `anomaly_locked`는 Supervisor가 붙이고 ④가 보존한 값이다.
 - 원본 메뉴 확인값(`inherited_confirmations`)은 입력에서 **삭제됐다** (2026-10-13, ③ §3-1). 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의).
@@ -140,7 +141,7 @@ confidence = 1 − 1 / √(ν + 1)
 
 ```mermaid
 flowchart TD
-    S[Supervisor 호출] --> V{"context.store_id가<br/>양의 정수?"}
+    S[Supervisor 호출] --> V{"context.store_id가<br/>양의 정수 또는 null?"}
     V -->|No| ERR[StoreIdRequiredError]
     V -->|Yes| L[재료별 루프]
 
@@ -224,7 +225,7 @@ A0, B0 = 1.0, 1.0                                      # Beta(1,1) 라플라스 
 
 
 def estimate_probabilities(
-    context: RequestContext,                           # 필수. context.store_id 양수
+    context: RequestContext,                           # 필수. context.store_id 양수 또는 None(가게 없는 스캔)
     menu_id: int | None,
     menu_category_id: int | None,
     ingredients: list[IngredientNode],
@@ -449,7 +450,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 | 상황 | 처리 |
 |---|---|
-| `context.store_id` 누락/0 이하 | `StoreIdRequiredError`. **전역 prior fallback 금지** |
+| `context.store_id` 누락/문자열/0 이하 | `StoreIdRequiredError`. **다른 가게 prior fallback 금지** |
+| `context.store_id: null` (가게 없는 스캔) | 에러 아님. store prior 없이 관측값으로 계산 |
 | store prior 없음 | cluster → global 순 fallback. `prior_source` 반드시 표기 |
 | 전역 prior도 없음 | `uninformative` + 낮은 `confidence`. **SAFE 방향 기본값 금지** |
 | `n_total = 0` | Beta(1,1)로 `mean = 0.5`, 낮은 `confidence`, `uninformative` 표기 |
@@ -480,7 +482,8 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 8 | `inherited` 확인 정보 포함 | α·β 변화 없음 | override로도, prior 보정으로도 쓰지 않을 것 |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
 | 9-b | 3개월 만료 재료 (`expired: true`, `anomaly_locked: false`로 들어옴) | 확률 계산, `anomaly_locked: false` 그대로 | 만료를 이상 답변으로 바꾸지 않을 것 |
-| 10 | `context.store_id` 누락 | 즉시 에러 | 전역 fallback 없을 것 |
+| 10 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
+| 10-b | `context.store_id: null` + 관측값 있는 재료 | `prior_source: global`로 계산 | 에러가 나지 않고, 가게 prior를 쓰지 않을 것 |
 | 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
 | 12 | `k_count > n_total` | `uninformative` + 오류 로그 | 음수 β 발생하지 않을 것 |
 | 13 | 동일 입력 2회 실행 | 동일 결과 | 재현성 (부작용 없을 것) |
