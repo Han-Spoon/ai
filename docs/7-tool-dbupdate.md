@@ -476,7 +476,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 
 | 상황 | 처리 |
 |---|---|
-| `context.store_id` 누락/0 이하 | `StoreIdRequiredError`. 명령을 만들지 않음 |
+| `context.store_id` 누락/null/0 이하 | `StoreIdRequiredError`. 명령을 만들지 않음. 가게 없는 스캔(`store_id: null`)이면 Supervisor가 ⑦을 부르지 않는다 (⓪ §1-3). 가게 단위 테이블에 저장할 곳이 없기 때문이다 |
 | 관리자가 오랫동안 컨펌 안 함 | review item은 대기 상태 유지, DB 미반영 (SLA 미확정, §8) |
 | 웹서치 후보가 여러 개고 서로 재료 목록이 다름 | 전부 관리자에게 노출, 병합 규칙은 관리자 판단 또는 별도 규칙 필요 (§8) |
 | 같은 메뉴에 대해 웹서치 제안과 변형 태깅 제안이 동시에 옴 | 각각 독립된 review item으로 취급 (병합하지 않음) |
