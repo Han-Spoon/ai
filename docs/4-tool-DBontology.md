@@ -358,7 +358,7 @@ return OntologyResult(context=context, ingredients=nodes, variant_origin=variant
 
 | 진입점 | 언제 부르나 | 입력 | 출력 |
 |---|---|---|---|
-| `lookup_tags` | ③만 거치는 경로 (사장님 확정값이 모두 있어 ④⑤를 건너뛸 때) | `ingredient_id` 목록 | 재료별 `constraint_tags` |
+| `lookup_tags` | **모든 경로**에서 ⑧ 직전 (⓪ §2-8 `tag_lookup` node). ③ 사장님 확인값에는 태그가 없으므로, 확인된 재료 전부의 태그를 채운다. 일부만 확인된 메뉴도 포함 | `ingredient_id` 목록 | 재료별 `constraint_tags`, `role` |
 | `map_ingredients` | ⑥ 웹 재료 후보를 ⑤로 보내기 전 | 재료명 목록 | 재료별 `ingredient_id`, `canonical_name`, `constraint_tags` |
 
 ```python

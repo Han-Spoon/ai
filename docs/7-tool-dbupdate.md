@@ -449,8 +449,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - **물리 DB 쓰기는 백엔드만 수행한다.** ⑦을 포함한 AI 노드는 DB 자격 증명을 갖지 않는다.
 - **저장 명령은 ⑦만 만든다.** `menus`/`recipe_ingredients`/`ingredient_evidence_log`/`ingredient_confirmations`/`owner_verification_requests`가 대상이다. `ingredient_risk_scores`는 명령 대상도 아니며 재계산으로만 갱신된다.
 - **AGENTS.md가 정한 예외는 `menu_ingredient_cache` 하나다** (`caution-db-schema.md` §5). ④가 ⑦을 거치지 않고 저장 명령을 직접 만든다. ④가 이미 계산한 재귀 확장 결과를 저장만 하는 파생 캐시이지, 새로운 증거·사실이 아니기 때문에 관리자 컨펌 게이트가 필요 없다는 게 근거다. 이 경우에도 물리 쓰기는 백엔드가 한다 (④ §0).
-- **`web_search_cache` 저장 명령은 ⑦이 만든다 (결정, #208).** ⑥은 검색만 하고, 원본 기록 명령 `save_web_search_cache`는 ⑦이 만든다. 원본 로그라 관리자 게이트 없이 바로 저장한다. 아래는 정리 전 기록이다.
-- *(정리 전)* **`web_search_cache`는 정리가 필요하다.** ⑥ §3은 ⑥이 검색 결과마다 `web_search_cache` 저장 명령을 직접 만들고 백엔드가 관리자 게이트 없이 즉시 저장한다고 적는다. 근거는 "원본 로그이지 확률에 영향을 주는 데이터가 아니다"이다. 이는 AGENTS.md 예외 목록(④ 캐시 하나)에 없는 두 번째 예외다. ⑦의 검토 명령은 `evidence_ref_table: web_search_cache`로 이 행을 가리키므로 검토 전에 캐시 행이 먼저 있어야 한다. 예외로 인정할지, ⑦이 이 명령도 만들지 정해야 한다 (§8).
+- **`web_search_cache` 저장 명령은 ⑦이 만든다 (결정, #208).** ⑥은 검색만 하고, 원본 기록 명령 `save_web_search_cache`는 ⑦이 만든다. 원본 로그라 관리자 게이트 없이 바로 저장한다.
 
 ---
 
