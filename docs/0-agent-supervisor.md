@@ -2784,7 +2784,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 정보 없는 메뉴(`no_information: true`)는 재료가 없으므로, 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다: `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 메뉴가 DB에 없으면 `menu_id`도 null이다. 이 카드는 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 답이 판정을 바꾸지 않고(무엇이 들어가는지 알 수 없음) 저장할 메뉴 행도 없으므로 ⑦ 저장 요청을 만들지 않는다.
 
-`reason_codes` 허용값은 `insufficient_recipe_evidence`(확률 근거 부족: 실질 레시피 근거 5개 미만), `anomaly`(이상 답변), `no_information`(정보 없음), `unknown_tag`(태그 모름), `expired`(3개월 만료), `high_risk_review`(재검증 발견), `ambiguous_menu`(메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음), `unconfirmed`(사장님 확인값 없음. 다른 이유가 하나도 없을 때만)이며 한 카드에 여러 값을 넣을 수 있다. 모든 카드에는 이유가 하나 이상 있다. 카드 정렬 우선순위는 `anomaly → expired → unknown_tag → ambiguous_menu → high_risk_review → insufficient_recipe_evidence → no_information → unconfirmed`이다. 사진 품질 신호인 `scan_quality.status: low_confidence`와 레시피 근거 부족 이유 코드를 혼동하지 않는다.
+`reason_codes` 허용값은 `insufficient_recipe_evidence`(확률 근거 부족: 실질 레시피 근거 5개 미만), `anomaly`(이상 답변), `no_information`(정보 없음), `expired`(3개월 만료), `high_risk_review`(재검증 발견), `ambiguous_menu`(메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음), `unconfirmed`(사장님 확인값 없음. 다른 이유가 하나도 없을 때만)이며 한 카드에 여러 값을 넣을 수 있다. 모든 카드에는 이유가 하나 이상 있다. 카드 정렬 우선순위는 `anomaly → expired → ambiguous_menu → high_risk_review → insufficient_recipe_evidence → no_information → unconfirmed`이다. 태그를 모르는 재료(④ warning `unmapped_constraint_tags`, `constraint_tags_lookup_failed`)는 사용자 금지 태그와 겹치는지 알 수 없어 카드를 만들지 않는다. 이 재료는 warning으로 SAFE를 막고, 아래 고위험 재검증 이유 `unknown_tag`로만 쓴다 (⑧ §1-3). 사진 품질 신호인 `scan_quality.status: low_confidence`와 레시피 근거 부족 이유 코드를 혼동하지 않는다.
 
 `high_risk_review.required`는 해당 메뉴가 고가 모델 재검증 후보인지 나타낸다. `reason_code`는 `anomaly | unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
 
@@ -2801,6 +2801,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - `proposed_variant_ingredients`가 비어 있지 않음
 - `risk_tag_observations`가 사용자 금지 태그와 겹침
 - `menu_ambiguity_flags`에 사용자와 관련 있고 사장님 답(`flag_confirmations`)으로 풀리지 않은 플래그가 있음
+- `confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음. 판정에 쓸 재료가 하나도 없으면 "모두 사장님 확인값" 조건이 저절로 참이 되어 SAFE가 나갈 수 있으므로, ⑧은 `no_information: true`와 같이 처리한다 (⑧ §2-1 3단계)
 
 확률값이나 변형 제안만 있는 경우는 Hard Evidence가 아니므로 확률이 낮더라도 CAUTION이다.
 
@@ -3022,6 +3023,8 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 33 | `locale: en` + 번역 이름이 없는 재료(웹 재료, `ingredient_id: null`) | 그 재료의 `localized_name`은 한국어 `canonical_name` 그대로 | LLM으로 재료 이름을 번역하지 않음 |
 | 34 | 최종 응답의 근거·카드·명령이 존재하지 않는 ID를 참조 | finalize에서 invariant 오류로 종료 | 끊어진 `evidence_refs`, `item_id`, `card_id`를 정상 응답으로 반환하지 않음 |
 | 35 | `store_id: null`인데 ⑧ 또는 adapter가 카드·명령·SAFE를 반환 | finalize에서 invariant 오류로 종료 | 가게 없는 결과에 사장님 기능·저장·SAFE가 노출되지 않음 |
+| 36 | `no_information: false` + ⑧ 요청의 세 재료 목록이 모두 빔 + 다른 SAFE 금지 조건 없음 | ⑧ CAUTION, `evidence_basis: unknown` | 재료가 0개일 때 SAFE로 새지 않음 (⑧ 테스트 32) |
+| 37 | 할랄 사용자 + 웹 재료가 표준 재료로 매핑되지 않음(`unmapped_constraint_tags`) | ⑧ CAUTION, 그 재료의 질문 카드 없음, `high_risk_review.reason_code: unknown_tag` | 태그를 모르는 재료로 카드를 만들지 않고 재검증 이유로만 씀 |
 
 ---
 
