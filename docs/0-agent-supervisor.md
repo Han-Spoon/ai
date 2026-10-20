@@ -361,7 +361,7 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 ```
 
 - `evidence_class`: `hard | soft`
-- `source_type`: `owner_feedback | user_feedback | recipe | expanded | web_search | ocr_variant_tag | ocr_text_hint`
+- `source_type`: `owner_feedback | recipe | expanded | web_search | ocr_variant_tag | ocr_text_hint`. 손님 피드백(`user_feedback`)은 근거로 쓰지 않는다 (③ 결정, 2026-10-09)
 - `verification_status`: `owner_confirmed | approved | pending_review | rejected | inferred`
 - `reliability_weight`: 0~1 number 또는 아직 출처 신뢰도를 계산하지 않은 경우 `null`. ⑥의 신규 웹 출처는 `null`로 시작한다.
 - DB PK가 아직 없는 런타임 근거도 `evidence_id`를 생략하거나 null로 두지 않는다. 생성 노드가 `runtime:{scan_session_id}:{item_id}:{source_type}:{ordinal}` 형식의 run-local ID를 발급하고, 백엔드가 저장 후 DB ID와의 매핑을 관리한다.
@@ -625,7 +625,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
                 {
                   "evidence_id": "evidence-prior-001",
                   "evidence_class": "soft",
-                  "source_type": "web_search",
+                  "source_type": "ocr_variant_tag",
                   "source_ref": "ingredient_evidence_log:9001",
                   "verification_status": "approved",
                   "reliability_weight": 0.5,
@@ -702,7 +702,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `ontology`와 `fallback_ontology`는 펼친 재료 결과가 아니라 DB에서 가져온 원재료 행이다. `menu`와 함께 `recipe_ingredients[]`, `menu_recipe_corpora[]`, `menu_ingredient_priors[]`, `cache`를 항상 포함한다. `menu`는 원본 컬럼인 `menu_id`, `base_menu_id`, `remain_token`, `menu_category_id`, `source`, `ambiguity_flags`, `knowledge_revision`만 전달한다. `source`는 DB의 `curated | web_search_generated | variant_generated` 값이다. `exists_in_db`, `is_variant`, `variant_origin`, `menu_category` 같은 파생값은 백엔드가 만들지 않고 Supervisor가 원본 컬럼으로 도출한다. `menu.ambiguity_flags`는 DB `menus.ambiguity_flags`(메뉴 애매함 플래그 `has_unclear_broth | has_unclear_seasoning | has_unclear_jeotgal | has_hidden_animal | has_variant`의 부분집합)를 그대로 넣고, 없으면 `[]`다. 레시피 목록 밖에 무엇이 더 들어갈지 불분명하다는 표시라 ⑧의 SAFE 판단에 쓰인다 (§4-7). `recipe_ingredients[]`는 `{ingredient_id}`, `menu_recipe_corpora[]`는 `{corpus, n_total}`, `menu_ingredient_priors[]`는 `{corpus, ingredient_id, k_count}`다. `cache`는 revision이 일치하는 스냅샷이 있으면 `{menu_revision: integer, ingredients_snapshot: object[]}`, 없으면 `null`이다. `ingredients_snapshot`은 확인 재료를 빼기 전의 전체 확장 목록이며 `anomaly_locked`와 가게 확정값을 포함하지 않는다. ④가 두 재료 목록의 합집합을 시작점으로 만들고, corpus별 0회 관측 채우기와 숨은 재료 관측값 상속까지 한 곳에서 수행한다.
 
-`priors.store[]`의 각 원소는 `{ingredient_id: integer, alpha: number, beta: number, evidence_refs: string[]}`이며 `alpha > 0`, `beta > 0`이어야 한다. 가게 prior에는 관리자 승인된 `web_search`와 `ocr_variant_tag` 근거만 포함하고 `owner_feedback`은 포함하지 않는다. 사용하지 않는 `priors.cluster`와 `priors.global`은 외부 계약에 넣지 않는다. ⑤의 논리적 fallback 순서 `store → cluster → global → uninformative`는 유지하되, cluster 데이터가 없는 현재 계약에서는 건너뛰고 global은 ④의 corpus별 `observations`와 출처 신뢰도로 계산한다. `priors.evidence[]`는 `store[].evidence_refs`가 가리키는 `EvidenceRef`를 중복 없이 담는다.
+`priors.store[]`의 각 원소는 `{ingredient_id: integer, alpha: number, beta: number, evidence_refs: string[]}`이며 `alpha > 0`, `beta > 0`이어야 한다. 가게 prior에는 그 가게 메뉴판에서 나온 관리자 승인 변형 근거(`ocr_variant_tag`)만 포함하고 `owner_feedback`은 포함하지 않는다. 승인된 웹 레시피는 가게와 무관해 가게 prior에 넣지 않고, 같은 메뉴로 30개가 모이면 백엔드가 공용 메뉴로 등록한다 (⑦ §2-1, 2026-10-20). 사용하지 않는 `priors.cluster`와 `priors.global`은 외부 계약에 넣지 않는다. ⑤의 논리적 fallback 순서 `store → cluster → global → uninformative`는 유지하되, cluster 데이터가 없는 현재 계약에서는 건너뛰고 global은 ④의 corpus별 `observations`와 출처 신뢰도로 계산한다. `priors.evidence[]`는 `store[].evidence_refs`가 가리키는 `EvidenceRef`를 중복 없이 담는다.
 
 `source_reliability.weights[]`는 `{source_key: string, weight: number}`이고 `weight` 범위는 0~1이다. `source_key`는 ④의 `observations[].corpus`와 연결할 때 `corpus:{corpus}` 형식을 사용하며, 큐레이션과 웹 관측치는 각각 `curated`, `web_search`를 사용한다. 같은 `source_key`는 한 번만 보낸다. 목록에 없는 신규 출처의 기본 weight는 0.5다. status가 `unavailable`이어도 계산을 계속해야 한다면 0.5를 적용하되 SAFE 금지 warning을 유지한다.
 
@@ -1290,7 +1290,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 | JSON | number (정수) |
 | Python | `int` |
 
-`null`, 문자열 숫자(`"123"`), 0, 음수는 모두 `StoreIdRequiredError` 대상이다. 이 검증은 다른 가게의 데이터로 fallback하는 것보다 요청을 실패시키는 편이 안전하다는 FN 최소화 원칙을 따른다.
+필드 누락, 문자열 숫자(`"123"`), 0, 음수는 모두 `StoreIdRequiredError` 대상이다. 명시적 `null`은 Judge의 가게 없는 스캔으로 허용한다 (§1-3). ③⑦처럼 가게별 데이터가 필요한 노드는 `null`이면 호출되지 않는다. 이 검증은 다른 가게의 데이터로 fallback하는 것보다 요청을 실패시키는 편이 안전하다는 FN 최소화 원칙을 따른다.
 
 ---
 
@@ -1947,7 +1947,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       {
         "evidence_id": "evidence-prior-001",
         "evidence_class": "soft",
-        "source_type": "web_search",
+        "source_type": "ocr_variant_tag",
         "source_ref": "ingredient_evidence_log:9001",
         "verification_status": "approved",
         "reliability_weight": 0.5,
