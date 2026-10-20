@@ -1947,7 +1947,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       {
         "evidence_id": "evidence-prior-001",
         "evidence_class": "soft",
-        "source_type": "web_search",
+        "source_type": "ocr_variant_tag",
         "source_ref": "ingredient_evidence_log:9001",
         "verification_status": "approved",
         "reliability_weight": 0.5,
