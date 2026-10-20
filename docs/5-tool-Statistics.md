@@ -79,7 +79,6 @@
 |---|---|---|
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
 | `scope: exact` + `flagged_anomaly: true` (이상 답변) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. `anomaly_locked: true`로 CAUTION 이상 유지 |
-| `scope: inherited` | 보류 | 원본 메뉴 확정값. override도 prior 보정도 하지 않는다 (③ §6) |
 | 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
@@ -458,7 +457,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | `observations` 안에 `k_count > n_total` | 데이터 무결성 오류. 로그 + 그 출처 관측값은 버리고, 남은 근거가 없으면 `uninformative`. `warnings`에 `integrity_error` |
 | `observations` 필드 부재 또는 `[]` | 크롤링 근거 없음. 큐레이션·가게 증거도 없으면 `uninformative` |
 | `source_reliability`에 그 출처가 없음 | 처음 보는 출처는 신뢰도 0.5(`(0+1)/(0+2)`)로 쓴다 |
-| `inherited` 확정값이 들어옴 | 쓰지 않는다 (보류, ③ §6) |
 | 재료 리스트 빈 배열 | 빈 결과 + `warnings`에 `empty_ingredients`. ⑧에서 CAUTION 이상 유지 |
 | `anomaly_locked` 재료의 확률이 낮게 나옴 | **확률과 무관하게 플래그 유지.** ⑧이 CAUTION 이상 강제 |
 
@@ -479,7 +477,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 6 | `db_registered` 변형 재료 | scale 1.0 | 신규 변형과 같게 취급되지 않을 것 |
 | 7 | depth 0 vs depth 3 동일 관측값 (`inherited`) | scale 1.0 vs 0.125, mean 같음 | depth가 무시되지 않고, mean이 내려가지 않을 것 |
 | 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
-| 8 | `inherited` 확인 정보 포함 | α·β 변화 없음 | override로도, prior 보정으로도 쓰지 않을 것 |
+| 8 | 삭제됨 (2026-10-13, ③ §3-1). 원본 메뉴 확인값 입력이 없어졌다 | — | — |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
 | 9-b | 3개월 만료 재료 (`expired: true`, `anomaly_locked: false`로 들어옴) | 확률 계산, `anomaly_locked: false` 그대로 | 만료를 이상 답변으로 바꾸지 않을 것 |
 | 10 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
