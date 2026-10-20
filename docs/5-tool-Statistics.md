@@ -66,7 +66,7 @@
 
 | 배열 | 내용 | ⑤의 처리 |
 |---|---|---|
-| `store` | `ingredient_risk_scores` (가게 증거 합계, `alpha = 1 + δα`, `beta = 1 + δβ`) | `alpha − 1`, `beta − 1`만 더한다 (§3-3, 테스트 22). 근거 출처는 `web_search`·`ocr_variant_tag`뿐이고 사장님 답변(`owner_feedback`)은 들어오지 않는다 |
+| `store` | `ingredient_risk_scores` (가게 증거 합계, `alpha = 1 + δα`, `beta = 1 + δβ`) | `alpha − 1`, `beta − 1`만 더한다 (§3-3, 테스트 22). 근거 출처는 그 가게 메뉴판의 변형 근거(`ocr_variant_tag`)뿐이다. 승인된 웹 레시피는 가게와 무관해 여기 들어오지 않고, 30개가 모이면 공용 메뉴로 등록된다 (⑦ §2-1, 2026-10-20). 사장님 답변(`owner_feedback`)도 들어오지 않는다 |
 | `cluster` | **항상 `[]`** | 메뉴 분류 prior는 #200으로 연기 |
 | `global` | **항상 `[]`** | 전역 prior는 ⑤가 ④의 `observations` × 출처 신뢰도 + 큐레이션으로 계산한다 (§3-3). 여기에 α·β를 또 받으면 같은 크롤링 레시피를 두 번 센다 |
 
