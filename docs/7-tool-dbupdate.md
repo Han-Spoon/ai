@@ -144,13 +144,26 @@ flowchart TD
     CMD --> REVIEW["백엔드: 관리자 검토 항목 저장<br/>(source_url/extracted_ingredients 또는<br/>base_menu_id/remain_token/suggested_ingredients 포함)"]
     REVIEW --> WAIT{관리자 판단}
     WAIT -->|반려| DROP["반영 안 함, 로그만 남김<br/>verification_status: rejected"]
-    WAIT -->|승인| M1["1. menus INSERT<br/>(source: web_search_generated 또는 variant_generated)<br/>verification_status: approved"]
-    M1 --> M2["2. recipe_ingredients INSERT<br/>(evidence_type: explicit 또는 variant)"]
-    M2 --> M3["3. ingredient_evidence_log INSERT<br/>(source_type: web_search 또는 ocr_variant_tag,<br/>delta_alpha = 출처 신뢰도 × 1, delta_beta = 0,<br/>review_item_id로 검토 항목 연결)"]
+    WAIT -->|승인| KIND{어떤 근거?}
+    KIND -->|변형 태깅 (가게 메뉴판)| M1["1. menus INSERT<br/>(source: variant_generated)"]
+    M1 --> M2["2. recipe_ingredients INSERT<br/>(evidence_type: variant)"]
+    M2 --> M3["3. ingredient_evidence_log INSERT<br/>(source_type: ocr_variant_tag,<br/>delta_alpha = 출처 신뢰도 × 1, delta_beta = 0,<br/>review_item_id로 검토 항목 연결)"]
     M3 --> M4["4. 애플리케이션 로직이<br/>ingredient_risk_scores α/β 재계산"]
+    KIND -->|웹 레시피| W1["승인 레시피 수 세기<br/>(같은 메뉴의 approved 검토 항목)"]
+    W1 --> W2{30개 이상?}
+    W2 -->|No| W3["대기. DB 등록 안 함<br/>판정은 ⑥이 캐시 레시피로 계속"]
+    W2 -->|Yes| W4["공용 메뉴 등록<br/>menus INSERT (source: web_search_generated)<br/>→ recipe_ingredients INSERT (evidence_type: web_search)<br/>가게 prior에는 넣지 않음"]
 ```
 
-**soft 증거의 δ 값 (결정, 2026-10-10):** 승인된 웹·변형 근거는 "이 재료가 있다"는 근거 1건이다. ⑦은 기록할 때 그 출처의 현재 신뢰도를 곱해 `delta_alpha = 신뢰도 × 1`, `delta_beta = 0`으로 넣는다. `ingredient_risk_scores`에는 출처별로 나뉘지 않은 합계만 남으므로, 신뢰도는 기록 시점에 곱해야 한다 (⑤ §3-3). 후보 목록에 없다고 β를 더하지 않는 이유는 큐레이션 레시피와 같다. 목록에 없다고 안 들어간다는 뜻이 아니다.
+**승인된 웹 레시피는 30개가 모이면 공용 메뉴로 등록한다 (결정, 2026-10-20, ⑥ §2-4와 같음).**
+- 웹 레시피는 인터넷에서 찾은 일반 레시피라 **그 가게의 레시피가 아니다.** 그래서 `ingredient_evidence_log`·`ingredient_risk_scores`(가게 prior)에 넣지 않는다. 넣으면 남의 레시피가 "이 가게 증거"가 된다.
+- 승인 1건마다 메뉴를 등록하지 않는다. 레시피 몇 개만으로 DB 메뉴가 생기면 그때부터 웹서치가 멈춰 30개 기준이 의미가 없어진다.
+- 30개 전까지는 등록하지 않고, ⑥이 웹 캐시 레시피로 판정한다 (CAUTION).
+- 30개가 되면 백엔드가 `menus`(`source: web_search_generated`) → `recipe_ingredients`(`evidence_type: web_search`) 순서로 등록한다. 이후 그 메뉴는 ④⑤ 경로로 간다.
+- 미확정: 30개 레시피의 "n개 중 k개" 통계도 함께 넣을지. 제안은 크롤링 코퍼스와 같은 형태로 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 넣는 것이다. 그러면 ⑤가 다른 사이트처럼 계산하고 출처 신뢰도 `web_search`가 적용된다 (§8, `caution-db-schema.md` §6 22번).
+- **변형 태깅 근거는 그 가게 메뉴판에서 나온 것**이라 지금처럼 가게 prior(`ocr_variant_tag`)에 반영한다.
+
+**soft 증거의 δ 값 (결정, 2026-10-10):** 승인된 변형 근거는 "이 재료가 있다"는 근거 1건이다. ⑦은 기록할 때 그 출처의 현재 신뢰도를 곱해 `delta_alpha = 신뢰도 × 1`, `delta_beta = 0`으로 넣는다. `ingredient_risk_scores`에는 출처별로 나뉘지 않은 합계만 남으므로, 신뢰도는 기록 시점에 곱해야 한다 (⑤ §3-3). 후보 목록에 없다고 β를 더하지 않는 이유는 큐레이션 레시피와 같다. 목록에 없다고 안 들어간다는 뜻이 아니다.
 
 **순서가 고정인 이유**: `menus` → `recipe_ingredients` → `ingredient_evidence_log` 순서를 지키지 않으면 FK가 끊긴다 (`caution-db-schema.md` §7-3, §7-4). `ingredient_risk_scores`는 이 로그 재계산 결과로만 갱신되고 **직접 UPDATE는 절대 금지**.
 
@@ -492,7 +505,9 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | 관리자가 웹서치 제안 승인 | 백엔드가 `menus`→`recipe_ingredients`→`ingredient_evidence_log` 순서로 INSERT | FK 순서 위반 시 트랜잭션 전체 실패 |
+| 1 | 관리자가 변형 태깅 제안 승인 | 백엔드가 `menus`→`recipe_ingredients`→`ingredient_evidence_log` 순서로 INSERT | FK 순서 위반 시 트랜잭션 전체 실패 |
+| 1-b | 관리자가 웹 레시피 승인, 같은 메뉴 승인 누적 29개 | DB 등록 없음, 가게 prior 변경 없음 | 승인 1건으로 메뉴가 생기지 않을 것 |
+| 1-c | 웹 레시피 승인 누적 30개 | 공용 `menus`·`recipe_ingredients` 등록, `ingredient_evidence_log` 없음 | 웹 레시피가 가게 prior에 들어가지 않을 것 |
 | 2 | 관리자가 제안 반려 | DB 변경 없음 | `ingredient_risk_scores` 그대로 |
 | 3 | 사장님 1·2차 같은 답 (돈까스 + "돼지고기 있음") | ⑦이 `record_owner_answer` 명령 생성, 백엔드가 이력 기록 후 `ingredient_confirmations` UPSERT | 커밋 후 다음 조회부터 확정값 반환 |
 | 3-b | 사장님 답변 1번만 | 이력만 기록 | `ingredient_confirmations` 변경 없음, ③은 미확인 유지 |
@@ -526,6 +541,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
+- [ ] **웹 레시피 30개 등록 때 통계 함께 저장 (백엔드와)** — `corpus: web_search`로 `menu_recipe_corpora`·`menu_ingredient_priors`에 넣을지 (§2-1, `caution-db-schema.md` §6 22번)
 - [x] **10개 후보의 병합/선택 규칙** — 관리자 화면은 레시피 10개를 하나씩 보여주지 않고 **재료별로 합쳐서** 보여준다 (예: "돼지고기 8/10, 새우 2/10", 고유 레시피 기준, ⑥ §1-2 `observations`). 관리자는 재료 단위로 체크해 승인하고, 자동 채택은 하지 않는다 (2026-10-12)
 - [x] **관리자 컨펌 SLA** — 두지 않는다. 검토 항목은 승인·반려될 때까지 `pending`으로 쌓이고, 대기 일수 표시나 자동 만료도 없다 (2026-10-12)
 - [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 재확인 UI를 두지 않고, 2차·3차 질문으로 한 번의 실수를 거른다 (2026-10-10, #193)

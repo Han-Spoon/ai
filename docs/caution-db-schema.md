@@ -87,7 +87,7 @@ erDiagram
 | `needs_review` | 웹서치·변형으로 생긴 메뉴는 `true` |
 | `knowledge_revision` | 기본 1. 메뉴의 지식이 바뀌면 +1. ④ 캐시 무효화 기준 (§5) |
 
-- **웹서치 메뉴**: 관리자가 승인하면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`·`ingredient_evidence_log`를 채운다.
+- **웹서치 메뉴**: 관리자가 승인한 웹 레시피가 같은 메뉴로 **30개 이상** 모이면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`(`evidence_type: web_search`)를 채운다 (⑦ §2-1, 2026-10-20). 웹 레시피는 가게와 무관하므로 `ingredient_evidence_log`(가게 증거)에는 넣지 않는다.
 - **변형 메뉴**: 원본 메뉴 행을 다시 쓰지 않고 `base_menu_id`로 원본을 가리키는 새 행(`source: variant_generated`)을 만든다. 변형 메뉴의 증거가 원본 메뉴 확률과 섞이지 않게 하기 위해서다. 원본 메뉴의 확정값을 변형 메뉴가 물려받아 쓰는 방식은 보류다 (③ §6).
 
 ### `menu_aliases`, `ingredient_aliases`
@@ -195,9 +195,9 @@ erDiagram
 |---|---|
 | `id` PK | |
 | `store_id`, `menu_id`, `ingredient_id` | |
-| `source_type` | `owner_feedback` / `web_search` / `ocr_variant_tag`. 손님 피드백은 쓰지 않는다 |
+| `source_type` | `owner_feedback` / `ocr_variant_tag`. 손님 피드백은 쓰지 않는다. 웹 레시피는 가게 증거가 아니라 넣지 않는다 (ERD 허용값의 `web_search`는 쓰지 않음) |
 | `delta_alpha`, `delta_beta` | soft evidence는 `delta_beta = 0` 고정 |
-| `owner_verification_request_id` / `review_item_id` | 배타적 아크. 사장님 답변이면 앞쪽, 웹서치·변형이면 뒤쪽 |
+| `owner_verification_request_id` / `review_item_id` | 배타적 아크. 사장님 답변이면 앞쪽, 변형이면 뒤쪽 |
 
 - 사장님 답변은 확률을 거치지 않고 `ingredient_confirmations`로 override하지만, 답변 이력은 이 로그에 **매번** 남는다. 답이 바뀐 이력은 여기서 본다.
 - OCR 변형 재료(예: "차돌" → 소고기)는 변형 `menu_id`로 `ocr_variant_tag` 증거 한 줄을 남긴다. 확정이 아니라 확률 증거다.
@@ -334,7 +334,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22는 2026-10-20 추가)
 
 🔴 **우선: 16·20번.** 이 두 개가 없으면 사장님 질문 흐름(1차 답 저장 → 2·3차 질문)이 동작하지 않는다.
 
@@ -361,6 +361,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(5), 7번의 7개 값 | `zh-CN`·`zh-TW`가 5자라 지금 길이에 안 들어간다 |
 | 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 없음 | `card_id` VARCHAR(200) NULL, `round` SMALLINT NOT NULL DEFAULT 1 (1~3), `previous_question_id` UUID NULL FK→같은 테이블, `confirmation_state` VARCHAR(20) NULL 추가 + CHECK (§3) | ⓪이 "백엔드는 `round`·`previous_question_id`를 질문 행에 보존해 질문 사슬과 차수를 검증한다"로 정함. 저장할 곳이 없으면 2·3차 질문을 만들 수 없다 |
 | 21 | `ingredient_tags.tag_code`, `ingredient_composition_tags.tag_code`, `user_allergies.allergy_code` | 알레르기 19종 + fish/duck/alcohol (이름 형식 미정), `allergy_code`는 "19종" | `is_*` 형식 22종으로 통일: 식약처 알레르기 19종 + `is_fish` / `is_duck` / `is_alcohol` (원천 `ai_ruleengine/constants.py`) | 재료 태그와 사용자 알레르기 코드의 이름이 다르면 매칭이 안 돼 알레르겐을 놓친다 |
+| 22 | 승인된 웹 레시피 등록 | 승인마다 `menus` 등록 + 가게 증거 반영 | 같은 메뉴의 승인 레시피가 **30개 이상**일 때만 공용 `menus`·`recipe_ingredients` 등록. `ingredient_evidence_log`에는 넣지 않음. (제안, 확인 필요) 30개의 "n개 중 k개" 통계를 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 함께 넣기 (3번 `corpus` 값에 `web_search` 추가) | 웹 레시피는 가게 레시피가 아님. 승인마다 등록하면 30개 기준이 무의미해짐 (⑦ §2-1, ⑥ §2-4) |
 
 - `corpus`·배치 `source`에 `etc` 같은 기타 값은 넣지 않는다 (3·4번 값만).
 - 메뉴·재료 ID는 정수(BIGINT)를 유지한다.
