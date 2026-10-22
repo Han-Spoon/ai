@@ -63,6 +63,7 @@ class PreparedItem(StrictModel):
     description: str | None
     price_text: str | None
     price_options: list[PriceOption]
+    ocr_confidence: Probability
     locale_hint: Locale | None
     options: list[str]
     residual_tokens: list[str]

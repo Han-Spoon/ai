@@ -9,7 +9,9 @@
 | 모듈 | 역할 | 문서 |
 |---|---|---|
 | `app.py` | FastAPI 진입점 (`/v1/ocr`, `/v1/ruleengine`, `/v1/result`) | — |
+| `ai_supervisor/` | Prepare/Judge 계약과 LangGraph 상태 모델 | [Supervisor 스펙](docs/0-agent-supervisor.md) |
 | `ai_ocr/` | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) | [README](ai_ocr/README.md) |
+| `ai_normalization/` | ② 메뉴명 정제 및 허용 후보 선택 | [README](ai_normalization/README.md) |
 | `ai_ruleengine/` | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 | [README](ai_ruleengine/README.md) |
 | `ai_result/` | 최종 판정과 근거 메시지 생성 (Decision / XAI) | [README](ai_result/README.md) |
 | `ai_web_search_agent/` | DB 미등록 메뉴의 재료 후보 수집 | [README](ai_web_search_agent/README.md) |
@@ -31,7 +33,7 @@ Python 3.11 기준입니다.
 ```bash
 pip install -r requirements-dev.txt
 pytest -q
-python -m compileall -q app.py ai_ocr ai_ruleengine ai_result
+python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization
 ```
 
 CI(`.github/workflows/ci.yml`)가 위 두 가지를 실행합니다. `main`에 머지되면 `.github/workflows/deploy-prod.yml`로 운영 배포가 나갑니다 (문서·마크다운 변경은 제외).
