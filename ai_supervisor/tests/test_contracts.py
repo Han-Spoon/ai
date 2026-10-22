@@ -21,6 +21,7 @@ def prepared_item() -> dict:
         "description": None,
         "price_text": "8,000원",
         "price_options": [],
+        "ocr_confidence": 0.93,
         "locale_hint": "ko",
         "options": ["2인"],
         "residual_tokens": [],
