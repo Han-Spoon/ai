@@ -12,6 +12,7 @@ from .contracts import (
     CleanedMenuItem,
     NameCleaningRequest,
     NameCleaningResponse,
+    NameResolutionInput,
     NameResolver,
     OcrMenuItem,
 )
@@ -29,8 +30,8 @@ _PHONE_RE = re.compile(r"^(?:전화|tel\.?\s*)?\s*\d{2,4}[-\s]\d{3,4}[-\s]\d{4}$
 _HOURS_RE = re.compile(
     r"^(?:영업시간\s*)?(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:~|-|–)\s*(?:[01]?\d|2[0-3]):[0-5]\d$"
 )
-_HAS_HANGUL_RE = re.compile(r"[가-힣]")
 _HAS_LATIN_RE = re.compile(r"[A-Za-z]")
+LOW_OCR_CONFIDENCE_THRESHOLD = 0.65
 
 
 @dataclass(frozen=True)
@@ -117,11 +118,9 @@ class NameCleaningAgent:
     def __init__(
         self,
         resolver: NameResolver | None = None,
-        low_ocr_confidence_threshold: float | None = None,
+        low_ocr_confidence_threshold: float = LOW_OCR_CONFIDENCE_THRESHOLD,
     ) -> None:
-        if low_ocr_confidence_threshold is not None and not (
-            0.0 <= low_ocr_confidence_threshold <= 1.0
-        ):
+        if not 0.0 <= low_ocr_confidence_threshold <= 1.0:
             raise ValueError("low OCR confidence threshold must be between 0 and 1")
         self._resolver = resolver
         self._low_ocr_confidence_threshold = low_ocr_confidence_threshold
@@ -138,7 +137,7 @@ class NameCleaningAgent:
                     _warning(outcome.warning_code, source.item_id, forces_caution=False)
                 )
             if (
-                self._low_ocr_confidence_threshold is not None
+                item.cleaning_status != "invalid"
                 and source.ocr_confidence < self._low_ocr_confidence_threshold
             ):
                 warnings.append(
@@ -147,7 +146,13 @@ class NameCleaningAgent:
 
             if self._resolver is not None and _needs_multilingual_resolution(item, outcome):
                 try:
-                    resolved = await self._resolver.resolve_name(item)
+                    resolver_input = NameResolutionInput(
+                        display_name=item.display_name,
+                        normalized_menu_name=item.normalized_menu_name,
+                        locale_hint=item.locale_hint,
+                        residual_tokens=item.residual_tokens,
+                    )
+                    resolved = await self._resolver.resolve_name(resolver_input)
                     if _valid_name_resolution(
                         item, resolved.normalized_menu_name, resolved.confidence
                     ):
@@ -220,10 +225,7 @@ def _to_cleaned_item(source: OcrMenuItem, outcome: CleaningOutcome) -> CleanedMe
 def _needs_multilingual_resolution(item: CleanedMenuItem, outcome: CleaningOutcome) -> bool:
     if item.cleaning_status == "invalid" or outcome.dictionary_hit:
         return False
-    text = item.display_name
-    return bool(_HAS_LATIN_RE.search(text)) and (
-        bool(_HAS_HANGUL_RE.search(text)) or item.locale_hint not in {None, "ko"}
-    )
+    return bool(_HAS_LATIN_RE.search(item.display_name))
 
 
 def _valid_name_resolution(
