@@ -37,7 +37,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q app.py ai_ocr ai_ruleengine ai_result
+        run: python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_exact_feedback
 
       - name: Run tests
         run: pytest -q
