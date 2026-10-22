@@ -1,5 +1,6 @@
 # LLM
 openai==3.8.0
+langgraph==1.2.16
 
 # 이미지 전처리
 opencv-python-headless==5.0.0.93
@@ -8,6 +9,7 @@ pillow==12.3.0
 
 # HTTP 서비스
 fastapi==0.141.1
+pydantic==2.13.5
 uvicorn[standard]==0.52.4
 httpx==0.28.1
 
