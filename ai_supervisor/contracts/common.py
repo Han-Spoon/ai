@@ -133,10 +133,15 @@ class NodeWarning(StrictModel):
     @model_validator(mode="after")
     def validate_safety_warning(self) -> "NodeWarning":
         safety_codes = {
+            "candidate_llm_failed",
+            "candidate_unavailable",
             "max_depth_reached",
             "constraint_tags_lookup_failed",
+            "invalid_llm_candidate",
             "unmapped_constraint_tags",
             "knowledge_slice_unavailable",
+            "low_ocr_confidence",
+            "multiple_close_candidates",
             "store_context_missing",
         }
         if self.code in safety_codes and not self.forces_caution:
