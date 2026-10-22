@@ -8,6 +8,8 @@ from ai_supervisor.contracts.common import NodeWarning
 
 from .contracts import (
     CandidateResolver,
+    CandidateResolutionCandidate,
+    CandidateResolutionInput,
     CandidateSelectionItem,
     CandidateSelectionRequest,
     CandidateSelectionResponse,
@@ -110,7 +112,23 @@ class CandidateSelectionAgent:
             return _result(item, "ambiguous", "none", [base_reason]), warnings
 
         try:
-            resolution = await self._resolver.resolve_candidate(item)
+            resolver_input = CandidateResolutionInput(
+                raw_menu_name=item.raw_menu_name,
+                normalized_menu_name=item.normalized_menu_name,
+                display_name=item.display_name,
+                description=item.description,
+                locale_hint=item.locale_hint,
+                options=item.options,
+                residual_tokens=item.residual_tokens,
+                candidates=[
+                    CandidateResolutionCandidate(
+                        menu_id=candidate.menu_id,
+                        canonical_name=candidate.canonical_name,
+                    )
+                    for candidate in item.match_candidates
+                ],
+            )
+            resolution = await self._resolver.resolve_candidate(resolver_input)
         except Exception:
             warnings.extend(_ambiguity_warnings(item, base_reason))
             warnings.append(

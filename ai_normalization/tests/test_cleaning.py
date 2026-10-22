@@ -74,10 +74,42 @@ def test_header_is_invalid_but_unknown_single_character_is_valid() -> None:
     assert valid.normalized_menu_name == "죽"
 
 
-def test_multilingual_dictionary_avoids_llm() -> None:
-    result = clean_menu_name("Bibimbap")
-    assert result.normalized_menu_name == "비빔밥"
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("돈까스", "돈가스"),
+        ("김치찌게", "김치찌개"),
+        ("가재미탕", "가자미탕"),
+        ("Bibimbap", "비빔밥"),
+        ("BULGOGI", "불고기"),
+        ("Kimchi Jjigae", "김치찌개"),
+        ("Kimchi Stew", "김치찌개"),
+    ],
+)
+def test_documented_dictionary_entries(raw: str, expected: str) -> None:
+    result = clean_menu_name(raw)
+    assert result.normalized_menu_name == expected
     assert result.dictionary_hit is True
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "메뉴",
+        "메뉴판",
+        "식사류",
+        "안주류",
+        "주류",
+        "음료",
+        "음료류",
+        "추천 메뉴",
+        "대표 메뉴",
+    ],
+)
+def test_documented_section_headers_are_invalid(header: str) -> None:
+    result = clean_menu_name(header)
+    assert result.status == "invalid"
+    assert result.warning_code == "section_header"
 
 
 def test_batch_preserves_fields_and_returns_source_order() -> None:
@@ -119,6 +151,15 @@ class UnsafeNameResolver:
         return NameResolution(normalized_menu_name="라면", confidence=0.99)
 
 
+class EnglishNameResolver:
+    def __init__(self) -> None:
+        self.received = None
+
+    async def resolve_name(self, item):
+        self.received = item
+        return NameResolution(normalized_menu_name="치킨", confidence=0.99)
+
+
 def test_llm_cannot_delete_korean_ingredient_tokens() -> None:
     payload = {
         "context": context(),
@@ -133,6 +174,26 @@ def test_llm_cannot_delete_korean_ingredient_tokens() -> None:
     assert response.warnings[0].code == "name_llm_failed"
 
 
+def test_unknown_latin_name_uses_minimal_resolver_input() -> None:
+    resolver = EnglishNameResolver()
+    payload = {
+        "context": context(),
+        "items": [item(0, "Chicken", locale="ko")],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(
+        NameCleaningAgent(resolver).run(NameCleaningRequest.model_validate(payload))
+    )
+    assert response.items[0].normalized_menu_name == "치킨"
+    assert set(resolver.received.model_dump()) == {
+        "display_name",
+        "normalized_menu_name",
+        "locale_hint",
+        "residual_tokens",
+    }
+
+
 def test_configured_low_ocr_confidence_is_a_safety_warning() -> None:
     source = item(0, "김치찌개")
     source["ocr_confidence"] = 0.4
@@ -144,3 +205,32 @@ def test_configured_low_ocr_confidence_is_a_safety_warning() -> None:
     )
     assert response.warnings[0].code == "low_ocr_confidence"
     assert response.warnings[0].forces_caution is True
+
+
+def test_default_low_ocr_threshold_is_documented_value() -> None:
+    source = item(0, "김치찌개")
+    source["ocr_confidence"] = 0.64
+    payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
+    response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
+    assert response.warnings[0].code == "low_ocr_confidence"
+
+
+@pytest.mark.parametrize("raw", ["02-123-4567", "영업시간 09:00~21:00"])
+def test_phone_and_business_hours_are_invalid(raw: str) -> None:
+    payload = {
+        "context": context(),
+        "items": [item(0, raw)],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
+    assert response.items[0].cleaning_status == "invalid"
+    assert response.warnings[0].code == "invalid_menu_text"
+
+
+def test_low_ocr_warning_is_not_created_for_excluded_invalid_item() -> None:
+    source = item(0, "식사류")
+    source["ocr_confidence"] = 0.1
+    payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
+    response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
+    assert [warning.code for warning in response.warnings] == ["section_header"]

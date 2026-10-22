@@ -1,7 +1,7 @@
 # ② Menu Normalization Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase 계약 및 v1 판정 정책 확정, 운영 버전만 §8에서 고정)
+상태: 구현 기준안 (Prepare/Judge 2-phase 계약·v1 판정 정책·현재 구현 운영값 확정)
 상위 문서: `0-agent-supervisor.md`, `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -304,6 +304,10 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 
 검색 키에서는 한글 음절 사이 공백과 일반 구분 공백을 제거한다. 사용자 표시 이름에서는 인분·크기 옵션을 분리한 뒤 원래 메뉴명의 띄어쓰기와 표기를 최대한 보존한다. Latin 문자는 검색 비교용으로만 case-fold하고 `display_name`의 메뉴명 표기는 바꾸지 않는다.
 
+`cleaning_status: unchanged`는 NFKC·제어문자·공백 처리 후의 원문과 `display_name`, `normalized_menu_name`이 모두 같고 옵션 분리와 사전 치환도 없을 때만 사용한다. 그 외 유효한 변경은 `cleaned`다.
+
+v1에서 선행 장식으로 제거하는 문자는 `· • ▶ ▷ ■ □ ◆ ◇ ★ ☆ ▪ ▫ _ - – — | ※ *`다. 끝 가격은 메뉴명과 공백으로 분리된 3~7자리 숫자 또는 쉼표 천 단위 숫자이며, 선택적으로 `₩ ￦ $ € ¥`나 `원`이 붙은 형태만 제거한다. 통화 기호·`원` 없이 붙은 숫자는 반드시 앞 메뉴명과 공백으로 분리돼야 한다.
+
 ### 2-3. 옵션과 위험 토큰
 
 | 분류 | 예시 | `options` | `residual_tokens` | 이름에서 제거 |
@@ -314,6 +318,14 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 | 재료 추가·교체 | `치즈 추가`, `차돌 추가`, `해물` | 포함 | 재료 토큰 포함 | X |
 
 `소/중/대/소자/중자/대자/곱빼기`는 문자열 끝에서 독립 토큰이고 앞에 실제 메뉴명이 있을 때만 크기 옵션이다. 인분 표기도 문자열 끝에서 독립된 `숫자+인` 또는 `숫자+인분` 형태일 때만 분리한다. `대구탕`의 `대`처럼 메뉴명 내부 문자는 제거하지 않는다.
+
+v1 옵션 사전은 다음으로 고정한다.
+
+- 조리·맵기 관측 문구: `덜 맵게`, `매운맛`, `튀김`
+- 재료 추가·교체의 재료 토큰: `치즈`, `차돌`, `고기`, `돼지`, `소고기`, `해물`
+- 재료 옵션 형태: 위 토큰 뒤의 `추가 | 교체`, 또는 독립 토큰 `해물`
+
+조리·맵기와 재료 옵션은 `options`에 기록하되 메뉴 이름에서 제거하지 않는다. 재료 옵션의 재료 부분은 `residual_tokens`에도 한 번만 기록한다. 같은 옵션을 여러 규칙이 찾더라도 최초 위치 순서로 중복 없이 반환한다.
 
 ②는 `risk_tag_observations`를 새로 만들지 않는다. 매운맛 문구를 분리하더라도 ①이 만든 관측을 그대로 보존한다. 재료 옵션은 ④가 해석할 수 있도록 전체 이름과 `residual_tokens` 양쪽에서 잃지 않는다.
 
@@ -326,6 +338,16 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 - 매장별 별칭과 DB 메뉴 ID는 ②-A가 조회하지 않는다.
 - DB 기반 별칭은 Prepare 이후 백엔드의 `menu_aliases` 후보 조회에서 처리한다.
 
+현재 저장소 사전은 `ai_normalization/dictionaries/__init__.py`에 두고 애플리케이션 import 시 한 번 immutable 객체로 만든다. 버전은 `2026-10-v1`이다. 사전 내용이 바뀌면 버전도 함께 바꾸고 §7 회귀 테스트를 통과해야 한다.
+
+| 사전 | 현재 v1 항목 |
+|---|---|
+| 안전한 표기·OCR 교정 | `돈까스 → 돈가스`, `찌게 → 찌개`, `가재미탕 → 가자미탕` |
+| 검증된 영문 별칭 | `bibimbap → 비빔밥`, `bulgogi → 불고기`, `kimchi jjigae → 김치찌개`, `kimchi stew → 김치찌개` |
+| 섹션 헤더 | `메뉴`, `메뉴판`, `식사류`, `안주류`, `주류`, `음료`, `음료류`, `추천 메뉴`, `대표 메뉴` |
+
+사전 비교 키는 NFKC 적용 후 공백을 제거하고 Latin 문자를 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi stew`, `kimchistew`는 같은 키로 비교한다. `display_name`은 사전으로 바꾸지 않는다.
+
 다국어 처리는 다음 순서다.
 
 1. 검증된 다국어 별칭 사전
@@ -333,6 +355,16 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 3. 둘로 해석되지 않을 때만 LangChain 구조화 출력
 
 ②-A의 LLM은 `normalized_menu_name` 후보와 confidence만 반환한다. confidence가 0.90 미만이거나 빈 문자열·과도한 삭제·schema 위반이면 결과를 폐기하고 정제된 원문을 사용한다. LLM은 `menu_id`를 받거나 만들지 않는다.
+
+v1에서 “과도한 삭제”는 다음처럼 검증한다.
+
+- 원문 `display_name`에 남은 모든 한글 연속 토큰이 LLM 결과에도 있어야 한다.
+- `residual_tokens`의 모든 토큰이 LLM 결과에도 있어야 한다.
+- 하나라도 사라지면 `name_llm_failed` warning을 남기고 결정론적 검색명을 유지한다.
+
+현재 구현은 구조화 LLM을 직접 생성하지 않고 `NameResolver` 인터페이스로 주입받는다. Resolver가 주입되지 않은 배포에서는 검증된 사전까지만 사용하고, 해석되지 않은 외국어·혼합 표기는 정제된 원문 검색명을 유지한다. 구체 모델·timeout 연결은 #164 범위다.
+
+Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin 문자가 하나 이상 포함된 경우 ②-A LLM 대상이 된다. 순수 Latin 메뉴도 `locale_hint` 값과 관계없이 대상이며, 한글·숫자만 있는 이름은 호출하지 않는다.
 
 ### 2-5. invalid 판정
 
@@ -342,6 +374,8 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 - 가격만 남은 문자열
 - `식사류`, `주류`, `추천 메뉴`처럼 버전 관리된 섹션 헤더와 정확히 일치
 - 전화번호·영업시간처럼 메뉴가 아님을 규칙으로 확정할 수 있는 문자열
+
+전화번호는 번호 묶음을 하이픈 또는 공백으로 구분한 `지역/휴대전화 식별 번호-중간 번호-끝 번호` 형태, 영업시간은 `HH:MM~HH:MM` 형태(`~`, `-`, `–` 구분자)와 앞의 `전화`, `Tel.`, `영업시간` 라벨을 허용해 정확히 일치할 때만 invalid로 만든다. 이 경우 warning code는 `invalid_menu_text`다. 일부 문자열이 비슷하다는 이유만으로 메뉴를 invalid로 만들지 않는다.
 
 한 글자, 낯선 외국어, 처음 보는 메뉴라는 이유만으로 invalid로 만들지 않는다. 이런 값은 유효한 이름으로 Prepare에 남겨 백엔드 조회 후 `unmatched` 경로를 허용한다.
 
@@ -422,7 +456,10 @@ fuzzy 알고리즘은 Unicode 정규화 후 문자 기반 유사도를 0~1로 �
 - `description`, `locale_hint`, 메뉴판 인접 문맥 등 규칙 외의 실제 문맥이 하나 이상 있음
 - Supervisor의 남은 시간 예산 안에서 호출 가능
 
-LLM 입력에는 OCR 이름·설명·옵션과 허용 후보의 ID·이름만 보낸다. 사용자 프로필, 재료 정보, 다른 가게 정보는 보내지 않는다.
+LLM 입력에는 OCR 이름·설명·옵션과 허용 후보의 ID·이름만 보낸다. 사용자 프로필, 재료 정보, 가격, OCR 위험 관측, 후보 score·분류·match type, 다른 가게 정보는 보내지 않는다. 이를 코드에서 강제하기 위해 전체 wire item을 Resolver에 넘기지 않고 다음 최소 view를 만든다.
+
+- ②-A `NameResolutionInput`: `display_name`, `normalized_menu_name`, `locale_hint`, `residual_tokens`
+- ②-B `CandidateResolutionInput`: `raw_menu_name`, `normalized_menu_name`, `display_name`, `description`, `locale_hint`, `options`, `residual_tokens`, 후보별 `menu_id`·`canonical_name`
 
 구조화 출력은 다음 내부 모델이다.
 
@@ -442,6 +479,16 @@ LLM 입력에는 OCR 이름·설명·옵션과 허용 후보의 ID·이름만 �
 - 후보 이름을 새로 만들거나 `residual_tokens`를 삭제하지 않음
 - Pydantic closed schema 검증 통과
 
+v1 내부 `reason_code`는 다음 세 값만 허용하고 해당 문맥 필드가 실제로 있어야 한다.
+
+| `reason_code` | 필요한 입력 문맥 |
+|---|---|
+| `description_supports_candidate` | 비어 있지 않은 `description` |
+| `locale_supports_candidate` | null이 아닌 `locale_hint` |
+| `option_supports_candidate` | 하나 이상의 `options` 또는 `residual_tokens` |
+
+허용하지 않은 reason code, 문맥 필드가 없는 reason code, 후보 밖 ID는 `invalid_llm_candidate`로 폐기한다. LLM으로 모호성이 해소돼 `normalized`가 되면 `multiple_close_candidates` warning은 최종 응답에 남기지 않는다.
+
 실패하면 결과를 폐기하고 규칙 기반 `ambiguous`를 유지한다. LLM은 후보 점수나 `match_type`을 바꾸지 않는다.
 
 ### 4-4. 변형 메뉴 처리
@@ -459,7 +506,7 @@ def select_candidate(item):
     if item.candidate_status == "not_found" or not item.match_candidates:
         return unmatched("candidate_not_found")
 
-    candidates = sort_and_dedupe(item.match_candidates)
+    candidates = validate_sorted_and_unique(item.match_candidates)
     top = candidates[0]
     margin = 1.0 if len(candidates) == 1 else top.score - candidates[1].score
 
@@ -467,7 +514,11 @@ def select_candidate(item):
         return unmatched("below_accept_threshold")
 
     if top.score >= 0.92 and margin >= 0.08:
-        reason = "exact_unique" if top.match_type != "fuzzy" else "score_and_margin"
+        reason = (
+            "exact_unique"
+            if len(candidates) == 1 and top.match_type != "fuzzy"
+            else "score_and_margin"
+        )
         return normalized(top, method="deterministic", reason=reason)
 
     llm_result = resolve_with_llm_only_if_context_exists(item, candidates)
@@ -502,15 +553,33 @@ def select_candidate(item):
 ### 5-1. 구현 모듈 경계
 
 ```text
-normalization/
+ai_normalization/
+├── __init__.py         # 공개 import 경계
+├── README.md           # 현재 구현 범위와 실행 방법
 ├── contracts.py       # §1 모델
 ├── cleaning.py        # NFKC·장식·가격·옵션·표기 사전
 ├── option_rules.py    # 크기/인분/조리/재료 옵션 분류
 ├── candidate_policy.py# §4의 순수 판정 함수
-├── multilingual.py    # 제한적 LangChain 구조화 호출
-├── dictionaries/      # 버전 관리 표기·헤더·다국어 사전
+├── dictionaries/      # `2026-10-v1` 표기·헤더·다국어 사전
 └── tests/
 ```
+
+`contracts.py`의 `NameResolver`와 `CandidateResolver`가 제한적 LLM 경계다. 실제 provider adapter가 추가되면 별도 모듈에 구현하되 두 Protocol과 closed schema를 따라야 한다. ②의 두 실행 객체는 Supervisor의 비동기 adapter 규칙에 맞게 `async run(request) -> response` 형태로 제공한다.
+
+`CandidatePolicy`의 v1 기본값은 §4-1의 네 값이다. 테스트나 다음 정책 버전 검증에서는 객체를 주입할 수 있지만, 운영에서 값을 바꾸려면 문서·정책 버전·고정 검증 결과를 같은 PR에서 갱신한다.
+
+### 5-2. 현재 구현 범위
+
+| 항목 | 현재 상태 | 소유자/후속 작업 |
+|---|---|---|
+| ②-A 결정론적 정제·사전·invalid | 구현 | `ai_normalization` |
+| ②-B 후보 검증·상태 판정 | 구현 | `ai_normalization` |
+| 후보 exact·alias·fuzzy 조회와 score 생성 | AI에서 구현하지 않음 | 백엔드가 §3 계약으로 제공 |
+| 구체 LLM provider·모델·timeout | 미연결, Resolver 주입 경계만 구현 | #164에서 확정 후 문서와 함께 구현 |
+| Supervisor Prepare/Judge graph 연결 | 미연결 | #151 |
+| 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
+
+구현되지 않은 항목은 암묵적 fallback으로 숨기지 않는다. 현재 LLM Resolver가 없으면 규칙 결과를 유지하고, 후보 생성은 빈 목록을 AI가 만들어 대신하지 않고 백엔드의 `candidate_status`를 그대로 받는다.
 
 기존 `ai_ocr`의 텍스트 구조화와 `ai_ruleengine`의 표기 정리 코드는 동작을 조사해 재사용하되, ①과 ④가 같은 문자열을 다시 정규화하지 않도록 책임을 한곳으로 모은다.
 
@@ -525,7 +594,8 @@ normalization/
 | `empty_menu_name` | 정제 후 빈 문자열 | `invalid`, Prepare 외부 목록에서 제외 | false |
 | `price_only` | 가격만 존재 | `invalid`, 제외 | false |
 | `section_header` | 확정된 메뉴판 헤더 | `invalid`, 제외 | false |
-| `low_ocr_confidence` | OCR confidence가 품질 기준 미달 | 이름은 보존하고 계속 진행 | true |
+| `invalid_menu_text` | 전화번호·영업시간과 정확히 일치 | `invalid`, 제외 | false |
+| `low_ocr_confidence` | 유효 메뉴의 `ocr_confidence < 0.65` | 이름은 보존하고 계속 진행 | true |
 | `name_llm_failed` | ②-A 다국어 해석 실패 | 정제된 원문 fallback | false |
 | `candidate_unavailable` | 백엔드 후보 조회 실패 | `unmatched`, unknown 경로 | true |
 | `multiple_close_candidates` | 자동 선택할 수 없는 근접 후보 | `ambiguous` | true |
@@ -533,6 +603,8 @@ normalization/
 | `candidate_llm_failed` | ②-B timeout·파싱 실패 | `ambiguous` 유지 | true |
 
 한 항목의 오류는 해당 항목에만 기록한다. 전체 요청을 실패시키는 경우는 공통 context 위변조, schema 위반, 입력 item_id 중복처럼 배치 계약 자체가 깨진 경우뿐이다.
+
+Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시적 null도 거부한다. Judge의 context는 양의 정수 또는 null인 `store_id` 필드를 반드시 포함한다. 입력 warning/error는 그대로 보존하고, 새 warning은 `(code, node, item_id)`가 같은 경우 한 번만 반환한다.
 
 ---
 
@@ -561,10 +633,15 @@ normalization/
 | 18 | 메뉴 20개 중 정확 후보 18개 | LLM은 나머지 문맥 있는 모호 항목에만 호출 |
 | 19 | 입력 순서와 비동기 완료 순서가 다름 | 출력은 `source_index` 순서 |
 | 20 | ②-B 선택 후보 | `selected_candidate`가 입력 후보와 값까지 동일 |
+| 21 | 유효 메뉴의 OCR confidence 0.64 | `low_ocr_confidence`, `forces_caution: true` |
+| 22 | `02-123-4567`, `영업시간 09:00~21:00` | `invalid_menu_text`, `invalid` |
+| 23 | Prepare context에 `store_id: null` | schema 거부 |
+| 24 | Judge context에서 `store_id` 누락 | schema 거부 |
+| 25 | LLM reason과 실제 문맥 필드 불일치 | 결과 폐기, `invalid_llm_candidate` |
 
 ---
 
-## 8. 확정 상태와 구현 전 고정할 운영값
+## 8. 확정 상태와 운영값
 
 ### 확정
 
@@ -576,15 +653,18 @@ normalization/
 - v1 판정값은 `candidate_floor=0.65`, `accept_threshold=0.92`, `ambiguity_margin=0.08`, `llm_accept_confidence=0.90`이다.
 - 후보 조회 실패와 모호성은 SAFE 금지 신호로 보존한다.
 - schema 3.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
+- Python 패키지 경로는 `ai_normalization/`이다.
+- 사전 경로와 버전은 `ai_normalization/dictionaries/__init__.py`, `2026-10-v1`이다.
+- item 단위 저신뢰 기준은 `ocr_confidence < 0.65`이며 유효 메뉴에만 `low_ocr_confidence`를 만든다.
+- LLM 내부 reason code는 §4-3의 세 값이다.
+- warning은 `(code, node, item_id)`로 중복 제거한다.
 
-### 구현 전 저장소에서 고정할 값
+### 외부 의존과 후속 구현
 
-다음은 JSON이나 책임 경계가 아니라 패키지·배포 설정이다.
+다음은 현재 코드에서 임의로 선택하지 않는다. 값이 정해지면 이 절을 먼저 수정한 뒤 같은 PR에서 구현·테스트를 추가한다.
 
-- fuzzy 문자열 유사도 라이브러리와 정확한 버전
-- 다국어 구조화 LLM 모델·provider 패키지 버전
-- Supervisor 전체 시간 예산 안에서 ②-A·②-B LLM timeout
-- 표기·헤더·다국어 사전 파일 경로와 version 표기 방식
+- 후보 조회의 fuzzy 문자열 유사도 라이브러리와 버전은 후보 조회를 소유한 백엔드가 고정하고, AI는 0~1 score와 최대 0.94 계약만 검증한다.
+- 다국어 구조화 LLM 모델·provider 패키지 버전과 ②-A·②-B timeout은 #164에서 확정한다. 확정 전 운영 배포에서는 Resolver를 주입하지 않는다.
 - 고정 검증셋 위치와 정책 수치 변경 승인 절차
 
 ---

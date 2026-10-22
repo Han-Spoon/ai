@@ -186,6 +186,31 @@ class NameResolution(StrictModel):
     confidence: Probability
 
 
+class NameResolutionInput(StrictModel):
+    display_name: NonEmptyString
+    normalized_menu_name: NonEmptyString
+    locale_hint: Locale | None
+    residual_tokens: list[NonEmptyString]
+
+
+class CandidateResolutionCandidate(StrictModel):
+    menu_id: PositiveInt
+    canonical_name: NonEmptyString
+
+
+class CandidateResolutionInput(StrictModel):
+    raw_menu_name: NonEmptyString
+    normalized_menu_name: NonEmptyString
+    display_name: NonEmptyString
+    description: str | None
+    locale_hint: Locale | None
+    options: list[NonEmptyString]
+    residual_tokens: list[NonEmptyString]
+    candidates: Annotated[
+        list[CandidateResolutionCandidate], Field(min_length=1, max_length=5)
+    ]
+
+
 class CandidateResolution(StrictModel):
     selected_menu_id: PositiveInt
     confidence: Probability
@@ -197,14 +222,14 @@ class CandidateResolution(StrictModel):
 
 
 class NameResolver(Protocol):
-    async def resolve_name(self, item: CleanedMenuItem) -> NameResolution:
+    async def resolve_name(self, item: NameResolutionInput) -> NameResolution:
         """Resolve only a multilingual name; never return a menu ID."""
         ...
 
 
 class CandidateResolver(Protocol):
     async def resolve_candidate(
-        self, item: CandidateSelectionItem
+        self, item: CandidateResolutionInput
     ) -> CandidateResolution:
         """Choose only from item.match_candidates using item context."""
         ...

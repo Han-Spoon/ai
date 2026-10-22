@@ -105,7 +105,11 @@ def test_unavailable_adds_safety_warning_and_storeless_is_preserved() -> None:
 
 
 class ValidResolver:
+    def __init__(self) -> None:
+        self.received = None
+
     async def resolve_candidate(self, _item):
+        self.received = _item
         return CandidateResolution(
             selected_menu_id=2,
             confidence=0.93,
@@ -124,12 +128,25 @@ class OutsideResolver:
 
 def test_llm_may_select_only_an_existing_candidate() -> None:
     source = selection_item([candidate(1, 0.91), candidate(2, 0.87)])
-    selected = run(source, ValidResolver()).items[0]
+    resolver = ValidResolver()
+    selected = run(source, resolver).items[0]
     assert selected.normalization_status == "normalized"
     assert selected.selection_method == "llm"
     assert selected.selected_candidate.menu_id == 2
     assert selected.selection_reason_codes == ["llm_context_resolved"]
     assert selected.model_dump()["selected_candidate"] == source["match_candidates"][1]
+    resolver_payload = resolver.received.model_dump()
+    assert set(resolver_payload) == {
+        "raw_menu_name",
+        "normalized_menu_name",
+        "display_name",
+        "description",
+        "locale_hint",
+        "options",
+        "residual_tokens",
+        "candidates",
+    }
+    assert set(resolver_payload["candidates"][0]) == {"menu_id", "canonical_name"}
 
     rejected = run(source, OutsideResolver())
     assert rejected.items[0].normalization_status == "ambiguous"
@@ -143,3 +160,30 @@ def test_contract_rejects_more_than_five_or_unsorted_candidates() -> None:
 
     with pytest.raises(ValidationError):
         request(selection_item([candidate(1, 0.8), candidate(2, 0.9)]))
+
+
+def test_candidate_selection_requires_explicit_store_id_or_null() -> None:
+    payload = request(selection_item([candidate(1, 1.0, "canonical")])).model_dump(
+        mode="json"
+    )
+    del payload["context"]["store_id"]
+    with pytest.raises(ValidationError):
+        CandidateSelectionRequest.model_validate(payload)
+
+
+class UnsupportedContextResolver:
+    async def resolve_candidate(self, _item):
+        return CandidateResolution(
+            selected_menu_id=1,
+            confidence=0.99,
+            reason_code="option_supports_candidate",
+        )
+
+
+def test_llm_reason_must_have_its_documented_context() -> None:
+    response = run(
+        selection_item([candidate(1, 0.91), candidate(2, 0.87)]),
+        UnsupportedContextResolver(),
+    )
+    assert response.items[0].normalization_status == "ambiguous"
+    assert any(warning.code == "invalid_llm_candidate" for warning in response.warnings)
