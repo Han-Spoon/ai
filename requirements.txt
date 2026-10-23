@@ -1,6 +1,7 @@
 # LLM
 openai==3.8.0
 langgraph==1.2.16
+rfc8785==0.1.4
 
 # 이미지 전처리
 opencv-python-headless==5.0.0.93

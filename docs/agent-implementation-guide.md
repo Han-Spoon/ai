@@ -108,8 +108,8 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 ### 여기에 적을 것
 
 - [x] ①~⑧ 요청·응답 canonical JSON — Supervisor 문서 §4로 확정
-- [ ] Supervisor 문서 §1·§4를 그대로 구현하는 Pydantic 모델 작성
-- [x] 공통 모델 경로와 소유자 — `ai_supervisor/contracts/`, Supervisor가 canonical 계약을 소유하고 각 노드가 import
+- [x] Supervisor 문서 §1·§4를 그대로 구현하는 Pydantic 모델 작성 — ②-A·②-B는 `ai_normalization/contracts.py`, 나머지는 `ai_supervisor/contracts/`
+- [x] 공통 모델 경로와 소유자 — Supervisor가 `ai_supervisor/contracts/`의 공통·①·③~⑧ 계약을 소유하고 ②는 자기 소유 계약에서 Supervisor context를 import
 - [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
@@ -125,10 +125,11 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | 경로 | 현재 역할 |
 |---|---|
 | [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
-| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ 계약·state 뼈대. Prepare/Judge/Item Graph와 신규 API는 후속 구현 |
+| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare Graph. Judge/Item Graph와 신규 API는 후속 구현 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
 | [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책 |
 | [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core. Supervisor canonical adapter 연결은 후속 구현 |
+| [`../ai_decision_policy/`](../ai_decision_policy/README.md) | ⑧ 규칙 기반 판정 core. Supervisor canonical adapter 연결은 후속 구현 |
 | [`../ai_ruleengine/`](../ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
 | [`../ai_result/`](../ai_result/README.md) | ⑧ 최종 판정·근거 메시지 |
 | [`../ai_web_search_agent/`](../ai_web_search_agent/README.md) | ⑥ 재료 후보 수집 |
@@ -243,7 +244,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 ```bash
 pytest -q
-python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization ai_exact_feedback
+python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization ai_exact_feedback ai_decision_policy
 ```
 
 CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크플로의 `test` 잡이 통과해야 머지 버튼이 열립니다. Python 3.11 기준입니다.
