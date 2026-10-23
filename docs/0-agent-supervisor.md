@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase 및 외부 JSON 계약 확정, 운영값은 §8에서 협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase 및 외부 JSON 계약 확정, 계약·state 뼈대 구현, graph·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -106,9 +106,10 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 - `call_scope`와 `item_id`는 각 node가 공통 context에서 호출 대상에 맞게 조립한다.
 - 여러 메뉴의 결과는 reducer로 모으고, 최종 출력 전에 `source_index`로 다시 정렬한다. 병렬 완료 순서를 사용자 출력 순서로 사용하지 않는다.
 - 초기 버전은 `compile(checkpointer=False)` 또는 checkpointer 없이 요청 단위 휘발성 state로 실행한다. checkpoint 도입은 §8 결정 뒤에 한다.
-- 라이브러리 도입 전 `langgraph`, `langchain`, `langchain-core`, 사용하는 모델 provider 패키지(예: `langchain-openai`)의 **정확한 호환 버전**을 #76에서 고정한다. 특히 현재 `openai==3.8.0`과 provider 패키지의 호환성을 함께 확인한다. 현재 `requirements.txt`에는 LangChain/LangGraph 의존성이 없으므로 승인 전 설치했다고 가정하지 않는다.
+- Supervisor orchestration은 팀 결정에 따라 LangGraph를 사용하며 Python 3.11 기준 `langgraph==1.2.16`으로 고정한다. Supervisor 자체는 LLM으로 라우팅하지 않으므로 LangChain이 graph 구현의 선행 조건은 아니다.
+- `langchain`, `langchain-core`, 모델 provider 패키지(예: `langchain-openai`)는 아직 `requirements.txt`에 추가하지 않는다. ②·⑥·⑧의 구체 모델·provider·timeout이 각 담당 문서와 이슈에서 확정될 때 `openai==3.8.0` 호환성을 확인하고 해당 Agent 내부에만 도입한다. ②의 후속 범위는 #164다.
 
-이 문서의 코드 예시는 LangGraph 1.x 공개 API인 `StateGraph`, `context_schema`, reducer, conditional edge, `Send`, `compile()`, `ainvoke()`를 기준으로 한다. 정확한 pin을 정한 뒤 import와 인자 이름을 해당 버전에서 한 번 더 확인한다.
+이 문서의 코드 예시는 현재 고정된 LangGraph 1.2.16의 `StateGraph`, `context_schema`, reducer, conditional edge, `Send`, `compile()`, `ainvoke()`를 기준으로 구현하고 테스트한다.
 
 ### 0-3. 입출력 계약의 기준 문서
 
@@ -1096,6 +1097,15 @@ ai_supervisor/
 ├── contracts/          # §1·§4 Pydantic closed schema
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
+
+현재 저장소에는 `contracts/`, `state.py`, 공통 `NodeAdapter` Protocol, 최소 router와 단위 테스트가 있다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+
+- `service.py`, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`
+- ①~⑧의 구체 adapter와 graph node
+- `chains/`의 실제 LangChain/provider 연결
+- `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
+
+Normalization의 ②-A·②-B 실행 객체는 구현돼 있지만 Supervisor graph에는 아직 연결되지 않았다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
 
 기존 `ai_ocr`, `ai_ruleengine`, `ai_web_search_agent`, `ai_result` 코드를 복사하지 않는다. adapter가 기존 모듈의 입력·출력을 §4 계약으로 바꿔 호출한다.
 
@@ -3032,7 +3042,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 
 설계와 JSON 계약의 확정 내용은 각 본문에만 기록한다. 아래에는 구현 전에 실제 담당자와 값을 맞춰야 하는 항목만 남긴다.
 
-- LangGraph·LangChain과 provider 패키지의 정확한 호환 버전
+- ②·⑥·⑧에서 사용할 LangChain·모델 provider 패키지의 정확한 버전과 `openai==3.8.0` 호환성. LangGraph 자체는 `1.2.16`으로 확정됐다.
 - Prepare/Judge timeout, Prepare 결과 저장 위치·보존 기간, Judge API 재시도·멱등성
 - `persistence_commands` 적용 시점과 저장 실패 명령의 보관·재처리 방식
 - 메뉴판 단위 ③④⑤⑧ batch 최적화 여부와 동시성 상한
