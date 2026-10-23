@@ -116,13 +116,14 @@ class RunContext:
 
 
 class PrepareState(TypedDict, total=False):
-    context: RunContext
     image: ImageRef
     locale: Locale
     ocr_response: Any
+    normalization_response: Any
     scan_quality: ScanQuality
     prepare_signals: PrepareSignals
     prepared_items: list[PreparedItem]
+    response: Any
     warnings: Annotated[list[NodeWarning], merge_signals]
     errors: Annotated[list[NodeError], merge_signals]
 

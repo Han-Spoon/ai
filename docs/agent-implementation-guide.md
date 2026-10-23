@@ -125,7 +125,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | 경로 | 현재 역할 |
 |---|---|
 | [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
-| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ 외부/내부 canonical 계약·hash 검증·state. Prepare/Judge/Item Graph와 신규 API는 후속 구현 |
+| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare Graph. Judge/Item Graph와 신규 API는 후속 구현 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
 | [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책 |
 | [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core. Supervisor canonical adapter 연결은 후속 구현 |

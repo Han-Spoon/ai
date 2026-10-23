@@ -576,7 +576,8 @@ ai_normalization/
 | ②-B 후보 검증·상태 판정 | 구현 | `ai_normalization` |
 | 후보 exact·alias·fuzzy 조회와 score 생성 | AI에서 구현하지 않음 | 백엔드가 §3 계약으로 제공 |
 | 구체 LLM provider·모델·timeout | 미연결, Resolver 주입 경계만 구현 | #164에서 확정 후 문서와 함께 구현 |
-| Supervisor Prepare/Judge graph 연결 | 미연결 | #151 |
+| Supervisor Prepare Graph의 ②-A 연결 | 구현 | `ai_supervisor/prepare_graph.py` |
+| Supervisor Judge Graph의 ②-B 연결 | 미연결 | #151 |
 | 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
 
 구현되지 않은 항목은 암묵적 fallback으로 숨기지 않는다. 현재 LLM Resolver가 없으면 규칙 결과를 유지하고, 후보 생성은 빈 목록을 AI가 만들어 대신하지 않고 백엔드의 `candidate_status`를 그대로 받는다.

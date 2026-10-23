@@ -112,8 +112,23 @@ class PrepareResponse(StrictModel):
     def validate_prepare_result(self) -> "PrepareResponse":
         if self.scan_quality.status != self.prepare_signals.scan_quality_status:
             raise ValueError("scan quality status must be preserved in prepare_signals")
+        expected_signals = [warning for warning in self.warnings if warning.forces_caution]
+        if self.prepare_signals.warnings != expected_signals:
+            raise ValueError("prepare_signals must contain every caution warning once")
         if self.scan_quality.status == "needs_retake" and self.prepared_items:
             raise ValueError("needs_retake responses must not contain prepared_items")
+        if self.scan_quality.status == "low_confidence" and not any(
+            warning.code == "scan_quality_low_confidence"
+            and warning.item_id is None
+            for warning in self.prepare_signals.warnings
+        ):
+            raise ValueError("low-confidence scans require a scan-level caution warning")
+        if (
+            self.scan_quality.status != "needs_retake"
+            and not self.prepared_items
+            and not any(error.code == "no_menu_items" for error in self.errors)
+        ):
+            raise ValueError("empty prepared items require a no_menu_items error")
         item_ids = [item.item_id for item in self.prepared_items]
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("prepared item_id values must be unique")

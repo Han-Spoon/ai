@@ -147,6 +147,7 @@ class NodeWarning(StrictModel):
             "unmapped_constraint_tags",
             "knowledge_slice_unavailable",
             "low_ocr_confidence",
+            "scan_quality_low_confidence",
             "multiple_close_candidates",
             "store_context_missing",
             "web_llm_extraction_failed",

@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase·외부/내부 canonical 계약·hash 검증 구현, graph·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph 구현, Judge/Item Graph·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -484,7 +484,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - `item_id`는 `{scan_session_id}:{source_index}` 형식으로 한 번만 만들고 Judge 최종 결과까지 유지한다.
 - Prepare에서는 DB 후보를 조회하거나 `menu_id`, `menu_category_id`를 확정하지 않으므로 두 필드를 응답에 넣지 않는다.
 - `needs_retake`이면 ②-A를 실행하지 않고 `prepared_items: []`로 반환한다. `reasons`와 `retake_suggestions`로 재촬영 이유를 전달하며 이 응답으로 Judge를 호출할 수 없다.
-- `low_confidence`이면 ②-A까지 실행하고 메뉴를 반환하되 `forces_caution: true` warning을 함께 보존한다.
+- `low_confidence`이면 ②-A까지 실행하고 메뉴를 반환하되 스캔 단위 `scan_quality_low_confidence` warning(`item_id: null`, `forces_caution: true`)을 만들어 `prepare_signals`에 보존한다. Judge에서 이 메뉴판 전체 신호를 각 메뉴에 적용하는 방법은 §8 미확정 항목을 따른다.
 - `description`, `price_text`는 인식하지 못하면 `null`, 목록형 필드는 값이 없으면 `[]`다.
 
 #### `/v1/analyze/judge` 요청 — `JudgeRequest`
@@ -1009,7 +1009,6 @@ Prepare Graph의 누적 state는 다음 모양이다.
   "image": {
     "source": "camera",
     "storage_key": "scans/.../menu.jpg",
-    "image_url": null,
     "version_id": null,
     "expected_etag": null
   },
@@ -1100,14 +1099,14 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, 최소 router와 단위 테스트가 있다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
-- `service.py`, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`
-- ①~⑧의 구체 adapter와 graph node
+- `service.py`, `judge_graph.py`, `item_graph.py`
+- ①의 레거시 OCR 출력 변환 adapter와 ②-B~⑧의 구체 adapter·graph node
 - `chains/`의 실제 LangChain/provider 연결
 - `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
 
-Normalization의 ②-A·②-B 실행 객체는 구현돼 있지만 Supervisor graph에는 아직 연결되지 않았다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
+Normalization의 ②-A는 Prepare Graph에 `NodeAdapter` 계약으로 연결됐다. ②-B는 Judge Graph가 아직 없으므로 미연결이다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
 
 기존 `ai_ocr`, `ai_ruleengine`, `ai_web_search_agent`, `ai_result` 코드를 복사하지 않는다. adapter가 기존 모듈의 입력·출력을 §4 계약으로 바꿔 호출한다.
 
