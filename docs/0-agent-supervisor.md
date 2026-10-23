@@ -2186,7 +2186,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 
 1단계는 출처별 원문과 추출한 재료명만 반환한다. 이 단계에서는 이름을 합치거나 `k_count`, `n_total`을 계산하지 않는다. Supervisor는 `sources[].ingredients`를 ④ `map_ingredients`에 보내 표준 `ingredient_id`, `canonical_name`, `constraint_tags`를 채운다.
 
-`next_rank`는 ⑥이 이번 호출에서 실제로 읽은 검색 결과의 다음 순위다. 우선 사이트에서 모자라 일반 웹으로 넓히거나(⑥ §2-3-1) 시간 제한으로 덜 읽으면(⑥ §2-5) "요청 `next_rank` + 10"과 달라질 수 있으므로 ⑥이 직접 알려 준다. 새로 읽은 결과가 없으면 요청의 `next_rank`를 그대로 돌려준다. Supervisor는 이 값을 ⑦ `save_web_search_cache.next_rank`에 그대로 넣는다 (§4-6, ⑥ §2-4).
+`next_rank`는 ⑥이 이번 호출에서 실제로 읽은 검색 결과의 다음 순위다. 우선 사이트에서 모자라 일반 웹으로 넓히거나(⑥ §2-3-1), 판별에서 빠진 글(후기·광고·다른 음식·재료 없는 글)만큼 더 읽거나(⑥ §2-3), 시간 제한으로 덜 읽으면(⑥ §2-5) "요청 `next_rank` + 10"과 달라질 수 있으므로 ⑥이 직접 알려 준다. 새로 읽은 결과가 없으면 요청의 `next_rank`를 그대로 돌려준다. Supervisor는 이 값을 ⑦ `save_web_search_cache.next_rank`에 그대로 넣는다 (§4-6, ⑥ §2-4).
 
 #### 2단계 요청 — `WebAggregateRequest`
 

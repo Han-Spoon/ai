@@ -1,9 +1,40 @@
+"""Search provider interface for ⑥ stage 1 (docs/6-agent-websearch.md §2-3-1, §2-5).
+
+The real provider is the Naver Search API (#254). Until then only the static provider
+exists, for tests and local runs without a key.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from models import SearchResult, utc_now_iso
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def domain_of(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    query: str
+    title: str
+    url: str
+    snippet: str = ""
+    content: str = ""
+    fetched_at: datetime = field(default_factory=_utc_now)
+
+    @property
+    def domain(self) -> str:
+        return domain_of(self.url)
+
+    def text(self) -> str:
+        return " ".join(part for part in (self.title, self.snippet, self.content) if part)
 
 
 class SearchProvider(ABC):
@@ -15,29 +46,12 @@ class SearchProvider(ABC):
 
 
 class StaticSearchProvider(SearchProvider):
-    """테스트와 로컬 데모용 Provider."""
+    """Returns canned results per query; for tests and runs without a search key."""
 
     name = "static"
 
-    def __init__(self, results_by_query: dict[str, list[dict]] | None = None):
+    def __init__(self, results_by_query: dict[str, list[SearchResult]] | None = None):
         self.results_by_query = results_by_query or {}
 
     def search(self, query: str, top_k: int) -> list[SearchResult]:
-        rows = self.results_by_query.get(query, [])[:top_k]
-        return [
-            SearchResult(
-                query=query,
-                title=row.get("title", ""),
-                url=row.get("url", ""),
-                domain=row.get("domain") or _domain(row.get("url", "")),
-                snippet=row.get("snippet", ""),
-                content=row.get("content", ""),
-                fetched_at=row.get("fetched_at") or utc_now_iso(),
-            )
-            for row in rows
-        ]
-
-
-def _domain(url: str) -> str:
-    return urlparse(url).netloc.lower().removeprefix("www.")
-
+        return self.results_by_query.get(query, [])[:top_k]
