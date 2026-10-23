@@ -20,11 +20,11 @@ ai_exact_feedback/
 ```python
 from ai_exact_feedback import ExactFeedbackTool
 
-tool = ExactFeedbackTool(item_knowledge)   # 같은 item_id의 ItemKnowledge (⓪ §2-6)
+tool = ExactFeedbackTool(task.knowledge)   # 같은 메뉴 칸의 ItemTaskKnowledge (⓪ §2-6)
 response = await tool.run(request)         # ExactFeedbackRequest → ExactFeedbackResponse
 ```
 
-요청·응답 틀은 ⓪ §4-2를 구현한 `ai_supervisor/contracts/exact.py`를 씁니다. ③ 요청에는 확인값 자료가 없으므로, Supervisor가 그 메뉴 칸의 자료(`ItemKnowledge`)를 도구를 만들 때 넘깁니다. 다른 메뉴 칸·다른 메뉴의 자료가 들어오면 조용히 넘어가지 않고 에러를 냅니다.
+요청·응답 틀은 ⓪ §4-2를 구현한 `ai_supervisor/contracts/exact.py`를 씁니다. ③ 요청에는 확인값 자료가 없으므로, Supervisor가 그 메뉴 칸의 자료(`ItemTask.knowledge`, 고른 메뉴의 자료만 든 `ItemTaskKnowledge`)를 도구를 만들 때 넘깁니다. 다른 메뉴 칸·다른 메뉴의 자료가 들어오면 조용히 넘어가지 않고 에러를 냅니다.
 
 ## 지키는 규칙
 

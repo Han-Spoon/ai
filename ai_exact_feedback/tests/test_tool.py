@@ -8,7 +8,8 @@ from pydantic import ValidationError
 
 from ai_exact_feedback import ExactFeedbackTool
 from ai_supervisor.contracts.exact import ExactFeedbackRequest
-from ai_supervisor.contracts.external import ItemKnowledge
+from ai_supervisor.contracts.external import CandidateKnowledge, OntologySlice, WebSearchCache
+from ai_supervisor.state import ItemTaskKnowledge
 
 NOW = datetime(2026, 10, 22, 3, 0, tzinfo=timezone.utc)
 RECENT = datetime(2026, 10, 8, 3, 0, tzinfo=timezone.utc)
@@ -75,7 +76,8 @@ def knowledge(
     *,
     ontology: dict | None = None,
     exact_menu_id: int = 1001,
-) -> ItemKnowledge:
+    selected: bool = True,
+) -> ItemTaskKnowledge:
     exact = (
         {"status": "not_found", "exact": None}
         if confirmations is None
@@ -89,32 +91,19 @@ def knowledge(
             },
         }
     )
-    return ItemKnowledge.model_validate(
+    candidate = CandidateKnowledge.model_validate(
         {
-            "item_id": "scan-123:0",
-            "candidate_lookup": {
-                "status": "ok",
-                "candidates": [
-                    {
-                        "menu_id": 1001,
-                        "menu_category_id": None,
-                        "canonical_name": "김치찌개",
-                        "score": 0.95,
-                        "match_type": "canonical",
-                    }
-                ],
-            },
-            "candidate_knowledge": [
-                {
-                    "menu_id": 1001,
-                    "exact_feedback": exact,
-                    "ontology": ontology or EMPTY_ONTOLOGY,
-                    "priors": {"status": "not_found", "store": [], "evidence": []},
-                }
-            ],
-            "fallback_ontology": EMPTY_ONTOLOGY,
-            "web_search_cache": {"status": "not_found", "cached_sources": [], "next_rank": 1},
+            "menu_id": 1001,
+            "exact_feedback": exact,
+            "ontology": ontology or EMPTY_ONTOLOGY,
+            "priors": {"status": "not_found", "store": [], "evidence": []},
         }
+    )
+    return ItemTaskKnowledge(
+        item_id="scan-123:0",
+        selected=candidate if selected else None,
+        fallback_ontology=OntologySlice.model_validate(EMPTY_ONTOLOGY),
+        web_search_cache=WebSearchCache(status="not_found", cached_sources=[], next_rank=1),
     )
 
 
@@ -190,10 +179,16 @@ def test_run_rejects_another_items_knowledge() -> None:
         run(tool, request(item_id="scan-123:1"))
 
 
-def test_run_rejects_menu_outside_candidates() -> None:
+def test_run_rejects_menu_other_than_selected() -> None:
     tool = ExactFeedbackTool(knowledge([confirmation(PORK)]), clock=lambda: NOW)
-    with pytest.raises(ValueError, match="no candidate knowledge"):
+    with pytest.raises(ValueError, match="no selected knowledge"):
         run(tool, request(menu_id=2002))
+
+
+def test_run_rejects_unmatched_item() -> None:
+    tool = ExactFeedbackTool(knowledge([confirmation(PORK)], selected=False), clock=lambda: NOW)
+    with pytest.raises(ValueError, match="no selected knowledge"):
+        run(tool, request())
 
 
 def test_run_rejects_confirmations_of_another_menu() -> None:
