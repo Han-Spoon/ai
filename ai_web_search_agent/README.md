@@ -1,5 +1,14 @@
 # Hanspoon Web Search Agent
 
+> **새 설계로 옮기는 중입니다.** 기준은 [`docs/6-agent-websearch.md`](../docs/6-agent-websearch.md)와 ⓪ §4-5 두 단계 형식(`ai_supervisor/contracts/web_search.py`)입니다.
+>
+> - **2단계(집계)** — `aggregate.py`의 `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`: ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7을 만듭니다. 규칙 5(LLM만 찾은 재료)는 LLM 추출을 붙일 때 추가합니다.
+> - **1단계(수집)** — 아직 아래 옛 코드입니다. 옛 코드는 재료에 태그를 직접 붙이고 SQLite에 저장하는데, 새 설계에서는 태그는 ④만 붙이고 저장은 백엔드만 합니다. 1단계를 새 형식으로 바꿀 때 걷어냅니다.
+>
+> ```bash
+> pytest -q ai_web_search_agent/tests/test_aggregate.py
+> ```
+
 Rule Engine 결과를 받은 뒤 웹 레시피 근거로 누락 가능 재료 태그를 보완합니다.
 
 원칙:

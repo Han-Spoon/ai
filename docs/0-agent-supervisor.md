@@ -2247,21 +2247,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
     "normalized_menu_name": "마라탕"
   },
   "found": true,
-  "sources": [
-    {
-      "source_url": "https://example.com/recipe/mala-tang",
-      "title": "마라탕 레시피",
-      "fetched_at": "2026-10-08T03:00:00Z",
-      "evidence": {
-        "evidence_id": "web:https://example.com/recipe/mala-tang",
-        "evidence_class": "soft",
-        "source_type": "web_search",
-        "source_ref": "https://example.com/recipe/mala-tang",
-        "verification_status": "pending_review",
-        "reliability_weight": null,
-        "observed_at": "2026-10-08T03:00:00Z"
-      },
-      "ingredients": [
+  "ingredients": [
         {
           "ingredient_id": null,
           "canonical_name": "소고기"
@@ -2303,7 +2289,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 }
 ```
 
-Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `mapped_sources`로 전달한다. `source_origin`은 `new | cache`이며, 2단계는 둘을 합쳐 표준 재료·사이트별 `observations`를 계산한다. 응답 `sources`에는 저장·관리자 검토 대상인 신규 출처만 넣고 캐시 출처를 다시 넣지 않는다. `curated`는 false, `observation_basis`는 `direct`로 고정한다. `role`은 ④ 매핑 결과를 그대로 옮기며 ⑥이 새로 판단하지 않는다.
+Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `mapped_sources`로 전달한다. `source_origin`은 `new | cache`이며, 2단계는 둘을 합쳐 표준 재료·사이트별 `observations`를 계산한다. 2단계 응답에는 출처 원본(`sources`)을 다시 넣지 않는다. 저장·관리자 검토 대상인 신규 출처 원본은 Supervisor가 1단계 응답 `sources`를 그대로 쓴다 (2단계 요청에는 `fetched_at`·`evidence`·원문 재료명이 없어 ⑥이 원본을 다시 만들 수 없고, 같은 자료를 두 번 주고받을 이유도 없다). `curated`는 false, `observation_basis`는 `direct`로 고정한다. `role`은 ④ 매핑 결과를 그대로 옮기며 ⑥이 새로 판단하지 않는다.
 
 집계 재료의 `evidence_refs`는 원본 출처를 가리킨다. 매핑하지 못한 재료는 버리지 않고 `ingredient_id: null`로 유지하며, ④의 `unmapped_constraint_tags` warning을 이어받아 ⑧이 SAFE를 막게 한다. `review_notes`는 관리자 검토용이며 판정에는 사용하지 않는다. 수집 결과와 캐시가 모두 없을 때만 `found: false`다.
 

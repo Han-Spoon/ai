@@ -98,8 +98,8 @@ Supervisor가 새 출처와 캐시를 모두 ④ `map_ingredients`로 표준 재
 - 고정값: `source: web_search`, `depth: 0`(펼치기 전), `curated: false`(DB에 없는 메뉴라 큐레이션 레시피가 없음), `observation_basis: direct`(레시피마다 직접 셈), `anomaly_locked: false`(사장님 답변이 아님).
 - `constraint_tags`와 `role`은 ④가 매핑하며 붙인 값을 그대로 옮긴다. ⑥이 새로 붙이지 않는다 (§1, ④ §2-7).
 - `ingredients[].evidence_refs`는 그 재료가 나온 출처의 `evidence_id` 목록이다.
-- 응답 `sources`에는 다시 새 출처만 넣는다 (저장·관리자 검토 대상). 캐시 출처는 넣지 않는다 (§2-4).
-- `found`는 캐시와 새 검색 모두에서 쓸 수 있는 출처를 하나도 못 찾았을 때만 `false`다. 그때 `sources`와 `ingredients`는 `[]`.
+- 2단계 응답에는 출처 원본(`sources`)을 다시 넣지 않는다. 저장·관리자 검토에 쓸 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 그대로 쓴다 (⓪ §4-5).
+- `found`는 캐시와 새 검색 모두에서 쓸 수 있는 출처를 하나도 못 찾았을 때만 `false`다. 그때 `ingredients`는 `[]`.
 - `review_notes[]`는 관리자 페이지에 보여줄 검토 필요 문구다 (§2-6). `rule_code`는 걸린 규칙, `message`는 한국어 한 줄. 걸린 규칙이 없으면 `[]`. 판정에는 쓰지 않는다.
 - **개수 세기는 병합·선택이 아니다.** "어느 출처를 믿을지" 고르지 않고 모든 유효 출처를 그대로 센다. 레시피별 통과·제외는 관리자가 한다 (§2-6). 원본은 `sources`에 남고 `ingredients[].evidence_refs`가 원본을 가리킨다.
 
@@ -311,7 +311,7 @@ flowchart TD
     AGG --> MIN{"유효 출처 10개 이상?"}
     MIN -->|No| W["insufficient_sources warning<br/>(forces_caution: true)"]
     MIN -->|Yes| OUT
-    W --> OUT["sources + ingredients + review_notes를<br/>⓪ Supervisor Agent에 반환"]
+    W --> OUT["ingredients + review_notes를<br/>⓪ Supervisor Agent에 반환"]
     F --> OUT2[⓪ Supervisor Agent에 반환]
 ```
 
@@ -325,7 +325,7 @@ flowchart TD
 4. **(2단계)** ④가 맞춘 **표준 재료 기준으로** 묶고, **출처 사이트별로** `k_count`(그 사이트에서 나온 레시피 수)와 `n_total`(그 사이트의 유효 레시피 수)을 세어 `observations`에 담는다. 우선 사이트 밖의 출처는 `web_search` 하나로 묶는다.
 5. 유효 출처가 10개 미만이면 `insufficient_sources` warning을 붙인다. 결과는 버리지 않고 반환한다.
 5-1. 관리자 검토 규칙 1~7(§2-6)을 확인해 `review_notes`를 만든다.
-6. `sources`, `ingredients`, `review_notes`를 ⓪ Supervisor Agent에 반환한다. 저장은 ⑥의 일이 아니다. 관리자 검토 명령은 Supervisor가 ⑦을 불러 만든다. 가게 없는 스캔은 ⑦을 부르지 않는다 (⓪ §1-3).
+6. `ingredients`, `review_notes`를 ⓪ Supervisor Agent에 반환한다. 새 출처 원본은 1단계 응답 `sources`로 이미 넘겼다. 저장은 ⑥의 일이 아니다. 관리자 검토 명령은 Supervisor가 ⑦을 불러 만든다. 가게 없는 스캔은 ⑦을 부르지 않는다 (⓪ §1-3).
 
 **fallback**: 캐시도 없고 웹서치도 실패하면 "정보 없음"(`NO_INFORMATION`) 상태로 CAUTION 이상 처리 — SAFE로 떨어뜨리지 않는다 (FN-minimization 원칙, `docs/ppt-baseline.md` 8쪽 "4 정보 부족→보수적 판정").
 
@@ -441,4 +441,4 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
-- 현재 없음 (2026-10-18, ⓪ §4-5와 대조)
+- [x] **2단계 응답 `sources`를 채울 자료가 2단계 요청에 없음** (2026-10-23, 구현 중 발견) — 2단계 응답에서 `sources`를 뺐다. 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 쓴다 (다은님 확인, 2026-10-23). ⓪ §4-5·`contracts/web_search.py` 반영

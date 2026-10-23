@@ -111,7 +111,6 @@ class WebAggregateResponse(StrictModel):
     context: NodeContext
     menu: WebMenu
     found: StrictBool
-    sources: list[WebSource]
     ingredients: list[BayesianIngredient]
     review_notes: list[ReviewNote]
     warnings: list[NodeWarning]
