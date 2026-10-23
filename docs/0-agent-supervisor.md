@@ -2157,6 +2157,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       ]
     }
   ],
+  "next_rank": 11,
   "warnings": [],
   "errors": []
 }
@@ -2185,6 +2186,8 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 
 1단계는 출처별 원문과 추출한 재료명만 반환한다. 이 단계에서는 이름을 합치거나 `k_count`, `n_total`을 계산하지 않는다. Supervisor는 `sources[].ingredients`를 ④ `map_ingredients`에 보내 표준 `ingredient_id`, `canonical_name`, `constraint_tags`를 채운다.
 
+`next_rank`는 ⑥이 이번 호출에서 실제로 읽은 검색 결과의 다음 순위다. 우선 사이트에서 모자라 일반 웹으로 넓히거나(⑥ §2-3-1) 시간 제한으로 덜 읽으면(⑥ §2-5) "요청 `next_rank` + 10"과 달라질 수 있으므로 ⑥이 직접 알려 준다. 새로 읽은 결과가 없으면 요청의 `next_rank`를 그대로 돌려준다. Supervisor는 이 값을 ⑦ `save_web_search_cache.next_rank`에 그대로 넣는다 (§4-6, ⑥ §2-4).
+
 #### 2단계 요청 — `WebAggregateRequest`
 
 ```json
@@ -2204,6 +2207,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
   "mapped_sources": [
     {
       "source_url": "https://example.com/recipe/mala-tang",
+      "title": "마라탕 레시피",
       "source_origin": "new",
       "corpus": "web_search",
       "evidence_id": "web:https://example.com/recipe/mala-tang",
@@ -2223,6 +2227,8 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
   "errors": []
 }
 ```
+
+`mapped_sources[].title`은 레시피 제목이다. Supervisor가 새 출처는 1단계 응답 `sources[].title`에서, 캐시 출처는 `cached_sources[].title`에서 그대로 옮긴다. ⑥은 관리자 검토 규칙 `title_mismatch`(제목에 메뉴명이 없음, ⑥ §2-6)에 쓴다.
 
 #### 2단계 응답 — `WebAggregateResponse`
 
@@ -2525,7 +2531,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `create_owner_verification_request.recipe_probability`는 Supervisor가 같은 스캔의 ⑤ 결과에서 그 재료의 `posterior_mean`을 그대로 넣는다 (0~1). ⑧ 카드에는 이 필드가 없다. 플래그 카드는 `null`이다. 백엔드가 질문 행에 저장했다가, 사장님 답을 확정할 때 이상 답변(`flagged_anomaly`: 이 값 0.9 이상 + "없음") 판정에 쓴다 (⑦ §2-3).
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
-- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
+- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수이며 ⑥ 1단계 응답의 `next_rank`를 그대로 쓴다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
 - 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
 - 백엔드가 `record_owner_answer`를 처리한 결과는 `{question_id, answered_round, confirmation_state}`이며 `confirmation_state`는 `confirmed | needs_second | needs_third`다. 이 객체를 AI가 같은 호출에서 직접 받는 별도 endpoint는 만들지 않는다. 백엔드는 결과를 저장하고 다음 Judge의 `KnowledgeBundle.exact_feedback.exact.owner_question_states[]`에 대상 재료 또는 플래그 정보와 함께 넣는다. ③은 이를 `ExactFeedbackResponse.owner_question_states[]`로 보존하고, Supervisor는 ⑧ `DecisionRequest.owner_question_states[]`까지 전달한다. ⑧은 `needs_second`와 `needs_third`에 후속 카드를 생성한다. `confirmed`이면 보통 추가 카드를 만들지 않지만, 확정값이 만료된 경우에는 새 확인 회차의 `round: 1`, `previous_question_id: null` 카드부터 다시 만든다.
 - 스캔 중 생긴 작업은 원래 `item` context를 사용한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 `call_scope: out_of_band`, `item_id: null`로 별도 요청한다.

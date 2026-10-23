@@ -450,7 +450,7 @@ DO UPDATE SET search_status = EXCLUDED.search_status,
 ```
 
 - `payload`는 출처 배열(JSONB array)이다. 명령에는 이번에 새로 찾은 `sources`만 들어 있으므로 기존 배열 뒤에 붙인다. 덮어쓰면 2번째 검색 때 1~10위 레시피가 사라져 30개가 모이지 않는다 (⑥ §2-4).
-- `next_rank`는 다음 검색 시작 순위다. 다음 Judge 때 백엔드가 이 값을 ⑥ 입력으로 넘긴다.
+- `next_rank`는 다음 검색 시작 순위다. Supervisor가 ⑥ 1단계 응답의 `next_rank`를 그대로 넣는다 (⓪ §4-5). 다음 Judge 때 백엔드가 이 값을 ⑥ 입력으로 넘긴다.
 - `expires_at`은 항상 NULL이다 (⑥은 캐시 유효기간을 두지 않음).
 
 ---

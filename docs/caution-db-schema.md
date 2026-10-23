@@ -314,7 +314,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | `normalized_menu_name` UK | `normalize_food_name` 결과와 같아야 한다 |
 | `search_status` | `searched` / `unresolved` |
 | `payload` | 후보 URL별 추출 재료 (출처 배열). **검색할 때마다 새 출처를 뒤에 붙인다. 덮어쓰지 않는다** |
-| `next_rank` 🔶 신규 | 다음 검색 시작 순위 (1 이상). 1번째 검색 뒤 11, 2번째 뒤 21 (⑥ §2-4) |
+| `next_rank` 🔶 신규 | 다음 검색 시작 순위 (1 이상). 예: 1번째 검색 뒤 11, 2번째 뒤 21. ⑥이 실제로 읽은 결과 수에 따라 달라질 수 있어 AI가 계산해 저장 명령에 넣는다 (⑥ §2-1·§2-4) |
 | `searched_at` | 마지막 검색 시각 |
 | `expires_at` 🔶 | **NULL 허용, 항상 NULL** (지금 ERD는 NOT NULL). ⑥은 캐시 유효기간 없이 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4, ⓪ §4-6) |
 

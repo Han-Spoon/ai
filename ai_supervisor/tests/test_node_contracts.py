@@ -13,7 +13,9 @@ from ai_supervisor.contracts import (
     OcrRequest,
     OntologyRequest,
     TagLookupRequest,
+    WebAggregateRequest,
     WebCollectRequest,
+    WebCollectResponse,
 )
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
@@ -206,6 +208,45 @@ def test_web_collect_uses_documented_source_limit() -> None:
     payload["max_sources"] = 9
     with pytest.raises(ValidationError):
         WebCollectRequest.model_validate(payload)
+
+
+def test_web_collect_response_reports_next_rank() -> None:
+    payload = {
+        "context": item_context(None),
+        "menu": {"menu_id": None, "normalized_menu_name": "마라탕"},
+        "found": False,
+        "sources": [],
+        "next_rank": 14,
+        "warnings": [],
+        "errors": [],
+    }
+    assert WebCollectResponse.model_validate(payload).next_rank == 14
+    del payload["next_rank"]
+    with pytest.raises(ValidationError, match="next_rank"):
+        WebCollectResponse.model_validate(payload)
+
+
+def test_web_aggregate_sources_carry_title() -> None:
+    source = {
+        "source_url": "https://www.10000recipe.com/recipe/1",
+        "title": "김치찜 황금레시피",
+        "source_origin": "new",
+        "corpus": "10000recipe",
+        "evidence_id": "web:https://www.10000recipe.com/recipe/1",
+        "ingredients": [],
+    }
+    payload = {
+        "context": item_context(),
+        "menu": {"menu_id": None, "normalized_menu_name": "김치찌개"},
+        "mapped_sources": [source],
+        "warnings": [],
+        "errors": [],
+    }
+    request = WebAggregateRequest.model_validate(payload)
+    assert request.mapped_sources[0].title == "김치찜 황금레시피"
+    del source["title"]
+    with pytest.raises(ValidationError, match="title"):
+        WebAggregateRequest.model_validate(payload)
 
 
 def test_db_update_operation_type_must_match_closed_payload() -> None:

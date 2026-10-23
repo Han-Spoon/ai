@@ -54,6 +54,7 @@ class WebCollectResponse(StrictModel):
     menu: WebMenu
     found: StrictBool
     sources: list[WebSource]
+    next_rank: PositiveInt
     warnings: list[NodeWarning]
     errors: list[NodeError]
 
@@ -73,6 +74,7 @@ class MappedIngredient(StrictModel):
 
 class MappedSource(StrictModel):
     source_url: NonEmptyString
+    title: NonEmptyString
     source_origin: Literal["new", "cache"]
     corpus: NonEmptyString
     evidence_id: NonEmptyString
