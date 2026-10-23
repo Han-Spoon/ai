@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect 구현, Item Graph·Judge 후처리·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect·Item Graph DB 경로 구현, 웹/저장·Judge 후처리·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -1101,11 +1101,12 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있으며, 예상 가능한 메뉴 단위 실패만 보수적 결과로 바꾼다. 두 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴에 대해 `prepare_item → exact → ontology → bayesian → tag_lookup → decision → finish_item` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
-- `service.py`, `item_graph.py`
+- `service.py`
+- Item Graph의 ⑥ 웹 검색 경로와 ⑦ `variant_review`·`web_review` 저장 명령 경로
 - Judge의 `high_risk_review → owner_request → finalize` 후처리
-- ①의 레거시 OCR 출력 변환 adapter와 ③~⑧의 구체 adapter·graph node
+- ①의 레거시 OCR 출력 변환 adapter와 ④~⑧의 실제 구현 adapter
 - `chains/`의 실제 LangChain/provider 연결
 - `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
 
@@ -1181,6 +1182,8 @@ Router는 외부 호출이나 LLM 호출이 없는 순수 함수다.
 | `decision*` | 항상 | `finish_item` |
 
 `variant_review`, `web_review`, `owner_request`는 모두 ⑦ adapter를 사용하지만 trace에서 원인을 구분하기 위해 node 이름을 나눈다. 질문 저장 명령을 만드는 `owner_request`는 메뉴별 Item Graph가 아니라 Judge Graph의 고위험 재검증 뒤에 한 번 실행한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
+
+현재 구현된 DB 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·④ `lookup_tags`·⑧은 canonical `NodeAdapter`로 주입한다. ⑥이 필요한 미등록 메뉴와 ⑦ 검토가 필요한 `runtime_tagged` 변형은 다음 단계를 몰래 건너뛰지 않고 각각 `web_path_not_implemented`, `variant_review_not_implemented` 메뉴 단위 오류로 종료한다. Judge는 이를 해당 메뉴의 `partial_failed`·CAUTION으로 격리한다.
 
 ### 2-9. 메뉴 fan-out과 collect
 
@@ -1903,6 +1906,66 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 `ingredients_snapshot`은 확인 재료를 빼기 전 전체 확장 목록(`ingredients[]`와 같은 원소, `anomaly_locked`·확인값 제외)이다. `store_id`는 `context.store_id`를 쓴다.
 
 ④가 내는 warning code는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조한 원본 메뉴가 없음)다. 앞의 네 개는 §1-2 표대로 `forces_caution: true`이고, `empty_recipe`·`broken_base_menu`도 재료를 놓칠 수 있는 상태라 `forces_caution: true`로 보낸다.
+
+#### 확인값 태그 조회 — `TagLookupRequest` / `TagLookupResponse`
+
+모든 Item Graph 경로는 ⑧ 직전에 ④ `lookup_tags`를 거친다. ③ 확인값이 없으면 Supervisor가 빈 결과를 만드는 no-op으로 처리하고, 있으면 다음 계약으로 ④를 호출한다.
+
+```json
+{
+  "context": {
+    "schema_version": "3.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "item",
+    "item_id": "scan-123:0"
+  },
+  "ingredient_ids": [101],
+  "ingredient_graph": {
+    "status": "ok",
+    "ingredients": [
+      {
+        "ingredient_id": 101,
+        "canonical_name": "돼지고기",
+        "name_normalized": "돼지고기",
+        "localized_name": "돼지고기",
+        "taxonomy_category": "base"
+      }
+    ],
+    "aliases": [],
+    "tags": [{"ingredient_id": 101, "tag_code": "is_pork"}],
+    "compositions": [],
+    "composition_tags": []
+  },
+  "warnings": [],
+  "errors": []
+}
+```
+
+```json
+{
+  "context": {
+    "schema_version": "3.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "item",
+    "item_id": "scan-123:0"
+  },
+  "results": [
+    {
+      "ingredient_id": 101,
+      "constraint_tags": ["is_pork"],
+      "role": "identity"
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
+```
+
+`ingredient_ids`와 `results[].ingredient_id`는 중복 없이 같은 순서를 유지한다. `results`는 요청한 ID마다 정확히 하나씩 반환하며, `constraint_tags`와 `role`의 의미는 위 `OntologyResponse`와 같다. `ingredient_graph`는 JudgeRequest의 공통 slice를 수정 없이 전달한다. 재료 마스터에 없는 ID나 조회 실패는 결과를 조용히 빈 태그로 만들지 않고 `constraint_tags_lookup_failed` warning을 붙인다.
 
 ### 4-4. ⑤ Bayesian Tool
 

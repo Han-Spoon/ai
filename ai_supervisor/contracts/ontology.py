@@ -169,3 +169,39 @@ class OntologyResponse(StrictModel):
             if self.context.store_id is None:
                 raise ValueError("storeless ontology response cannot contain cache command")
         return self
+
+
+class TagLookupRequest(StrictModel):
+    context: NodeContext
+    ingredient_ids: list[PositiveInt]
+    ingredient_graph: IngredientGraph
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
+
+    @model_validator(mode="after")
+    def validate_request(self) -> "TagLookupRequest":
+        require_item_context(self.context)
+        ensure_unique(self.ingredient_ids, "tag lookup ingredient IDs")
+        return self
+
+
+class TagLookupResult(StrictModel):
+    ingredient_id: PositiveInt
+    constraint_tags: list[ConstraintTag]
+    role: IngredientRole | None
+
+
+class TagLookupResponse(StrictModel):
+    context: NodeContext
+    results: list[TagLookupResult]
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
+
+    @model_validator(mode="after")
+    def validate_response(self) -> "TagLookupResponse":
+        require_item_context(self.context)
+        ensure_unique(
+            [result.ingredient_id for result in self.results],
+            "tag lookup result ingredient IDs",
+        )
+        return self

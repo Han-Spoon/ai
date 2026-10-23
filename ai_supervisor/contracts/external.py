@@ -351,6 +351,17 @@ class CandidateKnowledge(StrictModel):
     ontology: OntologySlice
     priors: PriorSlice
 
+    @model_validator(mode="after")
+    def validate_menu_scope(self) -> "CandidateKnowledge":
+        if (
+            self.exact_feedback.exact is not None
+            and self.exact_feedback.exact.menu_id != self.menu_id
+        ):
+            raise ValueError("exact feedback must belong to candidate menu_id")
+        if self.ontology.menu is not None and self.ontology.menu.menu_id != self.menu_id:
+            raise ValueError("ontology must belong to candidate menu_id")
+        return self
+
 
 class ItemKnowledge(StrictModel):
     item_id: NonEmptyString

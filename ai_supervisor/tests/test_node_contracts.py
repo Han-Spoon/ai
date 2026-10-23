@@ -12,6 +12,7 @@ from ai_supervisor.contracts import (
     ExactFeedbackRequest,
     OcrRequest,
     OntologyRequest,
+    TagLookupRequest,
     WebCollectRequest,
 )
 
@@ -142,6 +143,28 @@ def test_ontology_knowledge_accepts_only_raw_bundle_columns() -> None:
     invalid["knowledge"]["menu"]["exists_in_db"] = True
     with pytest.raises(ValidationError):
         OntologyRequest.model_validate(invalid)
+
+
+def test_tag_lookup_contract_is_item_scoped_and_rejects_duplicate_ids() -> None:
+    payload = {
+        "context": item_context(),
+        "ingredient_ids": [101, 102],
+        "ingredient_graph": {
+            "status": "not_found",
+            "ingredients": [],
+            "aliases": [],
+            "tags": [],
+            "compositions": [],
+            "composition_tags": [],
+        },
+        "warnings": [],
+        "errors": [],
+    }
+    assert TagLookupRequest.model_validate(payload).ingredient_ids == [101, 102]
+
+    payload["ingredient_ids"] = [101, 101]
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        TagLookupRequest.model_validate(payload)
 
 
 def test_bayesian_contract_rejects_removed_cluster_and_global_priors() -> None:
