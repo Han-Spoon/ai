@@ -1,12 +1,13 @@
 """③ Exact Feedback Tool: read owner confirmations for one menu (docs/3-tool-exact.md).
 
-Pure lookup. No DB access, no LLM, no calls to other nodes. The request/response
-wrapper (``query_exact_confirmations``) is added once the ⓪ §4-2 contract models exist.
+Pure lookup. No DB access, no LLM, no calls to other nodes. ``ExactFeedbackTool`` wraps
+the core in the ⓪ §4-2 request/response contract.
 """
 
 from __future__ import annotations
 
 import calendar
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
@@ -16,6 +17,7 @@ from ai_supervisor.contracts.common import (
     FlagConfirmation,
     OwnerQuestionState,
 )
+from ai_supervisor.contracts.exact import ExactFeedbackRequest, ExactFeedbackResponse
 from ai_supervisor.contracts.external import (
     CandidateKnowledge,
     ExactFeedbackSlice,
@@ -156,3 +158,49 @@ def evaluate_exact_feedback(
         flag_confirmations=flag_confirmations,
         owner_question_states=list(exact.owner_question_states),
     )
+
+
+class ExactFeedbackTool:
+    """③ node for one menu item, matching the Supervisor ``NodeAdapter`` shape.
+
+    The request carries no bundle data (⓪ §4-2), so the Item Graph hands over the same
+    item's ``ItemKnowledge`` when it creates the tool (⓪ §2-6). Reading any other item's
+    or menu's data is a contract error, never a silent fallback.
+    """
+
+    def __init__(
+        self,
+        knowledge: ItemKnowledge,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._knowledge = knowledge
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    async def run(self, request: ExactFeedbackRequest) -> ExactFeedbackResponse:
+        if request.context.item_id != self._knowledge.item_id:
+            raise ValueError("③ may only read the knowledge of its own item_id")
+        menu_id = request.menu.menu_id
+        candidate = find_candidate_knowledge(self._knowledge, menu_id)
+        if candidate is None:
+            raise ValueError(f"no candidate knowledge for menu_id {menu_id}")
+        exact = candidate.exact_feedback.exact
+        if exact is not None and exact.menu_id != menu_id:
+            raise ValueError("exact_feedback belongs to a different menu_id")
+
+        outcome = evaluate_exact_feedback(
+            request.context.store_id,
+            candidate.exact_feedback,
+            candidate.ontology.cache,
+            now=self._clock(),
+        )
+        return ExactFeedbackResponse(
+            context=request.context,
+            menu_id=menu_id,
+            confirmation_scope=request.scope_hint,
+            completeness=outcome.completeness,
+            confirmations=outcome.confirmations,
+            flag_confirmations=outcome.flag_confirmations,
+            owner_question_states=outcome.owner_question_states,
+            warnings=list(request.warnings),
+            errors=list(request.errors),
+        )

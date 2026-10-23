@@ -10,9 +10,21 @@
 
 ```text
 ai_exact_feedback/
-  tool.py                       # 만료·덮어쓰기 가능 여부·completeness 계산
+  tool.py                       # 만료·덮어쓰기 가능 여부·completeness 계산, ExactFeedbackTool
   tests/test_exact_feedback.py  # 문서 §5 테스트
+  tests/test_tool.py            # 요청·응답 틀로 감싼 run() 테스트
 ```
+
+## 쓰는 법
+
+```python
+from ai_exact_feedback import ExactFeedbackTool
+
+tool = ExactFeedbackTool(item_knowledge)   # 같은 item_id의 ItemKnowledge (⓪ §2-6)
+response = await tool.run(request)         # ExactFeedbackRequest → ExactFeedbackResponse
+```
+
+요청·응답 틀은 ⓪ §4-2를 구현한 `ai_supervisor/contracts/exact.py`를 씁니다. ③ 요청에는 확인값 자료가 없으므로, Supervisor가 그 메뉴 칸의 자료(`ItemKnowledge`)를 도구를 만들 때 넘깁니다. 다른 메뉴 칸·다른 메뉴의 자료가 들어오면 조용히 넘어가지 않고 에러를 냅니다.
 
 ## 지키는 규칙
 
@@ -23,8 +35,7 @@ ai_exact_feedback/
 | 확인한 한국 날짜부터 달력 기준 3개월 지나면 만료. 월말에 같은 날이 없으면 그 달 마지막 날로 당김 | §1-7 |
 | 백엔드가 보낸 `expired`·`override_eligible`은 쓰지 않고 다시 계산 | §1-2 |
 | 캐시가 있고, 캐시 재료가 전부 확인됐고, 이상 답변·만료가 0건일 때만 `complete`. 애매하면 `unknown` | §2 |
-
-요청·응답 틀(`ExactFeedbackRequest`·`ExactFeedbackResponse`)과 이를 받는 `query_exact_confirmations()`는 ⓪ 계약 모델이 생기면 추가합니다.
+| `context`·`warnings`·`errors`는 받은 그대로 돌려줌. `scope_hint`는 `confirmation_scope`로 그대로 | §1-1 |
 
 ## 테스트
 

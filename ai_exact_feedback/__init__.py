@@ -2,6 +2,7 @@
 
 from .tool import (
     ExactFeedbackOutcome,
+    ExactFeedbackTool,
     StoreIdRequiredError,
     check_completeness,
     evaluate_exact_feedback,
@@ -12,6 +13,7 @@ from .tool import (
 
 __all__ = [
     "ExactFeedbackOutcome",
+    "ExactFeedbackTool",
     "StoreIdRequiredError",
     "check_completeness",
     "evaluate_exact_feedback",
