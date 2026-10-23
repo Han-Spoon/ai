@@ -189,9 +189,11 @@ class ItemState(TypedDict, total=False):
     exact_response: Any
     ontology_response: Any
     bayesian_response: Any
+    tag_lookup_response: Any
     web_response: Any
     decision_response: Any
     result: ItemResult
+    analysis_output: ItemAnalysisOutput
     evidence: Annotated[list[EvidenceRef], merge_evidence]
     commands: Annotated[list[PersistenceCommand], merge_commands]
     warnings: Annotated[list[NodeWarning], merge_signals]

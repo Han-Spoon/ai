@@ -125,11 +125,11 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | 경로 | 현재 역할 |
 |---|---|
 | [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
-| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare Graph·Judge fan-out/collect. Item Graph·Judge 후처리·신규 API는 후속 구현 |
+| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare Graph·Judge fan-out/collect·Item Graph DB 경로. 웹/저장 경로·Judge 후처리·신규 API는 후속 구현 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
 | [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책 |
-| [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core. Supervisor canonical adapter 연결은 후속 구현 |
-| [`../ai_decision_policy/`](../ai_decision_policy/README.md) | ⑧ 규칙 기반 판정 core. Supervisor canonical adapter 연결은 후속 구현 |
+| [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core와 canonical adapter. Supervisor Item Graph의 선택 후보 slice 읽기 경로에 연결됨 |
+| [`../ai_decision_policy/`](../ai_decision_policy/README.md) | ⑧ 규칙 기반 판정 core와 canonical 계약. Item Graph 호출 경계는 연결됐고 실제 응답 adapter는 후속 구현 |
 | [`../ai_ruleengine/`](../ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
 | [`../ai_result/`](../ai_result/README.md) | ⑧ 최종 판정·근거 메시지 |
 | [`../ai_web_search_agent/`](../ai_web_search_agent/README.md) | ⑥ 재료 후보 수집 |

@@ -19,7 +19,12 @@ from .decision import (
 from .exact import ExactFeedbackRequest, ExactFeedbackResponse
 from .external import JudgeRequest, JudgeResponse, PrepareRequest, PrepareResponse
 from .ocr import OcrRequest, OcrResponse
-from .ontology import OntologyRequest, OntologyResponse
+from .ontology import (
+    OntologyRequest,
+    OntologyResponse,
+    TagLookupRequest,
+    TagLookupResponse,
+)
 from .web_search import (
     WebAggregateRequest,
     WebAggregateResponse,
@@ -49,6 +54,8 @@ __all__ = [
     "OcrResponse",
     "OntologyRequest",
     "OntologyResponse",
+    "TagLookupRequest",
+    "TagLookupResponse",
     "PrepareRequest",
     "PrepareResponse",
     "UserProfile",
