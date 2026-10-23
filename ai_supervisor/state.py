@@ -3,23 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypedDict
 from uuid import UUID
 
 from .contracts.common import Locale, NodeContext, NodeError, NodeWarning, PositiveInt
 from .contracts.external import (
     EvidenceRef,
     ImageRef,
-    ItemKnowledge,
+    CandidateKnowledge,
     ItemResult,
     KnowledgeBundle,
+    OntologySlice,
     PersistenceCommand,
     PrepareSignals,
     PreparedItem,
     ScanQuality,
     SourceReliability,
     UserProfile,
+    WebSearchCache,
 )
+
+if TYPE_CHECKING:
+    from ai_normalization.contracts import CandidateSelectionResult
 
 
 def merge_signals(
@@ -101,7 +106,11 @@ class RunContext:
             raise ValueError("store_id must be a positive integer or null")
 
     def node_context(
-        self, call_scope: Literal["scan", "item", "out_of_band"], item_id: str | None
+        self,
+        call_scope: Literal["scan", "item", "out_of_band"],
+        item_id: str | None,
+        *,
+        include_store: bool = False,
     ) -> NodeContext:
         data: dict[str, Any] = {
             "schema_version": self.schema_version,
@@ -110,7 +119,7 @@ class RunContext:
             "call_scope": call_scope,
             "item_id": item_id,
         }
-        if self.store_id is not None:
+        if include_store or self.store_id is not None:
             data["store_id"] = self.store_id
         return NodeContext.model_validate(data)
 
@@ -129,13 +138,48 @@ class PrepareState(TypedDict, total=False):
 
 
 @dataclass(frozen=True)
+class ItemTaskKnowledge:
+    item_id: str
+    selected: CandidateKnowledge | None
+    fallback_ontology: OntologySlice
+    web_search_cache: WebSearchCache
+
+
+@dataclass(frozen=True)
 class ItemTask:
     prepared_item: PreparedItem
-    knowledge: ItemKnowledge
+    selection: "CandidateSelectionResult"
+    knowledge: ItemTaskKnowledge
     ingredient_graph: Any
     source_reliability: SourceReliability
     user_profile: UserProfile
     locale: Locale
+    warnings: tuple[NodeWarning, ...] = ()
+    errors: tuple[NodeError, ...] = ()
+
+
+@dataclass(frozen=True)
+class ItemAnalysisOutput:
+    result: ItemResult
+    evidence: tuple[EvidenceRef, ...] = ()
+    commands: tuple[PersistenceCommand, ...] = ()
+
+
+def merge_item_updates(
+    current: list[ItemAnalysisOutput], update: list[ItemAnalysisOutput]
+) -> list[ItemAnalysisOutput]:
+    """Append concurrent item outputs once without imposing completion order."""
+
+    merged = list(current)
+    by_id = {item.result.item_id: item for item in current}
+    for item in update:
+        previous = by_id.get(item.result.item_id)
+        if previous is not None and previous != item:
+            raise ValueError(f"conflicting item update: {item.result.item_id}")
+        if previous is None:
+            merged.append(item)
+            by_id[item.result.item_id] = item
+    return merged
 
 
 class ItemState(TypedDict, total=False):
@@ -155,15 +199,18 @@ class ItemState(TypedDict, total=False):
 
 
 class JudgeState(TypedDict, total=False):
-    context: RunContext
+    request: Any
     prepared_items: list[PreparedItem]
     prepare_signals: PrepareSignals
     knowledge_bundle: KnowledgeBundle
     user_profile: UserProfile
     locale: Locale
-    item_results: Annotated[list[ItemResult], merge_item_results]
+    bundle_hash: str
+    candidate_selection_response: Any
+    item_task: ItemTask
+    item_updates: Annotated[list[ItemAnalysisOutput], merge_item_updates]
     ordered_items: list[ItemResult]
     evidence: Annotated[list[EvidenceRef], merge_evidence]
-    commands: Annotated[list[PersistenceCommand], merge_commands]
+    persistence_commands: Annotated[list[PersistenceCommand], merge_commands]
     warnings: Annotated[list[NodeWarning], merge_signals]
     errors: Annotated[list[NodeError], merge_signals]

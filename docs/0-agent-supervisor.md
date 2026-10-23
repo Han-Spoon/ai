@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph 구현, Judge/Item Graph·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect 구현, Item Graph·Judge 후처리·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -695,6 +695,8 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `prepared_items`와 `prepare_signals`에는 같은 `prepare_id`의 `PrepareResponse` 값을 수정 없이 다시 넣는다. `knowledge_bundle.items`와 `item_id`가 정확히 1:1로 대응해야 한다. Supervisor는 `{prepared_items, prepare_signals}`로 `prepared_items_hash`를 다시 계산해 Prepare의 안전 신호까지 함께 검증한다.
 
+`prepare_signals.scan_quality_status == "needs_retake"`인 Prepare 결과와 `prepared_items`가 빈 결과는 Judge에 넣지 않는다. 백엔드는 이 경우 Judge를 호출하지 않아야 하며, 호출되더라도 JudgeRequest 계약 검증에서 거부한다.
+
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
 
 `exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations, owner_question_states}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. `owner_question_states`는 이전 질문의 최신 처리 상태이며 진행 중인 질문이 없으면 `[]`다. 사용하지 않는 `exact_feedback.inherited`는 외부 계약에 넣지 않고, 백엔드는 기본 메뉴의 사장님 답변을 조회하지 않는다. `confirmations[]`·`flag_confirmations[]`·`owner_question_states[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
@@ -1037,7 +1039,7 @@ Judge Graph의 누적 state는 다음 모양이다. `knowledge_bundle`은 §1-3 
   "candidate_selection_response": null,
   "item_updates": [],
   "ordered_items": [],
-  "evidence": {},
+  "evidence": [],
   "persistence_commands": [],
   "warnings": [],
   "errors": []
@@ -1049,7 +1051,7 @@ Judge Graph의 누적 state는 다음 모양이다. `knowledge_bundle`은 §1-3 
 - `ocr_response.scan_quality`는 재촬영 여부와 사용자 안내에 사용한다.
 - `item_updates`는 병렬 Item Graph가 reducer로 append하는 channel이다.
 - `ordered_items`는 collect 후 `source_index` 순서로 정렬된 최종 메뉴 배열이다.
-- `evidence`는 `evidence_id`를 키로 중복 제거한 근거 레지스트리다. 각 노드의 `evidence_refs`는 반드시 이 레지스트리에 존재하는 ID만 가리킨다.
+- `evidence`는 `evidence_id`를 기준으로 중복 제거한 근거 배열이다. 각 노드의 `evidence_refs`는 반드시 이 배열에 존재하는 ID만 가리킨다.
 - 각 node는 자신의 결과 필드만 갱신하며 이전 근거를 삭제하거나 재해석하지 않는다.
 - `status`와 `route`는 각 `ItemResult` 안에서 §1-3과 §5의 enum을 사용한다.
 
@@ -1099,14 +1101,15 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있으며, 예상 가능한 메뉴 단위 실패만 보수적 결과로 바꾼다. 두 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
-- `service.py`, `judge_graph.py`, `item_graph.py`
-- ①의 레거시 OCR 출력 변환 adapter와 ②-B~⑧의 구체 adapter·graph node
+- `service.py`, `item_graph.py`
+- Judge의 `high_risk_review → owner_request → finalize` 후처리
+- ①의 레거시 OCR 출력 변환 adapter와 ③~⑧의 구체 adapter·graph node
 - `chains/`의 실제 LangChain/provider 연결
 - `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
 
-Normalization의 ②-A는 Prepare Graph에 `NodeAdapter` 계약으로 연결됐다. ②-B는 Judge Graph가 아직 없으므로 미연결이다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
+Normalization의 ②-A는 Prepare Graph에, ②-B는 Judge Graph의 fan-out 직전에 각각 `NodeAdapter` 계약으로 연결됐다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
 
 기존 `ai_ocr`, `ai_ruleengine`, `ai_web_search_agent`, `ai_result` 코드를 복사하지 않는다. adapter가 기존 모듈의 입력·출력을 §4 계약으로 바꿔 호출한다.
 
@@ -1122,11 +1125,11 @@ Normalization의 ②-A는 Prepare Graph에 `NodeAdapter` 계약으로 연결됐�
 |---|---|
 | `PrepareState` | image, locale, OCR response, scan quality, prepared items, warnings/errors |
 | `JudgeState` | prepared items, KnowledgeBundle, profile, candidate result, item updates, ordered items, evidence, commands |
-| `ItemTask` | normalized item, 같은 `item_id`의 `ItemKnowledge`, 공통 source reliability, profile, locale |
+| `ItemTask` | normalized item, ②-B 선택 결과, 선택 후보 한 건 또는 fallback 지식, 공통 ingredient graph·source reliability, profile, locale, item 신호 |
 | `ItemState` | ItemTask 값 + exact/ontology/bayesian/web/decision 응답 + route + commands |
 | `ItemResult` | 메뉴 하나의 최종 판정·근거·경고·저장 명령 |
 
-`ItemKnowledge`는 `KnowledgeBundle.items[]`에서 같은 `item_id` 한 건만 떼어낸 read-only view다. Item Graph는 다른 메뉴 자료를 볼 수 없다. ②-B가 후보를 선택하면 adapter가 같은 `menu_id`의 exact·ontology·priors를 사용하고, 미매칭이면 `fallback_ontology`를 사용한다. Bundle 공통 `ingredient_graph`는 모든 Item Graph가 변경 없이 공유하고 ④ adapter에만 전달한다.
+`ItemTaskKnowledge`는 `KnowledgeBundle.items[]`에서 같은 `item_id`의 자료를 다시 잘라 만든 read-only view다. ②-B가 후보를 선택하면 선택된 `menu_id`의 `CandidateKnowledge` 한 건만 넣고, 미매칭이면 `selected: null`과 `fallback_ontology`를 넣는다. Item Graph는 다른 메뉴나 선택되지 않은 후보의 지식을 볼 수 없다. Bundle 공통 `ingredient_graph`는 모든 Item Graph가 변경 없이 공유하고 ④ adapter에만 전달한다.
 
 ### 2-7. Adapter와 node 규칙
 
@@ -1193,7 +1196,7 @@ Judge는 ②-B 결과를 메뉴별 `Send("analyze_item", task)`로 fan-out한다
 
 누적 channel인 `item_updates`를 정렬 결과로 덮어쓰지 않는다. 최종 channel `ordered_items`를 따로 사용해 reducer가 결과를 다시 append하는 문제를 막는다.
 
-한 Item Graph가 실패해도 다른 task는 취소하지 않는다. 실패한 메뉴만 보수적 `ItemResult`로 만들고 전체 메뉴판 결과는 collect한다.
+한 Item Graph가 실패해도 다른 task는 취소하지 않는다. 외부 호출 실패처럼 예상 가능한 메뉴 단위 오류(`ItemAnalysisError`)만 해당 메뉴의 `partial_failed`·`CAUTION` 결과로 바꾸고 전체 메뉴판 결과는 collect한다. 프로그래밍 오류나 invariant 위반처럼 예상하지 않은 예외는 숨기지 않고 Graph 실행을 실패시킨다.
 
 ### 2-10. Graph 조립 순서
 
