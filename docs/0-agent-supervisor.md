@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase 및 외부 JSON 계약 확정, 계약·state 뼈대 구현, graph·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·외부/내부 canonical 계약·hash 검증 구현, graph·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -477,7 +477,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 필드 규칙은 다음과 같다.
 
 - `prepare_id`는 Supervisor가 Prepare 요청마다 한 번 발급하는 UUID이며 재시도 추적과 Judge 연결에 사용한다. 백엔드는 값을 변경하지 않고 Prepare 결과·KnowledgeBundle과 함께 보존한다.
-- `prepared_items_hash`는 Supervisor가 `{prepared_items, prepare_signals}` 객체를 **RFC 8785 JSON Canonicalization Scheme(JCS)** 으로 직렬화한 뒤 계산한 SHA-256이다. 출력 형식은 `sha256:`과 소문자 64자리 hex를 연결한 문자열이다. 백엔드는 Judge 요청에 두 값과 hash를 그대로 돌려보내며 AI가 다시 계산해 검증한다.
+- `prepared_items_hash`는 Supervisor가 `{prepared_items, prepare_signals}` 객체를 **RFC 8785 JSON Canonicalization Scheme(JCS)** 으로 직렬화한 뒤 계산한 SHA-256이다. 구현은 `rfc8785==0.1.4`의 `dumps()`가 반환하는 canonical UTF-8 bytes를 그대로 hash한다. 출력 형식은 `sha256:`과 소문자 64자리 hex를 연결한 문자열이다. 백엔드는 Judge 요청에 두 값과 hash를 그대로 돌려보내며 AI가 다시 계산해 검증한다.
 - `scan_quality.status`는 `usable | low_confidence | needs_retake`다. 수치형 품질 점수와 메뉴별 OCR confidence는 AI 내부 관측값이며 외부 계약에는 넣지 않는다.
 - `prepare_signals`는 Judge까지 보존해야 하는 Prepare 안전 신호다. `scan_quality_status`는 `scan_quality.status`와 같고, `warnings`에는 `forces_caution: true`인 warning만 넣는다. `prepared_items_hash`가 이 객체까지 보호하므로 백엔드는 값을 수정하거나 일부만 누락할 수 없다.
 - `prepared_items[]`는 기존 OCR 메뉴 필드에 `normalized_menu_name`, `display_name`, `options`, `residual_tokens`를 추가한 구조다.
@@ -1095,10 +1095,12 @@ ai_supervisor/
 ├── routers.py          # 부작용 없는 조건 분기
 ├── adapters.py         # 기존 모듈을 §4 JSON으로 변환
 ├── contracts/          # §1·§4 Pydantic closed schema
+├── hashing.py         # RFC 8785 JCS 기반 Prepare/Bundle hash
+├── validation.py      # Judge 요청·응답 교차 invariant 검증
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`, `state.py`, 공통 `NodeAdapter` Protocol, 최소 router와 단위 테스트가 있다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, 최소 router와 단위 테스트가 있다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - `service.py`, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`
 - ①~⑧의 구체 adapter와 graph node
@@ -1709,10 +1711,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       "base_menu_id": null,
       "remain_token": null,
       "menu_category_id": 11,
-      "menu_category": "찌개",
-      "exists_in_db": true,
-      "is_variant": false,
-      "variant_origin": null,
+      "source": "curated",
       "ambiguity_flags": ["has_unclear_jeotgal"],
       "knowledge_revision": 7
     },
