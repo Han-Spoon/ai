@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Optional
 
 import pytest
 from pydantic import ValidationError
@@ -86,6 +87,32 @@ def base_judge_request() -> dict:
         },
         "locale": "ko",
     }
+
+
+@pytest.mark.parametrize(
+    ("prepare_signals", "prepared_items", "knowledge_items"),
+    [
+        (
+            {"scan_quality_status": "needs_retake", "warnings": []},
+            [prepared_item()],
+            None,
+        ),
+        ({"scan_quality_status": "usable", "warnings": []}, [], []),
+    ],
+)
+def test_judge_rejects_non_analyzable_prepare_results(
+    prepare_signals: dict,
+    prepared_items: list[dict],
+    knowledge_items: Optional[list[dict]],
+) -> None:
+    payload = base_judge_request()
+    payload["prepare_signals"] = prepare_signals
+    payload["prepared_items"] = prepared_items
+    if knowledge_items is not None:
+        payload["knowledge_bundle"]["items"] = knowledge_items
+
+    with pytest.raises(ValidationError):
+        JudgeRequest.model_validate(payload)
 
 
 def store_warning() -> dict:

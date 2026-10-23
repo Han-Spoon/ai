@@ -413,6 +413,10 @@ class JudgeRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_bundle_scope(self) -> "JudgeRequest":
+        if self.prepare_signals.scan_quality_status == "needs_retake":
+            raise ValueError("needs_retake Prepare results cannot enter Judge")
+        if not self.prepared_items:
+            raise ValueError("Judge requires at least one prepared item")
         prepared_ids = [item.item_id for item in self.prepared_items]
         bundle_ids = [item.item_id for item in self.knowledge_bundle.items]
         if len(prepared_ids) != len(set(prepared_ids)):
