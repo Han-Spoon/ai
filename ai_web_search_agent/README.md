@@ -1,41 +1,27 @@
-# Hanspoon Web Search Agent
+# ⑥ Web Search Agent
 
-> **새 설계로 옮기는 중입니다.** 기준은 [`docs/6-agent-websearch.md`](../docs/6-agent-websearch.md)와 ⓪ §4-5 두 단계 형식(`ai_supervisor/contracts/web_search.py`)입니다.
->
-> - **2단계(집계)** — `aggregate.py`의 `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`: ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7을 만듭니다. 규칙 5(LLM만 찾은 재료)는 LLM 추출을 붙일 때 추가합니다.
-> - **1단계(수집)** — 아직 아래 옛 코드입니다. 옛 코드는 재료에 태그를 직접 붙이고 SQLite에 저장하는데, 새 설계에서는 태그는 ④만 붙이고 저장은 백엔드만 합니다. 1단계를 새 형식으로 바꿀 때 걷어냅니다.
->
-> ```bash
-> pytest -q ai_web_search_agent/tests/test_aggregate.py
-> ```
+DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`docs/6-agent-websearch.md`](../docs/6-agent-websearch.md)와 ⓪ §4-5 두 단계 형식(`ai_supervisor/contracts/web_search.py`)입니다.
 
-Rule Engine 결과를 받은 뒤 웹 레시피 근거로 누락 가능 재료 태그를 보완합니다.
+- ⑥은 **모으고 세기만** 합니다. 재료 태그는 ④가 붙이고, 저장은 백엔드가 ⑦ 명령으로 합니다. ⑥ 안에는 DB 연결이 없습니다.
+- 웹 결과는 미검증 정보(soft evidence)입니다. 판정은 CAUTION까지이고, DB 등록은 관리자가 통과시킨 레시피가 30개 이상일 때 백엔드가 합니다.
 
-원칙:
+## 지금 있는 것
 
-- 검색 결과는 실제 식당 레시피로 간주하지 않습니다.
-- Rule Engine의 `danger` 판단은 Web 결과로 낮추지 않습니다.
-- 웹에서 발견한 재료는 기존 `ai_ruleengine`의 `VARIANT_INGREDIENTS`와 `tag_explicit()`으로만 태깅합니다.
-- 검색 결과와 추출 evidence는 SQLite DB에 캐시합니다.
+| 파일 | 내용 |
+|---|---|
+| `aggregate.py` | **2단계(집계)** `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`. ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7 |
+| `providers.py` | 검색 도구 틀(`SearchProvider`)과 테스트용 `StaticSearchProvider` |
 
-## 실행
+## 아직 없는 것
 
-실제 검색은 `TAVILY_API_KEY` 환경변수가 있을 때 Tavily adapter를 사용합니다. 키가 없으면 빈 `StaticSearchProvider`로 동작해 DB/파이프라인 테스트만 가능합니다.
+- **1단계(수집)**: 검색 → 이 메뉴의 레시피 글인지 판별 → 재료 뽑기 (⑥ §3). 재료 사전 출처와 일반 웹으로 넓힐 때의 `next_rank` 기준(⑥ §5)을 정한 뒤 만듭니다
+- **네이버 검색 연결** (#254)
+- **LLM**: 레시피 판별, 사전에 없는 재료 찾기, 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
 
-Rule Engine 결과를 이미 가지고 있으면:
+옛 코드(룰엔진 결과에 웹 태그를 덧붙이고 SQLite에 저장하던 구조, Tavily 검색, CLI)는 새 설계와 맞지 않아 지웠습니다.
+
+## 테스트
 
 ```bash
-python3 ai_web_search_agent/main.py --judged-json outputs/final/menu_001_judged.json --print-json
-```
-
-OCR 결과와 프로필만 가지고 있으면 Web Search Agent가 기존 `ai_ruleengine.analyze_all()`을 먼저 실행한 뒤 웹 검증을 붙입니다.
-
-```bash
-python3 ai_web_search_agent/main.py --ocr-json outputs/final/menu_001_result.json --profile profile.json --print-json
-```
-
-DB 기본 경로:
-
-```text
-ai_web_search_agent/data/web_search_cache.sqlite3
+pytest -q ai_web_search_agent
 ```

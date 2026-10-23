@@ -1,6 +1,16 @@
-"""
-한스푼 Web Search Agent.
+"""⑥ Web Search Agent — web recipes for menus the DB does not know (docs/6-agent-websearch.md).
 
-Rule Engine 결과를 대체하지 않고, 웹 레시피 근거로 누락 가능 태그를 보완한다.
+⑥ only collects and counts. It never tags ingredients (④ does) and never writes to any
+DB (the backend does, from ⑦ commands).
 """
 
+from .aggregate import WebAggregateAgent, aggregate_sources
+from .providers import SearchProvider, SearchResult, StaticSearchProvider
+
+__all__ = [
+    "SearchProvider",
+    "SearchResult",
+    "StaticSearchProvider",
+    "WebAggregateAgent",
+    "aggregate_sources",
+]
