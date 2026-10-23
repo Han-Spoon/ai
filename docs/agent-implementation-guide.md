@@ -2,8 +2,8 @@
 
 ⓪~⑧ AI 노드를 구현할 때 **노드마다 똑같이 반복되는 결정**을 한곳에 모으는 문서입니다. 프레임워크, 공통 데이터 계약, 오류 규격, LLM 호출 규칙, 테스트 위치처럼 "어느 Agent를 만들든 먼저 알아야 하는 것"이 여기 들어갑니다. 큐레이션은 백엔드 구현 범위다.
 
-> **현재 상태: 틀만 있는 문서입니다.**
-> 각 절은 **"현재 알려진 내용"** 과 **"여기에 적을 것"** 으로 나뉩니다. "현재 알려진 내용"은 다른 문서에 이미 적혀 있어 옮겨온 것이고 출처를 함께 적었습니다. 비어 있는 항목은 아직 팀이 정하지 않은 것이며, **이 문서를 채우는 사람이 임의로 결정하지 않습니다** (→ [§1](#1-이-문서를-채울-때의-규칙)).
+> **현재 상태: 공통 기준 일부 확정·구현 중입니다.**
+> LangGraph 버전, schema 3.0 공통 모델 위치, Supervisor·Normalization 패키지 경계는 확정·반영됐습니다. 각 절의 미체크 항목은 아직 팀이 정하지 않았거나 구현이 끝나지 않은 내용이며, **이 문서를 채우는 사람이 임의로 결정하지 않습니다** (→ [§1](#1-이-문서를-채울-때의-규칙)).
 
 ---
 
@@ -50,7 +50,7 @@
 
 ### 현재 알려진 내용
 
-[`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-17에 **승인 후 바로 구현할 상세 설계**가 작성되어 있습니다. 프레임워크 채택과 정확한 버전 pin은 아직 팀 승인 전입니다(이슈 #76).
+[`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-15에 구현 설계가 작성되어 있습니다. Supervisor orchestration은 LangGraph를 사용하며 Python 3.11 기준 버전을 고정했습니다.
 
 - Supervisor는 LangChain 생태계 + LangGraph `StateGraph`로 구현한다.
 - 라우팅은 LLM에 맡기지 않고 명시적 conditional edge로 구현한다.
@@ -62,17 +62,17 @@
 - graph와 client는 FastAPI lifespan에서 한 번 만들고 요청마다 `ainvoke()`한다.
 - Scan Graph와 메뉴별 Item Graph를 나누고 `Send`와 reducer로 fan-out/collect한다.
 
-현재 [`../requirements.txt`](../requirements.txt)에는 langchain·langgraph가 **없습니다.** 승인 전까지 의존성을 추가하지 않습니다.
+현재 [`../requirements.txt`](../requirements.txt)에는 `langgraph==1.2.16`이 있습니다. `langchain`, `langchain-core`, 모델 provider 패키지는 아직 없으며 ②·⑥·⑧의 모델·provider가 각 담당 이슈에서 확정되기 전까지 추가하지 않습니다. Supervisor graph 구현은 LangChain에 의존하지 않습니다.
 
 ### 여기에 적을 것
 
-- [ ] 승인 결과와 결정 근거 (승인되면 이 절을 "확정"으로 승격)
-- [ ] langchain / langgraph 버전 고정값과 Python 3.11 호환 확인 결과
+- [x] Supervisor orchestration에 LangGraph `StateGraph` 사용
+- [x] LangGraph `1.2.16`, Python 3.11 기준 고정
+- [ ] ②·⑥·⑧의 LangChain / provider 버전과 `openai==3.8.0` 호환 확인
 - [x] LLM / HTTP 클라이언트 생성 위치 — FastAPI lifespan에서 생성 후 adapter에 주입
 - [x] 동기/비동기 선택 — FastAPI에서 compiled graph의 `ainvoke()` 사용
-- [ ] 승인되지 않을 경우의 대안 (직접 오케스트레이션) 비교
 
-> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-17이 소유합니다. 이 문서에는 중복 작성하지 않습니다.
+> graph·state·node 시그니처처럼 **Supervisor 내부 구조**에 해당하는 항목은 [`0-agent-supervisor.md`](0-agent-supervisor.md) §0-2와 §2-4~§2-15가 소유합니다. 이 문서에는 중복 작성하지 않습니다.
 
 ---
 
@@ -84,7 +84,7 @@
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "3.0",
   "trace_id": "0199...",
   "scan_session_id": "scan-123",
   "store_id": 123456,
@@ -96,7 +96,7 @@
 - 모든 외부 경계는 Pydantic 모델로 검증한다.
 - `item_id`는 ① OCR Tool 출력 순서로 생성하고 최종 응답까지 바꾸지 않는다. `call_scope: item`이면 필수이고 `scan | out_of_band`이면 null을 허용한다.
 - 하위 노드는 `store_id` / `scan_session_id` / `item_id`를 **수정하지 않고 그대로 반환**한다.
-- `store_id`는 정수(DB `BIGINT` ↔ Java `Long` ↔ Python `int`)이며 AI가 새로 발급하거나 변경하지 않는다.
+- Prepare context에는 `store_id` 필드가 없어야 한다. Judge context의 `store_id`는 양의 정수 또는 가게 없는 스캔을 뜻하는 명시적 `null`이며, AI가 새로 발급하거나 변경하지 않는다.
 - 재료 식별자는 `ingredient_id` + `canonical_name`을 함께 쓴다. 웹 신규 후보만 `ingredient_id: null`을 허용한다.
 - 재료 제한 속성은 `constraint_tags`의 `is_*` 표준 어휘로 전달하며 ③·④·⑤·⑥·⑧ 사이에서 삭제하거나 이름을 바꾸지 않는다.
 - 각 `evidence_refs`는 Supervisor state의 evidence registry에 등록된 `EvidenceRef.evidence_id`만 가리킨다. 런타임 근거도 null ID를 쓰지 않는다.
@@ -109,7 +109,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 - [x] ①~⑧ 요청·응답 canonical JSON — Supervisor 문서 §4로 확정
 - [ ] Supervisor 문서 §1·§4를 그대로 구현하는 Pydantic 모델 작성
-- [ ] 공통 모델이 사는 모듈 경로와 누가 import하는지
+- [x] 공통 모델 경로와 소유자 — `ai_supervisor/contracts/`, Supervisor가 canonical 계약을 소유하고 각 노드가 import
 - [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
@@ -125,13 +125,16 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | 경로 | 현재 역할 |
 |---|---|
 | [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
+| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ 계약·state 뼈대. Prepare/Judge/Item Graph와 신규 API는 후속 구현 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
+| [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책 |
+| [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core. Supervisor canonical adapter 연결은 후속 구현 |
 | [`../ai_ruleengine/`](../ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
 | [`../ai_result/`](../ai_result/README.md) | ⑧ 최종 판정·근거 메시지 |
 | [`../ai_web_search_agent/`](../ai_web_search_agent/README.md) | ⑥ 재료 후보 수집 |
 | [`../crawling/`](../crawling/README.md) | 메뉴·재료 데이터 수집·전처리 |
 
-현재 디렉터리는 **⓪~⑧ 번호와 1:1로 대응하지 않습니다.** 한 패키지가 여러 노드를 담고 있고, ⓪·③·⑦에 해당하는 자리가 없습니다.
+현재 디렉터리는 아직 **⓪~⑧ 번호와 완전히 1:1로 대응하지 않습니다.** ⓪·②·③ 패키지는 생겼지만 Supervisor graph와 canonical adapter 연결은 미완료이고, ④·⑤·⑦은 전용 패키지 경계가 확정되지 않았습니다.
 
 ### 여기에 적을 것
 
@@ -240,12 +243,12 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 ```bash
 pytest -q
-python -m compileall -q app.py ai_ocr ai_ruleengine ai_result
+python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization ai_exact_feedback
 ```
 
 CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크플로의 `test` 잡이 통과해야 머지 버튼이 열립니다. Python 3.11 기준입니다.
 
-테스트는 현재 [`../tests/`](../tests), `ai_result/tests`, `ai_web_search_agent/tests`, `ai_ocr/test_parser_with_mock.py`에 흩어져 있습니다.
+테스트는 현재 [`../tests/`](../tests), `ai_supervisor/tests`, `ai_normalization/tests`, `ai_exact_feedback/tests`, `ai_result/tests`, `ai_web_search_agent/tests`, `ai_ocr/test_parser_with_mock.py`에 흩어져 있습니다.
 
 ### 여기에 적을 것
 
@@ -254,7 +257,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 - [ ] 외부 호출(OCR·LLM·웹서치) mock 방식과 공용 fixture 위치
 - [ ] 샘플 데이터 사용 기준 — [`../sample_data/`](../sample_data), [`../examples/`](../examples)
 - [ ] FN·F2 회귀 테스트 구성 방법 (북극성 지표를 CI에서 확인할 수 있게 할지)
-- [ ] `compileall` 대상에 새 패키지를 추가하는 절차
+- [x] 새 실행 패키지는 같은 PR에서 CI `compileall` 대상에 추가
 
 ---
 
@@ -293,13 +296,12 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 ## 12. 미확정 항목 (팀 확인 대기)
 
-- [ ] LangChain 생태계 + LangGraph `StateGraph` 사용 최종 승인 (#76)
-- [ ] 공통 Pydantic 모델이 사는 모듈 경로와 소유자
+- [ ] ②·⑥·⑧의 LangChain / 모델 provider 버전과 공통 도입 방식
 - [ ] 재료 식별자 `IngredientRef` 계약을 기존 구현에 적용하는 전환 순서
 - [ ] 오류 `code` 체계와 전체 목록
 - [ ] 로그 마스킹 정책 구체화
 - [ ] 테스트 배치 규칙 (패키지 내부 vs 루트 `tests/`)
-- [ ] ⓪~⑧ ↔ 디렉터리 대응과 기존 패키지 재배치 여부
+- [ ] ④·⑤·⑦ 디렉터리 대응과 기존 패키지 재배치 여부
 - [ ] 이 문서를 [`README.md`](README.md) 읽는 순서 표의 어느 위치에 넣을지
 
 여기에는 **구현 방식에 관한 미확정 항목만** 둡니다. 판정 로직·계약에 관한 미확정 항목은 이미 각 문서에 등록되어 있으므로 옮겨 적지 않습니다.
@@ -319,7 +321,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 | [`ppt-baseline.md`](ppt-baseline.md) | 충돌 시 최우선. 수정 금지 |
 | [`caution-multi-agent-architecture.md`](caution-multi-agent-architecture.md) | 흐름·라우팅. 이 문서는 그 흐름을 코드로 옮기는 방법만 다룬다 |
 | [`caution-db-schema.md`](caution-db-schema.md) | 테이블·제약. DB 쓰기 경계는 [§6](#6-결정론적-tool-구현-규칙) |
-| [`0-agent-supervisor.md`](0-agent-supervisor.md) | 프레임워크 제안(§0-2), canonical 입출력 계약(§1·§4), 공통 오류(§6-1)의 원 출처 |
-| [`2-agent-normalization.md`](2-agent-normalization.md) | `9. 구현 계획` 절 형식의 참고 사례 |
+| [`0-agent-supervisor.md`](0-agent-supervisor.md) | 확정된 Supervisor 프레임워크(§0-2), canonical 입출력 계약(§1·§4), 공통 오류(§6-1)의 원 출처 |
+| [`2-agent-normalization.md`](2-agent-normalization.md) | ②의 구현 범위와 후속 작업(§5), 구현 추적(§9) |
 | [`../AGENTS.md`](../AGENTS.md) | 커밋·브랜치·이슈·PR 규칙, 금지 사항, 용어집 |
 | [`README.md`](README.md) | 문서 인덱스와 읽는 순서 |
