@@ -1,7 +1,7 @@
 """Verdict and high-risk review cases from docs/8-agent-xai.md §7.
 
-Message text and owner cards come later; for cases that also check those
-(5, 13~15, 17, 26~31) only the verdict part is covered here.
+Owner cards are in test_owner_cards.py. Message text comes later; for cases that
+also check it (13~15, 31) only the verdict part is covered here.
 """
 
 from datetime import datetime, timezone
@@ -129,6 +129,8 @@ def request(
     store_id: int | None = STORE_ID,
     localized_names: dict[int, str] | None = None,
     warnings: list[NodeWarning] | None = None,
+    states: list[dict] | None = None,
+    locale: str = "en",
 ) -> DecisionRequest:
     warnings = list(warnings or [])
     if store_id is None:
@@ -149,12 +151,12 @@ def request(
         risk_tag_observations=observations or [],
         menu_ambiguity_flags=flags or [],
         flag_confirmations=flag_answers or [],
-        owner_question_states=[],
+        owner_question_states=states or [],
         no_information=no_information,
         information_status=information_status,
         owner_interaction_allowed=store_id is not None,
         user_profile=user,
-        locale="en",
+        locale=locale,
         localized_names=[
             {"ingredient_id": i, "localized_name": n} for i, n in (localized_names or {}).items()
         ],
