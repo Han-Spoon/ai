@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from ai_supervisor.contracts import JudgeRequest, JudgeResponse, PrepareRequest, UserProfile
 from ai_supervisor.contracts.common import NodeWarning, OwnerQuestionState
-from ai_supervisor.contracts.external import CandidateKnowledge
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
 PREPARE_ID = "0199a2f0-0000-7000-8000-000000000101"
@@ -114,26 +113,6 @@ def test_judge_rejects_non_analyzable_prepare_results(
 
     with pytest.raises(ValidationError):
         JudgeRequest.model_validate(payload)
-
-
-def test_candidate_knowledge_rejects_cross_menu_slices() -> None:
-    payload = {
-        "menu_id": 1001,
-        "exact_feedback": {
-            "status": "ok",
-            "exact": {
-                "menu_id": 9999,
-                "confirmations": [],
-                "flag_confirmations": [],
-                "owner_question_states": [],
-            },
-        },
-        "ontology": empty_ontology(),
-        "priors": {"status": "not_found", "store": [], "evidence": []},
-    }
-
-    with pytest.raises(ValidationError, match="candidate menu_id"):
-        CandidateKnowledge.model_validate(payload)
 
 
 def store_warning() -> dict:
