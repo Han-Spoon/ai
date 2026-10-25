@@ -91,6 +91,7 @@ def test_unavailable_exact_slice_reads_as_empty_and_blocks_safe() -> None:
     )
     assert request.information_status == "partial"
     assert output.result.risk_level != "safe"
+    assert output.result.owner_answer_status == "none"
 
 
 def test_only_eligible_known_confirmations_skip_bayesian() -> None:
@@ -118,6 +119,7 @@ def test_only_eligible_known_confirmations_skip_bayesian() -> None:
     ]
     assert all(item.constraint_tags == ["is_pork"] for item in confirmed)
     assert output.result.route == "db_bayes"
+    assert output.result.owner_answer_status == "partial"
 
 
 def test_anomaly_lock_reaches_decision_through_ontology_and_bayesian() -> None:

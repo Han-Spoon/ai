@@ -499,6 +499,37 @@ class OwnerCard(StrictModel):
         return self
 
 
+class ResultOwnerCard(StrictModel):
+    """Single-shot owner card exposed by JudgeResponse."""
+
+    item_id: NonEmptyString
+    card_id: NonEmptyString
+    menu_id: PositiveInt | None
+    ingredient: IngredientRef | None
+    ambiguity_flag: AmbiguityFlag | None
+    constraint_tags: list[ConstraintTag]
+    question: dict[Locale, NonEmptyString]
+    reason_codes: list[
+        Literal[
+            "insufficient_recipe_evidence",
+            "anomaly",
+            "no_information",
+            "high_risk_review",
+            "ambiguous_menu",
+            "unconfirmed",
+        ]
+    ]
+    evidence_refs: list[NonEmptyString]
+
+    @model_validator(mode="after")
+    def validate_card(self) -> "ResultOwnerCard":
+        if not self.reason_codes:
+            raise ValueError("owner card requires at least one reason")
+        if "ko" not in self.question:
+            raise ValueError("owner question must include Korean")
+        return self
+
+
 class ItemResult(StrictModel):
     item_id: NonEmptyString
     source_index: NonNegativeInt
@@ -512,11 +543,12 @@ class ItemResult(StrictModel):
     risk_level: Literal["danger", "caution", "safe"]
     evidence_basis: Literal["confirmed", "estimated", "unknown"]
     information_status: Literal["complete", "partial", "none"]
+    owner_answer_status: Literal["none", "partial", "complete"]
     risk_ingredients: list[RiskIngredient]
     matched_tags: list[ConstraintTag]
     evidence_refs: list[NonEmptyString]
     message: DecisionMessage
-    owner_cards: list[OwnerCard]
+    owner_cards: list[ResultOwnerCard]
     warnings: list[NodeWarning]
     errors: list[NodeError]
 
@@ -524,6 +556,8 @@ class ItemResult(StrictModel):
     def validate_item_cards(self) -> "ItemResult":
         if any(card.item_id != self.item_id for card in self.owner_cards):
             raise ValueError("owner cards must belong to their item")
+        if self.risk_level == "safe" and self.owner_answer_status != "complete":
+            raise ValueError("safe requires complete owner answers")
         return self
 
 
@@ -589,6 +623,8 @@ class JudgeResponse(StrictModel):
                 raise ValueError("storeless result cannot contain cards or persistence commands")
             if any(item.risk_level == "safe" for item in self.items):
                 raise ValueError("storeless result cannot be safe")
+            if any(item.owner_answer_status != "none" for item in self.items):
+                raise ValueError("storeless result owner_answer_status must be none")
             for item in self.items:
                 if not any(warning.code == "store_context_missing" for warning in item.warnings):
                     raise ValueError("storeless items require store_context_missing warning")

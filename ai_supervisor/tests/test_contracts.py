@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from ai_supervisor.contracts import JudgeRequest, JudgeResponse, PrepareRequest, UserProfile
 from ai_supervisor.contracts.common import NodeWarning, OwnerQuestionState
+from ai_supervisor.contracts.external import ResultOwnerCard
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
 PREPARE_ID = "0199a2f0-0000-7000-8000-000000000101"
@@ -149,6 +150,7 @@ def base_judge_response() -> dict:
                 "risk_level": "caution",
                 "evidence_basis": "unknown",
                 "information_status": "none",
+                "owner_answer_status": "none",
                 "risk_ingredients": [],
                 "matched_tags": [],
                 "evidence_refs": [],
@@ -268,5 +270,40 @@ def test_storeless_judge_response_rejects_safe() -> None:
 
     payload = deepcopy(base_judge_response())
     payload["items"][0]["risk_level"] = "safe"
+    payload["items"][0]["owner_answer_status"] = "complete"
     with pytest.raises(ValidationError, match="cannot be safe"):
         JudgeResponse.model_validate(payload)
+
+
+def test_safe_requires_complete_owner_answers() -> None:
+    payload = deepcopy(base_judge_response())
+    payload["store_id"] = 123
+    payload["items"][0]["warnings"] = []
+    payload["items"][0]["risk_level"] = "safe"
+    with pytest.raises(ValidationError, match="complete owner answers"):
+        JudgeResponse.model_validate(payload)
+
+
+def test_storeless_owner_answer_status_is_always_none() -> None:
+    payload = deepcopy(base_judge_response())
+    payload["items"][0]["owner_answer_status"] = "partial"
+    with pytest.raises(ValidationError, match="must be none"):
+        JudgeResponse.model_validate(payload)
+
+
+def test_result_owner_card_has_no_multi_round_fields() -> None:
+    card = ResultOwnerCard.model_validate(
+        {
+            "item_id": "scan-123:0",
+            "card_id": "card:scan-123:0:ingredient-101",
+            "menu_id": 1001,
+            "ingredient": {"ingredient_id": 101, "canonical_name": "돼지고기"},
+            "ambiguity_flag": None,
+            "constraint_tags": [],
+            "question": {"ko": "이 메뉴에 돼지고기가 들어가나요?"},
+            "reason_codes": ["unconfirmed"],
+            "evidence_refs": [],
+        }
+    )
+    assert "round" not in card.model_dump()
+    assert "previous_question_id" not in card.model_dump()

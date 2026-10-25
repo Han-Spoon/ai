@@ -39,7 +39,12 @@ from .contracts.decision import (
     ProposedVariantIngredient,
 )
 from .contracts.exact import ExactFeedbackRequest, ExactFeedbackResponse, ExactMenu
-from .contracts.external import ItemResult, PersistenceCommand, WebSource
+from .contracts.external import (
+    ItemResult,
+    PersistenceCommand,
+    ResultOwnerCard,
+    WebSource,
+)
 from .contracts.ontology import (
     ConfirmedIngredient,
     IngredientMappingRequest,
@@ -826,6 +831,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 result.anomaly_locked
                 for result in request.probability_results
             )
+            or _owner_answer_status(exact, response.owner_cards) != "complete"
         ):
             raise ItemGraphInvariantError(
                 "Decision returned safe while a safety restriction is active"
@@ -851,6 +857,9 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 "Decision evidence_refs must resolve inside the item registry"
             )
         candidate = task.selection.selected_candidate
+        owner_answer_status = _owner_answer_status(
+            state.get("exact_response"), decision.owner_cards
+        )
         result = ItemResult(
             item_id=task.prepared_item.item_id,
             source_index=task.prepared_item.source_index,
@@ -864,6 +873,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             risk_level=decision.risk_level,
             evidence_basis=decision.evidence_basis,
             information_status=decision.information_status,
+            owner_answer_status=owner_answer_status,
             risk_ingredients=[
                 ingredient.model_dump(exclude={"anomaly_locked"})
                 for ingredient in decision.risk_ingredients
@@ -871,7 +881,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             matched_tags=decision.matched_tags,
             evidence_refs=decision.evidence_refs,
             message=decision.message,
-            owner_cards=decision.owner_cards,
+            owner_cards=[_result_owner_card(card) for card in decision.owner_cards],
             warnings=decision.warnings,
             errors=decision.errors,
         )
@@ -945,6 +955,52 @@ def _validate_task_context(task: ItemTask, context: RunContext) -> None:
         raise ItemGraphInvariantError("ItemTask does not belong to RunContext")
     if task.knowledge.item_id != task.prepared_item.item_id:
         raise ItemGraphInvariantError("ItemTask knowledge has a different item_id")
+
+
+def _owner_answer_status(exact: ExactFeedbackResponse | None, cards: list[Any]) -> str:
+    if exact is None:
+        return "none"
+    has_answer = any(
+        item.status in {"present", "absent"}
+        for item in [*exact.confirmations, *exact.flag_confirmations]
+    )
+    if not has_answer:
+        return "none"
+    has_unanswered_target = any(
+        card.ingredient is not None or card.ambiguity_flag is not None for card in cards
+    )
+    if exact.completeness == "complete" and not has_unanswered_target:
+        return "complete"
+    return "partial"
+
+
+def _result_owner_card(card: Any) -> ResultOwnerCard:
+    if card.ingredient is not None:
+        ingredient_id = card.ingredient.ingredient_id
+        target = (
+            f"ingredient-{ingredient_id}"
+            if ingredient_id is not None
+            else f"name-{card.ingredient.canonical_name}"
+        )
+    elif card.ambiguity_flag is not None:
+        tags = "+".join(sorted(card.constraint_tags))
+        target = f"flag-{card.ambiguity_flag}-{tags}"
+    else:
+        target = "menu"
+    reasons = [reason for reason in card.reason_codes if reason != "expired"]
+    if not reasons:
+        reasons = ["unconfirmed"]
+    return ResultOwnerCard(
+        item_id=card.item_id,
+        card_id=f"card:{card.item_id}:{target}",
+        menu_id=card.menu_id,
+        ingredient=card.ingredient,
+        ambiguity_flag=card.ambiguity_flag,
+        constraint_tags=card.constraint_tags,
+        question=card.question,
+        reason_codes=reasons,
+        evidence_refs=card.evidence_refs,
+    )
 
 
 def _validate_response_signals(request: Any, response: Any, node: str) -> None:
