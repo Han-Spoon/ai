@@ -41,7 +41,14 @@ class SearchProvider(ABC):
     name = "base"
 
     @abstractmethod
-    def search(self, query: str, top_k: int) -> list[SearchResult]:
+    def search(
+        self, query: str, start: int, count: int, sites: tuple[str, ...] = ()
+    ) -> list[SearchResult]:
+        """Results at ranks ``start`` .. ``start + count - 1`` (1-based) of one ranked list.
+
+        ``sites`` limits the search to those domains; empty means the whole web. Fewer
+        than ``count`` results means the list has ended. Errors are raised, not hidden.
+        """
         raise NotImplementedError
 
 
@@ -53,5 +60,10 @@ class StaticSearchProvider(SearchProvider):
     def __init__(self, results_by_query: dict[str, list[SearchResult]] | None = None):
         self.results_by_query = results_by_query or {}
 
-    def search(self, query: str, top_k: int) -> list[SearchResult]:
-        return self.results_by_query.get(query, [])[:top_k]
+    def search(
+        self, query: str, start: int, count: int, sites: tuple[str, ...] = ()
+    ) -> list[SearchResult]:
+        results = self.results_by_query.get(query, [])
+        if sites:
+            results = [r for r in results if r.domain in sites]
+        return results[start - 1 : start - 1 + count]

@@ -1,7 +1,7 @@
 # ⑥ Web Search Agent 스펙
 
 담당: 정유진
-상태: 설계 정리됨, 구현 전 (남은 항목은 §5 참조)
+상태: 1단계(수집)·2단계(집계) 구현됨. 일반 웹으로 넓히기, 실제 LLM, 네이버 검색 연결이 남음 (§5, `ai_web_search_agent/README.md`)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ---
