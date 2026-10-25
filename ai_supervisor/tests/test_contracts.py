@@ -270,6 +270,7 @@ def test_storeless_judge_response_rejects_safe() -> None:
 
     payload = deepcopy(base_judge_response())
     payload["items"][0]["risk_level"] = "safe"
+    payload["items"][0]["owner_answer_status"] = "complete"
     with pytest.raises(ValidationError, match="cannot be safe"):
         JudgeResponse.model_validate(payload)
 
