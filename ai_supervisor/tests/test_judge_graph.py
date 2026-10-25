@@ -176,6 +176,7 @@ class DelayedItemAnalyzer:
                 risk_level="caution",
                 evidence_basis="estimated" if selected else "unknown",
                 information_status="partial" if selected else "none",
+                owner_answer_status="none",
                 risk_ingredients=[],
                 matched_tags=[],
                 evidence_refs=[],

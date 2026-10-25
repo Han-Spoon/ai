@@ -549,6 +549,7 @@ def test_exact_complete_path_skips_ontology_and_bayesian() -> None:
 
     assert output.result.route == "exact_only"
     assert output.result.risk_level == "danger"
+    assert output.result.owner_answer_status == "complete"
     assert ontology.requests == []
     assert bayesian.requests == []
     assert tags.requests[0].ingredient_ids == [101]
@@ -563,6 +564,7 @@ def test_partial_exact_uses_db_ontology_and_bayesian_path() -> None:
 
     assert output.result.route == "db_bayes"
     assert output.result.risk_level == "danger"
+    assert output.result.owner_answer_status == "partial"
     assert [item.ingredient.ingredient_id for item in ontology.requests[0].confirmed_ingredients] == [101]
     assert bayesian.requests[0].ingredients[0].ingredient.ingredient_id == 102
     assert tags.requests[0].ingredient_ids == [101]

@@ -321,8 +321,15 @@ def _validate_item_output(
         raise JudgeGraphInvariantError(
             "item output cannot be safe while a safety warning is active"
         )
+    if result.risk_level == "safe" and result.owner_answer_status != "complete":
+        raise JudgeGraphInvariantError(
+            "item output cannot be safe without complete owner answers"
+        )
     if context.store_id is None and (
-        result.risk_level == "safe" or result.owner_cards or output.commands
+        result.risk_level == "safe"
+        or result.owner_answer_status != "none"
+        or result.owner_cards
+        or output.commands
     ):
         raise JudgeGraphInvariantError(
             "storeless item output cannot be safe or create owner/store output"
@@ -387,6 +394,7 @@ def _fallback_item_output(
             risk_level="caution",
             evidence_basis="unknown",
             information_status="partial",
+            owner_answer_status="none",
             risk_ingredients=[],
             matched_tags=[],
             evidence_refs=[],
