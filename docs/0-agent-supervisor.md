@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect·Item Graph DB·웹 경로 구현, 변형 검토·Judge 후처리·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect·Item Graph DB·웹·변형 검토 경로 구현, Judge 후처리·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -1101,10 +1101,9 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로와 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - `service.py`
-- Item Graph의 ⑦ `variant_review` 저장 명령 경로
 - Judge의 `high_risk_review → owner_request → finalize` 후처리
 - ①의 레거시 OCR 출력 변환 adapter와 ④~⑧의 실제 구현 adapter
 - `chains/`의 실제 LangChain/provider 연결
@@ -1183,7 +1182,7 @@ Router는 외부 호출이나 LLM 호출이 없는 순수 함수다.
 
 `variant_review`, `web_review`, `owner_request`는 모두 ⑦ adapter를 사용하지만 trace에서 원인을 구분하기 위해 node 이름을 나눈다. 질문 저장 명령을 만드는 `owner_request`는 메뉴별 Item Graph가 아니라 Judge Graph의 고위험 재검증 뒤에 한 번 실행한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
 
-현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 ⑦ `web_review`에 관리자 검토와 캐시 저장 operation을 함께 보내고, `store_id: null`이면 분석만 수행하고 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다. 아직 ⑦ 검토가 연결되지 않은 `runtime_tagged` 변형만 `variant_review_not_implemented` 메뉴 단위 오류로 종료한다.
+현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 런타임 변형의 ⑦ `variant_review` 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 런타임 변형은 ④의 `variant_suggestion`을 바꾸지 않고 ⑦ `create_review_item(review_origin: variant_suggestion)` operation으로 전달한 뒤 ⑤·⑧ 분석을 계속한다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 ⑦ `web_review`에 관리자 검토와 캐시 저장 operation을 함께 보내고, `store_id: null`이면 두 검토 경로 모두 분석만 수행하며 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다.
 
 ### 2-9. 메뉴 fan-out과 collect
 
@@ -2585,6 +2584,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 ```
 
 - `create_review_item.review_origin`은 `web_search | variant_suggestion`이다. `web_search`이면 `web_sources`가 비어 있지 않고 `variant_suggestion`은 `null`; `variant_suggestion`이면 `web_sources: []`이고 ④가 반환한 `variant_suggestion` 객체를 그대로 넣는다.
+- 런타임 변형의 `variant_review` node는 위 `create_review_item` operation 하나만 ⑦에 보낸다. ⑦ 응답은 `origin_node: ontology`, `source_type: ocr_variant_tag`, `evidence_class: soft`, `evidence_refs: [variant_suggestion.evidence.evidence_id]`를 보존해야 한다. `store_id: null`이면 ⑦을 호출하지 않지만 같은 변형 제안을 ⑤·⑧ 분석에서는 유지한다.
 - `create_review_item.review_notes`는 ⑥ 응답을 그대로 보존한다. 검토 화면에만 사용하며 위험 판정이나 확률 계산에는 사용하지 않는다.
 - `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. `create_owner_verification_request.item_id`와 `card_id`는 원래 `owner_cards[]`의 같은 값을 보존해 화면 카드와 저장 명령을 잇는다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
 - `create_owner_verification_request.question`은 한국어 `ko`와 Judge 요청 `locale`의 문구만 보존한다. 요청 언어가 한국어면 `ko` 하나만 보낸다.
@@ -2930,6 +2930,8 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 `high_risk_review.required`는 해당 메뉴가 고가 모델 재검증 후보인지 나타낸다. `reason_code`는 `anomaly | unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
 
 `probability_results`의 `anomaly_locked`는 ③이 override 거부한 재료가 ④를 거쳐 ⑤까지 온 값을 그대로 옮긴다. Supervisor나 ⑧이 이 값을 제거하지 않는다.
+
+`runtime_tagged`의 `variant_suggestion.suggested_ingredients[]`는 `proposed_variant_ingredients[]`로 옮기고 제안 근거 ID를 각 `evidence_refs`에 넣는다. 같은 재료를 ⑤ `probability_results[]`에도 중복해서 넣으면 ⑧의 위험 재료가 두 번 만들어지므로, `source: variant_suggested`인 ⑤ 결과는 확률 계산·scale 검증까지만 수행하고 ⑧ 경계에서는 제안 목록 하나로 합친다. 나머지 ⑤ 결과는 `probability_results[]`로 전달한다.
 
 ③의 3-State와 `expired`는 `confirmed_results[]`로 그대로 전달하며 boolean status로 축약하지 않는다. ④·⑤·⑥의 `warnings`와 Prepare의 같은 `item_id` 경고(`prepare_signals.warnings`, §2-1 Judge 3단계)도 요청 `warnings`에 누적한다. 다음 중 하나라도 있으면 SAFE를 허용하지 않는다.
 

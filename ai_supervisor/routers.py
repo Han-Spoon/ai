@@ -42,11 +42,11 @@ def route_after_exact(
 
 def route_after_ontology(
     response: OntologyResponse,
-) -> Literal["bayesian", "variant_pending", "web_search"]:
+) -> Literal["bayesian", "variant_review", "web_search"]:
     """Route the implemented DB path without silently skipping later phases."""
 
     if response.menu.variant_origin == "runtime_tagged":
-        return "variant_pending"
+        return "variant_review"
     if response.menu.exists_in_db or response.menu.base_menu_id is not None:
         return "bayesian"
     return "web_search"

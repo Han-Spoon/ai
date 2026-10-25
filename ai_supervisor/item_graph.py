@@ -1,4 +1,4 @@
-"""LangGraph orchestration for one menu's implemented DB and web paths."""
+"""LangGraph orchestration for one menu's DB, variant, and web paths."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from .contracts.decision import (
     DecisionResponse,
     DecisionTagObservation,
     LocalizedName,
+    ProposedVariantIngredient,
 )
 from .contracts.exact import ExactFeedbackRequest, ExactFeedbackResponse, ExactMenu
 from .contracts.external import ItemResult, PersistenceCommand, WebSource
@@ -59,7 +60,6 @@ from .contracts.web_search import (
     WebCollectResponse,
     WebMenu,
 )
-from .judge_graph import ItemAnalysisError
 from .routers import (
     route_after_exact,
     route_after_ontology,
@@ -108,7 +108,7 @@ class ItemGraphAnalyzer:
 
 
 def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
-    """Compile the documented DB and web paths for one menu."""
+    """Compile the documented DB, runtime-variant, and web paths."""
 
     web_search_slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
 
@@ -274,9 +274,13 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 "ontology cache command changed item scope"
             )
         route = route_after_ontology(response)
+        suggestion = response.variant_suggestion
         update: dict[str, Any] = {
             "ontology_response": response,
-            "evidence": list(response.evidence),
+            "evidence": [
+                *response.evidence,
+                *([suggestion.evidence] if suggestion is not None else []),
+            ],
             "commands": (
                 [response.cache_command]
                 if response.cache_command is not None
@@ -285,7 +289,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             "warnings": list(response.warnings),
             "errors": list(response.errors),
         }
-        if route == "bayesian":
+        if route in {"bayesian", "variant_review"}:
             update["route"] = (
                 "db_variant_bayes" if response.menu.is_variant else "db_bayes"
             )
@@ -293,6 +297,71 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
 
     def ontology_route(state: ItemState) -> str:
         return route_after_ontology(state["ontology_response"])
+
+    async def variant_review_node(
+        state: ItemState, runtime: Runtime[RunContext]
+    ) -> dict[str, Any]:
+        task = state["task"]
+        ontology: OntologyResponse = state["ontology_response"]
+        suggestion = ontology.variant_suggestion
+        if (
+            ontology.menu.variant_origin != "runtime_tagged"
+            or suggestion is None
+        ):
+            raise ItemGraphInvariantError(
+                "variant review requires one runtime variant suggestion"
+            )
+        if (
+            suggestion.base_menu_id != ontology.menu.base_menu_id
+            or suggestion.remain_token != ontology.menu.remain_token
+        ):
+            raise ItemGraphInvariantError(
+                "variant suggestion changed base menu identity"
+            )
+        if runtime.context.store_id is None:
+            return {}
+
+        context = runtime.context.node_context(
+            "item", task.prepared_item.item_id, include_store=True
+        )
+        request = DbUpdateRequest(
+            context=context,
+            operations=[
+                DbOperation(
+                    operation_id=(
+                        f"operation:{task.prepared_item.item_id}:variant-review"
+                    ),
+                    operation_type="create_review_item",
+                    payload=CreateReviewItemPayload(
+                        review_origin="variant_suggestion",
+                        menu=WebMenu(
+                            menu_id=None,
+                            normalized_menu_name=(
+                                task.prepared_item.normalized_menu_name
+                            ),
+                        ),
+                        web_sources=[],
+                        review_notes=[],
+                        variant_suggestion=suggestion,
+                    ),
+                )
+            ],
+            warnings=list(state.get("warnings", [])),
+            errors=list(state.get("errors", [])),
+        )
+        response = await dependencies.db_update.run(request)
+        _validate_db_update_response(request, response)
+        return {
+            "db_update_response": response,
+            "commands": [
+                PersistenceCommand.model_validate(
+                    command.model_dump(mode="python")
+                )
+                for command in response.commands
+            ],
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
+        }
 
     async def web_collect_node(
         state: ItemState, runtime: Runtime[RunContext]
@@ -677,7 +746,25 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 evidence_refs=result.evidence_refs,
             )
             for result in (bayesian.probabilities if bayesian else [])
+            if result.source != "variant_suggested"
         ]
+        proposed_variants = (
+            [
+                ProposedVariantIngredient(
+                    ingredient=ingredient.ingredient,
+                    constraint_tags=ingredient.constraint_tags,
+                    role=ingredient.role,
+                    source="variant_suggested",
+                    evidence_refs=[
+                        ontology.variant_suggestion.evidence.evidence_id
+                    ],
+                )
+                for ingredient in ontology.variant_suggestion.suggested_ingredients
+            ]
+            if ontology is not None
+            and ontology.variant_suggestion is not None
+            else []
+        )
         candidate = task.selection.selected_candidate
         menu = DecisionMenu(
             menu_id=candidate.menu_id if candidate else None,
@@ -692,7 +779,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             menu=menu,
             confirmed_results=confirmed_results,
             probability_results=probabilities,
-            proposed_variant_ingredients=[],
+            proposed_variant_ingredients=proposed_variants,
             risk_tag_observations=[
                 DecisionTagObservation(
                     tag=observation.tag,
@@ -710,13 +797,13 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             ),
             no_information=state.get("route") == "no_information",
             information_status=_information_status(
-                state, confirmed_results, probabilities
+                state, confirmed_results, probabilities, proposed_variants
             ),
             owner_interaction_allowed=runtime.context.store_id is not None,
             user_profile=task.user_profile,
             locale=task.locale,
             localized_names=_localized_names(
-                task, confirmed_results, probabilities
+                task, confirmed_results, probabilities, proposed_variants
             ),
             warnings=list(state.get("warnings", [])),
             errors=list(state.get("errors", [])),
@@ -795,17 +882,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         )
         return {"result": result, "analysis_output": output}
 
-    def pending_variant_node(state: ItemState) -> dict[str, Any]:
-        raise ItemAnalysisError(
-            "variant_review_not_implemented",
-            "런타임 변형 검토 경로는 7번 구현에서 연결됩니다.",
-            retryable=False,
-        )
-
     graph = StateGraph(ItemState, context_schema=RunContext)
     graph.add_node("prepare_item", prepare_item_node)
     graph.add_node("exact", exact_node)
     graph.add_node("ontology", ontology_node)
+    graph.add_node("variant_review", variant_review_node)
     graph.add_node("web_search", web_collect_node)
     graph.add_node("ingredient_mapping", ingredient_mapping_node)
     graph.add_node("web_aggregate", web_aggregate_node)
@@ -814,7 +895,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
     graph.add_node("tag_lookup", tag_lookup_node)
     graph.add_node("decision", decision_node)
     graph.add_node("finish_item", finish_item_node)
-    graph.add_node("variant_pending", pending_variant_node)
     graph.add_edge(START, "prepare_item")
     graph.add_conditional_edges(
         "prepare_item", start_route, {"exact": "exact", "ontology": "ontology"}
@@ -829,10 +909,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         ontology_route,
         {
             "bayesian": "bayesian",
-            "variant_pending": "variant_pending",
+            "variant_review": "variant_review",
             "web_search": "web_search",
         },
     )
+    graph.add_edge("variant_review", "bayesian")
     graph.add_conditional_edges(
         "web_search",
         web_collect_route,
@@ -990,7 +1071,7 @@ def _validate_db_update_response(
         command.item_id != request.context.item_id or command.card_id is not None
         for command in response.commands
     ):
-        raise ItemGraphInvariantError("Web DB commands changed item scope")
+        raise ItemGraphInvariantError("DB commands changed item scope")
     by_operation = {
         operation.operation_id: operation for operation in request.operations
     }
@@ -1003,24 +1084,43 @@ def _validate_db_update_response(
         if command_payload != source_payload:
             raise ItemGraphInvariantError("DB update changed operation payload")
         provenance = command.payload.provenance
-        expected_refs = (
-            [
-                source.evidence.evidence_id
-                for source in operation.payload.web_sources
-            ]
-            if operation.operation_type == "create_review_item"
-            else [
+        if operation.operation_type == "create_review_item":
+            payload = operation.payload
+            if payload.review_origin == "web_search":
+                expected_origin = "web_search"
+                expected_source_type = "web_search"
+                expected_refs = [
+                    source.evidence.evidence_id
+                    for source in payload.web_sources
+                ]
+            else:
+                if payload.variant_suggestion is None:
+                    raise ItemGraphInvariantError(
+                        "variant review operation omitted its suggestion"
+                    )
+                expected_origin = "ontology"
+                expected_source_type = "ocr_variant_tag"
+                expected_refs = [
+                    payload.variant_suggestion.evidence.evidence_id
+                ]
+        elif operation.operation_type == "save_web_search_cache":
+            expected_origin = "web_search"
+            expected_source_type = "web_search"
+            expected_refs = [
                 source.evidence.evidence_id
                 for source in operation.payload.sources
             ]
-        )
+        else:
+            raise ItemGraphInvariantError(
+                "Item Graph received an unsupported DB operation"
+            )
         if (
-            provenance.origin_node != "web_search"
-            or provenance.source_type != "web_search"
+            provenance.origin_node != expected_origin
+            or provenance.source_type != expected_source_type
             or provenance.evidence_class != "soft"
             or provenance.evidence_refs != expected_refs
         ):
-            raise ItemGraphInvariantError("DB update changed web provenance")
+            raise ItemGraphInvariantError("DB update changed operation provenance")
 
 
 def _unique_ingredient_names(sources: list[WebSource]) -> list[str]:
@@ -1060,10 +1160,11 @@ def _localized_names(
     task: ItemTask,
     confirmed: list[ConfirmedResult],
     probabilities: list[DecisionProbabilityResult],
+    proposed_variants: list[ProposedVariantIngredient],
 ) -> list[LocalizedName]:
     used_ids = {
         item.ingredient.ingredient_id
-        for item in [*confirmed, *probabilities]
+        for item in [*confirmed, *probabilities, *proposed_variants]
         if item.ingredient.ingredient_id is not None
     }
     return [
@@ -1081,6 +1182,7 @@ def _information_status(
     state: ItemState,
     confirmed: list[ConfirmedResult],
     probabilities: list[DecisionProbabilityResult],
+    proposed_variants: list[ProposedVariantIngredient],
 ) -> str:
     if state.get("route") == "no_information":
         return "none"
@@ -1091,7 +1193,7 @@ def _information_status(
         for warning in state.get("warnings", [])
     ):
         return "partial"
-    if not confirmed and not probabilities:
+    if not confirmed and not probabilities and not proposed_variants:
         return "partial"
     return "complete"
 
