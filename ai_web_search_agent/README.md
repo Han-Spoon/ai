@@ -9,16 +9,18 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 
 | 파일 | 내용 |
 |---|---|
+| `collect.py` | **1단계(수집)** `await WebCollectAgent(provider, reader).run(WebCollectRequest)` → `WebCollectResponse`. 우선 사이트 3곳을 `next_rank`부터 읽고, 이 메뉴의 레시피로 남은 글에서 재료 이름을 사전(규칙)과 LLM으로 뽑아 합친다(LLM 이름은 본문에 있을 때만). 빠진 글만큼 다음 결과를 더 읽어 유효 레시피 10개를 채운다. 시간 제한 7초(검색 3초·LLM 3초), 캐시 URL은 다시 세지 않음. LLM이 없거나 실패하면 모든 글을 남기고 사전 결과만 쓴 뒤 `web_llm_extraction_failed`. 새 레시피도 캐시도 없으면 `found: false` + `web_search_timeout` |
 | `aggregate.py` | **2단계(집계)** `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`. ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7 |
-| `providers.py` | 검색 도구 틀(`SearchProvider`)과 테스트용 `StaticSearchProvider` |
+| `providers.py` | 검색 도구 틀(`SearchProvider.search(query, start, count, sites)`: 한 검색 순위 목록의 `start`위부터 `count`개)과 테스트용 `StaticSearchProvider` |
 | `dictionary.py` | 1단계 재료 뽑기의 **규칙** 쪽. `find_ingredient_names(text)`가 재료 사전에 있는 이름을 글에 적힌 그대로 찾는다 (긴 이름 우선, 한 글자 재료는 단어 전체일 때만). 표준 재료로 맞추는 건 ④ |
 | `data/ingredient_dictionary.csv` | 재료 사전 (`surface`, `canonical_name`). 크롤링 표준 재료 324개 + 크롤링 레시피에서 두 번 이상 나온 원문 이름. `python -m ai_web_search_agent.build_dictionary`로 다시 만든다 |
 
 ## 아직 없는 것
 
-- **1단계(수집)**: 검색 → 이 메뉴의 레시피 글인지 판별 → 재료 뽑기 (⑥ §3). 재료 사전은 있음. 일반 웹으로 넓힐 때의 `next_rank` 기준(⑥ §5)은 네이버 연결(#254) 때 정합니다
+- **일반 웹으로 넓히기** (⑥ §2-3-1): 우선 사이트에서 10개를 못 채울 때. 그때 `next_rank`가 어느 검색의 순위인지(⑥ §5)를 정한 뒤 붙입니다. 지금은 우선 사이트만 읽습니다
+- **실제 LLM** (`RecipeReader` 구현): 모델·프롬프트 공통 규칙(`docs/agent-implementation-guide.md` §5)이 정해지면 붙입니다
 - **네이버 검색 연결** (#254)
-- **LLM**: 레시피 판별, 사전에 없는 재료 찾기, 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
+- **LLM 검토 문구**: 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
 
 옛 코드(룰엔진 결과에 웹 태그를 덧붙이고 SQLite에 저장하던 구조, Tavily 검색, CLI)는 새 설계와 맞지 않아 지웠습니다.
 

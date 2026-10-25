@@ -15,8 +15,10 @@ def test_static_provider_returns_canned_results_up_to_top_k() -> None:
         for i in range(5)
     ]
     provider = StaticSearchProvider({"김치찌개 레시피": results})
-    assert provider.search("김치찌개 레시피", 3) == results[:3]
-    assert provider.search("없는 검색어", 3) == []
+    assert provider.search("김치찌개 레시피", 1, 3) == results[:3]
+    assert provider.search("김치찌개 레시피", 4, 3) == results[3:5]
+    assert provider.search("김치찌개 레시피", 1, 3, sites=("wtable.co.kr",)) == []
+    assert provider.search("없는 검색어", 1, 3) == []
     assert results[0].domain == "10000recipe.com"
 
 
