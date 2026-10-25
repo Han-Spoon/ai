@@ -1,7 +1,7 @@
 # ⓪ Supervisor Agent 스펙
 
 담당: 박다은
-상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect·Item Graph DB 경로 구현, 웹/저장·Judge 후처리·운영값은 후속 구현/협의 중)
+상태: 구현 기준안 (Prepare/Judge 2-phase·canonical 계약·hash 검증·Prepare Graph·Judge fan-out/collect·Item Graph DB·웹 경로 구현, 변형 검토·Judge 후처리·운영값은 후속 구현/협의 중)
 상위 문서: `caution-multi-agent-architecture.md`, `caution-db-schema.md`
 
 ## 문서 읽는 방법
@@ -1101,10 +1101,10 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴에 대해 `prepare_item → exact → ontology → bayesian → tag_lookup → decision → finish_item` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로와 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - `service.py`
-- Item Graph의 ⑥ 웹 검색 경로와 ⑦ `variant_review`·`web_review` 저장 명령 경로
+- Item Graph의 ⑦ `variant_review` 저장 명령 경로
 - Judge의 `high_risk_review → owner_request → finalize` 후처리
 - ①의 레거시 OCR 출력 변환 adapter와 ④~⑧의 실제 구현 adapter
 - `chains/`의 실제 LangChain/provider 연결
@@ -1183,7 +1183,7 @@ Router는 외부 호출이나 LLM 호출이 없는 순수 함수다.
 
 `variant_review`, `web_review`, `owner_request`는 모두 ⑦ adapter를 사용하지만 trace에서 원인을 구분하기 위해 node 이름을 나눈다. 질문 저장 명령을 만드는 `owner_request`는 메뉴별 Item Graph가 아니라 Judge Graph의 고위험 재검증 뒤에 한 번 실행한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
 
-현재 구현된 DB 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·④ `lookup_tags`·⑧은 canonical `NodeAdapter`로 주입한다. ⑥이 필요한 미등록 메뉴와 ⑦ 검토가 필요한 `runtime_tagged` 변형은 다음 단계를 몰래 건너뛰지 않고 각각 `web_path_not_implemented`, `variant_review_not_implemented` 메뉴 단위 오류로 종료한다. Judge는 이를 해당 메뉴의 `partial_failed`·CAUTION으로 격리한다.
+현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 ⑦ `web_review`에 관리자 검토와 캐시 저장 operation을 함께 보내고, `store_id: null`이면 분석만 수행하고 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다. 아직 ⑦ 검토가 연결되지 않은 `runtime_tagged` 변형만 `variant_review_not_implemented` 메뉴 단위 오류로 종료한다.
 
 ### 2-9. 메뉴 fan-out과 collect
 
@@ -1906,6 +1906,81 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 `ingredients_snapshot`은 확인 재료를 빼기 전 전체 확장 목록(`ingredients[]`와 같은 원소, `anomaly_locked`·확인값 제외)이다. `store_id`는 `context.store_id`를 쓴다.
 
 ④가 내는 warning code는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조한 원본 메뉴가 없음)다. 앞의 네 개는 §1-2 표대로 `forces_caution: true`이고, `empty_recipe`·`broken_base_menu`도 재료를 놓칠 수 있는 상태라 `forces_caution: true`로 보낸다.
+
+#### 웹 재료 매핑 — `IngredientMappingRequest` / `IngredientMappingResponse`
+
+⑥ 1단계가 반환한 신규 출처와 같은 `item_id`의 웹 캐시에 있는 원문 재료명을 합쳐, 중복을 제거한 최초 등장 순서로 ④ `map_ingredients`에 보낸다.
+
+```json
+{
+  "context": {
+    "schema_version": "3.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "item",
+    "item_id": "scan-123:0"
+  },
+  "ingredient_names": ["소고기", "마라소스"],
+  "ingredient_graph": {
+    "status": "ok",
+    "ingredients": [
+      {
+        "ingredient_id": 120,
+        "canonical_name": "소고기",
+        "name_normalized": "소고기",
+        "localized_name": "beef",
+        "taxonomy_category": "base"
+      }
+    ],
+    "aliases": [],
+    "tags": [{"ingredient_id": 120, "tag_code": "is_beef"}],
+    "compositions": [],
+    "composition_tags": []
+  },
+  "warnings": [],
+  "errors": []
+}
+```
+
+```json
+{
+  "context": {
+    "schema_version": "3.0",
+    "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+    "scan_session_id": "scan-123",
+    "store_id": 123456,
+    "call_scope": "item",
+    "item_id": "scan-123:0"
+  },
+  "results": [
+    {
+      "input_name": "소고기",
+      "ingredient": {"ingredient_id": 120, "canonical_name": "소고기"},
+      "constraint_tags": ["is_beef"],
+      "role": "identity"
+    },
+    {
+      "input_name": "마라소스",
+      "ingredient": {"ingredient_id": null, "canonical_name": "마라소스"},
+      "constraint_tags": [],
+      "role": null
+    }
+  ],
+  "warnings": [
+    {
+      "code": "unmapped_constraint_tags",
+      "node": "ontology",
+      "item_id": "scan-123:0",
+      "message": "표준 재료로 맞추지 못한 웹 재료가 있습니다.",
+      "forces_caution": true
+    }
+  ],
+  "errors": []
+}
+```
+
+`ingredient_names`와 `results[].input_name`은 중복 없이 같은 순서를 유지하고, ④는 요청한 이름마다 결과를 정확히 하나씩 반환한다. 매핑하지 못한 이름도 버리지 않고 `ingredient_id: null`, 원문 이름, 빈 태그로 남기며 `unmapped_constraint_tags` warning을 붙인다. Supervisor는 결과를 원래 출처별 재료 위치에 다시 넣어 ⑥ 2단계 `mapped_sources`를 만든다. `role`을 판단할 근거가 없으면 `null`이다. `ingredient_graph`만 사용하며 판정 중 DB를 조회하지 않는다.
 
 #### 확인값 태그 조회 — `TagLookupRequest` / `TagLookupResponse`
 

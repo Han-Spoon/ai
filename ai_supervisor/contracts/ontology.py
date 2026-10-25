@@ -171,6 +171,43 @@ class OntologyResponse(StrictModel):
         return self
 
 
+class IngredientMappingRequest(StrictModel):
+    context: NodeContext
+    ingredient_names: list[NonEmptyString]
+    ingredient_graph: IngredientGraph
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
+
+    @model_validator(mode="after")
+    def validate_request(self) -> "IngredientMappingRequest":
+        require_item_context(self.context)
+        ensure_unique(self.ingredient_names, "ingredient mapping names")
+        return self
+
+
+class IngredientMappingResult(StrictModel):
+    input_name: NonEmptyString
+    ingredient: IngredientRef
+    constraint_tags: list[ConstraintTag]
+    role: IngredientRole | None
+
+
+class IngredientMappingResponse(StrictModel):
+    context: NodeContext
+    results: list[IngredientMappingResult]
+    warnings: list[NodeWarning]
+    errors: list[NodeError]
+
+    @model_validator(mode="after")
+    def validate_response(self) -> "IngredientMappingResponse":
+        require_item_context(self.context)
+        ensure_unique(
+            [result.input_name for result in self.results],
+            "ingredient mapping result names",
+        )
+        return self
+
+
 class TagLookupRequest(StrictModel):
     context: NodeContext
     ingredient_ids: list[PositiveInt]

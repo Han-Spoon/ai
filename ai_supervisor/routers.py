@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from .contracts.exact import ExactFeedbackResponse
 from .contracts.external import ScanQuality
 from .contracts.ontology import OntologyResponse
+from .contracts.web_search import WebAggregateResponse, WebCollectResponse
 
 if TYPE_CHECKING:
     from .state import ItemTask
@@ -41,11 +42,29 @@ def route_after_exact(
 
 def route_after_ontology(
     response: OntologyResponse,
-) -> Literal["bayesian", "variant_pending", "web_pending"]:
+) -> Literal["bayesian", "variant_pending", "web_search"]:
     """Route the implemented DB path without silently skipping later phases."""
 
     if response.menu.variant_origin == "runtime_tagged":
         return "variant_pending"
     if response.menu.exists_in_db or response.menu.base_menu_id is not None:
         return "bayesian"
-    return "web_pending"
+    return "web_search"
+
+
+def route_after_web_collect(
+    response: WebCollectResponse, *, has_cached_sources: bool
+) -> Literal["ingredient_mapping", "decision_no_information"]:
+    """Use cached recipes even when this scan did not collect a new source."""
+
+    return (
+        "ingredient_mapping"
+        if response.sources or has_cached_sources
+        else "decision_no_information"
+    )
+
+
+def route_after_web_aggregate(
+    response: WebAggregateResponse,
+) -> Literal["web_review", "decision_no_information"]:
+    return "web_review" if response.found else "decision_no_information"

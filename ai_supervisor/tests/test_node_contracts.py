@@ -10,6 +10,7 @@ from ai_supervisor.contracts import (
     DbUpdateRequest,
     DecisionRequest,
     ExactFeedbackRequest,
+    IngredientMappingRequest,
     OcrRequest,
     OntologyRequest,
     TagLookupRequest,
@@ -167,6 +168,31 @@ def test_tag_lookup_contract_is_item_scoped_and_rejects_duplicate_ids() -> None:
     payload["ingredient_ids"] = [101, 101]
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         TagLookupRequest.model_validate(payload)
+
+
+def test_ingredient_mapping_contract_rejects_duplicate_names() -> None:
+    payload = {
+        "context": item_context(None),
+        "ingredient_names": ["진간장", "소고기"],
+        "ingredient_graph": {
+            "status": "not_found",
+            "ingredients": [],
+            "aliases": [],
+            "tags": [],
+            "compositions": [],
+            "composition_tags": [],
+        },
+        "warnings": [],
+        "errors": [],
+    }
+    assert IngredientMappingRequest.model_validate(payload).ingredient_names == [
+        "진간장",
+        "소고기",
+    ]
+
+    payload["ingredient_names"] = ["진간장", "진간장"]
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        IngredientMappingRequest.model_validate(payload)
 
 
 def test_bayesian_contract_rejects_removed_cluster_and_global_priors() -> None:

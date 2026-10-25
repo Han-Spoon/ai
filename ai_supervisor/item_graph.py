@@ -1,10 +1,12 @@
-"""LangGraph orchestration for one menu's implemented DB analysis path."""
+"""LangGraph orchestration for one menu's implemented DB and web paths."""
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -19,6 +21,13 @@ from .contracts.bayesian import (
     BayesianResponse,
 )
 from .contracts.common import NodeError, NodeWarning
+from .contracts.db_update import (
+    CreateReviewItemPayload,
+    DbOperation,
+    DbUpdateRequest,
+    DbUpdateResponse,
+    SaveWebSearchCachePayload,
+)
 from .contracts.decision import (
     ConfirmedResult,
     DecisionMenu,
@@ -29,17 +38,35 @@ from .contracts.decision import (
     LocalizedName,
 )
 from .contracts.exact import ExactFeedbackRequest, ExactFeedbackResponse, ExactMenu
-from .contracts.external import ItemResult
+from .contracts.external import ItemResult, PersistenceCommand, WebSource
 from .contracts.ontology import (
     ConfirmedIngredient,
+    IngredientMappingRequest,
+    IngredientMappingResponse,
     OntologyMenuInput,
     OntologyRequest,
     OntologyResponse,
     TagLookupRequest,
     TagLookupResponse,
 )
+from .contracts.web_search import (
+    MappedIngredient,
+    MappedSource,
+    WebAggregateRequest,
+    WebAggregateResponse,
+    WebCollectMenu,
+    WebCollectRequest,
+    WebCollectResponse,
+    WebMenu,
+)
 from .judge_graph import ItemAnalysisError
-from .routers import route_after_exact, route_after_ontology, route_item_start
+from .routers import (
+    route_after_exact,
+    route_after_ontology,
+    route_after_web_aggregate,
+    route_after_web_collect,
+    route_item_start,
+)
 from .state import ItemAnalysisOutput, ItemState, ItemTask, RunContext
 
 
@@ -53,7 +80,18 @@ class ItemGraphDependencies:
     bayesian: NodeAdapter[BayesianRequest, BayesianResponse]
     tag_lookup: NodeAdapter[TagLookupRequest, TagLookupResponse]
     decision: NodeAdapter[DecisionRequest, DecisionResponse]
+    web_collect: NodeAdapter[WebCollectRequest, WebCollectResponse]
+    ingredient_mapping: NodeAdapter[
+        IngredientMappingRequest, IngredientMappingResponse
+    ]
+    web_aggregate: NodeAdapter[WebAggregateRequest, WebAggregateResponse]
+    db_update: NodeAdapter[DbUpdateRequest, DbUpdateResponse]
+    max_concurrent_web_searches: int = 5
     now_factory: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.max_concurrent_web_searches <= 5:
+            raise ValueError("max_concurrent_web_searches must be between 1 and 5")
 
 
 class ItemGraphAnalyzer:
@@ -70,7 +108,17 @@ class ItemGraphAnalyzer:
 
 
 def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
-    """Compile ③ → ④ → ⑤ → tag lookup → ⑧ for one menu."""
+    """Compile the documented DB and web paths for one menu."""
+
+    web_search_slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+    def current_web_search_slots() -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if loop not in web_search_slots:
+            web_search_slots[loop] = asyncio.Semaphore(
+                dependencies.max_concurrent_web_searches
+            )
+        return web_search_slots[loop]
 
     def prepare_item_node(
         state: ItemState, runtime: Runtime[RunContext]
@@ -246,28 +294,237 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
     def ontology_route(state: ItemState) -> str:
         return route_after_ontology(state["ontology_response"])
 
+    async def web_collect_node(
+        state: ItemState, runtime: Runtime[RunContext]
+    ) -> dict[str, Any]:
+        task = state["task"]
+        cache = task.knowledge.web_search_cache
+        warnings = list(state.get("warnings", []))
+        if cache.status == "unavailable":
+            warnings.append(_slice_warning(task, "web_search_cache"))
+        context = runtime.context.node_context(
+            "item", task.prepared_item.item_id, include_store=True
+        )
+        request = WebCollectRequest(
+            context=context,
+            menu=WebCollectMenu(
+                menu_id=None,
+                normalized_menu_name=task.prepared_item.normalized_menu_name,
+                locale_hint=task.prepared_item.locale_hint,
+            ),
+            max_sources=10,
+            cached_sources=list(cache.cached_sources),
+            next_rank=cache.next_rank,
+            warnings=_dedupe_signals(warnings),
+            errors=list(state.get("errors", [])),
+        )
+        async with current_web_search_slots():
+            response = await dependencies.web_collect.run(request)
+        _validate_web_collect_response(request, response)
+        combined_sources = [*request.cached_sources, *response.sources]
+        _validate_web_sources(combined_sources)
+        update: dict[str, Any] = {
+            "web_collect_response": response,
+            "evidence": [source.evidence for source in combined_sources],
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
+        }
+        if not combined_sources:
+            update["route"] = "no_information"
+        return update
+
+    def web_collect_route(state: ItemState) -> str:
+        task = state["task"]
+        return route_after_web_collect(
+            state["web_collect_response"],
+            has_cached_sources=bool(task.knowledge.web_search_cache.cached_sources),
+        )
+
+    async def ingredient_mapping_node(
+        state: ItemState, runtime: Runtime[RunContext]
+    ) -> dict[str, Any]:
+        task = state["task"]
+        collect: WebCollectResponse = state["web_collect_response"]
+        sources = [
+            *task.knowledge.web_search_cache.cached_sources,
+            *collect.sources,
+        ]
+        names = _unique_ingredient_names(sources)
+        context = runtime.context.node_context(
+            "item", task.prepared_item.item_id, include_store=True
+        )
+        request = IngredientMappingRequest(
+            context=context,
+            ingredient_names=names,
+            ingredient_graph=task.ingredient_graph,
+            warnings=list(state.get("warnings", [])),
+            errors=list(state.get("errors", [])),
+        )
+        response = await dependencies.ingredient_mapping.run(request)
+        _validate_ingredient_mapping_response(request, response)
+        return {
+            "ingredient_mapping_response": response,
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
+        }
+
+    async def web_aggregate_node(
+        state: ItemState, runtime: Runtime[RunContext]
+    ) -> dict[str, Any]:
+        task = state["task"]
+        collect: WebCollectResponse = state["web_collect_response"]
+        mapping: IngredientMappingResponse = state["ingredient_mapping_response"]
+        mapped_by_name = {result.input_name: result for result in mapping.results}
+        sources: list[MappedSource] = []
+        for origin, raw_sources in (
+            ("cache", task.knowledge.web_search_cache.cached_sources),
+            ("new", collect.sources),
+        ):
+            for source in raw_sources:
+                sources.append(
+                    MappedSource(
+                        source_url=source.source_url,
+                        title=source.title,
+                        source_origin=origin,
+                        corpus=_web_corpus(source.source_url),
+                        evidence_id=source.evidence.evidence_id,
+                        ingredients=[
+                            MappedIngredient(
+                                ingredient=mapped_by_name[
+                                    ingredient.canonical_name
+                                ].ingredient,
+                                constraint_tags=mapped_by_name[
+                                    ingredient.canonical_name
+                                ].constraint_tags,
+                                role=mapped_by_name[
+                                    ingredient.canonical_name
+                                ].role,
+                            )
+                            for ingredient in source.ingredients
+                        ],
+                    )
+                )
+        context = runtime.context.node_context(
+            "item", task.prepared_item.item_id, include_store=True
+        )
+        request = WebAggregateRequest(
+            context=context,
+            menu=WebMenu(
+                menu_id=None,
+                normalized_menu_name=task.prepared_item.normalized_menu_name,
+            ),
+            mapped_sources=sources,
+            warnings=list(state.get("warnings", [])),
+            errors=list(state.get("errors", [])),
+        )
+        response = await dependencies.web_aggregate.run(request)
+        _validate_web_aggregate_response(request, response)
+        evidence_ids = {source.evidence_id for source in sources}
+        if any(
+            ref not in evidence_ids
+            for ingredient in response.ingredients
+            for ref in ingredient.evidence_refs
+        ):
+            raise ItemGraphInvariantError(
+                "Web aggregate evidence_refs must resolve to web sources"
+            )
+        update: dict[str, Any] = {
+            "web_aggregate_response": response,
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
+        }
+        if response.found:
+            update["route"] = "web_bayes"
+        else:
+            update["route"] = "no_information"
+        return update
+
+    def web_aggregate_route(state: ItemState) -> str:
+        return route_after_web_aggregate(state["web_aggregate_response"])
+
+    async def web_review_node(
+        state: ItemState, runtime: Runtime[RunContext]
+    ) -> dict[str, Any]:
+        task = state["task"]
+        collect: WebCollectResponse = state["web_collect_response"]
+        aggregate: WebAggregateResponse = state["web_aggregate_response"]
+        if runtime.context.store_id is None or not collect.sources:
+            return {}
+        context = runtime.context.node_context(
+            "item", task.prepared_item.item_id, include_store=True
+        )
+        menu = WebMenu(
+            menu_id=None,
+            normalized_menu_name=task.prepared_item.normalized_menu_name,
+        )
+        operations = [
+            DbOperation(
+                operation_id=f"operation:{task.prepared_item.item_id}:web-review",
+                operation_type="create_review_item",
+                payload=CreateReviewItemPayload(
+                    review_origin="web_search",
+                    menu=menu,
+                    web_sources=list(collect.sources),
+                    review_notes=list(aggregate.review_notes),
+                    variant_suggestion=None,
+                ),
+            ),
+            DbOperation(
+                operation_id=f"operation:{task.prepared_item.item_id}:web-cache",
+                operation_type="save_web_search_cache",
+                payload=SaveWebSearchCachePayload(
+                    normalized_menu_name=task.prepared_item.normalized_menu_name,
+                    original_menu_name=task.prepared_item.raw_menu_name,
+                    search_status="searched",
+                    sources=list(collect.sources),
+                    next_rank=collect.next_rank,
+                    searched_at=dependencies.now_factory(),
+                ),
+            ),
+        ]
+        request = DbUpdateRequest(
+            context=context,
+            operations=operations,
+            warnings=list(state.get("warnings", [])),
+            errors=list(state.get("errors", [])),
+        )
+        response = await dependencies.db_update.run(request)
+        _validate_db_update_response(request, response)
+        return {
+            "db_update_response": response,
+            "commands": [
+                PersistenceCommand.model_validate(
+                    command.model_dump(mode="python")
+                )
+                for command in response.commands
+            ],
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
+        }
+
     async def bayesian_node(
         state: ItemState, runtime: Runtime[RunContext]
     ) -> dict[str, Any]:
         task = state["task"]
         selected = task.knowledge.selected
-        if selected is None:
+        ontology: OntologyResponse = state["ontology_response"]
+        web: WebAggregateResponse | None = state.get("web_aggregate_response")
+        if selected is None and web is None:
             raise ItemGraphInvariantError(
                 "DB Bayesian path requires selected candidate priors"
             )
-        ontology: OntologyResponse = state["ontology_response"]
         context = runtime.context.node_context(
             "item", task.prepared_item.item_id, include_store=True
         )
         warnings = list(state.get("warnings", []))
-        if selected.priors.status == "unavailable":
+        if selected is not None and selected.priors.status == "unavailable":
             warnings.append(_slice_warning(task, "priors"))
         if task.source_reliability.status == "unavailable":
             warnings.append(_slice_warning(task, "source_reliability"))
-        request = BayesianRequest(
-            context=context,
-            menu_category_id=ontology.menu.menu_category_id,
-            ingredients=[
+        ingredients = (
+            list(web.ingredients)
+            if web is not None
+            else [
                 BayesianIngredient(
                     ingredient=ingredient.ingredient,
                     constraint_tags=ingredient.constraint_tags,
@@ -281,8 +538,20 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     evidence_refs=ingredient.evidence_refs,
                 )
                 for ingredient in ontology.ingredients
-            ],
-            priors=BayesianPriors.model_validate(
+            ]
+        )
+        priors = (
+            BayesianPriors.model_validate(
+                {
+                    "status": "not_found",
+                    "store": [],
+                    "cluster": [],
+                    "global": [],
+                    "evidence": [],
+                }
+            )
+            if web is not None
+            else BayesianPriors.model_validate(
                 {
                     "status": selected.priors.status,
                     "store": selected.priors.store,
@@ -290,7 +559,13 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     "global": [],
                     "evidence": selected.priors.evidence,
                 }
-            ),
+            )
+        )
+        request = BayesianRequest(
+            context=context,
+            menu_category_id=ontology.menu.menu_category_id,
+            ingredients=ingredients,
+            priors=priors,
             source_reliability=task.source_reliability,
             warnings=_dedupe_signals(warnings),
             errors=list(state.get("errors", [])),
@@ -299,7 +574,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         _validate_bayesian_response(request, response)
         return {
             "bayesian_response": response,
-            "evidence": list(selected.priors.evidence),
+            "evidence": (
+                list(selected.priors.evidence)
+                if selected is not None and web is None
+                else []
+            ),
             "warnings": list(response.warnings),
             "errors": list(response.errors),
         }
@@ -350,7 +629,20 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         exact = state.get("exact_response")
         ontology = state.get("ontology_response")
         bayesian = state.get("bayesian_response")
-        tag_lookup: TagLookupResponse = state["tag_lookup_response"]
+        tag_lookup: TagLookupResponse | None = state.get("tag_lookup_response")
+        if tag_lookup is None:
+            if exact is not None and exact.confirmations:
+                raise ItemGraphInvariantError(
+                    "exact confirmations require tag lookup before decision"
+                )
+            tag_lookup = TagLookupResponse(
+                context=runtime.context.node_context(
+                    "item", task.prepared_item.item_id, include_store=True
+                ),
+                results=[],
+                warnings=list(state.get("warnings", [])),
+                errors=list(state.get("errors", [])),
+            )
         tags_by_id = {
             result.ingredient_id: result for result in tag_lookup.results
         }
@@ -416,7 +708,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             owner_question_states=(
                 list(exact.owner_question_states) if exact else []
             ),
-            no_information=False,
+            no_information=state.get("route") == "no_information",
             information_status=_information_status(
                 state, confirmed_results, probabilities
             ),
@@ -436,11 +728,13 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         if response.information_status != request.information_status:
             raise ItemGraphInvariantError("Decision changed information_status")
         if response.risk_level == "safe" and (
-            request.information_status != "complete"
+            request.no_information
+            or request.information_status != "complete"
             or any(warning.forces_caution for warning in request.warnings)
             or bool(request.probability_results)
             or bool(request.proposed_variant_ingredients)
             or not request.confirmed_results
+            or not request.owner_interaction_allowed
             or any(
                 result.anomaly_locked
                 for result in request.probability_results
@@ -508,23 +802,19 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             retryable=False,
         )
 
-    def pending_web_node(state: ItemState) -> dict[str, Any]:
-        raise ItemAnalysisError(
-            "web_path_not_implemented",
-            "DB에 없는 메뉴의 웹 검색 경로는 6번 구현에서 연결됩니다.",
-            retryable=False,
-        )
-
     graph = StateGraph(ItemState, context_schema=RunContext)
     graph.add_node("prepare_item", prepare_item_node)
     graph.add_node("exact", exact_node)
     graph.add_node("ontology", ontology_node)
+    graph.add_node("web_search", web_collect_node)
+    graph.add_node("ingredient_mapping", ingredient_mapping_node)
+    graph.add_node("web_aggregate", web_aggregate_node)
+    graph.add_node("web_review", web_review_node)
     graph.add_node("bayesian", bayesian_node)
     graph.add_node("tag_lookup", tag_lookup_node)
     graph.add_node("decision", decision_node)
     graph.add_node("finish_item", finish_item_node)
     graph.add_node("variant_pending", pending_variant_node)
-    graph.add_node("web_pending", pending_web_node)
     graph.add_edge(START, "prepare_item")
     graph.add_conditional_edges(
         "prepare_item", start_route, {"exact": "exact", "ontology": "ontology"}
@@ -540,9 +830,27 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         {
             "bayesian": "bayesian",
             "variant_pending": "variant_pending",
-            "web_pending": "web_pending",
+            "web_search": "web_search",
         },
     )
+    graph.add_conditional_edges(
+        "web_search",
+        web_collect_route,
+        {
+            "ingredient_mapping": "ingredient_mapping",
+            "decision_no_information": "decision",
+        },
+    )
+    graph.add_edge("ingredient_mapping", "web_aggregate")
+    graph.add_conditional_edges(
+        "web_aggregate",
+        web_aggregate_route,
+        {
+            "web_review": "web_review",
+            "decision_no_information": "decision",
+        },
+    )
+    graph.add_edge("web_review", "bayesian")
     graph.add_edge("bayesian", "tag_lookup")
     graph.add_edge("tag_lookup", "decision")
     graph.add_edge("decision", "finish_item")
@@ -608,6 +916,135 @@ def _validate_tag_lookup_response(
         )
 
 
+def _validate_web_collect_response(
+    request: WebCollectRequest, response: WebCollectResponse
+) -> None:
+    _validate_response_signals(request, response, "Web collect")
+    if (
+        response.menu.menu_id is not None
+        or response.menu.normalized_menu_name
+        != request.menu.normalized_menu_name
+    ):
+        raise ItemGraphInvariantError("Web collect changed menu identity")
+    if response.next_rank < request.next_rank:
+        raise ItemGraphInvariantError("Web collect moved next_rank backwards")
+    cached_urls = {source.source_url for source in request.cached_sources}
+    if any(source.source_url in cached_urls for source in response.sources):
+        raise ItemGraphInvariantError("Web collect returned an already cached source")
+
+
+def _validate_web_sources(sources: list[WebSource]) -> None:
+    urls = [source.source_url for source in sources]
+    evidence_ids = [source.evidence.evidence_id for source in sources]
+    if len(urls) != len(set(urls)) or len(evidence_ids) != len(set(evidence_ids)):
+        raise ItemGraphInvariantError("Web sources must have unique URLs and evidence IDs")
+    for source in sources:
+        evidence = source.evidence
+        if (
+            evidence.evidence_class != "soft"
+            or evidence.source_type != "web_search"
+            or evidence.verification_status != "pending_review"
+            or evidence.reliability_weight is not None
+        ):
+            raise ItemGraphInvariantError("Web source evidence is not pending soft evidence")
+        if any(item.ingredient_id is not None for item in source.ingredients):
+            raise ItemGraphInvariantError(
+                "Web collect sources must contain unmapped ingredient names"
+            )
+
+
+def _validate_ingredient_mapping_response(
+    request: IngredientMappingRequest, response: IngredientMappingResponse
+) -> None:
+    _validate_response_signals(request, response, "Ingredient mapping")
+    if [result.input_name for result in response.results] != request.ingredient_names:
+        raise ItemGraphInvariantError(
+            "Ingredient mapping must return every requested name in order"
+        )
+
+
+def _validate_web_aggregate_response(
+    request: WebAggregateRequest, response: WebAggregateResponse
+) -> None:
+    _validate_response_signals(request, response, "Web aggregate")
+    if response.menu != request.menu:
+        raise ItemGraphInvariantError("Web aggregate changed menu identity")
+
+
+def _validate_db_update_response(
+    request: DbUpdateRequest, response: DbUpdateResponse
+) -> None:
+    _validate_response_signals(request, response, "DB update")
+    operations = {
+        operation.operation_id: operation.operation_type
+        for operation in request.operations
+    }
+    actual = {
+        command.operation_id: command.action for command in response.commands
+    }
+    if len(response.commands) != len(request.operations) or actual != operations:
+        raise ItemGraphInvariantError(
+            "DB update must return one matching command per operation"
+        )
+    if any(
+        command.item_id != request.context.item_id or command.card_id is not None
+        for command in response.commands
+    ):
+        raise ItemGraphInvariantError("Web DB commands changed item scope")
+    by_operation = {
+        operation.operation_id: operation for operation in request.operations
+    }
+    for command in response.commands:
+        operation = by_operation[command.operation_id]
+        source_payload = operation.payload.model_dump(mode="json")
+        command_payload = command.payload.model_dump(
+            mode="json", exclude={"provenance"}
+        )
+        if command_payload != source_payload:
+            raise ItemGraphInvariantError("DB update changed operation payload")
+        provenance = command.payload.provenance
+        expected_refs = (
+            [
+                source.evidence.evidence_id
+                for source in operation.payload.web_sources
+            ]
+            if operation.operation_type == "create_review_item"
+            else [
+                source.evidence.evidence_id
+                for source in operation.payload.sources
+            ]
+        )
+        if (
+            provenance.origin_node != "web_search"
+            or provenance.source_type != "web_search"
+            or provenance.evidence_class != "soft"
+            or provenance.evidence_refs != expected_refs
+        ):
+            raise ItemGraphInvariantError("DB update changed web provenance")
+
+
+def _unique_ingredient_names(sources: list[WebSource]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        for ingredient in source.ingredients:
+            if ingredient.canonical_name not in seen:
+                names.append(ingredient.canonical_name)
+                seen.add(ingredient.canonical_name)
+    return names
+
+
+def _web_corpus(source_url: str) -> str:
+    domain = urlparse(source_url).netloc.lower().removeprefix("www.")
+    if domain == "10000recipe.com" or domain.endswith(".10000recipe.com"):
+        return "10000recipe"
+    if domain == "wtable.co.kr" or domain.endswith(".wtable.co.kr"):
+        return "wtable"
+    if domain == "semie.cooking" or domain.endswith(".semie.cooking"):
+        return "semie"
+    return "web_search"
+
+
 def _menu_ambiguity_flags(
     task: ItemTask, ontology: OntologyResponse | None
 ) -> list[str]:
@@ -645,6 +1082,8 @@ def _information_status(
     confirmed: list[ConfirmedResult],
     probabilities: list[DecisionProbabilityResult],
 ) -> str:
+    if state.get("route") == "no_information":
+        return "none"
     if state.get("errors"):
         return "partial"
     if any(
