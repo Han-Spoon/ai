@@ -236,7 +236,7 @@ erDiagram
 | `previous_question_id` 🔶 신규 | 직전 질문 `id` (같은 테이블 FK). 1차 질문은 NULL |
 | `confirmation_state` 🔶 신규 | 답을 처리한 결과 `confirmed` / `needs_second` / `needs_third`. 답 전에는 NULL. 다음 Judge의 `owner_question_states[]` 원천 (⓪ §4-2) |
 | `recipe_probability` 🔶 신규 | 질문을 만들 때의 ⑤ `posterior_mean` (0~1). 재료 질문만, 플래그 질문은 NULL. 답을 확정할 때 이상 답변 판정에 쓴다 (⑦ §2-3) |
-| `question_text` | 언어별 문구 (🔶 7개 언어, §6 7번) |
+| `question_text` | 언어별 문구. 실제로는 **한국어(`ko`) + 사용자 언어** 두 개만 저장한다 (10/14 회의). 허용 언어 코드는 7개 (🔶 §6 7번) |
 | `status` | `pending` / `answered` / `expired` |
 | `answer` | `present` / `absent` / `unknown` |
 | `resolved_confirmation_id` 🔶 | 재료 답변이 확정값으로 반영되면 채움. 1차 답처럼 아직 확정되지 않은 답은 NULL (ERD의 "present/absent면 필수" 삭제 요청) |

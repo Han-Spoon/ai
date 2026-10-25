@@ -100,7 +100,7 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 
 - `db_registered` 변형은 이미 컨펌된 데이터라 ⑦ 대상이 아니다 (④ §5-2).
 - 사장님 답변은 스캔 흐름 밖에서 들어온다. `context.call_scope: out_of_band`, `item_id: null`이고, `scan_session_id`는 원래 질문이 생긴 스캔이다.
-- 질문 문구는 6개 언어 객체이고 `owner_verification_requests.question_text`(언어 키 JSONB)에 모두 저장한다.
+- 질문 문구는 **한국어(`ko`) + 사용자 언어** 두 개만 담은 객체다 (10/14 회의, ⓪ §4-7·⑧). 사용자 언어가 `ko`면 한 개다. `owner_verification_requests.question_text`(언어 키 JSONB)에 받은 그대로 저장한다.
 - 확인 정보는 **사장님 답변만** 다룬다. 관광객이 직접 알려주는 재료 정보는 수집 경로가 없어 트리거를 두지 않는다 (③ 결정, 2026-10-09).
 
 ### 1-2. 출력 값을 정하는 규칙
@@ -556,7 +556,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **`web_search_cache` 저장 명령 주체** — ⑦이 `save_web_search_cache`로 만든다 (#208, §4)
 - [x] **soft 증거의 신뢰도 반영 위치** — ⑦이 기록할 때 `delta_alpha = 신뢰도 × 1`, `delta_beta = 0` (2026-10-10, §2-1)
 - [x] **멱등성** — `ai_command_receipts`, 허용 action 6종 (2026-10-10, §1-2, §3-2)
-- [x] **사장님 질문 저장 언어** — `question_text`는 언어 키를 담는 JSONB라 6개 언어를 모두 저장한다 (`caution-db-schema.md` v4 §3, 2026-10-12). 백엔드에 6개 언어 허용 요청함 (v4 §6 7번)
+- [x] **사장님 질문 저장 언어** — `question_text`에는 한국어 + 사용자 언어 두 개만 저장한다 (10/14 회의). 컬럼이 받을 수 있는 언어 코드는 7개다 (`caution-db-schema.md` §6 7번)
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
