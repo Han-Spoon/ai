@@ -5,6 +5,7 @@ DB (the backend does, from ⑦ commands).
 """
 
 from .aggregate import WebAggregateAgent, aggregate_sources
+from .dictionary import find_ingredient_names, load_dictionary
 from .providers import SearchProvider, SearchResult, StaticSearchProvider
 
 __all__ = [
@@ -13,4 +14,6 @@ __all__ = [
     "StaticSearchProvider",
     "WebAggregateAgent",
     "aggregate_sources",
+    "find_ingredient_names",
+    "load_dictionary",
 ]

@@ -33,3 +33,12 @@ def test_web_search_package_imports_no_database_driver() -> None:
                 imported.add(node.module.split(".")[0])
     assert not imported & DB_MODULES
     assert "ai_ruleengine" not in imported
+
+
+def test_web_search_responses_have_no_storage_command() -> None:
+    """Storage commands come from ⑦ via the Supervisor, never from ⑥ (⑥ §4 #1)."""
+
+    from ai_supervisor.contracts.web_search import WebAggregateResponse, WebCollectResponse
+
+    for model in (WebCollectResponse, WebAggregateResponse):
+        assert not [name for name in model.model_fields if "command" in name]

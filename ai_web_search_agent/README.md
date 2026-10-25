@@ -11,10 +11,12 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 |---|---|
 | `aggregate.py` | **2단계(집계)** `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`. ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7 |
 | `providers.py` | 검색 도구 틀(`SearchProvider`)과 테스트용 `StaticSearchProvider` |
+| `dictionary.py` | 1단계 재료 뽑기의 **규칙** 쪽. `find_ingredient_names(text)`가 재료 사전에 있는 이름을 글에 적힌 그대로 찾는다 (긴 이름 우선, 한 글자 재료는 단어 전체일 때만). 표준 재료로 맞추는 건 ④ |
+| `data/ingredient_dictionary.csv` | 재료 사전 (`surface`, `canonical_name`). 크롤링 표준 재료 324개 + 크롤링 레시피에서 두 번 이상 나온 원문 이름. `python -m ai_web_search_agent.build_dictionary`로 다시 만든다 |
 
 ## 아직 없는 것
 
-- **1단계(수집)**: 검색 → 이 메뉴의 레시피 글인지 판별 → 재료 뽑기 (⑥ §3). 재료 사전 출처와 일반 웹으로 넓힐 때의 `next_rank` 기준(⑥ §5)을 정한 뒤 만듭니다
+- **1단계(수집)**: 검색 → 이 메뉴의 레시피 글인지 판별 → 재료 뽑기 (⑥ §3). 재료 사전은 있음. 일반 웹으로 넓힐 때의 `next_rank` 기준(⑥ §5)은 네이버 연결(#254) 때 정합니다
 - **네이버 검색 연결** (#254)
 - **LLM**: 레시피 판별, 사전에 없는 재료 찾기, 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
 
