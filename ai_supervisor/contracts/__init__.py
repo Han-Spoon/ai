@@ -20,6 +20,8 @@ from .exact import ExactFeedbackRequest, ExactFeedbackResponse
 from .external import JudgeRequest, JudgeResponse, PrepareRequest, PrepareResponse
 from .ocr import OcrRequest, OcrResponse
 from .ontology import (
+    IngredientMappingRequest,
+    IngredientMappingResponse,
     OntologyRequest,
     OntologyResponse,
     TagLookupRequest,
@@ -44,6 +46,8 @@ __all__ = [
     "ExactFeedbackResponse",
     "HighRiskReviewRequest",
     "HighRiskReviewResponse",
+    "IngredientMappingRequest",
+    "IngredientMappingResponse",
     "IngredientRef",
     "JudgeRequest",
     "JudgeResponse",

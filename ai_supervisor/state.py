@@ -191,6 +191,10 @@ class ItemState(TypedDict, total=False):
     bayesian_response: Any
     tag_lookup_response: Any
     web_response: Any
+    web_collect_response: Any
+    ingredient_mapping_response: Any
+    web_aggregate_response: Any
+    db_update_response: Any
     decision_response: Any
     result: ItemResult
     analysis_output: ItemAnalysisOutput

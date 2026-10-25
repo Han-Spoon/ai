@@ -345,6 +345,11 @@ class UnsafeDecision(RuleDecision):
         return response.model_copy(update={"risk_level": "safe"})
 
 
+class UnusedAdapter:
+    async def run(self, request):
+        raise AssertionError("adapter must not be called on the DB path")
+
+
 def analyzer():
     ontology = RecordingOntology()
     bayesian = RecordingBayesian()
@@ -356,6 +361,10 @@ def analyzer():
             bayesian=bayesian,
             tag_lookup=tags,
             decision=decision,
+            web_collect=UnusedAdapter(),
+            ingredient_mapping=UnusedAdapter(),
+            web_aggregate=UnusedAdapter(),
+            db_update=UnusedAdapter(),
             now_factory=lambda: NOW,
         )
     )
@@ -495,6 +504,10 @@ def test_item_graph_rejects_safe_result_from_probability_path() -> None:
             bayesian=bayesian,
             tag_lookup=tags,
             decision=UnsafeDecision(),
+            web_collect=UnusedAdapter(),
+            ingredient_mapping=UnusedAdapter(),
+            web_aggregate=UnusedAdapter(),
+            db_update=UnusedAdapter(),
             now_factory=lambda: NOW,
         )
     )
@@ -512,6 +525,10 @@ def test_item_graph_compiles_with_documented_db_nodes() -> None:
         "prepare_item",
         "exact",
         "ontology",
+        "web_search",
+        "ingredient_mapping",
+        "web_aggregate",
+        "web_review",
         "bayesian",
         "tag_lookup",
         "decision",
