@@ -201,8 +201,8 @@ graph TB
   1. **정규화 위임**: OCR 메뉴명 리스트를 ② Menu Normalization Agent에 배치로 통째로 전달 → 정규화된 리스트를 받아 이후 단계에 사용. 아이템 하나마다 왕복하지 않는 이유는 메뉴판 1장당 수십 개 항목이 나올 수 있어 매번 왕복하면 느려지기 때문(5번 섹션 배치/캐싱 이슈 참고).
   2. **가게 컨텍스트 검증**: Judge에서 `store_id`가 양의 JSON 정수 또는 `null`인지 검증한다. 양의 정수는 ②-B~⑧ 호출에 전파한다. `null`이면 가게별 확정값·store prior·가게 캐시 없이 분석하고 ③·⑦·사장님 질문 경로를 건너뛴다. Prepare의 ①·②-A 호출에는 `store_id`를 넣지 않는다. 가게 검색·Kakao fallback·사용자 선택·기존 공공데이터 매칭·스캔 연결은 백엔드 책임이며 AI는 가게 마스터를 변경하지 않음.
   3. **메뉴 아이템별 라우팅**: 정규화된 메뉴명마다 ③ Exact Feedback Tool을 먼저 호출. 재료가 전부 확인되면(hard evidence 존재) 곧바로 ⑧ Decision Policy / XAI Agent로 넘어가는 **가벼운 경로**로 처리 종료, 일부/전부 미확인이면 ④ DB / Ontology Tool → (필요시) ⑤ Bayesian Tool / ⑥ Web Search Agent를 순서대로 호출하는 **무거운 경로**로 위임.
-  4. **결과 취합**: 메뉴판에 있는 모든 아이템의 ⑧ 결과가 모이면 하나의 응답으로 묶어 사용자에게 반환.
-- **출력**: Prepare는 `store_id` 없이 정제된 메뉴 목록을 반환한다. Judge는 입력과 동일한 `store_id`와 메뉴별 판정·근거·저장 명령을 반환한다. `store_id: null`이면 `owner_cards`와 `persistence_commands`는 빈 배열이다.
+  4. **결과 취합**: 메뉴판에 있는 모든 아이템의 ⑧ 결과가 모이면 하나의 응답으로 묶고, ③ 확인값과 메뉴 전체 재료·관련 플래그를 비교해 메뉴별 `owner_answer_status`를 계산한 뒤 사용자에게 반환.
+- **출력**: Prepare는 `store_id` 없이 정제된 메뉴 목록을 반환한다. Judge는 입력과 동일한 `store_id`와 메뉴별 판정·근거·저장 명령, 사장님 답변 상태(`owner_answer_status: none | partial | complete`)를 반환한다. 프론트가 있음/없음만 표시할 때는 `none`만 없음으로, `partial | complete`는 있음으로 본다. `store_id: null`이면 `owner_answer_status: none`, `owner_cards`와 `persistence_commands`는 빈 배열이다.
 - **주의**: `store_id: null`인 가게 없는 스캔은 가게별 확정값·store prior·가게 캐시를 사용하지 않고, 사장님 질문·답변과 모든 저장 명령을 만들지 않으며 SAFE를 금지한다. 양의 정수인 경우에만 가게별 데이터를 사용한다.
 
 #### 가게 없는 스캔
@@ -239,7 +239,7 @@ Prepare(store_id 없음)
 ### ③ Exact Feedback Tool (재료 단위로 재설계)
 - **역할 개요**: 확률로 추정하기 전에 "이미 사람이 확인해준 확실한 값이 있는지"부터 재료 단위로 체크하는 1차 관문. 여기서 확인되면 Bayesian 계산 자체가 불필요해 비용·속도 면에서 이득이고, 무엇보다 사람이 확인한 값이 확률 추정치보다 신뢰도가 높음.
 - **입력**: 양의 정수 store_id, 메뉴명 (Supervisor로부터 전달받음). 가게 없는 스캔에서는 ③을 호출하지 않음
-- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 확정으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`caution-db-schema.md` 참고)
+- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). 사장님 답변은 대상마다 한 번 받고 즉시 확정하며 기간 만료 없이 사용한다. **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 답변 이력은 존재하지만 override 가능한 확정값으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`caution-db-schema.md` 참고)
 - **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면(anomaly 예외 포함) 나머지 재료만 ⓪ Supervisor Agent가 다음 노드로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법(전부 확인 vs 전부 미확인) 금지 — 부분 확인을 지원해야 "새우젓만 사장님이 확인해줬고 나머지는 아직 모름" 같은 현실적인 상황을 표현할 수 있음.
 
@@ -271,7 +271,7 @@ Prepare(store_id 없음)
 - **입력**: Supervisor로부터 전달받은 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
 - **처리**:
   - **웹서치/변형 태깅 결과(신규 메뉴·재료, soft evidence)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
-  - **사장님 답변 피드백(확정 저장, hard evidence)**: `ingredient_confirmations` upsert 명령을 만들되, base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly`를 포함. 백엔드가 권한·FK·멱등성을 검증한 뒤 즉시 반영.
+  - **사장님 답변 피드백(확정 저장, hard evidence)**: 대상별 답변을 한 번만 받고 `ingredient_confirmations` 또는 `owner_flag_confirmations` upsert 명령을 만든다. 백엔드는 권한·FK·멱등성을 검증한 뒤 즉시 반영하며 2·3차 확인이나 다수결을 수행하지 않는다. 확정값은 기간 만료 없이 유지한다. base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly`를 포함해 SAFE 근거로 사용하지 않는다.
 - **출력**: 백엔드가 검증·저장할 구조화된 명령(`action`, `idempotency_key`, `payload`)
 - **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임. `flagged_anomaly: true` + `present: false`인 확정값은 저장은 그대로 하되, ③ Exact Feedback Tool이 이를 미확인으로 분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정하도록 함 — 저장(⑦)과 신뢰 여부 판단(③)의 책임을 분리.
 

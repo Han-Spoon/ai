@@ -102,6 +102,8 @@
 - 각 `evidence_refs`는 Supervisor state의 evidence registry에 등록된 `EvidenceRef.evidence_id`만 가리킨다. 런타임 근거도 null ID를 쓰지 않는다.
 - `schema_version`은 breaking change면 major, 신규 선택 필드는 minor.
 - `status`는 3값 `present` / `absent` / `unknown`. 2값 축약 금지 ([`../AGENTS.md`](../AGENTS.md) 변경 금지 항목).
+- 사장님 질문은 대상별 한 번만 받고 `present`/`absent`를 즉시 확정한다. 확인값에는 기간 만료를 두지 않으며 다차 질문 상태(`round`, `previous_question_id`, `confirmation_state`, `owner_question_states`)를 새 계약에 넣지 않는다.
+- 최종 `ItemResult.owner_answer_status`는 `none | partial | complete`다. 답변 레코드가 없으면 `none`, 하나 이상 있으나 미답변·override 불가 대상이 남으면 `partial`, 필요한 재료와 사용자 관련 플래그가 모두 유효하게 답변됐으면 `complete`다.
 
 Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서는 그 계약을 코드로 구현하는 공통 방식을 관리한다.
 
@@ -113,6 +115,8 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - [x] evidence / provenance 공통 구조 — Supervisor의 `EvidenceRef`로 확정
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
+- [ ] `owner_answer_status` 계산과 최종 응답 전달 — Supervisor가 ③ 확인값과 필요한 전체 대상을 비교해 계산하고, 프론트는 `none`만 답변 없음으로 표시
+- [ ] 기존 다차 질문·3개월 만료 필드 제거 — 사장님 답변 1건 즉시 확정 및 무기한 사용 계약으로 모델·라우팅·테스트 동기화
 - [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4-7 소유
 - [ ] 모델 변경 절차 — `schema_version`을 올리는 기준과 리뷰 담당
 
@@ -267,6 +271,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 북극성 지표는 **FN(false negative) 최소화, F2 기준**입니다. 판단이 애매하면 더 위험한 쪽으로 기웁니다. 노드를 만들 때마다 아래를 확인합니다.
 
 - [ ] `status` 3값(`present` / `absent` / `unknown`)을 내 노드 출력까지 유지했는가 — `unknown`을 `absent`로 떨어뜨리지 않았는가
+- [ ] SAFE는 `owner_answer_status: complete`인 경우에만 가능한가 — `partial`을 전체 확인으로 오인하지 않았는가
 - [ ] `anomaly_locked` 재료의 override를 거부하고 CAUTION 이상을 유지했는가
 - [ ] `no_information`(DB에도 없고 웹서치도 실패) 경로에서 SAFE를 반환하지 않는가
 - [ ] 내 노드가 실패했을 때 결과가 **더 안전한 쪽**으로 떨어지는가 — 실패가 SAFE로 이어지지 않는가

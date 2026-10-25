@@ -212,10 +212,10 @@ erDiagram
 | `source` | `owner_confirmed` |
 | `flagged_anomaly` | 통계적으로 이상한 답변 |
 | `override_eligible` | GENERATED, `NOT(flagged_anomaly AND NOT present)` |
-| `confirmed_at` 🔶 | 확정 시각. **확정(upsert)할 때만 갱신**하고, 확정되지 않은 답(예: 확정 뒤 다른 답 1번)으로는 바꾸지 않는다. 3개월 유효기간의 기준이다 (ERD는 "최신 답변 시각") |
+| `confirmed_at` 🔶 | 가장 최근 사장님 답변을 확정값으로 반영한 시각. 감사·이력 표시용이며 유효기간 계산에는 사용하지 않는다 |
 
-- **확정 규칙**: 확인 차례(마지막 확정 이후의 답변)에서 1·2차 답이 같으면 확정, 다르면 3차까지 받아 3개 중 2개 다수결 (⑦ §2-3).
-- **유효기간 3개월.** 지나면 override에 쓰지 않지만 삭제하지 않는다. 확률 계산에도 넣지 않고(사장님 답변은 확률에 쓰지 않음, 10/10 회의), ⑧이 다시 묻는 카드를 만든다.
+- **확정 규칙**: 사장님 답변은 대상마다 한 번만 받고, `present` 또는 `absent` 답을 즉시 확정값으로 upsert한다. 같은 대상에 새 답변이 들어오면 가장 최근 답으로 확정값을 갱신하고 모든 답변 이력은 `owner_verification_requests`에 보존한다.
+- **유효기간 없음.** 한 번 확정된 답변은 기간 경과만으로 만료하거나 재질문하지 않는다. 새 사장님 답변으로 갱신되거나 관리자가 무효화하기 전까지 hard evidence로 사용한다.
 - **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. 확률은 이번 확인 차례에서 가장 최근에 답한 질문의 `owner_verification_requests.recipe_probability`를 쓴다. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
 
 ### `owner_verification_requests`
@@ -231,22 +231,17 @@ erDiagram
 | `ingredient_id` 🔶 | 재료 질문만. **플래그 질문은 NULL** (지금 ERD는 NOT NULL) |
 | `ambiguity_flag` 🔶 신규 | 플래그 질문만. `menus.ambiguity_flags` 값 하나 |
 | `asked_tags` 🔶 신규 | 플래그 질문에서 물어본 `is_*` 태그 배열 (정렬해서 저장). 재료 질문은 NULL |
-| `card_id` 🔶 신규 | 화면 카드와 질문 행을 잇는 ID (`card:{item_id}:{대상}:r{round}`, ⓪ §4-7). 같은 스캔 안에서 유일 |
-| `round` 🔶 신규 | 질문 차수 `1` / `2` / `3` |
-| `previous_question_id` 🔶 신규 | 직전 질문 `id` (같은 테이블 FK). 1차 질문은 NULL |
-| `confirmation_state` 🔶 신규 | 답을 처리한 결과 `confirmed` / `needs_second` / `needs_third`. 답 전에는 NULL. 다음 Judge의 `owner_question_states[]` 원천 (⓪ §4-2) |
+| `card_id` 🔶 신규 | 화면 카드와 질문 행을 잇는 ID (`card:{item_id}:{대상}`, ⓪ §4-7). 같은 스캔 안에서 유일 |
 | `recipe_probability` 🔶 신규 | 질문을 만들 때의 ⑤ `posterior_mean` (0~1). 재료 질문만, 플래그 질문은 NULL. 답을 확정할 때 이상 답변 판정에 쓴다 (⑦ §2-3) |
 | `question_text` | 언어별 문구. 실제로는 **한국어(`ko`) + 사용자 언어** 두 개만 저장한다 (10/14 회의). 허용 언어 코드는 7개 (🔶 §6 7번) |
-| `status` | `pending` / `answered` / `expired` |
+| `status` | `pending` / `answered` / `expired`. 여기서 `expired`는 답하지 않은 질문 요청의 노출·처리 기한 종료이며, 이미 저장된 사장님 확정값의 만료를 뜻하지 않는다 |
 | `answer` | `present` / `absent` / `unknown` |
-| `resolved_confirmation_id` 🔶 | 재료 답변이 확정값으로 반영되면 채움. 1차 답처럼 아직 확정되지 않은 답은 NULL (ERD의 "present/absent면 필수" 삭제 요청) |
-| `resolved_flag_confirmation_id` 🔶 신규 | 플래그 답변이 확정값으로 반영되면 채움 (`owner_flag_confirmations.id`) |
+| `resolved_confirmation_id` 🔶 | `present`/`absent` 재료 답변을 즉시 확정값으로 반영한 뒤 채움 |
+| `resolved_flag_confirmation_id` 🔶 신규 | `present`/`absent` 플래그 답변을 즉시 확정값으로 반영한 뒤 채움 (`owner_flag_confirmations.id`) |
 
 - CHECK: `ingredient_id`와 `ambiguity_flag` 중 **정확히 하나**만 값이 있다. `ambiguity_flag`가 있으면 `asked_tags`는 비어 있지 않다.
-- UNIQUE 🔶: Supervisor가 같은 대상에 1·2·3차 질문 행을 각각 만드므로 차수를 포함한다. 재료 질문은 `(scan_session_id, menu_id, ingredient_id, round) WHERE ingredient_id IS NOT NULL`, 플래그 질문은 `(scan_session_id, menu_id, ambiguity_flag, asked_tags, round) WHERE ambiguity_flag IS NOT NULL`로 나눈다. 추가로 `(scan_session_id, card_id)`를 UNIQUE로 두어 같은 카드의 재시도 INSERT를 막는다. ERD의 `(scan_session_id, menu_id, ingredient_id)` 하나로는 `ingredient_id`가 NULL인 플래그 질문의 중복을 막지 못하고, 같은 재료의 2·3차 질문도 저장할 수 없다.
-- 답변 이력은 이 테이블의 answered 행들이다. 확인 차례(⑦ §2-3) 계산도 이 행으로 한다.
-- **다음 Judge에 넣을 질문 진행 상태**: 대상(재료 또는 플래그+태그)마다 가장 최근 answered 행의 `{id → question_id, round → answered_round, confirmation_state}`를 KnowledgeBundle `exact_feedback.exact.owner_question_states[]`로 보낸다 (⓪ §4-2).
-- CHECK: `round = 1`이면 `previous_question_id IS NULL`, `round > 1`이면 NOT NULL. `confirmation_state`가 `needs_second`이면 `round = 1`, `needs_third`이면 `round = 2`.
+- UNIQUE 🔶: 재료 질문은 `(scan_session_id, menu_id, ingredient_id) WHERE ingredient_id IS NOT NULL`, 플래그 질문은 `(scan_session_id, menu_id, ambiguity_flag, asked_tags) WHERE ambiguity_flag IS NOT NULL`로 나눈다. 추가로 `(scan_session_id, card_id)`를 UNIQUE로 두어 같은 카드의 재시도 INSERT를 막는다.
+- 답변 이력은 이 테이블의 answered 행들이다. `present`/`absent` 답변은 한 번의 처리로 해당 확정값에 즉시 반영한다. 후속 질문 차수나 합의 상태는 계산하지 않는다.
 
 ### `owner_flag_confirmations` 🔶 신규 (제안, 2026-10-13)
 메뉴 애매함 플래그 질문에 대한 사장님 **확정 답**. ③이 읽어 `flag_confirmations`로 넘긴다 (⓪ §4-2). 재료 확정값(`ingredient_confirmations`)과 따로 둔다 — 플래그 답은 특정 재료가 아니라 "그 메뉴의 젓갈·육수 등에 이 태그가 있는가"이기 때문이다. 테이블 이름은 ⓪ 예시(`source_ref: owner_flag_confirmations:…`)를 따랐고 최종 결정은 백엔드가 한다.
@@ -258,7 +253,7 @@ erDiagram
 | `ambiguity_flag` | 물어본 플래그 |
 | `asked_tags` | 물어본 태그 배열 (정렬) |
 | `present` | 물어본 태그 중 하나 이상 있음(`true`) / 전부 없음(`false`). 행이 없으면 `unknown` |
-| `confirmed_at` | 확정 시각. 3개월 유효 (재료 확정값과 같음) |
+| `confirmed_at` | 가장 최근 확정 시각. 감사·이력 표시용이며 유효기간은 없음 |
 | `created_at`, `updated_at` | |
 
 - UNIQUE `(store_id, menu_id, ambiguity_flag, asked_tags)`. 같은 플래그라도 다른 태그로 물은 답은 따로 저장한다 (③ §1-8).
@@ -300,6 +295,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 `scan_sessions`, `menu_images`, `menu_analyses`, `user_profiles`, `user_allergies`는 백엔드 ERD를 따른다. AI와 맞닿는 곳만 적는다.
 
 - `menu_analyses.menu_id`, `menu_match_type`(V11): DB enum은 `exact` / `alias` / `fuzzy` / `runtime_variant` / `unmatched`을 유지하고, Supervisor `JudgeResponse.items[].match_type`을 다음과 같이 저장한다. `canonical | spacing → exact`, `synonym | ocr_correction → alias`, `fuzzy → fuzzy`, `null → unmatched`. 해당 `item_id`의 `create_review_item(review_origin: variant_suggestion)` 명령이 있는 런타임 변형은 `runtime_variant`로 저장한다.
+- `menu_analyses.owner_answer_status` 🔶: Supervisor `JudgeResponse.items[].owner_answer_status`의 `none | partial | complete`를 저장한다. 프론트가 단순 있음/없음만 표시할 때는 `none`만 없음, `partial | complete`는 있음이다. 이는 해당 분석 시점의 스냅샷이며 사장님 답변 뒤 다시 판정하면 새 분석 결과로 갱신한다.
 - `menu_analyses.owner_cards` 🔶: ⑧이 만든 `JudgeResponse.items[].owner_cards[]` 전체를 JSONB 배열로 저장한다. 질문이 없으면 `[]`이며, 한 메뉴에 여러 카드가 있을 수 있으므로 단수 `owner_card` 객체로 축약하지 않는다. 각 실제 질문 행은 `card_id`로 `owner_verification_requests`와 연결한다.
 - `user_allergies.allergy_code` 🔶: `ingredient_tags.tag_code`와 같은 `is_*` 22종 어휘 (ERD는 "19종", §6 21번)
 - `user_profiles`: `religion_type`, `vegetarian_type`, `no_alcohol`, `no_spicy` → ⑧이 금지 태그로 바꾼다
@@ -334,9 +330,9 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20, 24는 2026-10-25 추가)
 
-🔴 **우선: 16·17·20번.** 이 세 개가 없으면 사장님 질문 흐름(1차 답 저장 → 2·3차 질문)이 동작하지 않는다.
+🔴 **우선: 8·16~18·20번.** 사장님 답변을 한 번에 확정하고 무기한 사용하도록 기존 다차 질문·만료 계약을 제거해야 한다.
 
 | # | 대상 | 지금 ERD | 요청 | 이유 |
 |---|---|---|---|---|
@@ -347,7 +343,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 5 | `ingredient_compositions.relation_type` | `part_of` / `is_a` | `part_of`만 | 분류는 `taxonomy_category`에 둠 |
 | 6 | `ingredients.taxonomy_category` | 7종 code | 9종 (§2) | 가공식품 추가, 기타를 `base`·`unknown`으로 분리 (#182) |
 | 7 | 다국어 JSONB 키 (`menus.name_i18n`, `ingredients.name_i18n`, `menu_analyses.message`, `saved_cards.text`, `owner_verification_requests.question_text`) | `ko` / `en` / `ar` | `ko` / `en` / `ar` / `zh-CN` / `zh-TW` / `ja` / `es` (7개, `ar` 유지) | 팀 결정 (2026-10-13, ⑧ §4): 아랍어 포함 7개 언어, 코드는 프론트 표기와 같음 |
-| 8 | `record_owner_answer` 처리 결과 | — | `confirmation_state`(`confirmed` / `needs_second` / `needs_third`)를 질문 행에 저장하고, 다음 Judge Bundle `owner_question_states[]`로 보냄 (20번 컬럼) | ⑧이 2·3차 질문을 만든다 (⑦ §1-2, ⓪ §4-6) |
+| 8 | `record_owner_answer` 처리 | 다차 답변 비교 후 확정 | 한 번 받은 `present`/`absent` 답변을 즉시 `ingredient_confirmations` 또는 `owner_flag_confirmations`에 upsert하고 처리 결과로 확정값 ID를 반환 | 프론트·사장님 흐름을 1회 응답으로 단순화하고 다음 Judge부터 바로 사용한다 |
 | 9 | `menus.knowledge_revision` | 메뉴 단위 | 재료 단위 변경 시 관련 메뉴 전부 +1 | ④ 캐시가 옛 재료 목록을 내지 않게 (§5) |
 | 10 | 시드 적재 | — | CSV의 `id`를 그대로 INSERT (IDENTITY 컬럼은 `OVERRIDING SYSTEM VALUE`). 안 되면 AI에 알림 → 이름 기준 매핑으로 바꿈 | 시드 CSV의 FK가 id로 연결돼 있음 |
 | 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
@@ -355,14 +351,15 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 13 | `web_search_cache.expires_at` | NOT NULL, TTL | NULL 허용 | ⑥이 캐시 유효기간을 두지 않기로 함 |
 | 14 | `web_search_cache` | `payload` 갱신 시 덮어씀, 순위 컬럼 없음 | `next_rank` INT 추가 + `payload`는 기존 배열에 이어 붙임 (§5) | ⑥이 검색마다 다음 순위 10개를 더해 30개까지 모은다. 덮어쓰면 이전 레시피가 사라짐 |
 | 15 | `owner_verification_requests` | 확률 컬럼 없음 | `recipe_probability` NUMERIC NULL 추가 (§3) | 사장님 답은 스캔 밖에서 들어와 그 순간 비교할 확률이 없다. 없으면 "돈가스에 돼지고기 없음" 같은 이상 답이 그대로 확정된다 (FN) |
-| 16 | `owner_verification_requests.resolved_confirmation_id` | present/absent 답이면 필수 | 필수 조건 삭제. 확정값이 만들어진 때만 채움 (§3) | 1차 답은 확정하지 않는다(`needs_second`). 지금 제약이면 1차 답 저장이 실패해 2·3차 질문 흐름 전체가 막힌다 |
-| 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | `round`를 포함한 부분 UNIQUE 2개(재료/플래그) + `(scan_session_id, card_id)` UNIQUE로 변경 (§3) | 현재 제약은 플래그 질문의 중복을 막지 못하고, 같은 대상의 2·3차 질문 INSERT를 막는다 |
-| 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 확정(upsert)된 시각. 확정되지 않은 답으로는 갱신하지 않음 (§3) | 확정 뒤 다른 답이 1번만 와도 3개월 유효기간이 다시 시작된다 |
+| 16 | `owner_verification_requests.resolved_confirmation_id` | 처리 중간에는 NULL 가능 | `present`/`absent` 답변 처리 트랜잭션에서 확정값 upsert 후 해당 ID를 필수 연결 (§3) | 한 번의 답변이 즉시 확정값이므로 질문 행과 실제 반영값을 추적할 수 있어야 한다 |
+| 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | 재료/플래그 부분 UNIQUE 2개 + `(scan_session_id, card_id)` UNIQUE로 변경하되 `round`는 사용하지 않음 (§3) | 플래그 질문 중복과 같은 카드의 재시도 INSERT를 막는다 |
+| 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 최근 확정 반영 시각으로 유지하되 TTL·만료 판정에는 사용하지 않음 (§3) | 사장님 확정값은 기간 만료 없이 사용하고 시각은 감사용으로만 남긴다 |
 | 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(5), 7번의 7개 값 | `zh-CN`·`zh-TW`가 5자라 지금 길이에 안 들어간다 |
-| 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 없음 | `card_id` VARCHAR(200) NULL, `round` SMALLINT NOT NULL DEFAULT 1 (1~3), `previous_question_id` UUID NULL FK→같은 테이블, `confirmation_state` VARCHAR(20) NULL 추가 + CHECK (§3) | ⓪이 "백엔드는 `round`·`previous_question_id`를 질문 행에 보존해 질문 사슬과 차수를 검증한다"로 정함. 저장할 곳이 없으면 2·3차 질문을 만들 수 없다 |
+| 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 도입안 | `card_id`만 추가하고 `round`, `previous_question_id`, `confirmation_state`는 추가하지 않거나 제거 (§3) | 질문은 대상별 한 번만 받고 즉시 확정하므로 차수·사슬·합의 상태가 필요 없다 |
 | 21 | `ingredient_tags.tag_code`, `ingredient_composition_tags.tag_code`, `user_allergies.allergy_code` | 알레르기 19종 + fish/duck/alcohol (이름 형식 미정), `allergy_code`는 "19종" | `is_*` 형식 22종으로 통일: 식약처 알레르기 19종 + `is_fish` / `is_duck` / `is_alcohol` (원천 `ai_ruleengine/constants.py`) | 재료 태그와 사용자 알레르기 코드의 이름이 다르면 매칭이 안 돼 알레르겐을 놓친다 |
 | 22 | 승인된 웹 레시피 등록 | 승인마다 `menus` 등록 + 가게 증거 반영 | 같은 메뉴의 승인 레시피가 **30개 이상**일 때만 공용 `menus`·`recipe_ingredients` 등록. `ingredient_evidence_log`에는 넣지 않음. (제안, 확인 필요) 30개의 "n개 중 k개" 통계를 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 함께 넣기 (3번 `corpus` 값에 `web_search` 추가) | 웹 레시피는 가게 레시피가 아님. 승인마다 등록하면 30개 기준이 무의미해짐 (⑦ §2-1, ⑥ §2-4) |
 | 23 | `menu_analyses.owner_card` | 단수 카드 저장 구조 | `owner_cards` JSONB 배열로 변경하고 기본값을 `[]`로 두며, 각 카드의 `card_id`를 `owner_verification_requests.card_id`와 연결 | Supervisor는 한 메뉴에 재료·플래그별 여러 `owner_cards[]`를 반환하므로 단수 객체로는 손실 없이 저장할 수 없다 |
+| 24 | `menu_analyses.owner_answer_status` | 없음 | `VARCHAR` 또는 enum으로 `none | partial | complete` 저장 (§4) | 프론트가 `risk_level`, `evidence_basis`, `owner_cards`를 추측해 사장님 답변 여부를 표시하지 않게 한다 |
 
 - `corpus`·배치 `source`에 `etc` 같은 기타 값은 넣지 않는다 (3·4번 값만).
 - 메뉴·재료 ID는 정수(BIGINT)를 유지한다.
