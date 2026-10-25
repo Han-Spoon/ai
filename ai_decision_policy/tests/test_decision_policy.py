@@ -191,6 +191,34 @@ def test_profile_mapping_merges_every_restriction() -> None:
     }
 
 
+
+MEAT_TAGS = {"is_pork", "is_beef", "is_chicken", "is_duck"}
+
+
+@pytest.mark.parametrize("vegetarian_type", ["vegan", "lacto", "ovo", "lacto_ovo", "pesco"])
+def test_every_vegetarian_type_forbids_all_meat(vegetarian_type: str) -> None:
+    tags = forbidden_tags(profile(is_vegetarian=True, vegetarian_type=vegetarian_type))
+    assert MEAT_TAGS <= tags
+
+
+@pytest.mark.parametrize(
+    ("vegetarian_type", "allowed"),
+    [
+        ("vegan", set()),
+        ("lacto", {"is_milk"}),
+        ("ovo", {"is_egg"}),
+        ("lacto_ovo", {"is_milk", "is_egg"}),
+    ],
+)
+def test_vegetarian_types_differ_only_in_milk_and_egg(
+    vegetarian_type: str, allowed: set[str]
+) -> None:
+    tags = forbidden_tags(profile(is_vegetarian=True, vegetarian_type=vegetarian_type))
+    assert {"is_fish", "is_shrimp"} <= tags
+    assert {"is_milk", "is_egg"} - allowed <= tags
+    assert not allowed & tags
+
+
 # §7 verdict cases
 
 
@@ -222,6 +250,7 @@ def test_04_variant_guess_never_becomes_danger() -> None:
     outcome = decide(request(VEGAN, variants=[variant]))
     assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
     assert outcome.risk_ingredients[0].status == "unknown"
+    assert outcome.risk_ingredients[0].role == "identity"
 
 
 def test_06_eligible_owner_answer_beats_probability() -> None:
