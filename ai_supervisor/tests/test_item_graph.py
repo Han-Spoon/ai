@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from hashlib import sha256
 from uuid import UUID
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from ai_decision_policy import decide
 from ai_normalization.contracts import CandidateSelectionResult
 from ai_supervisor.contracts.bayesian import BayesianResponse, ProbabilityResult
+from ai_supervisor.contracts.db_update import DbUpdateResponse
 from ai_supervisor.contracts.decision import DecisionResponse
 from ai_supervisor.contracts.external import (
     CandidateKnowledge,
@@ -31,7 +33,6 @@ from ai_supervisor.item_graph import (
     ItemGraphDependencies,
     ItemGraphInvariantError,
 )
-from ai_supervisor.judge_graph import ItemAnalysisError
 from ai_supervisor.state import ItemTask, ItemTaskKnowledge, RunContext
 
 TRACE_ID = UUID("0199a2f0-0000-7000-8000-000000000001")
@@ -159,11 +160,19 @@ def item_task(*, exact_complete: bool, flagged_anomaly: bool = False) -> ItemTas
                     "localized_name": "액젓",
                     "taxonomy_category": "fermented",
                 },
+                {
+                    "ingredient_id": 120,
+                    "canonical_name": "소고기",
+                    "name_normalized": "소고기",
+                    "localized_name": "소고기",
+                    "taxonomy_category": "base",
+                },
             ],
             "aliases": [],
             "tags": [
                 {"ingredient_id": 101, "tag_code": "is_pork"},
                 {"ingredient_id": 102, "tag_code": "is_fish"},
+                {"ingredient_id": 120, "tag_code": "is_beef"},
             ],
             "compositions": [],
             "composition_tags": [],
@@ -350,6 +359,159 @@ class UnusedAdapter:
         raise AssertionError("adapter must not be called on the DB path")
 
 
+class RuntimeVariantOntology(RecordingOntology):
+    async def run(self, request):
+        response = await super().run(request)
+        variant_evidence = {
+            "evidence_id": "variant:beef",
+            "evidence_class": "soft",
+            "source_type": "ocr_variant_tag",
+            "source_ref": "scan-123:0:차돌",
+            "verification_status": "pending_review",
+            "reliability_weight": 0.3,
+            "observed_at": "2026-10-01T00:00:00Z",
+        }
+        payload = response.model_dump(mode="json")
+        payload.update(
+            {
+                "menu": {
+                    "menu_id": None,
+                    "base_menu_id": 1001,
+                    "remain_token": "차돌",
+                    "menu_category_id": 11,
+                    "menu_category": "찌개",
+                    "exists_in_db": False,
+                    "is_variant": True,
+                    "variant_origin": "runtime_tagged",
+                },
+                "ingredients": [
+                    *payload["ingredients"],
+                    {
+                        "ingredient": {
+                            "ingredient_id": 120,
+                            "canonical_name": "소고기",
+                        },
+                        "taxonomy_category": "base",
+                        "constraint_tags": ["is_beef"],
+                        "role": "identity",
+                        "depth": 0,
+                        "parent_ingredient": None,
+                        "source": "variant_suggested",
+                        "curated": False,
+                        "observation_basis": "none",
+                        "observations": [],
+                        "anomaly_locked": False,
+                        "evidence_refs": ["variant:beef"],
+                    },
+                ],
+                "evidence": [*payload["evidence"], variant_evidence],
+                "variant_suggestion": {
+                    "base_menu_id": 1001,
+                    "remain_token": "차돌",
+                    "suggested_ingredients": [
+                        {
+                            "ingredient": {
+                                "ingredient_id": 120,
+                                "canonical_name": "소고기",
+                            },
+                            "constraint_tags": ["is_beef"],
+                            "role": "identity",
+                        }
+                    ],
+                    "evidence": variant_evidence,
+                },
+                "cache_command": None,
+            }
+        )
+        return OntologyResponse.model_validate(payload)
+
+
+class VariantDbUpdate:
+    def __init__(self, *, source_type: str = "ocr_variant_tag") -> None:
+        self.requests = []
+        self.source_type = source_type
+
+    async def run(self, request):
+        self.requests.append(request)
+        operation = request.operations[0]
+        suggestion = operation.payload.variant_suggestion
+        assert suggestion is not None
+        payload = operation.payload.model_dump(mode="json")
+        payload["provenance"] = {
+            "origin_node": "ontology",
+            "source_type": self.source_type,
+            "evidence_class": "soft",
+            "evidence_refs": [suggestion.evidence.evidence_id],
+        }
+        return DbUpdateResponse.model_validate(
+            {
+                "context": request.context.model_dump(mode="json"),
+                "commands": [
+                    {
+                        "command_id": "command-variant-review",
+                        "operation_id": operation.operation_id,
+                        "item_id": request.context.item_id,
+                        "card_id": None,
+                        "action": operation.operation_type,
+                        "idempotency_key": "sha256:"
+                        + sha256(operation.operation_id.encode()).hexdigest(),
+                        "payload": payload,
+                    }
+                ],
+                "warnings": [
+                    item.model_dump(mode="json") for item in request.warnings
+                ],
+                "errors": [
+                    item.model_dump(mode="json") for item in request.errors
+                ],
+            }
+        )
+
+
+def variant_analyzer(db_update=None):
+    ontology = RuntimeVariantOntology()
+    bayesian = RecordingBayesian()
+    tags = RecordingTagLookup()
+    decision = RuleDecision()
+    db_update = db_update or VariantDbUpdate()
+    item_analyzer = ItemGraphAnalyzer(
+        ItemGraphDependencies(
+            ontology=ontology,
+            bayesian=bayesian,
+            tag_lookup=tags,
+            decision=decision,
+            web_collect=UnusedAdapter(),
+            ingredient_mapping=UnusedAdapter(),
+            web_aggregate=UnusedAdapter(),
+            db_update=db_update,
+            now_factory=lambda: NOW,
+        )
+    )
+    return item_analyzer, ontology, bayesian, decision, db_update
+
+
+def runtime_variant_task() -> ItemTask:
+    task = item_task(exact_complete=False)
+    selected = task.knowledge.selected
+    assert selected is not None
+    return replace(
+        task,
+        knowledge=replace(
+            task.knowledge,
+            selected=selected.model_copy(
+                update={
+                    "exact_feedback": ExactFeedbackSlice(
+                        status="not_found", exact=None
+                    )
+                }
+            ),
+        ),
+        user_profile=task.user_profile.model_copy(
+            update={"religion_type": None, "allergies": ["is_beef"]}
+        ),
+    )
+
+
 def analyzer():
     ontology = RecordingOntology()
     bayesian = RecordingBayesian()
@@ -462,36 +624,61 @@ def test_anomaly_confirmation_is_forwarded_to_ontology_lock() -> None:
     assert output.result.risk_level != "safe"
 
 
-def test_runtime_variant_waits_for_phase_seven_instead_of_skipping_review() -> None:
-    item_analyzer, ontology, _, _, _ = analyzer()
+def test_runtime_variant_reviews_then_continues_to_bayesian_and_decision() -> None:
+    item_analyzer, _, bayesian, decision, db_update = variant_analyzer()
 
-    async def runtime_variant(request):
-        response = await RecordingOntology().run(request)
-        return response.model_copy(
-            update={
-                "menu": OntologyResultMenu(
-                    menu_id=None,
-                    base_menu_id=1001,
-                    remain_token="차돌",
-                    menu_category_id=11,
-                    menu_category="찌개",
-                    exists_in_db=False,
-                    is_variant=True,
-                    variant_origin="runtime_tagged",
-                ),
-                "variant_suggestion": {
-                    "base_menu_id": 1001,
-                    "remain_token": "차돌",
-                    "suggested_ingredients": [],
-                    "evidence": evidence("variant:beef"),
-                },
-            }
-        )
+    output = asyncio.run(item_analyzer.run(runtime_variant_task(), context()))
 
-    ontology.run = runtime_variant
+    request = db_update.requests[0]
+    assert [operation.operation_type for operation in request.operations] == [
+        "create_review_item"
+    ]
+    payload = request.operations[0].payload
+    assert payload.review_origin == "variant_suggestion"
+    assert payload.web_sources == []
+    assert payload.review_notes == []
+    assert payload.variant_suggestion.remain_token == "차돌"
+    assert bayesian.requests[0].ingredients[-1].source == "variant_suggested"
+    assert [
+        item.ingredient.ingredient_id
+        for item in decision.requests[0].proposed_variant_ingredients
+    ] == [120]
+    assert [
+        item.ingredient.ingredient_id
+        for item in decision.requests[0].probability_results
+    ] == [102]
+    assert output.result.route == "db_variant_bayes"
+    assert output.result.risk_level == "caution"
+    assert [command.action for command in output.commands] == [
+        "create_review_item"
+    ]
+    assert "variant:beef" in [item.evidence_id for item in output.evidence]
 
-    with pytest.raises(ItemAnalysisError, match="7번 구현"):
-        asyncio.run(item_analyzer.run(item_task(exact_complete=False), context()))
+
+def test_storeless_runtime_variant_skips_review_but_keeps_analysis() -> None:
+    item_analyzer, _, bayesian, decision, db_update = variant_analyzer()
+
+    output = asyncio.run(
+        item_analyzer.run(runtime_variant_task(), context(store_id=None))
+    )
+
+    assert db_update.requests == []
+    assert bayesian.requests[0].context.store_id is None
+    assert decision.requests[0].proposed_variant_ingredients
+    assert output.result.route == "db_variant_bayes"
+    assert output.result.risk_level == "caution"
+    assert output.commands == ()
+
+
+def test_runtime_variant_rejects_changed_review_provenance() -> None:
+    item_analyzer, *_ = variant_analyzer(
+        VariantDbUpdate(source_type="web_search")
+    )
+
+    with pytest.raises(
+        ItemGraphInvariantError, match="changed operation provenance"
+    ):
+        asyncio.run(item_analyzer.run(runtime_variant_task(), context()))
 
 
 def test_item_graph_rejects_safe_result_from_probability_path() -> None:
@@ -525,6 +712,7 @@ def test_item_graph_compiles_with_documented_db_nodes() -> None:
         "prepare_item",
         "exact",
         "ontology",
+        "variant_review",
         "web_search",
         "ingredient_mapping",
         "web_aggregate",
