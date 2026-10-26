@@ -45,7 +45,7 @@
 | 7쪽: Hard Evidence와 Soft Evidence를 분리 관리 (`신뢰도 분리`) | §0-3, §2-1, §2-3 |
 | 8쪽 5: 웹 검색·변형 후보 → 관리자 검토·승인 → DB Update Tool | §2-1 |
 | 8쪽 5: 사장님 확인 정보 → 최소 n회 이상 시 기록·이상 여부 검사 → DB Update Tool | §2-3 |
-| 8쪽 6: 사장님 확인 n건↑이면 확정, n개월마다 재확인 | §2-3 (재확인 기간은 단체 논의 #202) |
+| 8쪽 6: 사장님 확인 n건↑이면 확정, n개월마다 재확인 | §2-3. n=1, 기간 만료 없음 (⓪ #151). 주기적 재확인은 두지 않는다 |
 
 ### 0-3. 증거 신뢰도 계층 (⑥⑦ 공통 전제)
 
@@ -54,11 +54,11 @@
 | 구분 | 예시 | 처리 주체 | 반영 시점 |
 |---|---|---|---|
 | **soft evidence** | 웹서치 크롤링 결과, ④의 변형 태깅 제안 | ⑥ → ⑦ → 백엔드 | **관리자 컨펌 후에만** DB 반영 |
-| **hard evidence** | 사장님 답변 | ⑦ → 백엔드 | 답변 이력은 **즉시** 기록. 확정값(`ingredient_confirmations`)은 같은 재료에 **1·2차 답이 같거나, 다르면 3차까지 받아 3번 중 2번 나온 답**으로 이상 여부 검사를 거친 뒤 생기거나 바뀐다 (PPT 8쪽 5·6, §2-3) |
+| **hard evidence** | 사장님 답변 | ⑦ → 백엔드 | 답변 이력은 **즉시** 기록. `present`/`absent` 답 **한 번**으로 이상 여부 검사를 거쳐 확정값(`ingredient_confirmations`)이 바로 생기거나 바뀐다 (§2-3) |
 
-이 구분이 왜 필요한가: `caution-db-schema.md` §5 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이라 관리자 검토는 거치지 않지만, PPT 기준에 따라 여러 번의 확인(1·2차가 같거나, 3번 중 2번)과 이상 여부 검사를 거쳐 확정값이 된다.
+이 구분이 왜 필요한가: `caution-db-schema.md` §5 원칙 — "웹서치 캐시 데이터는 실제 식당 레시피로 간주하지 않고, danger 판정을 낮추는 데 쓰지 않음". 기계가 혼자 추측한 데이터를 사람 검토 없이 공유 DB(`ingredient_risk_scores`)에 자동으로 흘려보내면, 크롤링 하나가 잘못돼도 그 가게를 스캔하는 모든 이후 사용자의 확률이 조용히 오염된다. 사장님 답변은 사람이 직접 확인해준 것이라 관리자 검토는 거치지 않지만, 답 한 번과 이상 여부 검사를 거쳐 바로 확정값이 된다 (단일 확인 정책, ⓪ #151).
 
-> PPT의 n은 **2**로 정했다 (2026-10-06, #193).
+> PPT의 n은 **1**이다 (단일 확인 정책, ⓪ #151. 2026-10-06 #193의 n=2를 대체).
 
 ### 0-4. ⑥ ↔ ⑦ 역할 분담
 
@@ -111,28 +111,19 @@ Supervisor가 저장할 일을 `operations[]`로 묶어 보낸다. 공통 문맥
 |---|---|
 | `create_review_item` | 웹서치 결과 / 변형 태깅 제안 (§2-1) |
 | `create_owner_verification_request` | ⑧ 질문 카드 (§2-2) |
-| `record_owner_answer` | 사장님 답변. 이력 기록 + 확정 조건을 채우면 확정 (§2-3, §2-4) |
+| `record_owner_answer` | 사장님 답변. 이력 기록 + 즉시 확정 (§2-3, §2-4) |
 | `update_source_reliability` | 사장님 확정값이 생기거나 바뀜 (§3-1) |
 | `save_web_search_cache` | ⑥ 웹서치 결과 원본 (관리자 게이트 없음, §4) |
 
 - 허용 action은 위 5종 + ④가 직접 만드는 `save_menu_ingredient_cache`, 총 6종이다 (`ai_command_receipts.action`, `caution-db-schema.md` §4).
 - 모든 명령은 `idempotency_key`를 가진다. 백엔드는 `ai_command_receipts`에 먼저 기록하고, 이미 있으면 다시 실행하지 않는다 (§3-2).
-- `idempotency_key`는 **내용 기준**이다: action과 내용 키(예: 질문은 가게·스캔·`item_id`·`card_id`·메뉴·`round`·`previous_question_id`·재료 또는 플래그, 답은 `question_id`)의 해시. `trace_id`·`operation_id`는 넣지 않는다. 넣으면 같은 스캔을 재시도할 때 같은 질문이 또 저장된다. action별 내용 키는 ⓪ §4-6 표를 따른다.
+- `idempotency_key`는 **내용 기준**이다: action과 내용 키(예: 질문은 가게·스캔·`item_id`·`card_id`·메뉴·재료 또는 플래그, 답은 `question_id`)의 해시. `trace_id`·`operation_id`는 넣지 않는다. 넣으면 같은 스캔을 재시도할 때 같은 질문이 또 저장된다. action별 내용 키는 ⓪ §4-6 표를 따른다.
 - `context`는 입력 값을 수정하지 않고 그대로 돌려준다. 메뉴·재료 ID는 정수, 질문 ID는 UUID다.
 - 스캔 중에 만든 명령은 Supervisor 최종 응답의 `persistence_commands`로 백엔드에 전달된다.
 
-**백엔드의 `record_owner_answer` 처리 결과 — `confirmation_state`** (⑧이 다음 질문을 만든다, §2-3)
+**백엔드의 `record_owner_answer` 처리 결과** (§2-3)
 
-백엔드는 처리 결과 `{question_id, answered_round, confirmation_state}`를 질문 행에 저장하고, 다음 Judge의 KnowledgeBundle `exact_feedback.exact.owner_question_states[]`에 넣는다. ③이 그대로 넘기고 Supervisor가 ⑧까지 전달하면, ⑧이 `round`와 `previous_question_id`(직전 질문 ID)를 붙여 다음 카드를 만든다 (⓪ §4-2·§4-6). AI가 같은 호출에서 이 값을 받는 별도 endpoint는 없다.
-
-| 값 | 뜻 | 다음 할 일 |
-|---|---|---|
-| `confirmed` | 이번 확인 차례로 확정값이 생기거나 바뀜 | 없음. 3개월 뒤 만료 |
-| `needs_second` | 확인 차례의 1차 답만 있음 | ⑧이 2차 질문 생성 |
-| `needs_third` | 1·2차 답이 다름 | ⑧이 3차 질문 생성 |
-
-- `needs_second`는 `answered_round: 1`, `needs_third`는 `answered_round: 2`에서만 나온다. 3차 답 뒤에는 항상 `confirmed`다.
-- 확정값이 3개월 지나 만료되면 상태가 `confirmed`여도 ⑧이 새 확인 차례의 1차 카드(`round: 1`, `previous_question_id: null`)를 만든다.
+백엔드는 `present`/`absent` 답을 같은 트랜잭션에서 확정값에 바로 반영하고, 확정값 ID를 질문 행에 연결한다. 2·3차 질문이나 진행 상태(`round`, `previous_question_id`, `confirmation_state`, `owner_question_states`)는 만들지 않는다 (⓪ #151). `unknown` 답은 이력에만 남고 확정값을 만들지 않는다.
 
 ## 2. 처리 로직
 
@@ -190,13 +181,9 @@ flowchart TD
 ```mermaid
 flowchart TD
     IN["사장님 답변"] --> LOG["ingredient_evidence_log INSERT (매 답변)<br/>source_type: owner_feedback<br/>delta_alpha: 0, delta_beta: 0<br/>evidence_ref_table: owner_verification_requests"]
-    LOG --> CNT{"이번 확인 차례의<br/>답변 수는?"}
-    CNT -->|1번| WAIT["확정 보류, 이력만 남김<br/>→ 2차 질문 (needs_second)"]
-    CNT -->|2번| SAME{"1·2차 답이 같은가?"}
-    SAME -->|Yes| CHECK
-    SAME -->|No| WAIT3["확정 보류<br/>→ 3차 질문 (needs_third)"]
-    CNT -->|3번| MAJ["3번 중 2번 나온 답으로 결정"]
-    MAJ --> CHECK{"이상 여부 검사<br/>레시피 확률 ≥ 0.9 인데<br/>답이 '없음'?"}
+    LOG --> KIND{"답이 있음/없음인가?"}
+    KIND -->|모름| SKIP["이력만 남김, 확정값 없음"]
+    KIND -->|있음/없음| CHECK{"이상 여부 검사<br/>레시피 확률 ≥ 0.9 인데<br/>답이 '없음'?"}
     CHECK -->|Yes| FLAG["ingredient_confirmations UPSERT<br/>flagged_anomaly: true"]
     CHECK -->|No| NORMAL["ingredient_confirmations UPSERT<br/>flagged_anomaly: false"]
     FLAG --> LINK["owner_verification_requests.resolved_confirmation_id<br/>갱신"]
@@ -204,21 +191,18 @@ flowchart TD
     NORMAL --> REL["출처별 과거 주장과 비교<br/>update_source_reliability 명령 (§3-1)"]
 ```
 
-- **확정 조건 (결정, 2026-10-10 회의, #193)**: 같은 재료에 대한 사장님 답을 **확인 차례** 단위로 본다. 확인 차례는 마지막 확정 이후(확정값이 없으면 처음부터) 들어온 답변들이다.
-  - **1·2차 답이 같으면** 그 답으로 확정한다. PPT 8쪽 5의 "최소 n회 이상"에서 n=2다.
-  - **1·2차 답이 다르면 3차 질문을 한 번 더 하고, 3번 중 2번 나온 답으로 확정한다.** 답이 "있음/없음" 두 가지뿐이라 3번이면 반드시 정해진다.
-  - 확정되면 확인 차례가 끝나고, 다음 답부터 새 확인 차례가 시작된다.
-  - "모름" 답변은 이 규칙에서 세지 않는다 (회의에서 고려 대상에서 제외).
-  - 한 번 잘못 누른 답(오조작)은 2차·3차에서 걸러진다.
+- **확정 조건 (결정, 단일 확인 정책, ⓪ #151)**: 같은 재료에 대한 사장님 답은 **한 번만** 받는다. `present`/`absent` 답이 오면 이상 여부 검사를 거쳐 **바로 확정**한다. 2·3차 질문과 다수결은 없다 (2026-10-10 #193의 n=2 규칙을 대체).
+  - "모름" 답변은 확정값을 만들지 않고 이력에만 남는다.
+  - 한 번 잘못 누른 답(오조작)은 따로 거르지 않는다. 대신 레시피상 거의 확실한 재료에 "없음"을 누르면 이상 답변으로 잠겨 SAFE로 새지 않는다 (아래).
 - 확정값이 아직 없는 동안 ③은 해당 재료를 미확인으로 본다. 그동안 ⑤의 확률 계산과 ⑧의 CAUTION 판정이 유지되어 SAFE로 새지 않는다.
-- **이미 확정값이 있을 때도 같은 규칙을 쓴다** (결정, 2026-10-10). 새 확인 차례가 끝날 때까지는 **기존 확정값을 그대로 쓴다.** 새 차례의 결과가 기존 값과 같으면 확정 시각(`confirmed_at`)만 새로 고쳐 3개월 유효기간이 다시 시작되고, 다르면 새 값으로 바꾼다.
-- **확정값 유효기간 (결정, AGENTS.md):** 사장님 확정값은 확정 시각(`ingredient_confirmations.confirmed_at`)부터 **3개월** 동안만 확정 정보로 쓴다. 3개월이 지나면 ③이 override하지 않고, 그 재료는 ⑤ 확률 계산으로 간다. 확정값을 지우지는 않지만, 만료된 답을 확률에 넣지도 않는다 (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의, ⑤ §1-1). 만료된 재료는 ⑧이 다시 질문을 만들 수 있다. 재확인을 앞당기는 다른 계기(메뉴 구성 변경 등)는 #202에서 정한다.
-- `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — 확정 조건(2번 일치 또는 3번 중 2번)을 만족하면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
+- **이미 확정값이 있을 때**: 같은 대상에 새 답이 오면 **가장 최근 답으로 바로 덮어쓴다.** 이전 답은 질문 행 이력에 남는다.
+- **유효기간 없음 (⓪ #151):** 사장님 확정값은 기간이 지났다는 이유만으로 만료하거나 다시 묻지 않는다. `confirmed_at`은 감사·이력 표시용이다. 사장님 답변은 확률 계산에도 쓰지 않는다 (10/10 회의, ⑤ §1-1).
+- `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — `present`/`absent` 답이 오면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
 - **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
 - **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
-- **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 이번 확인 차례에서 **가장 최근에 답한 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
-- 답이 확정되면 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 (확정 보류인 1차 답 등은 NULL로 둔다, DB 스키마 §6 16번) — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
+- **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 **그 답이 달린 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
+- 답이 확정되면 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 (`present`/`absent` 답은 항상 채운다, DB 스키마 §6 16번) — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 2-4. 메뉴 애매함 플래그 답 처리 (결정, 2026-10-13)
 
@@ -227,16 +211,15 @@ flowchart TD
 | 항목 | 재료 답 (§2-3) | 플래그 답 |
 |---|---|---|
 | 확정 단위 | `(가게, 메뉴, 재료)` | `(가게, 메뉴, 플래그, 물어본 태그)`. 같은 플래그라도 다른 태그로 물은 답은 따로 |
-| 확정 조건 | 확인 차례에서 1·2차 같으면 확정, 다르면 3번 중 2번 | **같음** |
-| `confirmation_state` 응답 | `confirmed` / `needs_second` / `needs_third` | **같음** (⑧이 2·3차 플래그 질문을 만든다) |
-| 유효기간 | 3개월 | **같음** |
+| 확정 조건 | 답 1번으로 즉시 확정 | **같음** |
+| 유효기간 | 없음 | **같음** |
 | 이상 답변 표시 | 레시피 확률 ≥ 0.9 + "없음" | **없음.** 비교할 확률이 없다 |
 | 확정값 저장 | `ingredient_confirmations` | `owner_flag_confirmations` (신규 제안, `caution-db-schema.md` §3) |
 | 증거 로그 | `ingredient_evidence_log`에 매번 기록 | **기록하지 않음.** 확률에 쓰지 않고, 로그 테이블은 재료가 필수다. 이력은 `owner_verification_requests` answered 행 |
 | 출처 신뢰도 갱신 | 있음 (§3-1) | **없음.** 플래그에 대해 주장한 출처가 없다 |
 
 - `present`의 뜻: 물어본 태그 중 **하나 이상** 있으면 `true`, **전부** 없으면 `false` (⓪ §4-2 `flag_confirmations`).
-- "모름" 답은 재료 답과 같이 세지 않는다.
+- "모름" 답은 재료 답과 같이 확정값을 만들지 않는다.
 
 ---
 
@@ -331,13 +314,13 @@ RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아�
 -- :recipe_probability = 질문 시점 ⑤ posterior_mean (재료 질문만, 플래그 질문은 NULL)
 INSERT INTO owner_verification_requests
        (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, recipe_probability,
-        card_id, round, previous_question_id, question_text, status)
+        card_id, question_text, status)
 VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :recipe_probability,
-        :card_id, :round, :previous_question_id, :question_text, 'pending')
+        :card_id, :question_text, 'pending')
 ON CONFLICT DO NOTHING;
 ```
 
-**`record_owner_answer` — 재료 답** — 이력 기록, 확정 조건을 채우면 확정 (§2-3)
+**`record_owner_answer` — 재료 답** — 이력 기록 + 즉시 확정 (§2-3)
 
 ```sql
 UPDATE owner_verification_requests
@@ -347,21 +330,8 @@ WHERE id = :question_id AND status = 'pending';
 INSERT INTO ingredient_evidence_log (store_id, menu_id, ingredient_id, source_type, delta_alpha, delta_beta, owner_verification_request_id)
 VALUES (:store_id, :menu_id, :ingredient_id, 'owner_feedback', 0, 0, :question_id);
 
--- 이번 확인 차례의 답변 (마지막 확정 이후, unknown 제외, 오래된 순)
-SELECT r.answer, r.recipe_probability
-FROM owner_verification_requests r
-LEFT JOIN ingredient_confirmations c
-       ON c.store_id = r.store_id AND c.menu_id = r.menu_id AND c.ingredient_id = r.ingredient_id
-WHERE r.store_id = :store_id AND r.menu_id = :menu_id AND r.ingredient_id = :ingredient_id
-  AND r.status = 'answered' AND r.answer IN ('present', 'absent')
-  AND r.answered_at > COALESCE(c.confirmed_at, '-infinity')
-ORDER BY r.answered_at ASC
-LIMIT 3;
--- 1개: 확정 보류 → needs_second
--- 2개이고 같음: 그 답으로 아래 upsert
--- 2개이고 다름: 확정 보류 → needs_third
--- 3개: 3번 중 2번 나온 답으로 아래 upsert
--- :flagged_anomaly = (확정 답이 absent) AND (가장 최근 행의 recipe_probability >= 0.9)
+-- answer가 unknown이면 여기서 끝 (확정값 없음)
+-- :flagged_anomaly = (:answer = 'absent') AND (이 질문의 recipe_probability >= 0.9)
 
 INSERT INTO ingredient_confirmations (store_id, menu_id, ingredient_id, present, source, flagged_anomaly, confirmed_at)
 VALUES (:store_id, :menu_id, :ingredient_id, :present, 'owner_confirmed', :flagged_anomaly, now())
@@ -369,11 +339,6 @@ ON CONFLICT (store_id, menu_id, ingredient_id)
 DO UPDATE SET present = EXCLUDED.present, flagged_anomaly = EXCLUDED.flagged_anomaly,
               confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_confirmation_id에 기록
-
--- 처리 결과 저장 → 다음 Judge Bundle의 owner_question_states[]
-UPDATE owner_verification_requests
-SET confirmation_state = :confirmation_state        -- confirmed / needs_second / needs_third
-WHERE id = :question_id;
 ```
 
 **`record_owner_answer` — 플래그 답** (§2-4). 증거 로그·신뢰도 갱신 없음
@@ -383,28 +348,13 @@ UPDATE owner_verification_requests
 SET status = 'answered', answer = :answer, answered_at = now()
 WHERE id = :question_id AND status = 'pending';
 
--- 이번 확인 차례의 답변 (마지막 확정 이후, unknown 제외, 오래된 순)
-SELECT r.answer
-FROM owner_verification_requests r
-LEFT JOIN owner_flag_confirmations c
-       ON c.store_id = r.store_id AND c.menu_id = r.menu_id
-      AND c.ambiguity_flag = r.ambiguity_flag AND c.asked_tags = r.asked_tags
-WHERE r.store_id = :store_id AND r.menu_id = :menu_id
-  AND r.ambiguity_flag = :ambiguity_flag AND r.asked_tags = :asked_tags
-  AND r.status = 'answered' AND r.answer IN ('present', 'absent')
-  AND r.answered_at > COALESCE(c.confirmed_at, '-infinity')
-ORDER BY r.answered_at ASC
-LIMIT 3;
--- 판정은 재료 답과 같다 (1개 needs_second / 2개 같음 확정 / 2개 다름 needs_third / 3개 다수결)
+-- answer가 unknown이면 여기서 끝 (확정값 없음)
 
 INSERT INTO owner_flag_confirmations (store_id, menu_id, ambiguity_flag, asked_tags, present, confirmed_at)
 VALUES (:store_id, :menu_id, :ambiguity_flag, :asked_tags, :present, now())
 ON CONFLICT (store_id, menu_id, ambiguity_flag, asked_tags)
 DO UPDATE SET present = EXCLUDED.present, confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_flag_confirmation_id에 기록
-
--- 처리 결과 저장 (재료 답과 같음)
-UPDATE owner_verification_requests SET confirmation_state = :confirmation_state WHERE id = :question_id;
 ```
 
 **`create_review_item` 승인 후 soft 증거 반영** — 로그 INSERT 후 재계산 (직접 UPDATE 금지)
@@ -492,7 +442,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 관리자가 오랫동안 컨펌 안 함 | review item은 대기 상태 유지, DB 미반영 (SLA 미확정, §8) |
 | 웹서치 후보가 여러 개고 서로 재료 목록이 다름 | 전부 관리자에게 노출, 병합 규칙은 관리자 판단 또는 별도 규칙 필요 (§8) |
 | 같은 메뉴에 대해 웹서치 제안과 변형 태깅 제안이 동시에 옴 | 각각 독립된 review item으로 취급 (병합하지 않음) |
-| 기존 확정값과 다른 답변이 옴 | 새 확인 차례가 끝날 때까지 기존 확정값 유지. 차례 결과가 다르면 덮어씀. `ingredient_evidence_log`에는 매번 새 행이 남아 변경 이력은 보존됨 |
+| 기존 확정값과 다른 답변이 옴 | 새 답으로 바로 덮어씀. `ingredient_evidence_log`에는 매번 새 행이 남아 변경 이력은 보존됨 |
 | 확정값 없이 답이 1번만 옴 | 이력만 기록, 확정값 생성 보류. ③은 미확인으로 계속 취급 |
 | 같은 명령이 두 번 전달됨 | 같은 `idempotency_key`로 백엔드가 한 번만 반영 |
 
@@ -508,29 +458,26 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 1-b | 관리자가 웹 레시피 승인, 같은 메뉴 승인 누적 29개 | DB 등록 없음, 가게 prior 변경 없음 | 승인 1건으로 메뉴가 생기지 않을 것 |
 | 1-c | 웹 레시피 승인 누적 30개 | 공용 `menus`·`recipe_ingredients` 등록, `ingredient_evidence_log` 없음 | 웹 레시피가 가게 prior에 들어가지 않을 것 |
 | 2 | 관리자가 제안 반려 | DB 변경 없음 | `ingredient_risk_scores` 그대로 |
-| 3 | 사장님 1·2차 같은 답 (돈까스 + "돼지고기 있음") | ⑦이 `record_owner_answer` 명령 생성, 백엔드가 이력 기록 후 `ingredient_confirmations` UPSERT | 커밋 후 다음 조회부터 확정값 반환 |
-| 3-b | 사장님 답변 1번만 | 이력만 기록 | `ingredient_confirmations` 변경 없음, ③은 미확인 유지 |
-| 3-c | 1차 "있음", 2차 "없음" | 확정 보류, `needs_third` 반환 | 확정값 생성되지 않음, 3차 질문이 만들어질 것 |
-| 3-c2 | 1차 "있음", 2차 "없음", 3차 "있음" | "있음"으로 확정 | 3번 중 2번 나온 답을 쓸 것 |
-| 3-d | 확정값 "없음" + 새 답 "있음" 1번 | 기존 확정값 유지 | 2번째 "있음"이 오면 그때 바뀔 것 |
-| 3-e | 확정값 "없음" + 새 차례 "있음", "없음", "없음" | "없음" 유지, `confirmed_at` 갱신 | 유효기간 3개월이 다시 시작될 것 |
+| 3 | 사장님 답 1번 (돈까스 + "돼지고기 있음") | ⑦이 `record_owner_answer` 명령 생성, 백엔드가 이력 기록 후 `ingredient_confirmations` UPSERT | 커밋 후 다음 조회부터 확정값 반환 |
+| 3-b | 사장님 답 "모름" | 이력만 기록 | `ingredient_confirmations` 변경 없음, ③은 미확인 유지 |
+| 3-d | 확정값 "없음" + 새 답 "있음" 1번 | "있음"으로 바로 덮어씀 | 2·3차 질문 없이 최근 답을 쓸 것 |
+| 3-e | 오래전에 확정한 "있음" | 그대로 확정값으로 사용 | 기간 경과만으로 만료하지 않을 것 |
 | 4-b | 레시피 확률 0.95 + "없음" | `flagged_anomaly: true` | 0.9 이상 "없음"이면 표시 |
 | 4-c | 레시피 확률 0.95 + "있음" | `flagged_anomaly: false` | "있음"은 이상 답변이 아님 |
-| 4-d | 질문 생성 요청에 `recipe_probability: 0.95` → 나중에 "없음" 1·2차 | 확정 시 `flagged_anomaly: true` | 스캔 밖 답변도 질문 시점 확률로 판정할 것 |
-| 4-e | 1차 질문 `recipe_probability: 0.95`, 2차 질문 0.85, 둘 다 "없음" | `flagged_anomaly: false` | 가장 최근 질문의 값(0.85)을 쓸 것 |
+| 4-d | 질문 생성 요청에 `recipe_probability: 0.95` → 나중에 "없음" | 확정 시 `flagged_anomaly: true` | 스캔 밖 답변도 질문 시점 확률로 판정할 것 |
 | 4 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장, ③이 `override_eligible: false` 반환 | **확률 값과 무관하게** ⑧에서 CAUTION 이상 유지될 것 |
 | 5 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 | 6 | ⑧ 질문 생성 요청 | `create_owner_verification_request` 명령만 반환 | ⑦ 출력에 `question_id`·저장 완료 표시가 없을 것 (백엔드가 발급) |
 | 7 | 모든 명령 | `payload.provenance` 포함 | `origin_node`·`source_type`·`evidence_class`·`evidence_refs`만 있고 `verification_status`·`reliability_weight`는 없을 것 (⓪ §4-6) |
 | 8 | 같은 명령 2회 전달 | 한 번만 반영 | `idempotency_key`가 같을 것 |
 | 8-b | 같은 스캔(`scan_session_id`)의 Judge를 다른 `trace_id`로 재시도 | 같은 질문 명령의 `idempotency_key`가 같음 | 질문 행이 하나만 생길 것 |
-| 8-c | 같은 재료 질문에 1차·2차 답 (`question_id` 다름) | `record_owner_answer` 키가 서로 다름 | 두 답이 모두 기록될 것 |
+| 8-c | 다른 스캔에서 같은 재료를 다시 물어 답이 2건 (`question_id` 다름) | `record_owner_answer` 키가 서로 다름 | 두 답이 모두 기록되고 최근 답이 확정값이 될 것 |
 | 9 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`trace_id`를 수정하지 않을 것 |
 | 10 | 비교 기록 없는 새 출처 | 신뢰도 0.5 | (0+1)/(0+2) |
 | 11 | 웹 검색이 "있음", 사장님 확정 "있음" | 웹 검색 비교 +1, 맞춤 +1 | `update_source_reliability` 명령만 만들고 DB에 직접 쓰지 않을 것 |
 | 12 | 이상 답변 표시가 붙은 확정값 | 신뢰도 비교에 쓰지 않음 | 출처 신뢰도가 바뀌지 않을 것 |
 | 13 | ⑧ 플래그 카드 (`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: [is_fish]`) | `create_owner_verification_request`에 `ambiguity_flag`·`asked_tags` 포함, `ingredient_id` 없음 | 재료 질문으로 저장되지 않을 것 |
-| 14 | 같은 플래그 질문에 1·2차 "없음" | `owner_flag_confirmations`에 `present: false` 확정, `confirmed` 반환 | 재료 확정값 테이블에 쓰지 않을 것, 증거 로그를 남기지 않을 것 |
+| 14 | 플래그 질문에 "없음" 1번 | `owner_flag_confirmations`에 `present: false` 즉시 확정 | 재료 확정값 테이블에 쓰지 않을 것, 증거 로그를 남기지 않을 것 |
 | 15 | 같은 플래그를 `[is_fish]`와 `[is_shellfish]`로 각각 물음 | 두 답을 따로 확정 | 한 답이 다른 태그 답을 덮어쓰지 않을 것 |
 | 16 | 정보 없는 메뉴의 표시용 카드 (`ingredient: null`, `ambiguity_flag: null`) | 저장 명령 없음 | 빈 질문 행을 만들지 않을 것 |
 
@@ -543,11 +490,11 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **웹 레시피 30개 등록 때 통계 함께 저장 (백엔드와)** — `corpus: web_search`로 `menu_recipe_corpora`·`menu_ingredient_priors`에 넣을지 (§2-1, `caution-db-schema.md` §6 22번)
 - [x] **10개 후보의 병합/선택 규칙** — 관리자 화면은 레시피 10개를 하나씩 보여주지 않고 **재료별로 합쳐서** 보여준다 (예: "돼지고기 8/10, 새우 2/10", 고유 레시피 기준, ⑥ §1-2 `observations`). 관리자는 재료 단위로 체크해 승인하고, 자동 채택은 하지 않는다 (2026-10-12)
 - [x] **관리자 컨펌 SLA** — 두지 않는다. 검토 항목은 승인·반려될 때까지 `pending`으로 쌓이고, 대기 일수 표시나 자동 만료도 없다 (2026-10-12)
-- [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 재확인 UI를 두지 않고, 2차·3차 질문으로 한 번의 실수를 거른다 (2026-10-10, #193)
+- [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 거르지 않는다. 레시피상 거의 확실한 재료의 "없음"은 이상 답변으로 잠긴다 (단일 확인 정책, ⓪ #151)
 - [x] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 확정 테이블은 최신 1행만 두고, 이력은 `ingredient_evidence_log`에 매 답변마다 남긴다. `caution-db-schema.md` §3과 본문 §2-3에 이미 정해진 내용이라 정리함
-- [x] **사장님 확인 최소 건수 n** — 1·2차 같으면 확정, 다르면 3차까지 받아 3번 중 2번 (2026-10-10 회의, #193, §2-3)
-- [x] **모순 답변 대기 중 처리** — 새 확인 차례가 끝날 때까지 기존 확정값 유지 (2026-10-10, #193)
-- [x] **확정값 유효기간** — 3개월. 만료되면 override하지 않고 지우지도 않음 (AGENTS.md, §2-3). 재확인을 앞당기는 계기는 #202에서 계속 논의
+- [x] **사장님 확인 최소 건수 n** — n=1. 답 한 번으로 즉시 확정 (단일 확인 정책, ⓪ #151, §2-3. 2026-10-10 #193의 n=2를 대체)
+- [x] **모순 답변 처리** — 새 답으로 바로 덮어씀 (⓪ #151)
+- [x] **확정값 유효기간** — 없음. 기간 경과만으로 만료하거나 다시 묻지 않음 (⓪ #151, §2-3)
 - [x] **anomaly 판정 기준** — 레시피 확률 0.9 이상 + "없음"이면 표시, "있음"은 대상 아님 (2026-10-06, #193, §2-3). ③ §6(#168)에도 같은 결정 전달 필요
 - [x] **사용자 피드백 트리거** — 두지 않는다. 확인 정보는 사장님 답변만 다룬다 (③ 결정, 2026-10-09)
 - [x] **`reliability_weight` 계산 위치** — ⑦이 사장님 확정값과 비교해 계산 명령을 만들고, ⑤가 사용한다. 0~1 범위 (2026-10-06, §3-1, #194). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
@@ -560,9 +507,9 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **스키마 보완 요청 (외부 의존)** — `source_reliability` 생성, `ai_command_receipts.action` 6종 등 10건을 `caution-db-schema.md` v4 §6에 정리함 (#47). 백엔드 반영 대기
 - [x] **⑥ §0 동기화** — ⑥ §0이 이 표를 복사하지 않고 soft evidence 성격만 적도록 바뀌어 해당 없음 (2026-10-12 확인)
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
-- [x] **2·3차 질문 연결** — 백엔드가 처리 결과를 저장해 다음 Judge Bundle의 `owner_question_states[]`로 넣고 ③ → ⑧로 전달 (⓪ #269·#274, §1-2)
-- [ ] **질문 사슬 컬럼 (외부 의존)** — `owner_verification_requests`에 `card_id`·`round`·`previous_question_id`·`confirmation_state` 추가 요청 (`caution-db-schema.md` §6 20번)
-- [x] **이상 답변 판정용 레시피 확률** — 질문 생성 때 ⑤ `posterior_mean`을 `recipe_probability`로 저장하고, 답 확정 때 이번 확인 차례의 가장 최근 질문 값으로 판정 (2026-10-13, §2-3). ⑧은 바뀌지 않는다 (Supervisor가 ⑤ 결과에서 채움)
+- [x] **2·3차 질문 연결** — 삭제. 질문은 대상마다 한 번만 만든다 (⓪ #151)
+- [ ] **질문 카드 연결 컬럼 (외부 의존)** — `owner_verification_requests`에 `card_id`만 추가 요청. 차수·사슬 컬럼은 만들지 않음 (`caution-db-schema.md` §6 20번)
+- [x] **이상 답변 판정용 레시피 확률** — 질문 생성 때 ⑤ `posterior_mean`을 `recipe_probability`로 저장하고, 답 확정 때 그 답이 달린 질문의 값으로 판정 (2026-10-13, §2-3). ⑧은 바뀌지 않는다 (Supervisor가 ⑤ 결과에서 채움)
 - [ ] **`owner_verification_requests.recipe_probability` 컬럼 (외부 의존)** — `caution-db-schema.md` §6 15번으로 백엔드에 요청
 
 ---
@@ -585,10 +532,10 @@ PPT는 사장님 확인이 n건 이상일 때 확정한다고 제출했다 (n=2�
 
 **세부 작업**
 
-- [x] 최소 확인 건수 n과 재확인 주기 결정 (③ #168과 함께) — n=2, 3개월
+- [x] 최소 확인 건수 n과 재확인 주기 결정 (③ #168과 함께) — n=1, 유효기간 없음 (⓪ #151로 변경)
 - [x] anomaly 판정 임계값과 `present: true` 포함 여부 결정 — 0.9, "없음"만
 - [x] 사용자 피드백 트리거와 신뢰도 등급 결정 — 쓰지 않음
-- [x] 사장님 오조작 대비 방안 정리 — 2·3차 질문으로 거름
+- [x] 사장님 오조작 대비 방안 정리 — 따로 거르지 않음, 이상 답변 잠금만 유지
 - [x] 사장님 답변의 공통 문맥(`item_id: null`) 허용 여부를 ⓪ 담당자와 확정
 
 **관련 서비스**

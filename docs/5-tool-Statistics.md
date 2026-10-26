@@ -79,7 +79,6 @@
 |---|---|---|
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
 | `scope: exact` + `flagged_anomaly: true` (이상 답변) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. `anomaly_locked: true`로 CAUTION 이상 유지 |
-| 3개월 지난 확정값 (`exact`, 만료) | ✅ **온다** | 만료되면 override하지 않지만 버리지도 않는다 (AGENTS.md). 재료는 레시피 확률로 계산하고, **만료된 답 자체는 확률에 넣지 않는다** (사장님 답변은 확률 계산에 쓰지 않음, 10/10 회의). ⑧이 다시 묻는 카드를 만든다 (⑧ §2-1) |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
 ### 1-2. 출력 값을 정하는 규칙
@@ -130,7 +129,7 @@ confidence = 1 − 1 / √(ν + 1)
 
 ### 1-4. `anomaly_locked`
 
-③이 **`flagged_anomaly: true`(이상 답변)** 로 반환한 재료에만 Supervisor가 `true`를 부여하고, ④가 그대로 보존해 ⑤로 넘긴다 (④ §1-1, ③ §1-6). 3개월 만료(`expired: true`)로 `override_eligible: false`가 된 재료는 ⑤ 확률 계산 대상이지만 `anomaly_locked: false`다.
+③이 **`flagged_anomaly: true`(이상 답변)** 로 반환한 재료에만 Supervisor가 `true`를 부여하고, ④가 그대로 보존해 ⑤로 넘긴다 (④ §1-1, ③ §1-6).
 **⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.**
 ⑧은 이 플래그가 있으면 **posterior_mean과 무관하게 CAUTION 이상을 유지**한다.
 
@@ -479,7 +478,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
 | 8 | 삭제됨 (2026-10-13, ③ §3-1). 원본 메뉴 확인값 입력이 없어졌다 | — | — |
 | 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
-| 9-b | 3개월 만료 재료 (`expired: true`, `anomaly_locked: false`로 들어옴) | 확률 계산, `anomaly_locked: false` 그대로 | 만료를 이상 답변으로 바꾸지 않을 것 |
 | 10 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
 | 10-b | `context.store_id: null` + 관측값 있는 재료 | `prior_source: global`로 계산 | 에러가 나지 않고, 가게 prior를 쓰지 않을 것 |
 | 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
@@ -495,7 +493,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 20 | 큐레이션 목록에 없는 재료 | 큐레이션 근거 없음 | "목록에 없음"을 없다는 근거로 쓰지 않을 것 |
 | 21 | 사이트 2곳에 관측값 | 사이트별 신뢰도를 곱해 합산 | 한 사이트 값만 쓰지 않을 것 |
 | 22 | 가게 증거 있음 | `ingredient_risk_scores`의 α−1, β−1을 그대로 더함 | 신뢰도를 두 번 곱하지 않을 것 |
-| 23 | 3개월 지난 사장님 확정값 | 재료는 레시피 확률로 계산, 만료된 답은 α·β에 넣지 않음 | 만료값으로 override하지도, 확률에 섞지도 않을 것 |
 | 24 | `α=1, β=1` (관측 0건) | `confidence = 0` | 무정보에 0보다 큰 값을 주지 않을 것 |
 | 25 | `k=53, n=57`, 신뢰도 1 vs `k=28, n=57`, 신뢰도 1 | 둘 다 `confidence ≈ 0.87` | 확률이 0.5 근처라고 confidence가 낮아지지 않을 것 |
 | 26 | ν = 4.9 / 5.0 | "낮음" / "낮지 않음" | 기준 ν < 5를 지킬 것 |

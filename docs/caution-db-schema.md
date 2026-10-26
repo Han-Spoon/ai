@@ -216,7 +216,7 @@ erDiagram
 
 - **확정 규칙**: 사장님 답변은 대상마다 한 번만 받고, `present` 또는 `absent` 답을 즉시 확정값으로 upsert한다. 같은 대상에 새 답변이 들어오면 가장 최근 답으로 확정값을 갱신하고 모든 답변 이력은 `owner_verification_requests`에 보존한다.
 - **유효기간 없음.** 한 번 확정된 답변은 기간 경과만으로 만료하거나 재질문하지 않는다. 새 사장님 답변으로 갱신되거나 관리자가 무효화하기 전까지 hard evidence로 사용한다.
-- **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. 확률은 이번 확인 차례에서 가장 최근에 답한 질문의 `owner_verification_requests.recipe_probability`를 쓴다. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
+- **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. 확률은 그 답이 달린 질문의 `owner_verification_requests.recipe_probability`를 쓴다. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
 
 ### `owner_verification_requests`
 ⑧이 만든 사장님 질문과 답변. 질문은 두 종류다 (⓪ §4-6 `create_owner_verification_request`).
