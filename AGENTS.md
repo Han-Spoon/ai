@@ -34,7 +34,7 @@
 
 ```bash
 pytest -q
-python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization ai_exact_feedback ai_decision_policy ai_web_search_agent ai_ontology ai_bayesian
+python -m compileall -q app.py ai_ocr ai_ruleengine ai_result ai_supervisor ai_normalization ai_exact_feedback ai_decision_policy ai_web_search_agent ai_ontology ai_bayesian ai_db_update
 ```
 
 CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11 기준입니다.
