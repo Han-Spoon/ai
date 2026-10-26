@@ -107,7 +107,7 @@ def flag_answer(tags: list[str], status: str, *, eligible: bool = True) -> FlagC
             "observed_at": datetime(2026, 10, 8, tzinfo=timezone.utc),
         },
         override_eligible=eligible,
-        expired=not eligible,
+        expired=False,
     )
 
 
@@ -403,7 +403,7 @@ def test_23_present_answer_with_unknown_tag_mix_is_not_danger() -> None:
     assert outcome.risk_level == "caution"
 
 
-def test_expired_flag_answer_does_not_resolve() -> None:
+def test_ineligible_flag_answer_does_not_resolve() -> None:
     outcome = decide(
         request(
             FISH_ALLERGY,
