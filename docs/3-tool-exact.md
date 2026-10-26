@@ -8,7 +8,7 @@
 
 **③은 순수 조회기다. 판단하지 않는다.**
 
-- 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답(§1-8)과 이전 질문의 진행 상태(§1-9)도 함께 반환한다
+- 하는 것: Judge 요청 묶음(KnowledgeBundle)에 들어 있는 이 메뉴의 확인값(`exact_feedback.exact`)과 캐시(`ontology.cache`)를 읽어 재료 단위 확인 맵을 반환한다. 메뉴 애매함 플래그에 대한 사장님 답(§1-8)도 함께 반환한다
 - **DB는 부르지 않는다** (10/10 회의 결정 1). 백엔드가 Judge 요청을 만들 때 `store_id + menu_id`로 `ingredient_confirmations`를 미리 조회해 묶음에 담는다 (⓪ §1-3). 가게 없는 스캔(`store_id: null`)이면 담지 않고(`exact_feedback.status: not_found`) ③도 불리지 않는다 (§1-1). ③은 Item Graph에 들어온 같은 `item_id`의 자료만 읽는다 (⓪ §2-6)
 - 하지 않는 것: 재료 태그(`constraint_tags`, 재료가 걸리는 제한 태그, 예: 돼지고기 → `is_pork`)는 붙이지 않는다. **태그는 ④만 붙인다** (결정, 2026-10-10 회의, ④ §2-7). ③은 확인값마다 `ingredient_id`만 정확히 돌려주고 `constraint_tags`는 `[]`로 보낸다
 - 태그를 채우는 방법: **③이 ④를 직접 부르지 않는다. Supervisor가 ③ 결과를 받은 뒤 ④의 태그 조회(`lookup_tags`)를 불러 채운다** (⓪ §1-2, §2-8 `tag_lookup`). Agent·Tool끼리는 직접 호출하지 않기 때문이다 (⓪ §0). ③ 확인값이 ⑧로 가는 경로는 모두 채워야 한다. ③만 거치는 경로뿐 아니라 ④⑤를 거치는 경로도 마찬가지다. ④는 확인된 재료를 확장 결과에서 빼므로(④ §2-1 7단계), 따로 채우지 않으면 확인값의 태그가 빈 채로 ⑧에 간다 (§6)
@@ -36,17 +36,17 @@
 |---|---|
 | 7쪽: 검증·저장된 메뉴의 재료 확정 근거(Hard Evidence)를 조회 (`확정 근거 조회`) | §0, §2. 백엔드가 `store_id + menu_id`로 조회해 Judge 요청에 담은 `ingredient_confirmations`를 읽음. 확정 근거는 사장님 답변만 (§1-4) |
 | 7쪽: 존재 / 부재 / 미확인 상태를 반환 (`3-State`) | §1-3. `present` / `absent` / `unknown` |
-| 7쪽: Agent는 판단하고 Tool은 수행한다 | §0. ③은 조회기다. 만료·override 가능 여부·완전성 표시는 정해진 규칙으로 계산한다 (§1-6, §1-7, §2) |
+| 7쪽: Agent는 판단하고 Tool은 수행한다 | §0. ③은 조회기다. override 가능 여부·완전성 표시는 정해진 규칙으로 계산한다 (§1-6, §2) |
 | 3쪽 외부 연결: 가게 직원 — 질문, 답변 | §1-4. 확정 근거의 출처 |
 | 8쪽 1: 모든 호출에 `store_id`를 유지해 가게별 확정 재료가 섞이지 않게 | §1-1, §4-2. `store_id` 필수, 없으면 에러, 전역 조회 금지. 가게 없는 스캔은 ③을 부르지 않아 다른 가게 확정값이 섞일 수 없다 (§4-1 6번, #281) |
 | 8쪽 2: 확인된 재료는 그대로 유지, 미확인 재료만 확장·추정, 전부 확인되면 확률 계산 생략 | §0(부분 확인 지원), §2(`completeness`), §3-2(`complete`면 ④⑤ 생략) |
 | 8쪽 흐름: ③ 확정 재료 조회 (가게에서 제공 재료 정보 · 사용자 피드백 우선 반영) | §3 호출 시점. "사용자 피드백"은 손님 화면의 확인 질문으로 받은 **사장님 답변**으로 해석한다 (§1-4) |
 | 8쪽 흐름: 미확정 재료가 없으면 확정 재료로 바로 판정 | §3-2. `completeness: complete` → ⑧ 직행 |
-| 8쪽 5: 사장님 확인 정보 → 최소 n회 이상 시 기록 · 이상 여부 검사 | ⑦ 담당 (n=2: 1·2차가 같으면 확정, 다르면 3차까지, ⑦ §2-3). ③은 확정된 값과 ⑦이 붙인 `flagged_anomaly`를 읽기만 한다 (§1-6, §4-2) |
+| 8쪽 5: 사장님 확인 정보 → 최소 n회 이상 시 기록 · 이상 여부 검사 | ⑦ 담당 (n=1: 답 한 번으로 바로 확정, ⑦ §2-3, ⓪ #151). ③은 확정된 값과 ⑦이 붙인 `flagged_anomaly`를 읽기만 한다 (§1-6, §4-2) |
 | 8쪽 6: 사장님 확인 n건↑ → DANGER/SAFE 확정 | ③은 `override_eligible: true`로 확정 근거임을 표시하고, 판정은 ⑧이 한다 (§1-6) |
-| 8쪽 6: n개월마다 재확인 | §1-7. 3개월이 지나면 `expired: true`로 override하지 않는다. 다시 묻는 카드는 ⑧이 만든다 (⑧ §2-1 7단계, 이유 `expired`) |
+| 8쪽 6: n개월마다 재확인 | §1-7. **두지 않는다.** 사장님 답은 기간 만료 없이 쓰고 다시 묻지 않는다 (10/26 회의, ⓪ #151) |
 | 10쪽: `Exact-first` | §3. ④보다 먼저 호출해 전부 확인된 메뉴는 가벼운 경로로 끝낸다 |
-| 10쪽 RAI 02: 기록 재확인 경로 제공 | §1-7 만료 표시. 재질문 카드는 ⑧ §2-1 7단계 |
+| 10쪽 RAI 02: 기록 재확인 경로 제공 | ③ 범위 밖. 사장님 답을 주기적으로 다시 묻는 경로는 두지 않는다 (§1-7) |
 
 - PPT에 없던 기본 메뉴(`base_menu_id`) 확인값 2차 호출은 삭제했다 (2026-10-13, §3-1, §6).
 
@@ -75,9 +75,7 @@
 | `confirmations[].evidence` | 사장님 답변 근거 (§1-4). `observed_at`은 DB `ingredient_confirmations.confirmed_at` |
 | `confirmations[].flagged_anomaly` | ⑦이 저장할 때 붙인 값을 그대로 읽는다 (기준 §1-6) |
 | `confirmations[].override_eligible` | §1-6 표 |
-| `confirmations[].expired` | 확인 후 3개월 경과 여부 (§1-7) |
 | `flag_confirmations` | 메뉴 애매함 플래그에 대한 사장님 답 (§1-8) |
-| `owner_question_states` | 묶음 값을 그대로 넘긴다. 계산하거나 바꾸지 않는다 (§1-9) |
 
 ### 1-3. `status` — 3값 필수 (2값 금지)
 
@@ -118,27 +116,19 @@
 
 | 조건 | `override_eligible` | Supervisor 동작 |
 |---|---|---|
-| `flagged_anomaly: false` AND `expired: false` AND `scope: exact` | `true` | override 적용, ⑤ 스킵 가능 |
+| `flagged_anomaly: false` AND `scope: exact` | `true` | override 적용, ⑤ 스킵 가능 |
 | `flagged_anomaly: true` | **`false`** | **override 거부 → 해당 재료를 ⑤로 전달**, ⑧에서 CAUTION 이상 강제 유지 |
-| `expired: true` (§1-7) | **`false`** | override 거부 → 해당 재료를 ⑤로 전달 |
 
 > ⚠️ **anomaly 재료를 "무시"하면 안 된다.** 재료 자체가 리스트에서 사라지면 확률 계산도 안 되고 판정에서도 빠져 **FN이 발생한다.** 반드시 ⑤로 넘겨 확률을 계산하게 하고, 결과를 CAUTION 이상으로 유지한다.
 
-### 1-7. 확인값 유효기간 — 3개월 (결정, 2026-10-06 회의)
+### 1-7. 확인값 유효기간 — 없음 (결정, 2026-10-26 회의)
 
-사장님 확인값은 **확인 시점(`confirmed_at`)부터 3개월 동안만** 확정 정보로 쓴다. 3개월은 **등록(확인)한 날짜부터 달력 기준 3개월**이다 (2026-10-10 회의). 메뉴 레시피는 바뀔 수 있으므로 오래된 확인값으로 계속 override하면 FN이 생길 수 있다.
+사장님 답은 **대상마다 한 번만 받아 바로 확정하고, 기간 제한 없이** 확정 정보로 쓴다 (10/26 회의, 단일 확인 정책 ⓪ #151, ⑦ §2-3). 답이 이상해 보여도 다시 묻지 않는다.
 
-| 조건 | `expired` | 처리 |
-|---|---|---|
-| `confirmed_at`이 3개월 이내 | `false` | 기존 규칙대로 (§1-6) |
-| `confirmed_at`이 3개월 경과 | `true` | `override_eligible: false`. 확정 정보로 쓰지 않는다 |
-
-- **날짜는 한국 날짜(KST)로 센다** (결정, 2026-10-22). `confirmed_at`은 UTC로 오므로 한국 시간으로 바꾼 날짜에 3개월을 더한다. 예) `2026-10-31T16:00:00Z`는 한국 날짜 11/1이다.
-- **3개월째 되는 날까지 유효하고, 그다음 날부터 만료다** (결정, 2026-10-23). 예) 7/15 확인 → 10/15까지 유효, 10/16부터 `expired: true`. §2-2 의사코드(`confirmed_at < now() - months(3)`)와 같다.
-- **월말에 같은 날이 없으면 그 달 마지막 날로 당긴다** (결정, 2026-10-22). 예) 11/30 확인 → 3개월째 되는 날은 2/28(윤년 2/29)이라 그날까지 유효, 다음 날부터 만료. 더 빨리 만료되는 쪽이 오래된 확인값으로 override하는 FN을 줄인다.
-- **만료 레코드도 드롭하지 않는다.** `expired: true`로 표기해 반환한다. 재료가 리스트에서 사라지면 FN이 생긴다 (§1-6과 같은 이유).
-- 만료 판정은 ③이 판정 시점에 `confirmed_at`만 보고 한다. DB 레코드를 지우거나 바꾸지 않는다 (DB 쓰기는 ③ 범위 밖).
-- 만료된 재료는 사장님에게 다시 확인받을 대상이다. ⑧이 다시 묻는 질문 카드를 만든다 (⑧ §2-1 7단계, 이유 `expired`).
+- ③은 만료를 계산하지 않는다. 오래된 확인값도 다른 확인값과 똑같이 §1-6 규칙으로 `override_eligible`을 정한다.
+- 이상 답변(`flagged_anomaly: true`)은 다시 묻지 않지만 override 거부·CAUTION 이상 유지는 그대로다 (§1-6).
+- 예전 규칙(확인 후 3개월이 지나면 `expired: true`로 override 거부, ⑧이 다시 묻는 카드 생성, 2026-10-06·10-10·10-22·10-23 결정)은 폐지했다.
+- ⓪ 문서에서는 `expired`가 빠졌지만 ⓪ 계약 코드(`ai_supervisor/contracts`)에는 아직 필수 필드로 남아 있어, ③ 코드는 그때까지 항상 `expired: false`를 보낸다 (§8).
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
 
@@ -146,21 +136,17 @@
 
 - `constraint_tags`는 사장님에게 물어본 태그다. 질문에 들어 있던 값을 저장한 것이라 ③이 붙이는 태그가 아니다 (§0의 "태그는 ④만"은 재료 태그 이야기).
 - `status`는 §1-3과 같은 3값이다.
-- `override_eligible`은 `expired: false`면 `true`다. 재료 확인값과 달리 비교할 확률이 없어 anomaly 표시는 없다.
-- `expired`는 §1-7과 같은 3개월 규칙이다.
+- `override_eligible`은 항상 `true`다. 재료 확인값과 달리 비교할 확률이 없어 anomaly 표시가 없고, 기간 만료도 없다 (§1-7).
 
 - 같은 플래그를 다른 태그로 물은 답은 따로 반환한다. 어느 답을 쓸지는 ⑧이 정한다.
-- 2번 연속 같은 답이면 확정하는 규칙(10/10 회의)은 재료 확인값과 같이 ⑦이 저장할 때 적용한다. ③은 확정된 답만 읽는다.
+- 답 한 번으로 바로 확정하는 규칙(⓪ #151)은 재료 확인값과 같이 ⑦이 저장할 때 적용한다. ③은 확정된 답만 읽는다.
 - `completeness`(§2)에는 영향을 주지 않는다. `completeness`는 재료 확인값만 본다.
 
-### 1-9. 이전 질문의 진행 상태 — `owner_question_states` (⓪ 반영, #269)
+### 1-9. 이전 질문의 진행 상태 — 삭제 (2026-10-26)
 
-사장님 답은 2번 연속 같아야 확정된다 (⑦ §2-3). 확정 전이면 다음 스캔에서 같은 대상을 2차·3차로 다시 물어야 하는데, 그러려면 ⑧이 "지금 몇 차까지 물었는지"를 알아야 한다. 백엔드가 사장님 답을 처리한 뒤 진행 상태를 저장해 Judge 요청 묶음(`exact_feedback.exact.owner_question_states`)에 넣고, ③은 이를 그대로 넘긴다. 형식은 [⓪ §4-2 `owner_question_states`](0-agent-supervisor.md)다.
+사장님 답은 대상마다 한 번만 받아 바로 확정하므로 (⑦ §2-3, ⓪ #151) 2·3차 질문이 없고, "몇 차까지 물었는지"(`owner_question_states`)를 넘길 필요도 없다. ⓪ 문서 §4-2 응답에서도 빠졌다.
 
-- `confirmation_state`는 `confirmed`(확정됨) / `needs_second`(2차 질문 필요) / `needs_third`(1·2차 답이 달라 3차 필요)다. 이 값은 백엔드가 정한다. ③은 계산·변경하지 않는다.
-- 3개월 만료(§1-7)를 붙이지 않는다. 확정된 답의 만료는 `confirmations`·`flag_confirmations`의 `expired`로 따로 나간다.
-- `completeness`(§2)에는 영향을 주지 않는다.
-- ⑧이 이 값으로 질문 카드의 차수(`round`)와 직전 질문(`previous_question_id`)을 정한다 (⑧ §1-3).
+- ⓪ 계약 코드(`ai_supervisor/contracts`)에는 아직 필수 필드로 남아 있어, ③ 코드는 그때까지 묶음 값을 바꾸지 않고 그대로 넘긴다 (§8).
 
 ---
 
@@ -174,13 +160,12 @@ flowchart TD
     Q --> N{레코드 존재?}
     N -->|없음| E["빈 배열<br/>completeness: unknown"]
     N -->|있음| TG["ingredient_id 정리<br/>(태그는 ④가 붙임)"]
-    TG --> EX["만료 표시<br/>(confirmed_at 3개월 경과 → expired)"]
-    EX --> A{"flagged_anomaly 또는 expired?"}
+    TG --> A{"flagged_anomaly?"}
     A -->|Yes| MARK["override_eligible: false<br/>드롭 금지, 플래그와 함께 반환"]
     A -->|No| OK["override_eligible: true"]
     MARK --> C[캐시 대조]
     OK --> C
-    C --> CP{"캐시 존재 AND 전 재료 확인<br/>AND anomaly·만료 0건?"}
+    C --> CP{"캐시 존재 AND 전 재료 확인<br/>AND anomaly 0건?"}
     CP -->|Yes| COMP["completeness: complete"]
     CP -->|No| UNK["completeness: unknown"]
     COMP --> OUT[Supervisor에 반환]
@@ -202,12 +187,12 @@ def check_completeness(
     confirmations: list[Confirmation],
     cache: MenuIngredientCache | None,              # Judge 요청 묶음의 ontology.cache
 ) -> Literal["complete", "unknown"]:
-    """cache가 있고, 전 재료가 확인됐고, anomaly·만료가 0건일 때만 complete.
+    """cache가 있고, 전 재료가 확인됐고, anomaly가 0건일 때만 complete.
     cache가 없으면(None) 항상 unknown (④ 호출 유도)."""
 
 
 def resolve_override_eligibility(c: Confirmation) -> bool:
-    """anomaly이거나 만료(expired)됐으면 False.
+    """anomaly면 False. 기간 만료는 없다 (§1-7).
     False인 재료는 드롭하지 않고 ⑤로 전달한다."""
 ```
 
@@ -228,7 +213,6 @@ exact = knowledge.exact_feedback.exact               # not_found·unavailable이
                                                      # (unavailable warning은 Supervisor가 이미 붙임)
 rows = exact.confirmations if exact else []
 flag_rows = exact.flag_confirmations if exact else []
-question_states = exact.owner_question_states if exact else []   # §1-9. 그대로 넘긴다
 
 confirmations = [to_confirmation(r) for r in rows]   # anomaly 포함, 드롭 금지
 flag_confirmations = [to_flag_confirmation(r) for r in flag_rows]   # §1-8
@@ -236,22 +220,18 @@ flag_confirmations = [to_flag_confirmation(r) for r in flag_rows]   # §1-8
 for c in confirmations:
     c.constraint_tags = []                           # 태그는 ④가 붙인다 (④ §2-7)
 
-for c in confirmations:                              # §1-7. 드롭하지 않고 표기만
-    c.expired = c.confirmed_at < now() - months(3)
-
 for c in confirmations:
     c.override_eligible = resolve_override_eligibility(c)
 
-for f in flag_confirmations:                         # §1-8. 이상 답변 표시 없음
-    f.expired = f.confirmed_at < now() - months(3)
-    f.override_eligible = not f.expired
+for f in flag_confirmations:                         # §1-8. 이상 답변 표시·기간 만료 없음
+    f.override_eligible = True
 
 cached = knowledge.ontology.cache                    # 지식 버전이 같은 캐시만 들어옴. 없으면 None
 completeness = (
     "complete"
     if cached
        and all(c.status != "unknown" for c in cover(cached, confirmations))
-       and all(not c.flagged_anomaly and not c.expired for c in confirmations)
+       and all(not c.flagged_anomaly for c in confirmations)
     else "unknown"
 )
 
@@ -262,7 +242,6 @@ return ExactFeedbackResponse(
     completeness        = completeness,
     confirmations       = confirmations,            # evidence.observed_at = confirmed_at
     flag_confirmations  = flag_confirmations,
-    owner_question_states = question_states,
     warnings            = warnings,
     errors              = list(request.errors),
 )
@@ -320,8 +299,7 @@ return ExactFeedbackResponse(
 | 묶음에 이 메뉴의 확인값이 없음 (`exact_feedback.status: not_found`) | 빈 배열 + `unknown` 반환. 예외 발생시키지 않음 |
 | 묶음의 확인값을 백엔드가 못 가져옴 (`exact_feedback.status: unavailable`) | 빈 배열 + `unknown`. "확인값 없음"으로 믿지 않고 SAFE 금지 warning(`knowledge_slice_unavailable`)이 남는다 (⓪ §1-3) |
 | `flagged_anomaly: true` | **드롭 금지.** `override_eligible: false`로 표기해 반환 → ⑤ 계산 대상 |
-| 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 1·2·3차 사장님 답변은 질문·답변 기록(`owner_verification_requests`)에 따로 쌓이고, 확정 규칙은 ⑦이 센다 (⑦ §2-3, #167). ③은 확정값 표만 읽는다 |
-| 확인 후 3개월 경과 | **드롭 금지.** `expired: true`, `override_eligible: false`로 반환 → ⑤ 계산 대상 (§1-7) |
+| 같은 재료의 확정값이 여러 개 | 생기지 않는다. 확정값 표(`ingredient_confirmations`)는 가게·메뉴·재료당 1행이다 (UNIQUE). 사장님 답은 대상마다 한 번만 받아 ⑦이 바로 확정한다 (⑦ §2-3, ⓪ #151). ③은 확정값 표만 읽는다 |
 | `menu_ingredient_cache` 없음 | `completeness: unknown` 강제 → ④ 호출 유도 |
 | 메뉴 레시피가 바뀌어 캐시가 오래됨 | 백엔드가 지식 버전(`menus.knowledge_revision`)이 같은 캐시만 묶음에 담으므로 `cache: null`로 온다 → `unknown` 반환 (안전 방향, §6 캐시 무효화) |
 
@@ -341,31 +319,30 @@ return ExactFeedbackResponse(
 | 7 | 돈까스 `돼지고기: absent` (anomaly) | `override_eligible: false` + 재료 유지 | **드롭도 자동채택도 하지 않을 것**, ⑤로 전달될 것 |
 | 8 | 전 재료 확인 + anomaly 1건 | `completeness: unknown` | anomaly가 `complete`를 막을 것 |
 | 9 | 캐시 존재 + 전 재료 확인 + anomaly 0 | `complete` | ④⑤ 스킵 경로 작동할 것 |
-| 10 | 4개월 전 `돼지고기: absent` | `expired: true`, `override_eligible: false` + 재료 유지 | override되지 않고 ⑤로 전달될 것 |
-| 11 | 캐시 존재 + 전 재료 확인 + 그중 1건 만료 | `completeness: unknown` | 만료값이 `complete`를 막을 것 |
+| 10 | 1년 전 `돼지고기: absent` (anomaly 아님) | `override_eligible: true`, `expired: false` | 시간이 지났다는 이유로 override를 거부하지 않을 것 (§1-7) |
+| 11 | 캐시 존재 + 전 재료 확인 + 그중 1건이 1년 전 확인값 | `completeness: complete` | 오래된 확인값이 `complete`를 막지 않을 것 (§1-7) |
 | 12 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
 | 13 | 김치찌개 `땅콩: present` + `flagged_anomaly: false` (레시피 확률 낮음) | `override_eligible: true` | "있음" 답변은 anomaly가 아니므로 override가 거부되지 않을 것 |
 | 14 | 일부만 확인된 메뉴(④⑤ 경로) + 돼지고기 `status: present` | ③은 `constraint_tags: []`로 반환, Supervisor가 ④ `lookup_tags`로 `is_pork`를 채운 뒤 ⑧에 전달 | ④⑤를 거치는 경로에서도 확인값 태그가 빠지지 않을 것 (§0) |
 | 15 | 김치찌개에 젓갈 플래그 답 1건(`is_fish`, `absent`) | `flag_confirmations`에 1건, `confirmations`·`completeness`는 그대로 | 플래그 답이 재료 확인값과 섞이지 않을 것 |
-| 16 | 4개월 전 젓갈 플래그 답 | `expired: true`, `override_eligible: false` + 답 유지 | 만료 규칙이 플래그 답에도 적용될 것 |
-| 17 | 묶음에 액젓 질문 상태 1건(`answered_round: 2`, `needs_third`) | `owner_question_states`에 같은 값 그대로, `confirmations`·`completeness`는 그대로 | 진행 상태를 바꾸거나 빠뜨리지 않을 것 (⓪ 테스트 29) |
+| 16 | 1년 전 젓갈 플래그 답 | `override_eligible: true`, `expired: false` | 플래그 답에도 기간 만료가 없을 것 (§1-8) |
+| 17 | (삭제, 2026-10-26) 2·3차 질문 진행 상태 | — | 질문을 한 번만 하므로 진행 상태를 넘기지 않는다 (§1-9) |
 
 ---
 
 ## 6. 미확정 항목 (팀 확인 대기)
 
-- [x] **확인 정보 유효기간** — 3개월로 결정 (2026-10-06 회의, §1-7)
-- [x] **3개월 세는 기준** — 등록(확인)한 날짜부터 달력 기준 3개월 (2026-10-10 회의, §1-7)
-- [x] **만료된 재료 재질문 경로** — ⑧이 만료된 확인값(`expired: true`) 중 사용자 태그와 관련 있는 재료를 다시 묻는 질문 카드를 만든다(이유 `expired`). ⓪ §4-7이 ⑧에 `expired`를 넘겨야 한다 (2026-10-12, ⑧ §2-1 7단계)
+- [x] **확인 정보 유효기간** — 없음 (2026-10-26 회의, §1-7). 2026-10-06 회의의 3개월 규칙과 세는 기준(10-10·10-22·10-23)은 폐지
+- [x] **만료된 재료 재질문 경로** — 삭제. 사장님 답은 한 번만 받고 다시 묻지 않는다 (2026-10-26 회의, §1-7)
 - [x] **`menu_ingredient_cache` 무효화 시점** — ④ 방식을 따른다 (④ §2-1 6단계): 캐시는 `menus.knowledge_revision`이 같을 때만 유효하고, 메뉴의 레시피·온톨로지가 바뀌면(웹 레시피 DB 등록, 크롤링 데이터 재적재, 숨은 재료 규칙 추가 등) 리비전이 올라가 자동 무효화된다. 사장님 확인값은 캐시에 넣지 않으므로 새 확인값이 들어와도 무효화하지 않는다. 재료 단위 변경 시 리비전을 올리는 방식은 ④ §8 (#169)
 - [x] **2차 호출(`inherited`)** — 삭제 (2026-10-13). 10/10 회의에서 사장님 답변은 확률 계산에 쓰지 않기로 해 쓸 곳이 없고, 백엔드도 항상 `null`인 `exact_feedback.inherited`를 지우자고 요청함 (§3-1)
 - [x] **2차 호출 삭제 ⑤ 반영 (외부 의존)** — ✅ ⑤도 반영됨 (#286·#290, 2026-10-21 확인). ⓪은 반영됨: Bundle `exact_feedback.inherited`(#274), `scope_hint`·`confirmation_scope`의 `inherited` 값, `exact_inherited` 보류 node, ⑤ 요청 `inherited_confirmations` 삭제. ⑤도 §1-1·§3-3·§8에 입력에서 삭제됐다고 적었다
 - [x] **④⑤ 경로에서 확인값 태그 채우기 (외부 의존)** — ✅ ④ §2-7도 "모든 경로에서 ⑧ 직전"으로 반영됨 (#286, 2026-10-21 확인). ⓪은 반영됨: 모든 경로가 ⑧ 직전에 `tag_lookup`을 거친다 (⓪ §2-8 라우터 `bayesian → tag_lookup → decision`, §4-2, 테스트 12-a, 2026-10-13 확인). ④ §3 `lookup_tags` 설명도 "③만 거치는 경로" → "모든 경로, 일부만 확인된 메뉴도 포함"으로 고쳐졌다. 이 경로가 빠지면 일부만 확인된 메뉴에서 확인값 태그가 비어 할랄 사용자에게 돼지고기 `present`가 DANGER로 걸리지 않을 수 있었다 (FN)
-- [x] **`completeness` 계산 주체** — ③이 캐시(`ontology.cache`)와 이상 답변·3개월 만료 규칙으로 계산한다. 같은 규칙을 백엔드에도 두면 둘이 어긋나 만료값으로 ④⑤를 건너뛸 수 있어서, 백엔드는 Judge 요청에 `completeness`를 넣지 않는다 (2026-10-13, ⓪ §1-3)
+- [x] **`completeness` 계산 주체** — ③이 캐시(`ontology.cache`)와 이상 답변 규칙으로 계산한다. 같은 규칙을 백엔드에도 두면 둘이 어긋나 이상 답변으로 ④⑤를 건너뛸 수 있어서, 백엔드는 Judge 요청에 `completeness`를 넣지 않는다 (2026-10-13, ⓪ §1-3)
 - [x] **판정 중 DB 조회** — 하지 않는다. 확인값·캐시는 백엔드가 Judge 요청에 담아 주고 ③은 읽기만 한다 (10/10 회의 결정 1, §0·§2, 2026-10-13)
 - [x] **`completeness: partial` 기준** — `partial`은 쓰지 않고 `complete | unknown` 두 값만 쓴다. ⓪·④·⑤는 "complete인지 아닌지"로만 경로를 나누어 `partial`과 `unknown`의 차이가 어디에도 쓰이지 않기 때문이다. ⓪ §4-2의 값 목록과 예시에서 `partial`을 지운다 (2026-10-12)
 - [x] **⓪ 반영 요청** — ⓪ §4-2 응답과 §1-3 Judge 요청 `exact_feedback.exact`에 `flag_confirmations` 추가, §1-8은 ⓪ 링크로 바꿈 (2026-10-13)
-- [x] **2·3차 질문 진행 상태 전달** — 백엔드가 사장님 답 처리 결과(`owner_question_states`)를 Judge 요청 묶음에 넣고, ③이 그대로 ⑧까지 넘긴다 (⓪ 반영 #269, §1-9)
+- [x] **2·3차 질문 진행 상태 전달** — 삭제. 질문을 한 번만 하므로 넘길 진행 상태가 없다 (2026-10-26 회의, ⓪ #151, §1-9). 처음 결정은 ⓪ #269
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리. ⑦·DB 스키마 문서에는 반영됨: 새 테이블 `owner_flag_confirmations` 제안, ⑦이 저장 (#259, ⑦ §2-4, `caution-db-schema.md` §6 11·12번). 남은 것: 백엔드가 테이블을 확정
 - [x] **가게 없는 스캔** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 결정 (#281, AGENTS.md 갱신): Prepare는 `store_id`를 받지 않고, Judge는 `store_id: null`을 가게 없는 스캔으로 받는다. 이때 Supervisor는 ③을 부르지 않고, 사장님 질문·저장 명령을 만들지 않으며, 모든 메뉴는 SAFE 금지다 (⓪ §1-3). ③의 규칙(§1-1 `store_id` 필수)은 그대로다 (§4-1 6번)
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6)
@@ -378,9 +355,9 @@ return ExactFeedbackResponse(
 - **`status` 3값**: `present` / `absent` / `unknown`
 - **`menu_ingredient_cache`**: 생성하기로 확정. 무효화는 ④ 방식을 따른다 — 메뉴 지식 리비전(`menus.knowledge_revision`)이 바뀌면 자동 무효화, 사장님 확인값으로는 무효화하지 않음 (2026-10-11, ④ §2-1)
 - **확정 근거는 사장님 답변만**: 관광객이 직접 알려주는 재료 정보(`user_hard`)는 수집 경로가 없어 쓰지 않는다 (2026-10-09, #214)
-- **확정값은 재료당 1행**: 1·2·3차 답변은 질문·답변 기록에 따로 쌓이고 확정 규칙은 ⑦이 센다. ③은 확정값 표만 읽는다 (#167)
+- **확정값은 재료당 1행**: 사장님 답은 한 번만 받아 ⑦이 바로 확정한다. ③은 확정값 표만 읽는다 (#167, ⓪ #151)
 - **태그는 ④만 붙인다**: ③은 `constraint_tags: []`로 반환하고 Supervisor가 ④ `lookup_tags`로 채운다 (2026-10-10 회의)
-- **확인값 유효기간 3개월**: 등록(확인)한 날짜부터 달력 기준 3개월. 만료되면 override 거부, 드롭 금지 (2026-10-06·10-10 회의)
+- **확인값 유효기간 없음**: 사장님 답은 한 번만 받고 기간 제한 없이 쓴다. 다시 묻지 않는다 (2026-10-26 회의, 3개월 규칙 대체)
 - **가게 없는 스캔은 ③을 부르지 않는다**: Judge `store_id: null`이면 가게별 확인값이 없으므로 Supervisor가 ③을 건너뛴다. ③의 `store_id` 필수 규칙은 그대로다 (#281, AGENTS.md)
 
 ---
@@ -389,4 +366,4 @@ return ExactFeedbackResponse(
 
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
-- 현재 없음 (2026-10-18, ⓪ §4-2와 대조)
+- [ ] **⓪ 계약 코드의 `expired`·`owner_question_states`** (2026-10-27) — ⓪ 문서 §4-2에서는 빠졌지만 `ai_supervisor/contracts`(`Confirmation`, `FlagConfirmation`, `ExactFeedbackResponse`)에는 아직 필수다. 그때까지 ③ 코드는 `expired: false`를 보내고 진행 상태를 그대로 넘긴다. 구현 가이드 §3 "기존 다차 질문·3개월 만료 필드 제거" 항목. Item Graph(`ai_supervisor/item_graph.py`)가 ③에 넘기는 시계(`clock`)도 이제 쓰지 않으니 함께 빼면 된다

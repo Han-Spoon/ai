@@ -10,7 +10,7 @@
 
 ```text
 ai_exact_feedback/
-  tool.py                       # 만료·덮어쓰기 가능 여부·completeness 계산, ExactFeedbackTool
+  tool.py                       # 덮어쓰기 가능 여부·completeness 계산, ExactFeedbackTool
   tests/test_exact_feedback.py  # 문서 §5 테스트
   tests/test_tool.py            # 요청·응답 틀로 감싼 run() 테스트
 ```
@@ -31,10 +31,10 @@ response = await tool.run(request)         # ExactFeedbackRequest → ExactFeedb
 | 규칙 | 문서 |
 |---|---|
 | `store_id`가 없거나 0 이하면 `StoreIdRequiredError` | §1-1 |
-| 이상 답변(`flagged_anomaly`)·만료 재료는 `override_eligible: false`로 표시하되 목록에서 빼지 않음 | §1-6 |
-| 확인한 한국 날짜부터 달력 기준 3개월 지나면 만료. 월말에 같은 날이 없으면 그 달 마지막 날로 당김 | §1-7 |
+| 이상 답변(`flagged_anomaly`) 재료는 `override_eligible: false`로 표시하되 목록에서 빼지 않음 | §1-6 |
+| 사장님 답은 기간 만료 없이 씀. 오래된 답도 다시 묻거나 막지 않음. `expired`는 ⓪ 계약 코드에서 빠질 때까지 항상 `false` | §1-7 |
 | 백엔드가 보낸 `expired`·`override_eligible`은 쓰지 않고 다시 계산 | §1-2 |
-| 캐시가 있고, 캐시 재료가 전부 확인됐고, 이상 답변·만료가 0건일 때만 `complete`. 애매하면 `unknown` | §2 |
+| 캐시가 있고, 캐시 재료가 전부 확인됐고, 이상 답변이 0건일 때만 `complete`. 애매하면 `unknown` | §2 |
 | `context`·`warnings`·`errors`는 받은 그대로 돌려줌. `scope_hint`는 `confirmation_scope`로 그대로 | §1-1 |
 
 ## 테스트

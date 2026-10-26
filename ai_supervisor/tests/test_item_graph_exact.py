@@ -101,21 +101,22 @@ def test_only_eligible_known_confirmations_skip_bayesian() -> None:
         exact_slice(
             confirmation(101),
             confirmation(102, status="unknown"),
-            confirmation(103, status="absent", observed_at="2026-06-01T00:00:00Z"),
+            # Owner answers never expire, so a year-old answer still overrides (③ §1-7).
+            confirmation(103, status="absent", observed_at="2025-10-01T00:00:00Z"),
         ),
     )
 
     output = asyncio.run(item_analyzer.run(task, context()))
 
     request = ontology.requests[0]
-    assert [item.ingredient.ingredient_id for item in request.confirmed_ingredients] == [101]
+    assert [item.ingredient.ingredient_id for item in request.confirmed_ingredients] == [101, 103]
     assert request.anomaly_locked_ingredients == []
     assert tags.requests[0].ingredient_ids == [101, 102, 103]
     confirmed = decision.requests[0].confirmed_results
     assert [(item.status, item.expired, item.override_eligible) for item in confirmed] == [
         ("present", False, True),
         ("unknown", False, True),
-        ("absent", True, False),
+        ("absent", False, True),
     ]
     assert all(item.constraint_tags == ["is_pork"] for item in confirmed)
     assert output.result.route == "db_bayes"
