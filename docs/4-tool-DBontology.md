@@ -44,7 +44,7 @@
 - **펼치는 일은 ④만 한다.** 순환 차단, 깊이 5 제한, 숨은 재료의 관측값 상속(§1-5), 태그·`role` 부착 규칙이 한 곳에만 있어야 한다. 백엔드가 같은 규칙을 다시 구현하면 한쪽만 고쳐지는 순간 숨은 알레르겐을 놓친다.
 - 백엔드는 규칙 없이 **가져오기만** 한다. 쿼리는 §2-8.
 - `ingredient_graph`는 시드 기준 재료 324개·구성 관계 101개로 약 15KB라 통째로 보낸다. 재료가 수천 개로 늘면 메뉴에서 닿는 부분 그래프만 보내는 방식으로 바꾼다.
-- 메뉴 후보 조회와 longest-match(변형 원본 찾기)는 백엔드가 묶음을 만들 때 하고, ②-B가 후보를 고른다 (⓪ §1-3). ④는 고른 후보의 `ontology` 또는 `fallback_ontology`를 받는다.
+- 메뉴 후보 조회는 백엔드가 묶음을 만들 때 하고, ②-B가 후보를 고른다 (⓪ §1-3). ④는 고른 후보의 `ontology`를 쓴다. 후보를 못 고른 경로의 `fallback_ontology`는 쓰지 않고 웹 검색으로 보낸다 (§2-2 (C)).
 - ⓪ 계약 반영은 외부 의존이다 (§8).
 
 ### 0-1. 설계 원칙
@@ -128,7 +128,7 @@ graph TB
 - `observations`·`observation_basis`: §1-5 규칙으로 만든다. 관측이 없는 재료(`variant_suggested`, 메뉴가 어느 사이트에도 없음)는 `observations: []`다.
 - `constraint_tags`: `ingredient_graph.tags`와 그 경로의 `composition_tags`를 합쳐 중복을 뺀다 (§2-3, §3-3).
 - `menu_ambiguity_flags`: `knowledge.menu.ambiguity_flags`를 그대로 옮긴다. ④는 해석하지 않는다. 판정·질문 카드에서의 쓰임은 ⑧ §2-1 5-2.
-- `warnings`: 판정에 영향을 주는 데이터 이상. ⑧이 CAUTION 이상을 유지하려면 ⑧까지 가야 한다. ④가 내는 코드는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`, `unmapped_constraint_tags`, `empty_recipe`(레시피 재료 0개), `broken_base_menu`(참조 원본 메뉴 없음)다.
+- `warnings`: 판정에 영향을 주는 데이터 이상. ⑧이 CAUTION 이상을 유지하려면 ⑧까지 가야 한다. ④가 내는 코드는 `cycle_detected`(순환 참조 차단), `max_depth_reached`, `constraint_tags_lookup_failed`(재료 그래프에 없는 재료), `unmapped_constraint_tags`(웹 재료 매핑 실패), `empty_recipe`(레시피 재료 0개), `broken_base_menu`(원본 메뉴 참조가 자기 자신을 가리키는 등 쓸 수 없음)다. 묶음에는 원본 메뉴 행이 따로 오지 않아 "원본 메뉴가 DB에 없음"은 ④가 확인할 수 없다.
 - `variant_suggestion`: `variant_origin: runtime_tagged`일 때만 채운다 (§2-2). ⑦ 검토 명령에 그대로 들어간다 (⑦ §1-1).
 - `role`: 아래 규칙. ⑧이 "빼기 어려운 재료" 안내에만 쓰고 판정에는 쓰지 않는다 (⑧ §1 `role`).
 
@@ -151,7 +151,7 @@ graph TB
 | 값 | 의미 | 재료 `source` | ⑤ scale |
 |---|---|---|---|
 | `db_registered` | `menus`에 `base_menu_id` / `remain_token` 컬럼으로 **이미 등록된 변형**. 관리자 컨펌 완료 | `recipe` | **1.0** |
-| `runtime_tagged` | DB에 없어 런타임 longest-match로 **추정한 신규 변형** | `variant_suggested` | **0.5** |
+| `runtime_tagged` | DB에 없어 런타임에 메뉴명 − 고른 후보 이름으로 **추정한 신규 변형** | `variant_suggested` | **0.5** |
 | `null` | 변형 아님 | — | — |
 
 > ⚠️ 두 경우를 같게 취급하면 안 된다. `db_registered`는 사람이 컨펌한 확정 데이터이므로 신뢰도를 낮추지 않는다. 신뢰도 하향은 `runtime_tagged`에만 적용한다.
@@ -185,26 +185,20 @@ graph TB
 
 ```mermaid
 flowchart TD
-    S[Supervisor 호출] --> V{"context.store_id가<br/>양의 정수 또는 null?"}
-    V -->|No| ERR[StoreIdRequiredError]
-    V -->|Yes| Q["knowledge.menu 확인<br/>(②-B가 고른 후보 또는 fallback)"]
-
-    Q --> E{메뉴 존재?}
-    E -->|Yes| VC{"base_menu_id /<br/>remain_token 컬럼 존재?"}
-    E -->|No| LM["longest-match<br/>base 메뉴 탐색"]
+    S[Supervisor 호출] --> Q{"②-B가 고른 메뉴가 있고<br/>knowledge.menu가 있는가?"}
+    Q -->|No| NF["exists_in_db: false, 재료 []<br/>→ Supervisor가 ⑥ 웹 검색"]
+    Q -->|Yes| VC{"base_menu_id /<br/>remain_token 컬럼 존재?"}
 
     VC -->|Yes| DBV["DB 등록 변형<br/>variant_origin: db_registered<br/>파싱 없음, 컬럼 조회"]
-    VC -->|No| PLAIN["일반 메뉴"]
-
-    LM --> RM{remain 토큰 존재?}
+    VC -->|No| RM{"메뉴명 − 고른 후보 이름<br/>(+ ② 옵션 토큰)이<br/>재료로 매핑되는가?"}
     RM -->|Yes| RTV["runtime_tagged<br/>(제안만, DB 미반영)"]
-    RM -->|No| NF["exists_in_db: false<br/>→ Supervisor가 ⑥ 판단"]
+    RM -->|No| PLAIN["일반 메뉴<br/>(매핑 안 된 토큰은 unmapped_tokens)"]
 
-    DBV --> R["recursive_expand<br/>+ cycle detection"]
+    DBV --> R["recursive_expand<br/>+ cycle detection<br/>(캐시가 있어도 매번 그래프에서 펼침)"]
     PLAIN --> R
     RTV --> R
-    R --> TAG["taxonomy + constraint_tags 부착<br/>(전 depth 노드)"]
-    TAG --> CACHE["menu_ingredient_cache 저장 명령 생성<br/>(캐시가 없거나 리비전이 다를 때만, §0)"]
+    R --> TAG["taxonomy + constraint_tags + role 부착<br/>같은 재료는 하나로 합침"]
+    TAG --> CACHE["menu_ingredient_cache 저장 명령<br/>(유효한 캐시 없음 + 가게 있음 + runtime_tagged 아님)"]
     CACHE --> OUT[Supervisor에 반환]
     NF --> OUT
 ```
@@ -212,11 +206,13 @@ flowchart TD
 ### 2-1. 기본 조회 + 재귀 확장
 
 1. `context.store_id` 검증 → 양의 정수 또는 `null`이 아니면 즉시 에러 (다른 가게 데이터가 섞이는 것 방지). `null`이면 가게 없는 스캔이라 캐시를 쓰지 않는다
-2. `knowledge.menu`를 쓴다. 메뉴 후보 조회는 백엔드가 묶음을 만들 때 했고 ②-B가 골랐다 (§0-0). `knowledge.cache`가 있고 `menu_revision`이 `knowledge.menu.knowledge_revision`과 같으면 3~6을 건너뛰고 캐시의 전체 확장 목록을 쓴다
+2. `knowledge.menu`를 쓴다. 메뉴 후보 조회는 백엔드가 묶음을 만들 때 했고 ②-B가 골랐다 (§0-0). ②-B가 후보를 고르지 못했으면(`menu.menu_id: null`) `fallback_ontology`가 와도 쓰지 않고 `exists_in_db: false`로 끝낸다 → Supervisor가 ⑥ 웹 검색으로 보낸다 (§2-2 (C))
+   - **캐시가 있어도 다시 펼친다** (결정, 2026-10-26, #321). 재료 그래프가 작아(시드 324개) 다시 펼쳐도 비용이 거의 없고, 캐시에는 경로가 없어 `absent` 재료를 거친 경로만 정확히 뺄 수 없다(아래 7번 표). 캐시는 ③의 분모용으로만 쓰이고, 유효한 캐시가 있으면 저장 명령만 만들지 않는다 (6번)
 3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
-6. 캐시를 쓰지 않았으면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다 (캐시를 썼거나 `store_id: null`이면 `null`. 캐시 테이블이 가게 단위라 가게 없는 스캔은 저장할 곳이 없다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
+   - **같은 재료가 여러 경로로 나오면 하나로 합친다** (결정, 2026-10-26, #321). 가장 얕은 위치(`depth`가 작은 것, 같으면 먼저 나온 것)의 값을 쓰고, `constraint_tags`는 **모든 경로의 합집합**이다. ⑤는 재료당 확률 하나를 내고, 한 경로의 경로 태그라도 버리면 FN이다. 확인 재료 제외(7번)는 합치기 전에 경로 단위로 한다
+6. `knowledge.cache`가 없거나 리비전이 다르면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다. 다음 경우는 `null`이다: 리비전이 같은 캐시가 이미 있음 / `store_id: null`(캐시 테이블이 가게 단위라 저장할 곳이 없다) / `runtime_tagged` 변형(검토 전 변형 재료가 원본 메뉴 캐시, 곧 ③의 분모에 섞이면 안 된다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
 | 확인 상태 | 그 재료 자체 | 그 재료의 하위 재료 |
@@ -236,13 +232,21 @@ flowchart TD
 - **문자열 파싱을 수행하지 않는다.** 컬럼을 그대로 읽는다.
 - 이 변형의 재료는 관리자 컨펌을 거쳤으므로 `source: recipe` — **신뢰도 하향 대상이 아니다.**
 
-**(B) DB에 없는 신규 변형 (`runtime_tagged`)**
+**(B) DB에 없는 신규 변형 (`runtime_tagged`)** (구현 기준 정리, 2026-10-26, #321)
 
-- 메뉴가 `menus`에 없을 때**만** longest-match로 base / remain을 나눈다. 원본 메뉴 찾기는 백엔드가 묶음을 만들 때 하고 `fallback_ontology`로 준다 (§0-0). remain 토큰을 재료로 바꾸는 일은 ④가 한다
-- remain을 재료로 매핑 → `variant_suggested` 태깅. ②가 `residual_tokens`를 넘겼으면 그 토큰도 매핑 대상에 포함한다
-- `variant_suggested` 재료는 `k_count=0, n_total=0`으로 반환한다 (§1-5)
-- **DB에 쓰지 않는다.** ⑤가 메모리에서 즉시 사용
+- ②-B가 고른 후보가 있고 그 메뉴 행이 DB 등록 변형이 아닐 때, **정규화한 메뉴명에서 고른 후보의 이름(`match_candidates[].canonical_name`)을 뺀 나머지**를 remain 토큰으로 본다. 예) 차돌된장찌개 − 된장찌개 = 차돌. 후보 이름이 메뉴명 안에 그대로 없으면(오타 교정·유사어 매칭) 변형으로 보지 않는다
+- remain 토큰과 ②의 `residual_tokens`(재료 옵션 토큰, 예: "치즈 추가")를 재료로 매핑한다. 재료 이름·별칭과 정확히 같으면 그 재료, 아니면 토큰 안에 들어 있는 가장 긴 이름·별칭부터 찾는다
+- 매핑된 재료가 하나라도 있으면 `runtime_tagged`: `menu_id: null`, `base_menu_id`·`remain_token`은 고른 후보와 나머지 토큰, 재료는 `variant_suggested`. 이미 레시피에 있는 재료는 다시 제안하지 않는다
+- 매핑된 재료가 없으면 원본 메뉴로 처리하고(`exists_in_db: true`), 토큰은 `unmapped_tokens`에 남긴다 (§6)
+- `variant_suggested` 재료는 `observations: []`로 반환한다 (§1-5). 근거는 `ocr_variant_tag` 하나(`pending_review`)로 붙인다
+- **DB에 쓰지 않는다.** ⑤가 메모리에서 즉시 사용. 캐시 저장 명령도 만들지 않는다 (§2-1 6번)
 - DB 반영 시엔 원본 row 재사용 금지. `base_menu_id`로 원본을 참조하는 **새 `menus` 행**(`source: variant_generated`) 생성 → 원본 메뉴 확률과 섞이지 않도록. 이 INSERT는 **⑦이 관리자 컨펌 후** 저장 명령을 만들고 백엔드가 수행
+
+**(C) ②-B가 후보를 고르지 못한 메뉴 → 웹 검색** (결정, 2026-10-26)
+
+- `fallback_ontology`(백엔드 longest-match로 찾은 원본 메뉴)는 쓰지 않고 `exists_in_db: false`, `base_menu_id: null`, 재료 `[]`로 반환한다 → Supervisor가 ⑥으로 보낸다 (§5-2)
+- 이유: ②가 못 골랐다는 건 그 원본 메뉴가 맞는지 확실하지 않다는 뜻이라, 엉뚱한 레시피로 판정할 수 있다. 웹 검색은 메뉴명 그대로("차돌된장찌개") 찾으므로 변형 재료도 함께 잡힌다. 웹 검색이 실패해도 CAUTION이라 FN 쪽으로 새지 않는다
+- 이 경로에서 `fallback_ontology`를 쓰지 않으므로, 백엔드가 longest-match로 만드는 예비 데이터를 계약에서 뺄지는 ⓪·백엔드와 정한다 (§8)
 
 ### 2-3. 카테고리·위험 속성 태깅
 
@@ -271,7 +275,7 @@ def query_ontology(
 
 def resolve_variant(menu_row: MenuRow | None, menu_name: str) -> VariantInfo:
     """변형 판별. DB 컬럼(base_menu_id / remain_token) 우선.
-    menu_row가 None일 때만 longest-match fallback."""
+    등록 변형이 아니면 메뉴명에서 고른 후보 이름을 뺀 나머지 토큰을 매핑한다 (§2-2 (B))."""
 
 
 def recursive_expand(
@@ -299,50 +303,27 @@ def update_ingredient_cache(
 ### 2-5. 의사코드
 
 ```
-store_id = context.store_id
-if store_id is None or store_id <= 0:
-    raise StoreIdRequiredError
+menu = knowledge.menu                     # ②-B가 고른 후보의 슬라이스. DB 직접 조회 없음
+if request.menu.menu_id is None or menu is None:
+    return OntologyResult(exists_in_db=False, ingredients=[])          # §2-2 (C): 웹 검색으로
 
-menu  = knowledge.menu            # ②-B가 고른 후보 또는 fallback (§0-0). DB 직접 조회 없음
-graph = ingredient_graph          # 묶음 전체 공통 재료 그래프
-extra = []
+seeds = recipe_ingredients ∪ corpus_ingredients                       # 합집합 (§2-1 3번)
+if menu.base_menu_id and menu.remain_token:                           # (A) DB 등록 변형
+    variant_origin = "db_registered"; tokens = residual_tokens
+else:                                                                 # (B) 후보 이름을 뺀 나머지
+    variant_origin = None
+    tokens = [name − selected_candidate.canonical_name] + residual_tokens
+suggested, unmapped = map_tokens(tokens, graph) − seeds
+if suggested and variant_origin is None:
+    variant_origin = "runtime_tagged"                                  # menu_id: null, base = 고른 후보
 
-if menu is not None:
-    if menu.base_menu_id is not None:          # (A) DB 등록 변형
-        variant_origin = "db_registered"       # 파싱 없음, 컬럼 조회
-    else:
-        variant_origin = None
-else:                                          # (B) 신규 변형 추정
-    v = resolve_runtime_variant(knowledge, residual_tokens, graph)   # 백엔드가 찾은 원본 메뉴 + remain 토큰 매핑
-    if v is None:
-        return OntologyResult(context=context, exists_in_db=False)
-    menu, extra    = v.base_menu, v.suggested_ingredients   # extra: k_count=0, n_total=0
-    variant_origin = "runtime_tagged"          # source = variant_suggested
+paths = expand(seeds + suggested, graph, max_depth=5)                 # 캐시가 있어도 매번 펼침
+full  = merge_same_ingredient(paths)                                  # 얕은 위치, 태그는 합집합
+kept  = merge_same_ingredient(drop_confirmed(paths, confirmed))       # present 하위는 남기고 absent 경로만 제외
+mark anomaly_locked from anomaly_locked_ingredients                   # 받은 값 보존만
 
-cache = knowledge.cache
-if cache and cache.menu_revision == menu.knowledge_revision:
-    full = cache.ingredients_snapshot                                   # 리비전이 같으면 재사용
-else:
-    seeds = knowledge.recipe_ingredients | knowledge.corpus_ingredients   # 합집합 (§2-1)
-    full = []
-    for s in seeds + extra:
-        full += recursive_expand(graph, s, depth=0, visited=set())      # 확인 여부와 무관하게 전체 확장
-    full = attach_taxonomy(graph, full)                                 # 분류·constraint_tags·role
-    update_ingredient_cache(store_id, menu.id, menu.knowledge_revision, full)   # ③ 분모용 저장 명령
-
-confirmed = {c.name: c.status for c in (confirmed_ingredients or [])}
-nodes = full
-if unconfirmed_only:
-    nodes = [n for n in full
-             if n.name not in confirmed                              # 확인 재료 자체는 제외
-             and not has_absent_ancestor(n, confirmed)]              # absent 재료를 거친 경로만 제외
-    # present 재료의 하위 재료는 남는다 (§2-1 표)
-
-for n in nodes:
-    n.anomaly_locked = n.name in (anomaly_locked_ingredients or [])   # 받은 값 보존만
-
-return OntologyResult(context=context, ingredients=nodes, variant_origin=variant_origin,
-                      warnings=collect_warnings(...), ...)
+cache_command = save_cache(full) if store_id and not valid_cache and variant_origin != "runtime_tagged" else None
+return OntologyResult(ingredients=kept, cache_command=cache_command, ...)
 ```
 
 ### 2-6. 태그 사전과 단독 관리 원칙
@@ -363,15 +344,18 @@ return OntologyResult(context=context, ingredients=nodes, variant_origin=variant
 
 ```python
 def lookup_tags(context: RequestContext, ingredient_ids: list[int]) -> TagLookupResult:
-    """ingredient_graph.tags에서 태그 조회. 태그 행이 없는 재료는 정상([])이다.
+    """ingredient_graph.tags에서 태그 조회. 확인된 재료의 하위 재료(part-of) 태그와
+    경로 태그까지 합친다 (김치 present → 멸치액젓·멸치의 is_fish). 깊이 5, 순환 차단.
+    태그 행이 없는 재료는 정상([])이다.
     재료 마스터(ingredients)에 없는 ID나 조회 오류만 빈 배열로 끝내지 않고
     constraint_tags_lookup_failed warning(forces_caution=True)을 붙인다."""
 
 
 def map_ingredients(context: RequestContext, names: list[str]) -> MappingResult:
-    """재료명 → crawling/normalize_ingredients.py 규칙으로 표준 재료명(canonical)
-    → normalize_food_name()과 같은 Python 정규화 → ingredient_graph의 name_normalized·alias_normalized와 비교
-    → ingredient_id → 태그.
+    """재료명 원문 → crawling/normalize_ingredients.py의 clean_text(수량·괄호·수식어 제거)
+    → canonicalize(대표 재료명) 순서로 ingredient_graph의 name_normalized·alias_normalized와 비교
+    → ingredient_id → 태그. 태그는 lookup_tags와 같이 하위 재료 태그까지 합친다
+    (웹 경로는 재료를 펼치지 않아, 김치만 매핑되면 is_fish를 놓친다).
     매핑 실패 재료는 버리지 않고 ingredient_id: null로 남기며
     unmapped_constraint_tags warning(forces_caution=True)을 붙인다."""
 ```
@@ -552,7 +536,8 @@ graph TB
 | **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** | — |
 | **2-c) 피드백 전부 (anomaly 포함)** | 정상 호출됨. anomaly 재료 포함 확장 | ⑤로 전달되어 CAUTION 확보 |
 | **3-a) DB 등록 변형 (차돌된장찌개)** | 컬럼 조회 → `db_registered` | `base_menu_id`/`remain_token`, `source: recipe` |
-| **3-b) 신규 변형 (DB 없음)** | longest-match → `runtime_tagged` | `variant_suggestion` 채움, **DB INSERT 없음** |
+| **3-b) 신규 변형 (DB 없음)** | ②-B가 고른 후보 이름을 뺀 나머지 토큰 매핑 → `runtime_tagged` | `variant_suggestion` 채움, **DB INSERT·캐시 명령 없음** |
+| **3-c) ②-B가 후보를 못 고름** | `fallback_ontology`를 쓰지 않음 (§2-2 (C)) | `exists_in_db: false` → Supervisor가 ⑥ |
 | **4) DB에 없는 unknown 메뉴** | 조회 실패 확인까지만 | `exists_in_db: false`. ⑥은 ④가 호출하지 않음 |
 | **5) 웹서치도 실패 (엣지)** | **관여 없음** | 4번에서 이미 종료 |
 
@@ -566,8 +551,8 @@ graph TB
 | `context.store_id: null` (가게 없는 스캔) | 에러 아님. 캐시 없이 펼치고 `cache_command: null` |
 | 순환 참조 (A→B→A) | `visited`로 차단, 경고 로그, 확장분까지 반환. `warnings`에 `cycle_detected`. Supervisor는 이를 보고 ⓪ §6대로 해당 재료를 낮은 신뢰도로 다룬다 |
 | 재귀 깊이 과다 | `max_depth` = 5에서 확장을 멈추고 `warnings`에 `max_depth_reached`를 붙인다. ⑧은 이 경고가 있으면 CAUTION 이상을 유지한다. 그 아래 재료를 몰라서 SAFE로 새는 것을 막기 위함 |
-| `base_menu_id`는 있으나 참조 메뉴가 없음 | 일반 메뉴로 처리 + 무결성 오류 로그. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
-| longest-match 성공, remain 매핑 실패 (`"우리집된장찌개"`) | base로 처리, remain 무시, `unmapped_token`에 기록 |
+| `base_menu_id`가 자기 자신을 가리키는 등 쓸 수 없음 | 일반 메뉴로 처리. `base_menu_id: null` 반환, `warnings`에 `broken_base_menu` |
+| 나머지 토큰 매핑 실패 (`"우리집된장찌개"`) | 고른 후보 메뉴로 처리, 토큰은 `unmapped_tokens`에 기록 |
 | taxonomy 미등록 재료 | `unknown` 부여. **드롭 금지** — 재료 누락은 FN 직결 |
 | `recipe_ingredients` 빈 배열 | `exists_in_db: true`지만 재료 0개 → `warnings`에 `empty_recipe`. ⑧에서 CAUTION 이상 유지 |
 | 메뉴가 어느 크롤링 사이트에도 없음 | `observations: []`. ⑤가 낮은 `confidence`로 처리 |
@@ -581,8 +566,8 @@ graph TB
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
 | 1 | `김치찌개` (DB 존재) | 김치(d0) → 액젓(d1) → 새우(d2) | depth 기록, 전 노드 taxonomy, 새우 `is_shellfish` 태그 |
-| 2 | `차돌된장찌개` (DB 등록 변형) | 컬럼 조회 → `db_registered` | **longest-match 실행되지 않을 것**, `source: recipe` |
-| 3 | `트러플된장찌개` (DB 없음) | longest-match → `runtime_tagged` | **DB INSERT 없을 것**, `source: variant_suggested` |
+| 2 | `차돌된장찌개` (DB 등록 변형) | 컬럼 조회 → `db_registered` | **나머지 토큰 파싱이 실행되지 않을 것**, `source: recipe` |
+| 3 | `차돌된장찌개` (DB 없음, ②-B가 된장찌개 선택) | 나머지 "차돌" → 소고기, `runtime_tagged` | **DB INSERT·캐시 명령 없을 것**, `source: variant_suggested` |
 | 4 | `듣도보도못한메뉴` | `exists_in_db: false` | ④가 웹서치를 직접 호출하지 않을 것 |
 | 5 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
 | 5-b | `context.store_id: null` + 김치찌개 | 정상 확장, `cache_command: null` | 에러가 나지 않고, 캐시를 읽거나 저장하지 않을 것 |
@@ -599,7 +584,7 @@ graph TB
 | 12-b | 사이트에 메뉴는 있는데 재료가 안 나옴 | 그 사이트 `k_count=0`, `n_total=레시피 수` | 행이 없다고 관측값을 빠뜨리지 않을 것 |
 | 12-c | 큐레이션 목록엔 없고 크롤링에만 나온 재료 | 시작 재료에 포함, `curated: false` | 합집합에서 빠지지 않을 것 |
 | 13 | 돼지고기 포함 메뉴 | `constraint_tags`에 `is_pork` | ⑧ `forbidden_tags`와 같은 어휘일 것 |
-| 14 | `트러플된장찌개`의 변형 재료 | `observations: []` | base 메뉴 레시피 수로 계산되지 않을 것 |
+| 14 | `차돌된장찌개`의 변형 재료 | `observations: []` | base 메뉴 레시피 수로 계산되지 않을 것 |
 | 21 | 김치찌개의 숨은 재료 새우 (레시피에 직접 안 적힘) | 새우 `k_count`가 상위 재료(김치)의 k 이상, `observation_basis: inherited` | 숨은 재료가 k=0으로 채워져 확률이 0 가까이 떨어지지 않을 것 |
 | 22 | 김치찌개 메뉴 (`has_unclear_jeotgal`) | `menu_ambiguity_flags`에 `has_unclear_jeotgal`이 있고, 재료 노드에는 `ambiguity_flag` 필드가 없음 | 메뉴 플래그가 ④에서 끊기지 않을 것 |
 | 19 | 김치 → 액젓 경로 | 액젓에 경로 태그 `is_shellfish` 포함 | 노드 태그만 보고 경로 태그를 빠뜨리지 않을 것 |
@@ -608,7 +593,10 @@ graph TB
 | 16 | `anomaly_locked_ingredients=["돼지고기"]` | 해당 노드 `anomaly_locked: true` | 값이 ④에서 끊기지 않을 것 |
 | 17 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
 | 23 | 참치김밥: 참치·밥·단무지·마요네즈 속 달걀 | `role`: 참치·밥 `identity`, 단무지 `component`, 달걀 `hidden` | 같은 메뉴는 매번 같은 role일 것 |
-| 24 | 리비전이 같은 캐시가 `knowledge`에 있음 | 확장하지 않고 캐시 재사용, 캐시 저장 명령 없음 | 같은 결과를 두 번 계산·저장하지 않을 것 |
+| 24 | 리비전이 같은 캐시가 `knowledge`에 있음 | 그래프에서 다시 펼치고, 캐시 저장 명령은 없음 | 같은 캐시를 두 번 저장하지 않을 것, `absent` 경로 제외가 캐시 때문에 틀리지 않을 것 |
+| 27 | 같은 재료가 두 경로로 나옴 (김치 → 액젓, 액젓 직접) | 한 줄로 합침, 얕은 위치 사용, 태그 합집합 | 한 경로의 태그를 버리지 않을 것 |
+| 28 | ②-B가 후보를 못 고름 + `fallback_ontology`에 원본 메뉴 있음 | `exists_in_db: false`, 재료 `[]` | 확실하지 않은 원본 레시피로 판정하지 않을 것 |
+| 29 | ② 옵션 토큰 "소고기" + 일반 메뉴 | 소고기 `variant_suggested` | 옵션으로 추가된 재료를 놓치지 않을 것 |
 | 25 | 판정 단계 호출 | DB 연결 없이 `knowledge`·`ingredient_graph`만으로 결과 생성 | DB 접근 코드가 없을 것 |
 | 26 | 정규화 골든 테스트 (예: "쇠고기 " → 소고기, 띄어쓰기·전각 문자) | Python 정규화 결과가 DB `normalize_food_name()`과 같음 | 웹 재료 매핑이 표기 차이로 빠지지 않을 것 |
 | 18 | 레시피 재료 0개 메뉴 | `warnings: ["empty_recipe"]` | 경고가 출력에 실릴 것 |
@@ -639,6 +627,7 @@ graph TB
 - [ ] **애매함 플래그 사용 (외부 의존)** — ⑧ 입력에 플래그를 받고, 사용자 금지 태그와 관련 있으면 CAUTION 유지·사장님 질문 근거로 쓰는 규칙 추가 요청. 지금 룰엔진 `risk_judge._relevant_ambiguity_flags`와 같은 동작. ⓪ §4 계약에도 필드 추가 필요
 - [ ] **재료 단위 변경의 캐시 무효화 (외부 의존)** — 구성 간선·재료 태그·분류가 바뀌면 그 재료가 들어간 메뉴들의 `knowledge_revision`을 백엔드가 올려야 한다. `caution-db-schema.md` §6 요청 9번으로 전달, 백엔드 답변 대기
 - [ ] **KnowledgeBundle 반영 (외부 의존)** — ⓪ §1-3에 `ingredient_graph` 슬라이스 추가, `ontology`·`fallback_ontology`를 펼친 결과가 아니라 원재료 행(메뉴·레시피·관측값·캐시)으로 바꾸기 (§0-0). ⓪ 담당자와 백엔드 확인 필요
+- [ ] **`fallback_ontology` 유지 여부 (외부 의존)** — ②-B가 후보를 못 고른 메뉴는 웹 검색으로 보내기로 해서 ④는 이 값을 쓰지 않는다 (2026-10-26, §2-2 (C)). 백엔드의 longest-match 예비 데이터를 계약에서 뺄지 ⓪·백엔드와 정한다
 - [ ] **정규화 골든 테스트 공유 (외부 의존)** — DB `normalize_food_name()`과 ④ Python 정규화가 같은 결과를 내는지 확인할 입출력 예시 목록을 백엔드와 함께 만든다 (§2-7, 테스트 26)
 - [x] **`role` 정하는 규칙** — depth ≥ 1은 `hidden`, 변형 토큰·메뉴명 포함·레시피 90% 이상은 `identity`, 나머지 depth 0은 `component`, 웹 재료로 근거 없으면 `null` (2026-10-12, §1-2)
 - [x] **taxonomy 코드 값** — 8종 + `unknown` (2026-10-12, §4, #182). 가공식품 `processed`를 추가하고 `기타`를 `base`·`unknown`으로 나눴다. ⓪ 예시 값(`발효_장류`)은 ⓪ 담당자가 `fermented`로 맞춰야 한다
