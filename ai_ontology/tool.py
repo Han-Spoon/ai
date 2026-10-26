@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 from ai_supervisor.contracts.ontology import (
+    OntologyRequest,
+    OntologyResponse,
     TagLookupRequest,
     TagLookupResponse,
     TagLookupResult,
 )
 
+from .query import query_ontology
 from .tags import lookup_tags
+
+
+class OntologyTool:
+    """``ontology`` node: menu query, variant check, expansion (④ §2-1)."""
+
+    async def run(self, request: OntologyRequest) -> OntologyResponse:
+        return query_ontology(request)
 
 
 class TagLookupTool:
