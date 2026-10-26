@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from ai_supervisor.contracts.ontology import (
+    IngredientMappingRequest,
+    IngredientMappingResponse,
+    IngredientMappingResult,
     OntologyRequest,
     OntologyResponse,
     TagLookupRequest,
@@ -10,6 +13,7 @@ from ai_supervisor.contracts.ontology import (
     TagLookupResult,
 )
 
+from .mapping import map_ingredients
 from .query import query_ontology
 from .tags import lookup_tags
 
@@ -19,6 +23,32 @@ class OntologyTool:
 
     async def run(self, request: OntologyRequest) -> OntologyResponse:
         return query_ontology(request)
+
+
+class IngredientMappingTool:
+    """``ingredient_mapping`` node: ⑥ web ingredient names -> standard ingredients (§2-7).
+
+    ``role`` is ``None``: web ingredients have no recipe rows to judge it from (§1-2 rule 5).
+    """
+
+    async def run(self, request: IngredientMappingRequest) -> IngredientMappingResponse:
+        outcome = map_ingredients(
+            request.ingredient_names, request.ingredient_graph, request.context.item_id
+        )
+        return IngredientMappingResponse(
+            context=request.context,
+            results=[
+                IngredientMappingResult(
+                    input_name=result.input_name,
+                    ingredient=result.ingredient,
+                    constraint_tags=result.constraint_tags,
+                    role=None,
+                )
+                for result in outcome.results
+            ],
+            warnings=[*request.warnings, *outcome.warnings],
+            errors=list(request.errors),
+        )
 
 
 class TagLookupTool:

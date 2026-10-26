@@ -45,3 +45,34 @@ def test_storeless_path_has_no_cache_command():
     output, _ = run(store_id=None)
     assert not output.commands
     assert output.result.risk_level != "safe"
+
+
+def test_web_path_runs_with_real_ontology_and_mapping():
+    from ai_ontology import IngredientMappingTool
+    from ai_supervisor.tests.test_item_graph_web import (
+        RecordingAggregate,
+        RecordingCollect,
+        RecordingDbUpdate,
+        RecordingTagLookup,
+        WebBayesian,
+        unknown_task,
+        web_source,
+    )
+
+    bayesian = WebBayesian()
+    analyzer = ItemGraphAnalyzer(
+        ItemGraphDependencies(
+            ontology=OntologyTool(),
+            bayesian=bayesian,
+            tag_lookup=RecordingTagLookup(),
+            decision=RuleDecision(),
+            web_collect=RecordingCollect([web_source()]),
+            ingredient_mapping=IngredientMappingTool(),
+            web_aggregate=RecordingAggregate(),
+            db_update=RecordingDbUpdate(),
+            now_factory=lambda: NOW,
+        )
+    )
+    output = asyncio.run(analyzer.run(unknown_task(), context()))
+    assert output.result.route == "web_bayes"
+    assert bayesian.requests[0].ingredients[0].constraint_tags == ["is_beef"]

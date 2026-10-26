@@ -6,6 +6,7 @@
 
 | 진입점 | 상태 | 하는 일 |
 |---|---|---|
+| `IngredientMappingTool` / `map_ingredients` (`ingredient_mapping` node) | 구현됨 | ⑥ 웹 재료 이름을 표준 재료·태그로 바꾼다. 원문 → `crawling/normalize_ingredients.py` 정제·대표명 순서로 이름·별칭과 비교. 못 찾은 이름은 `ingredient_id: null`로 남기고 `unmapped_constraint_tags` 경고 |
 | `TagLookupTool` (`tag_lookup` node) | 구현됨 | ⑧ 바로 앞에서 ③ 확인 재료의 위험 태그를 채운다. 하위 재료(김치 → 멸치액젓 → 멸치)의 태그까지 합친다 |
 | `OntologyTool` / `query_ontology` (`ontology` node) | 구현됨 | 메뉴 조회, 변형 판별(DB 컬럼 우선, 없으면 후보 이름을 뺀 나머지 토큰), 재귀 확장, 태그, 관측값, `role`, 캐시 명령 |
 
