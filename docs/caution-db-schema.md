@@ -53,7 +53,6 @@ erDiagram
     ingredient_confirmations |o..o{ owner_verification_requests : "답변 반영"
     stores ||..o{ owner_flag_confirmations : "플래그 확정값 (🔶 신규)"
     owner_flag_confirmations |o..o{ owner_verification_requests : "플래그 답변 반영"
-    owner_verification_requests |o..o| ingredient_evidence_log : "답변 증거"
     knowledge_review_items |o..o{ ingredient_evidence_log : "승인 증거"
     knowledge_review_items |o..o{ recipe_ingredients : "승인 출처"
     web_search_cache |o..o{ knowledge_review_items : "검색 원본"
@@ -195,11 +194,11 @@ erDiagram
 |---|---|
 | `id` PK | |
 | `store_id`, `menu_id`, `ingredient_id` | |
-| `source_type` | `owner_feedback` / `ocr_variant_tag`. 손님 피드백은 쓰지 않는다. 웹 레시피는 가게 증거가 아니라 넣지 않는다 (ERD 허용값의 `web_search`는 쓰지 않음) |
+| `source_type` 🔶 | `ocr_variant_tag`만. 사장님 답변(`owner_feedback`)은 넣지 않는다 (§6 25번). 손님 피드백도 쓰지 않는다. 웹 레시피는 가게 증거가 아니라 넣지 않는다 (ERD 허용값의 `web_search`는 쓰지 않음) |
 | `delta_alpha`, `delta_beta` | soft evidence는 `delta_beta = 0` 고정 |
-| `owner_verification_request_id` / `review_item_id` | 배타적 아크. 사장님 답변이면 앞쪽, 변형이면 뒤쪽 |
+| `review_item_id` | 승인된 변형 검토 항목. `owner_verification_request_id` 컬럼과 배타적 아크는 필요 없다 (🔶 §6 25번) |
 
-- 사장님 답변은 확률을 거치지 않고 `ingredient_confirmations`로 override하지만, 답변 이력은 이 로그에 **매번** 남는다. 답이 바뀐 이력은 여기서 본다.
+- 사장님 답변은 확률을 거치지 않고 `ingredient_confirmations`로 override하며, **이 로그에는 남기지 않는다** (2026-10-26). 답이 바뀐 이력은 `owner_verification_requests`의 answered 행에서 본다. 예전의 δ=0 이력 행은 같은 내용의 중복이었다.
 - OCR 변형 재료(예: "차돌" → 소고기)는 변형 `menu_id`로 `ocr_variant_tag` 증거 한 줄을 남긴다. 확정이 아니라 확률 증거다.
 
 ### `ingredient_confirmations`
@@ -330,7 +329,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20, 24는 2026-10-25 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20, 24는 2026-10-25, 25는 2026-10-26 추가)
 
 🔴 **우선: 8·16~18·20번.** 사장님 답변을 한 번에 확정하고 무기한 사용하도록 기존 다차 질문·만료 계약을 제거해야 한다.
 
@@ -360,6 +359,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 22 | 승인된 웹 레시피 등록 | 승인마다 `menus` 등록 + 가게 증거 반영 | 같은 메뉴의 승인 레시피가 **30개 이상**일 때만 공용 `menus`·`recipe_ingredients` 등록. `ingredient_evidence_log`에는 넣지 않음. (제안, 확인 필요) 30개의 "n개 중 k개" 통계를 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 함께 넣기 (3번 `corpus` 값에 `web_search` 추가) | 웹 레시피는 가게 레시피가 아님. 승인마다 등록하면 30개 기준이 무의미해짐 (⑦ §2-1, ⑥ §2-4) |
 | 23 | `menu_analyses.owner_card` | 단수 카드 저장 구조 | `owner_cards` JSONB 배열로 변경하고 기본값을 `[]`로 두며, 각 카드의 `card_id`를 `owner_verification_requests.card_id`와 연결 | Supervisor는 한 메뉴에 재료·플래그별 여러 `owner_cards[]`를 반환하므로 단수 객체로는 손실 없이 저장할 수 없다 |
 | 24 | `menu_analyses.owner_answer_status` | 없음 | `VARCHAR` 또는 enum으로 `none | partial | complete` 저장 (§4) | 프론트가 `risk_level`, `evidence_basis`, `owner_cards`를 추측해 사장님 답변 여부를 표시하지 않게 한다 |
+| 25 | `ingredient_evidence_log` | `source_type`에 `owner_feedback` 허용, `owner_verification_request_id`와 `review_item_id` 배타적 아크 | `source_type`은 `ocr_variant_tag`만, `owner_verification_request_id` 컬럼·아크 CHECK 삭제 (§3) | 사장님 답변 이력은 질문 행에 이미 있어 δ=0 행은 중복이다. 재계산 쿼리에서 걸러 낼 필요도 없어진다 |
 
 - `corpus`·배치 `source`에 `etc` 같은 기타 값은 넣지 않는다 (3·4번 값만).
 - 메뉴·재료 ID는 정수(BIGINT)를 유지한다.

@@ -27,7 +27,7 @@
 ### 0-1. 설계 원칙
 
 - **soft evidence는 사람 승인 전에는 DB에 들어가지 않는다.** 웹 검색 결과와 런타임 변형 제안은 관리자 검토 항목으로만 만든다.
-- **이력은 지우지 않는다.** 확정 테이블은 최신값으로 덮어써도, 증거 로그에는 매 답변을 새 행으로 남긴다.
+- **이력은 지우지 않는다.** 확정 테이블은 최신값으로 덮어써도, 사장님 답변은 질문 행(answered)에 매번 남는다.
 - **모든 명령에 출처와 검증 상태를 붙인다** (§3).
 - **저장과 신뢰 판단을 분리한다.** ⑦은 이상 답변 표시를 붙여 저장할 뿐, 그 값을 믿을지는 ③ 이후 단계가 정한다.
 - **명령은 멱등이어야 한다.** 같은 명령이 두 번 와도 한 번만 반영되도록 `idempotency_key`를 붙이고, Supervisor는 ⑦ 명령을 자동 재시도하지 않는다 (⓪ §6-1).
@@ -180,8 +180,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    IN["사장님 답변"] --> LOG["ingredient_evidence_log INSERT (매 답변)<br/>source_type: owner_feedback<br/>delta_alpha: 0, delta_beta: 0<br/>evidence_ref_table: owner_verification_requests"]
-    LOG --> KIND{"답이 있음/없음인가?"}
+    IN["사장님 답변<br/>(질문 행에 answered로 기록)"] --> KIND{"답이 있음/없음인가?"}
     KIND -->|모름| SKIP["이력만 남김, 확정값 없음"]
     KIND -->|있음/없음| CHECK{"이상 여부 검사<br/>레시피 확률 ≥ 0.9 인데<br/>답이 '없음'?"}
     CHECK -->|Yes| FLAG["ingredient_confirmations UPSERT<br/>flagged_anomaly: true"]
@@ -198,7 +197,7 @@ flowchart TD
 - **이미 확정값이 있을 때**: 같은 대상에 새 답이 오면 **가장 최근 답으로 바로 덮어쓴다.** 이전 답은 질문 행 이력에 남는다.
 - **유효기간 없음 (⓪ #151):** 사장님 확정값은 기간이 지났다는 이유만으로 만료하거나 다시 묻지 않는다. `confirmed_at`은 감사·이력 표시용이다. 사장님 답변은 확률 계산에도 쓰지 않는다 (10/10 회의, ⑤ §1-1).
 - `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — `present`/`absent` 답이 오면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
-- **답변 이력은 `ingredient_evidence_log`에 별도로 남긴다.** upsert와 별개로, 매 답변마다 `source_type: owner_feedback`, `evidence_ref_table: owner_verification_requests`(해당 질문 행 참조)로 **새 행을 추가**한다 — 이 테이블은 절대 덮어쓰지 않으므로, "사장님이 같은 질문에 답을 몇 번 바꿨는지" 같은 이상 패턴을 나중에 여기서 확인할 수 있다. `delta_alpha`/`delta_beta`는 확정 답변이 확률 계산을 거치지 않으므로 `0`으로 기록 — 재계산 로직에 영향 없이 순수 이력 기록 용도.
+- **답변 이력은 질문 행(`owner_verification_requests`의 answered 행)으로 충분하다.** 증거 로그(`ingredient_evidence_log`)에는 사장님 답변을 남기지 않는다 (2026-10-26). 예전에는 확률에 안 쓰는 이력 행(δ=0)을 매번 한 줄씩 더 남겼는데, 같은 내용이 질문 행에 이미 있어 중복이었다. 증거 로그에는 확률에 쓰는 가게 증거(`ocr_variant_tag`)만 남는다.
 - `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
 - **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
 - **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 **그 답이 달린 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
@@ -215,7 +214,7 @@ flowchart TD
 | 유효기간 | 없음 | **같음** |
 | 이상 답변 표시 | 레시피 확률 ≥ 0.9 + "없음" | **없음.** 비교할 확률이 없다 |
 | 확정값 저장 | `ingredient_confirmations` | `owner_flag_confirmations` (신규 제안, `caution-db-schema.md` §3) |
-| 증거 로그 | `ingredient_evidence_log`에 매번 기록 | **기록하지 않음.** 확률에 쓰지 않고, 로그 테이블은 재료가 필수다. 이력은 `owner_verification_requests` answered 행 |
+| 증거 로그 | 기록하지 않음. 이력은 `owner_verification_requests` answered 행 | **같음** |
 | 출처 신뢰도 갱신 | 있음 (§3-1) | **없음.** 플래그에 대해 주장한 출처가 없다 |
 
 - `present`의 뜻: 물어본 태그 중 **하나 이상** 있으면 `true`, **전부** 없으면 `false` (⓪ §4-2 `flag_confirmations`).
@@ -327,9 +326,6 @@ UPDATE owner_verification_requests
 SET status = 'answered', answer = :answer, answered_at = now()
 WHERE id = :question_id AND status = 'pending';
 
-INSERT INTO ingredient_evidence_log (store_id, menu_id, ingredient_id, source_type, delta_alpha, delta_beta, owner_verification_request_id)
-VALUES (:store_id, :menu_id, :ingredient_id, 'owner_feedback', 0, 0, :question_id);
-
 -- answer가 unknown이면 여기서 끝 (확정값 없음)
 -- :flagged_anomaly = (:answer = 'absent') AND (이 질문의 recipe_probability >= 0.9)
 
@@ -367,7 +363,6 @@ INSERT INTO ingredient_risk_scores (store_id, menu_id, ingredient_id, delta_alph
 SELECT store_id, menu_id, ingredient_id, SUM(delta_alpha), SUM(delta_beta), COUNT(*), MAX(id)
 FROM ingredient_evidence_log
 WHERE store_id = :store_id AND menu_id = :menu_id AND ingredient_id = :ingredient_id
-  AND source_type <> 'owner_feedback'                 -- 사장님 답변 이력(δ=0)은 확률에 안 씀
 GROUP BY store_id, menu_id, ingredient_id
 ON CONFLICT (store_id, menu_id, ingredient_id)
 DO UPDATE SET delta_alpha_sum = EXCLUDED.delta_alpha_sum, delta_beta_sum = EXCLUDED.delta_beta_sum,
@@ -442,7 +437,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 관리자가 오랫동안 컨펌 안 함 | review item은 대기 상태 유지, DB 미반영 (SLA 미확정, §8) |
 | 웹서치 후보가 여러 개고 서로 재료 목록이 다름 | 전부 관리자에게 노출, 병합 규칙은 관리자 판단 또는 별도 규칙 필요 (§8) |
 | 같은 메뉴에 대해 웹서치 제안과 변형 태깅 제안이 동시에 옴 | 각각 독립된 review item으로 취급 (병합하지 않음) |
-| 기존 확정값과 다른 답변이 옴 | 새 답으로 바로 덮어씀. `ingredient_evidence_log`에는 매번 새 행이 남아 변경 이력은 보존됨 |
+| 기존 확정값과 다른 답변이 옴 | 새 답으로 바로 덮어씀. 이전 답은 질문 행(answered)에 남아 변경 이력은 보존됨 |
 | 확정값 없이 답이 1번만 옴 | 이력만 기록, 확정값 생성 보류. ③은 미확인으로 계속 취급 |
 | 같은 명령이 두 번 전달됨 | 같은 `idempotency_key`로 백엔드가 한 번만 반영 |
 
@@ -491,7 +486,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [x] **10개 후보의 병합/선택 규칙** — 관리자 화면은 레시피 10개를 하나씩 보여주지 않고 **재료별로 합쳐서** 보여준다 (예: "돼지고기 8/10, 새우 2/10", 고유 레시피 기준, ⑥ §1-2 `observations`). 관리자는 재료 단위로 체크해 승인하고, 자동 채택은 하지 않는다 (2026-10-12)
 - [x] **관리자 컨펌 SLA** — 두지 않는다. 검토 항목은 승인·반려될 때까지 `pending`으로 쌓이고, 대기 일수 표시나 자동 만료도 없다 (2026-10-12)
 - [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 거르지 않는다. 레시피상 거의 확실한 재료의 "없음"은 이상 답변으로 잠긴다 (단일 확인 정책, ⓪ #151)
-- [x] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 확정 테이블은 최신 1행만 두고, 이력은 `ingredient_evidence_log`에 매 답변마다 남긴다. `caution-db-schema.md` §3과 본문 §2-3에 이미 정해진 내용이라 정리함
+- [x] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 확정 테이블은 최신 1행만 두고, 이력은 질문 행(`owner_verification_requests` answered)으로 본다. 증거 로그에는 남기지 않는다 (2026-10-26, 중복 제거)
 - [x] **사장님 확인 최소 건수 n** — n=1. 답 한 번으로 즉시 확정 (단일 확인 정책, ⓪ #151, §2-3. 2026-10-10 #193의 n=2를 대체)
 - [x] **모순 답변 처리** — 새 답으로 바로 덮어씀 (⓪ #151)
 - [x] **확정값 유효기간** — 없음. 기간 경과만으로 만료하거나 다시 묻지 않음 (⓪ #151, §2-3)
