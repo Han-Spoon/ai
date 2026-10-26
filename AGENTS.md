@@ -54,6 +54,8 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - `status`는 **3값** `present` / `absent` / `unknown`. 2값으로 축약 금지.
 - anomaly 판정된 재료는 override를 거부하고 **CAUTION 이상을 강제 유지**한다 (FN 최소화 우선).
 - anomaly 재료도 확률 계산은 수행하되 `anomaly_locked`로 잠근다.
+- 사장님 있음/없음 답변은 **1회만** 받는다. 신뢰성 이슈가 있어도 다시 묻지 않는다 (10/26 회의).
+- 사장님 답변은 **만료 없이** 계속 확정 정보로 쓴다. 사장님 페이지는 만들지 않고, 답변은 질문 카드로만 받는다 (10/26 회의).
 
 ### 온톨로지
 - **교차오염은 다루지 않는다**
@@ -65,13 +67,14 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - `ingredient_risk_scores`는 직접 UPDATE 금지. 항상 `ingredient_evidence_log` INSERT → 재계산 순서.
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다 (파생 캐시이므로 ⑦ 승인 대상 아님).
 - 가게 검색·선택·공공데이터 매칭은 백엔드 책임. Prepare는 `store_id`를 받지 않는다. Judge는 백엔드가 확정한 양의 정수 `store_id` 또는 가게 없는 스캔을 뜻하는 `null`을 받는다. `store_id: null`이면 가게별 확정값·store prior·가게 캐시를 사용하지 않고, 사장님 질문·답변과 저장 명령을 만들지 않으며 SAFE 판정을 금지한다.
+- 웹 레시피는 **자동 등록이 기본**이다. 이상 신호가 잡힌 레시피만 운영자 페이지에 올라가고, 운영자가 예(DB에 넣기)/아니오(빼기)로 정한다. 백엔드는 레시피 승인 API만 둔다 (10/26 회의).
 
 ## 용어
 
 | 용어 | 뜻 |
 |---|---|
 | hard evidence | 사장님이 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override. 사장님 답은 대상마다 한 번만 받아 즉시 확정하고, 기간 만료 없이 쓴다 (새 답이 오면 덮어씀) |
-| soft evidence | 웹서치 등 미검증 정보. 관리자 컨펌 게이트를 거쳐야 DB 반영 |
+| soft evidence | 웹서치 등 미검증 정보. 기본은 자동으로 DB 반영, 이상 신호가 잡힌 레시피만 운영자가 예/아니오로 승인한 뒤 반영 |
 | `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
 | `prior_source` | prior를 어느 단계에서 가져왔는지 (`store` / `cluster` / `global` / `uninformative`) |
