@@ -56,14 +56,14 @@ cards = build_owner_cards(request, outcome)
 
 | 카드 | 언제 | 이유 코드 |
 |---|---|---|
-| 재료 카드 | 금지 태그와 겹치는데 쓸 수 있는 사장님 확인값이 없는 재료마다 한 장. 확률로 거르지 않음 | `anomaly`, `expired`, `insufficient_recipe_evidence`(⑤ `confidence < 0.59`), 셋 다 없으면 `unconfirmed` |
-| 플래그 카드 | 사장님 답으로 풀리지 않은 메뉴 애매함 플래그마다 한 장. 물을 태그는 플래그 태그 중 금지 태그 | `ambiguous_menu`, 답이 만료됐으면 `expired`도 |
+| 재료 카드 | 금지 태그와 겹치는데 사장님 답(`present`/`absent`)이 없는 재료마다 한 장. 확률로 거르지 않음 | `insufficient_recipe_evidence`(⑤ `confidence < 0.59`), 없으면 `unconfirmed` |
+| 플래그 카드 | 사장님 답으로 풀리지 않은 메뉴 애매함 플래그마다 한 장. 물을 태그는 플래그 태그 중 금지 태그 | `ambiguous_menu` |
 | 메뉴 카드 | 정보 없는 메뉴(또는 재료 0개)에 한 장. 화면 표시용이라 저장하지 않음 | `no_information` |
 
 - 태그를 모르는 재료는 겹치는지 알 수 없어 카드를 만들지 않습니다
-- 차수: `owner_question_states`에서 같은 대상이 `needs_second`면 2차, `needs_third`면 3차이고 직전 `question_id`를 잇습니다. 상태가 없거나 `confirmed`면 1차입니다 (확정값이 만료되거나 이상 답변으로 잠겨 다시 묻는 경우)
-- `card_id`는 `card:{item_id}:{대상}:r{차수}`로, 같은 요청이면 항상 같은 값입니다
-- 순서: `anomaly` → `expired` → `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 같은 이유끼리는 확률이 높은 재료, 확률이 없으면 `ingredient_id` 순, 플래그는 이름 순
+- 사장님에게는 대상마다 한 번만 묻습니다 (10/26 회의). 이미 답한 재료는 그 답이 이상 답변으로 잠겼어도 다시 묻지 않고, 만료·2·3차 질문도 없습니다. ⓪ 계약 코드에 `round`가 남아 있어 항상 `round: 1`, `previous_question_id: null`을 보냅니다 (§9)
+- `card_id`는 `card:{item_id}:{대상}`으로, 같은 요청이면 항상 같은 값입니다
+- 순서: `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 같은 이유끼리는 확률이 높은 재료, 확률이 없으면 `ingredient_id` 순, 플래그는 이름 순
 - 문구: 한국어 `ko`와 사용자 언어(한국어 사용자면 `ko` 하나). LLM 없이 고정 템플릿으로 만듭니다. 재료 이름은 `localized_names`에서 가져오고, 없으면 한국어 이름을 씁니다. `ko` 외 6개 언어는 원어민 확인 전 초안입니다 (#135)
 - `high_risk_review` 카드는 고위험 재검증이 더합니다 (§2-3)
 

@@ -29,9 +29,9 @@
 | 3쪽 OUTPUT: 위험도 판정 결과 / 판정 근거 / 위험 재료 / 확인 질문 | §1-2 |
 | 8쪽 4: 정보 부족 → 보수적 판정 (NO_INFORMATION, 안전으로 단정하지 않음) | §2-1 3단계, §3. `no_information`이면 CAUTION, `evidence_basis: unknown` |
 | 8쪽 흐름: 확정값과 미확인 재료의 확률값 통합 → ⑧ 최종 판정 생성 | ⓪이 ③ 확정값과 ⑤ 확률을 모아 넘기고(§5), ⑧이 합쳐 판정한다 (§2) |
-| 8쪽 6: Hard Evidence 있음(사장님 확인 n건↑) → DANGER / SAFE 확정 | §3. n건 확정 규칙은 ⑦ §2-3 |
+| 8쪽 6: Hard Evidence 있음(사장님 확인 n건↑) → DANGER / SAFE 확정 | §3. n=1: 사장님 답 한 번으로 확정 (⑦ §2-3, ⓪ #151) |
 | 8쪽 6: Hard Evidence 없음 → DANGER / SAFE 판정 불가, CAUTION + 확률 수치 제공 | §2-1 4단계, §3. 가게 없는 스캔은 사장님 확인값이 없으므로 모든 메뉴가 여기에 해당한다 (§1-1 `owner_interaction_allowed`, #281) |
-| 8쪽 6: n개월마다 재확인 | ③ §1-7(3개월 만료). 만료된 재료는 다시 묻는 질문 카드를 만든다 (§2-1 7단계, 이유 `expired`) |
+| 8쪽 6: n개월마다 재확인 | **두지 않는다.** 사장님 답은 기간 만료 없이 쓰고 다시 묻지 않는다 (10/26 회의, ③ §1-7, §1-3) |
 | 8쪽 6·흐름: 정보 부족·충돌 케이스만(5~10%) → 고가 모델 재검증 (`고위험 재검증`) | §2-3. 대상 기준·하는 일·결과 사용처 결정. 판정은 바꾸지 않고 질문 카드·설명만 보강 (#234) |
 | 10쪽 모델: Decision / XAI Agent(고위험 시 선택 호출) — 저가~중가 모델, 고위험 재검증은 고가 모델 | §0-2. 설명 문장은 기본 템플릿이고 필요할 때 LLM을 쓴다. 판정 값에는 LLM을 쓰지 않는다. 고위험 재검증은 §2-3 |
 | 10쪽 RAI 01 공정성: 언어·알레르기·종교가 달라도 같은 알고리즘 | §2-1 1단계에서 모든 제약을 금지 태그 하나로 바꿔 같은 규칙으로 판정. 언어는 문구에만 영향 (§4) |
@@ -76,8 +76,8 @@
 - **`status`는 3값을 유지한다. `true/false` 2값으로 축약하지 않는다** (AGENTS.md 확정). 2값이면 "없다고 확인됨"과 "아직 안 물어봄"이 구분되지 않아, 안 물어본 재료가 "없음"으로 읽혀 SAFE가 될 수 있다 (FN).
 - hard evidence로 쓰는 것은 **`override_eligible: true`이고 `status`가 `present` 또는 `absent`인 항목뿐**이다.
 - `status: unknown`은 "없음"으로 취급하지 않는다. 확인값이 없는 것과 같다.
-- `override_eligible: false`(anomaly이거나 3개월 만료)인 항목은 hard evidence로 쓰지 않는다. 이 재료는 Supervisor가 ④⑤ 경로로 보냈으므로 `probability_results`의 확률로 판정한다.
-- `expired: true`(확인한 지 3개월 경과, ③ §1-7)면 이 재료를 다시 묻는 질문 카드를 만든다 (§2-1 7단계).
+- `override_eligible: false`(이상 답변, anomaly)인 항목은 hard evidence로 쓰지 않는다. 이 재료는 Supervisor가 ④⑤ 경로로 보냈으므로 `probability_results`의 확률로 판정한다.
+- 사장님 답에는 기간 만료가 없다 (10/26 회의, ③ §1-7). `present`/`absent`로 답한 재료는 `override_eligible`과 관계없이 다시 묻지 않는다 (§1-3).
 
 **`probability_results` (⑤ 확률, soft evidence)**
 - `confidence`는 ⑤가 계산한 근거 충분도(0~1)다. 출력 `evidence_basis`(confirmed/estimated/unknown)와는 별개다. "낮음" 기준은 §1-3 `insufficient_recipe_evidence`.
@@ -125,18 +125,9 @@
 
 - `absent`는 **물어본 태그 전부**가 없다는 뜻이고, `present`는 그중 **하나 이상**이 있다는 뜻이다. 그래서 다른 사용자에게 쓸 때 규칙이 다르다 (§2-1 5-2).
 
-#### `owner_question_states` — 이전 질문의 진행 상태 (⓪ 반영, #269)
+#### `owner_question_states` — 쓰지 않음 (2026-10-26)
 
-사장님 답은 2번 연속 같아야 확정된다 (⑦ §2-3). 그래서 1차 답만 있거나 1·2차 답이 다르면 다음 스캔에서 같은 대상을 다시 물어야 한다. 이 값은 그 진행 상태다. 백엔드가 사장님 답을 처리한 뒤 저장하고, ③이 바꾸지 않고 넘긴다 (③ §1-9). 형식은 [⓪ §4-2 `owner_question_states`](0-agent-supervisor.md)다.
-
-| 필드 | 뜻 |
-|---|---|
-| `question_id` | 직전 질문의 번호. 다음 카드의 `previous_question_id`가 된다 |
-| `ingredient` / `ambiguity_flag` / `constraint_tags` | 무엇을 물었는지. 재료 질문이면 `ingredient`, 플래그 질문이면 `ambiguity_flag`와 물어본 태그 |
-| `answered_round` | 사장님이 방금 답한 차수 (1·2·3) |
-| `confirmation_state` | `confirmed`(확정됨) / `needs_second`(2차 질문 필요) / `needs_third`(1·2차 답이 달라 3차 질문 필요) |
-
-- 판정에는 쓰지 않는다. 확정된 답은 `confirmed_results`·`flag_confirmations`로 따로 들어온다. 이 값은 질문 카드의 차수(`round`)를 정하는 데만 쓴다 (§1-3).
+사장님 답은 대상마다 한 번만 받아 바로 확정하므로 (⑦ §2-3, ⓪ #151) 2·3차 질문이 없고, 카드의 차수를 정할 일도 없다. ⓪ 문서에서 빠졌다. ⓪ 계약 코드에는 아직 남아 있지만 ⑧은 이 값을 읽지 않는다 (§9).
 
 ### 1-2. 출력 값을 정하는 규칙
 
@@ -175,35 +166,27 @@
 
 ### 1-3. `owner_cards` — 질문 카드
 
-형식은 ⓪ §4-7 `owner_cards[]`다 (`item_id`, `card_id`, `menu_id`, `round`, `previous_question_id`, `ingredient`, `ambiguity_flag`, `constraint_tags`, `question`, `reason_codes`, `evidence_refs`). 가게 없는 스캔(`owner_interaction_allowed: false`)이면 카드를 한 장도 만들지 않는다 (§1-1, ⓪ §4-7). ⑧이 정하는 것:
+형식은 ⓪ §4-7 `owner_cards[]`다 (`item_id`, `card_id`, `menu_id`, `ingredient`, `ambiguity_flag`, `constraint_tags`, `question`, `reason_codes`, `evidence_refs`). 가게 없는 스캔(`owner_interaction_allowed: false`)이면 카드를 한 장도 만들지 않는다 (§1-1, ⓪ §4-7). ⑧이 정하는 것:
 
-- `item_id`(메뉴 칸 번호)와 `card_id`(카드 번호)는 카드 내용(메뉴 칸·물어볼 대상·차수)으로 정해지는 값이다 (⓪ §4-7 규칙, 예: `card:scan-123:0:ingredient-110:r3`). 같은 카드의 질문 저장 명령에도 복사한다. 같은 카드는 몇 번을 다시 돌려도 같은 번호다. 사장님 답을 어느 질문 행에 기록할지 잇는 번호다 (⓪ §4-7, #274).
+- `item_id`(메뉴 칸 번호)와 `card_id`(카드 번호)는 카드 내용(메뉴 칸·물어볼 대상)으로 정해지는 값이다 (⓪ §4-7 규칙, 예: `card:scan-123:0:ingredient-110`). 같은 카드의 질문 저장 명령에도 복사한다. 같은 카드는 몇 번을 다시 돌려도 같은 번호다. 사장님 답을 어느 질문 행에 기록할지 잇는 번호다 (⓪ §4-7, #274).
 - 카드 하나에 재료 하나다. 어떤 재료에 카드를 만드는지는 §2-1 7단계.
-- **질문 차수(`round`)와 직전 질문(`previous_question_id`)** (⓪ §4-7, #269): 카드를 만들기로 정한 뒤(§2-1 7단계), 같은 대상의 `owner_question_states`(§1-1)를 찾아 차수를 정한다. 카드를 만들지 말지는 바꾸지 않는다.
-  - 같은 대상: 재료 카드는 같은 `ingredient_id`, 플래그 카드는 같은 `ambiguity_flag`이고 `constraint_tags`가 같은 것
-  - 상태가 없음 → `round: 1`, `previous_question_id: null`
-  - `needs_second` → `round: 2`, `needs_third` → `round: 3`. `previous_question_id`에 그 상태의 `question_id`를 넣는다
-  - `confirmed` → 확정된 답이 들어 있으므로 보통 카드 대상이 아니다. 그 답이 3개월 지나 다시 묻는 경우(`expired`)는 새 질문으로 보고 `round: 1`, `previous_question_id: null`이다
-  - `confirmed`인데 그 답을 판정에 쓸 수 없어 카드를 만드는 경우(이상 답변으로 잠김, `unknown`)도 같다. 새 질문으로 보고 `round: 1`, `previous_question_id: null`이다 (2026-10-23)
-  - 정보 없는 메뉴 카드는 저장하지 않으므로 항상 `round: 1`, `previous_question_id: null`이다
+- **질문은 대상마다 한 번만** (결정, 2026-10-26 회의, ⓪ #151): 사장님이 이미 `present`/`absent`로 답한 재료는 다시 묻지 않는다. 그 답이 이상 답변으로 잠겼어도(`anomaly_locked`) 마찬가지다. 잠긴 재료는 CAUTION 이상으로 남는다 (§2-1 3-1). 플래그 질문도 같은 태그로 이미 답했으면 그 답으로 풀리거나 DANGER가 되므로 다시 묻지 않는다 (§2-1 5-2). 2·3차 질문과 차수(`round`, `previous_question_id`)는 없다. ⓪ 계약 코드에 `round`가 남아 있는 동안 ⑧은 항상 `round: 1`, `previous_question_id: null`을 보낸다 (§9).
 - **메뉴 애매함 플래그 카드** (2026-10-12, §2-1 5-2): 재료가 아니라 메뉴 단위로 묻는 카드다. 예) "이 메뉴의 젓갈에 생선이 들어가나요?" `ingredient: null`, `ambiguity_flag`에 플래그 이름, `constraint_tags`에 물어볼 태그(§1-1 `menu_ambiguity_flags` 표에서 사용자 금지 태그와 겹친 것)를 넣는다. 재료 카드는 `ambiguity_flag: null`, `constraint_tags: []`다.
 - **정보 없는 메뉴 카드** (결정, 2026-10-13): `no_information: true`인 메뉴는 재료 목록이 없어 재료 카드를 만들 수 없다. 사용자에게 금지 태그가 있으면 메뉴 전체를 묻는 카드를 한 장만 만든다. 예) 할랄 사용자 → "이 메뉴에 돼지고기나 술이 들어가나요?" `ingredient: null`, `ambiguity_flag: null`, `constraint_tags`에 사용자 금지 태그 전부, `reason_codes: ["no_information"]`. 손님이 가게에서 사장님께 보여 주는 **화면 표시용**이다. 사장님이 "예"라고 해도 둘 중 무엇이 들어가는지 알 수 없어 판정을 바꾸지 않고(DANGER로 올리지 않음), 메뉴가 DB에 없어 저장할 곳도 없으므로 ⑦ 저장 요청을 만들지 않는다 (⓪ §4-6·§4-7). 가게 없는 스캔이면 보여 줄 사장님이 없으므로 이 카드도 만들지 않는다 (#281).
 
-**`reason_codes` 허용값 (결정, 2026-10-12)** — 모두 ⑧ 입력에 이미 있는 신호에서 정해진다.
+**`reason_codes` 허용값 (결정, 2026-10-12. 2026-10-26 `anomaly`·`expired` 삭제)** — 모두 ⑧ 입력에 이미 있는 신호에서 정해진다. 이상 답변(`anomaly`)과 만료(`expired`)는 이미 답한 재료를 다시 묻는 이유라 10/26 회의 결정으로 뺐다.
 
 | 값 | 뜻 | 신호 |
 |---|---|---|
 | `insufficient_recipe_evidence` | 확률 근거가 부족함 | ⑤ `confidence`가 낮은 재료. "낮음"은 실질 레시피 근거 5개 미만, 즉 `confidence < 0.59`다 (⑤ §1-2-1, 2026-10-12). 카드를 만들지 말지 정하는 조건이 아니라 이유 표시로만 쓴다 (§2-1 7단계) |
-| `anomaly` | 사장님 답이 레시피와 크게 어긋나 다시 확인 필요 | `anomaly_locked: true` |
 | `no_information` | 메뉴 정보가 없음 | `no_information: true` 또는 `information_status: none` |
-| `expired` | 확인한 지 3개월이 지나 다시 확인 필요 | `confirmed_results[].expired: true` |
 | `high_risk_review` | 고위험 재검증이 찾은 재료 | §2-3 |
-| `unconfirmed` | 사장님 확인값이 없음. 위 이유가 하나도 없을 때만 쓴다 | 사용자 태그와 겹치고 `override_eligible: true` 확인값이 없는 재료 (2026-10-12). 예) 레시피 54개로 근거는 충분하지만 확인 안 된 설렁탕 새우젓 |
+| `unconfirmed` | 사장님 확인값이 없음. 위 이유가 하나도 없을 때만 쓴다 | 사용자 태그와 겹치고 사장님 답(`present`/`absent`)이 없는 재료 (2026-10-12, 2026-10-26 수정). 예) 레시피 54개로 근거는 충분하지만 확인 안 된 설렁탕 새우젓 |
 | `ambiguous_menu` | 메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음 | 사용자와 관련 있는 `menu_ambiguity_flags` (2026-10-12) |
 
 - 한 카드에 이유가 여럿이면 모두 넣는다. 모든 카드에 이유가 하나 이상 있다 (다른 이유가 없으면 `unconfirmed`).
 - **태그를 모르는 재료(`unknown_tag`)는 카드를 만들지 않는다** (결정, 2026-10-19). ④가 태그를 붙이지 못한 재료(`unmapped_constraint_tags`, `constraint_tags_lookup_failed`)는 사용자 금지 태그와 겹치는지 알 수 없어 7단계 카드 대상이 아니다. 재료 이름으로 물어도 답으로 알레르겐을 알 수 없어 판정이 바뀌지 않는다. 대신 SAFE를 막고(§2-1 3-3) 고위험 재검증 이유로 쓴다 (§2-3). 그래서 `unknown_tag`는 카드 이유 코드가 아니다
-- **카드 순서** (결정, 2026-10-12): 사장님 답이 판정을 바꿀 가능성이 큰 이유부터 둔다. `anomaly` → `expired` → `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 이유가 여럿인 카드는 가장 앞선 이유로 순서를 정하고, 같은 이유끼리는 확률(`posterior_mean`)이 높은 재료가 먼저다 (확률이 없으면 `ingredient_id` 순, 플래그 카드는 플래그 이름 순). 장수는 제한하지 않는다.
+- **카드 순서** (결정, 2026-10-12): 사장님 답이 판정을 바꿀 가능성이 큰 이유부터 둔다. `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 이유가 여럿인 카드는 가장 앞선 이유로 순서를 정하고, 같은 이유끼리는 확률(`posterior_mean`)이 높은 재료가 먼저다 (확률이 없으면 `ingredient_id` 순, 플래그 카드는 플래그 이름 순). 장수는 제한하지 않는다.
 
 ---
 
@@ -227,7 +210,7 @@ flowchart TD
     P7 --> MSG["다국어 메시지 생성"]
     DANGER --> MSG
     CAUTION1 --> MSG
-    MSG --> OC{"owner_interaction_allowed: true이고\n카드 대상 존재?\n(미확인·만료 재료, 풀리지 않은 플래그,\n정보 없는 메뉴)"}
+    MSG --> OC{"owner_interaction_allowed: true이고\n카드 대상 존재?\n(답 없는 재료, 풀리지 않은 플래그,\n정보 없는 메뉴)"}
     OC -->|Yes| CARD["owner_cards 생성\n(재료·플래그마다 한 장, 정보 없는 메뉴는 화면 표시용 한 장)"]
     OC -->|No| DONE["owner_cards: []"]
     CARD --> OUT[Supervisor에 반환]
@@ -253,11 +236,11 @@ flowchart TD
 5-2. **메뉴 애매함 플래그 반영** (결정, 2026-10-12): `menu_ambiguity_flags`의 플래그마다 물을 태그(§1-1 표에서 사용자 금지 태그와 겹친 것)를 구한다. 비어 있으면 그 플래그는 건너뛴다. 아니면 `flag_confirmations` 중 같은 플래그이고 `override_eligible: true`인 답을 보고 아래처럼 한다.
    - `absent`이고 답의 `constraint_tags`에 물을 태그가 **모두** 들어 있음 → 플래그가 풀린다. 판정에 영향 없음
    - `present`이고 답의 `constraint_tags`가 **모두** 사용자 금지 태그 → `danger`, `evidence_basis: confirmed`, 그 태그를 최상위 `matched_tags`에 넣는다. 사장님이 "들어 있다"고 확인한 hard evidence다
-   - 그 밖(답이 없음, `unknown`, 만료, 물은 태그가 달라 판단할 수 없음) → `safe`를 내지 않고 `caution` 이상으로 둔다. `message.notes`에 `ambiguous_menu` 안내를 넣고 (예: "젓갈이 들어갈 수 있어 확인이 필요해요"), 7단계에서 질문 카드를 만든다
+   - 그 밖(답이 없음, `unknown`, 물은 태그가 달라 판단할 수 없음) → `safe`를 내지 않고 `caution` 이상으로 둔다. `message.notes`에 `ambiguous_menu` 안내를 넣고 (예: "젓갈이 들어갈 수 있어 확인이 필요해요"), 7단계에서 질문 카드를 만든다
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 판정 한 줄 템플릿을 골라 `message.verdict`에 넣고, 필요하면 LLM 이유 설명을 `message.reason`에 넣는다 (§4).
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 `message.notes`에 `hard_to_remove` 안내를 넣는다 (§4-1). 판정은 바꾸지 않는다.
-7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 태그와 겹치는데 사장님 확인값(`override_eligible: true`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 3개월이 지난 확인값(`expired: true`)은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다 (이유 `expired`, PPT 8쪽 6 "n개월마다 재확인"). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`, 답이 만료됐으면 `expired`도). 같은 재료는 한 장만 만든다. 각 카드의 질문 차수는 `owner_question_states`로 정한다 (§1-3). 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
+7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 태그와 겹치는데 사장님 답(`present`/`absent`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 이미 답한 재료는 그 답이 이상 답변으로 잠겼어도 다시 묻지 않는다 (10/26 회의, §1-3). 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`). 같은 재료는 한 장만 만든다. 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
 
@@ -311,7 +294,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 - 정해진 칸 외에는 받지 않는다 (Pydantic 구조화 출력, ⓪ §2-13). 형식이 맞지 않으면 버리고 기본 결과를 낸다.
 - JSON 형식은 ⓪ §4-7 `HighRiskReviewRequest`·`HighRiskReviewResponse`다. Supervisor가 넘기는 것: 메뉴명·원문·메뉴판 설명 문구(`menu`), 재검증 이유(`reason_code`), 이 메뉴의 원래 판정·문장·카드(`decision`), 찾은 재료(`found_ingredients`), 표준 재료 선택지(`ingredient_choices`), 사용자 프로필, 언어. ⑧이 돌려주는 것: 놓친 재료(`missed_ingredients`, 추적용), 보강한 이유 설명 전체(`reason`), 보강한 카드 전체(`owner_cards`). 판정 값은 돌려주지 않으므로 바꿀 수 없다.
-- 놓친 재료는 사용자 금지 태그와 겹칠 때만 카드(`reason_codes: ["high_risk_review"]`)를 만든다 (§6 "관련 없는 질문 금지"와 같은 원칙).
+- 놓친 재료는 사용자 금지 태그와 겹칠 때만 카드(`reason_codes: ["high_risk_review"]`)를 만든다. 사장님이 이미 답한 재료는 더하지 않는다 (§1-3, 10/26 회의) (§6 "관련 없는 질문 금지"와 같은 원칙).
 
 **한 스캔당 개수 (결정, 2026-10-12)**
 - 고가 모델이라 **한 스캔당 최대 3개 메뉴**만 재검증한다. 초기값이며 QA에서 조정한다.
@@ -451,7 +434,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 |---|---|
 | `confirmed_results`/`probability_results` | Supervisor가 ③/⑤ 호출을 마친 뒤에만 전달 — 부분적으로만 채워질 수 있음(둘 다 없을 수도 있음. `proposed_variant_ingredients`까지 셋 다 비면 `no_information`과 같이 처리, §2-1 3단계) |
 | `user_profile` | 온보딩 단계에서 필수로 수집되므로 항상 존재함이 보장됨 (비로그인/미입력 케이스 없음) |
-| `owner_interaction_allowed` | Supervisor가 `store_id != null`로 계산해 넘긴다. 가게 없는 스캔이면 `false`이고, 이때 `confirmed_results`·`flag_confirmations`·`owner_question_states`는 비어 있다 (③을 부르지 않음, ⓪ §1-3·§4-7) |
+| `owner_interaction_allowed` | Supervisor가 `store_id != null`로 계산해 넘긴다. 가게 없는 스캔이면 `false`이고, 이때 `confirmed_results`·`flag_confirmations`는 비어 있다 (③을 부르지 않음, ⓪ §1-3·§4-7) |
 
 | ⑧이 돌려주는 것 | Supervisor의 후속 판단 |
 |---|---|
@@ -492,20 +475,20 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 14 | 새우 알레르기 + 김치찌개, 새우 `role: hidden`, 확률 근거 | `caution`, 새우 `role: hidden`, `message.notes`에 `hard_to_remove` "양념 안에 들어 있어 빼기 어려울 수 있어요" | 숨은 재료 안내가 붙을 것 |
 | 15 | 위험 재료 `role: component` 또는 `null` | 빼기 어려움 안내 없음 | 역할을 모를 때 안내를 지어내지 않을 것 |
 | 16 | `no_spicy` 사용자 + 모든 재료 사장님 확인(금지 태그 없음) + `risk_tag_observations`: `is_spicy` | `caution`, 최상위 `matched_tags`에 `is_spicy`, `risk_ingredients`에는 없음 | 매운 메뉴가 SAFE로 나가지 않고, OCR 관측만으로 DANGER를 내지 않을 것 |
-| 17 | 할랄 사용자 + 4개월 전 확인한 돼지고기 `absent` (`expired: true`) | `owner_cards`에 돼지고기 카드, `reason_codes: ["expired"]` | 만료된 확인값을 다시 물을 것 |
+| 17 | 할랄 사용자 + 1년 전 확인한 돼지고기 `absent` (`override_eligible: true`) | 돼지고기를 hard evidence로 씀, 돼지고기 카드 없음 | 오래된 확인값을 다시 묻지 않을 것 (10/26 회의) |
 | 18 | 생선 알레르기(`is_fish`) + 김치찌개 모든 재료 사장님 확인(금지 태그 없음) + `menu_ambiguity_flags: ["has_unclear_jeotgal"]` + `flag_confirmations: []` | `caution`, `evidence_basis: unknown`, `message.notes`에 `ambiguous_menu` 젓갈 안내, `owner_cards`에 플래그 카드(`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: ["is_fish"]`, `reason_codes: ["ambiguous_menu"]`) | 목록 밖 젓갈 때문에 SAFE가 나가지 않고, 사장님에게 물을 것 |
 | 19 | 할랄 사용자(`is_pork`·`is_alcohol`) + 같은 메뉴 + `menu_ambiguity_flags: ["has_unclear_jeotgal"]` | 플래그로는 판정이 바뀌지 않음 (다른 조건이 없으면 `safe`) | 관련 없는 플래그로 CAUTION을 내지 않을 것 |
 | 20 | 18번 + `flag_confirmations`: `has_unclear_jeotgal`, `constraint_tags: ["is_fish", "is_shrimp"]`, `absent`, `override_eligible: true` | `safe`, `evidence_basis: confirmed`, 플래그 카드 없음 | 사장님 답으로 플래그가 풀릴 것 |
 | 21 | 18번 + 같은 플래그 답 `present`, `constraint_tags: ["is_fish"]` | `danger`, `evidence_basis: confirmed`, 최상위 `matched_tags`에 `is_fish` | "들어 있다" 답을 hard evidence로 쓸 것 |
 | 22 | 새우 알레르기(`is_shrimp`) + 18번 메뉴 + 답 `absent`, `constraint_tags: ["is_fish"]` | `caution`, 플래그 카드(`constraint_tags: ["is_shrimp"]`) | 다른 태그에 대한 답으로 플래그를 풀지 않을 것 |
 | 23 | 생선 알레르기 + 18번 메뉴 + 답 `present`, `constraint_tags: ["is_fish", "is_shrimp"]` | `caution` (DANGER 아님) | 어느 태그가 들어 있는지 모르는 답으로 DANGER를 내지 않을 것 |
-| 24 | 할랄 사용자 + `probability_results`: 돈까스 돼지고기 `posterior_mean: 0.95`, `anomaly_locked: true` (레시피 확률 0.9 이상인데 사장님이 "없음"이라고 해 이상 답변으로 잠김, ③ §1-6) | `caution`, `evidence_basis: estimated`, 돼지고기가 `risk_ingredients`에 남음, `owner_cards`에 돼지고기 카드 `reason_codes`에 `anomaly`(맨 앞), `high_risk_review.required: true`·`reason_code: anomaly` | 사장님이 "없음"이라고 해도 이상 답변 재료는 SAFE로 새지 않을 것 |
+| 24 | 할랄 사용자 + `probability_results`: 돈까스 돼지고기 `posterior_mean: 0.95`, `anomaly_locked: true` (레시피 확률 0.9 이상인데 사장님이 "없음"이라고 해 이상 답변으로 잠김, ③ §1-6) | `caution`, `evidence_basis: estimated`, 돼지고기가 `risk_ingredients`에 남음, `owner_cards`에 돼지고기 카드 없음(이미 답한 재료), `high_risk_review.required: true`·`reason_code: anomaly` | 사장님이 "없음"이라고 해도 이상 답변 재료는 SAFE로 새지 않고, 다시 묻지도 않을 것 (10/26 회의) |
 | 25 | 생선 알레르기 사용자 + `anomaly_locked: true`인 재료가 돼지고기(`is_pork`)뿐 | `caution`(SAFE 금지 조건), 고위험 재검증 대상 아님 (`required: false`) | 이상 답변 잠금은 SAFE를 막되, 재검증은 사용자 금지 태그와 겹칠 때만일 것 (§2-3) |
-| 26 | 할랄 사용자 + 4개월 전 돼지고기 `absent` 확인값(`expired: true`, 이상 답변 아님) + `probability_results`의 같은 재료 `anomaly_locked: false` | `caution`, 카드 `reason_codes`에 `expired`만 (`anomaly` 없음) | 만료를 이상 답변으로 설명하지 않을 것 |
+| 26 | (삭제, 2026-10-26) 만료 이유 코드 | — | 만료가 없어 `expired` 이유를 만들지 않는다 |
 | 27 | 할랄 사용자 + `no_information: true` (DB에 없고 웹서치도 실패) | `caution`, `evidence_basis: unknown`, `owner_cards`에 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`, `constraint_tags: ["is_pork", "is_alcohol"]`, `reason_codes: ["no_information"]`) | 정보가 없어도 사장님께 물을 수 있는 카드가 나올 것 |
 | 28 | 금지 태그가 없는 사용자 + `no_information: true` | `caution`, `owner_cards: []` | 물을 것이 없으면 카드를 만들지 않을 것 |
-| 29 | 생선 알레르기 + 액젓(`is_fish`) 확인값 없음 + `owner_question_states`: 액젓 `question_id: question-002`, `answered_round: 2`, `needs_third` | 액젓 카드 `round: 3`, `previous_question_id: question-002` | 1·2차 답이 달랐던 재료에 3차 질문이 나갈 것 (⓪ 테스트 29) |
-| 30 | 할랄 사용자 + 4개월 전 확정된 돼지고기 `absent`(`expired: true`) + `owner_question_states`: 돼지고기 `confirmed` | 돼지고기 카드 `round: 1`, `previous_question_id: null`, `reason_codes`에 `expired` | 만료된 확정값을 `confirmed` 상태 때문에 다시 묻지 않는 일이 없을 것 |
+| 29 | 생선 알레르기 + 액젓(`is_fish`) 확인값 없음 | 액젓 카드 `card_id: card:scan-123:0:ingredient-110`, `round: 1`, `previous_question_id: null` | 차수 없이 한 번만 물을 것. 카드 번호에 차수가 붙지 않을 것 (⓪ §4-7) |
+| 30 | 생선 알레르기 + 18번 메뉴 + 1년 전 플래그 답 `absent`, `constraint_tags: ["is_fish"]` | 플래그가 풀림, 플래그 카드 없음 | 오래된 플래그 답도 다시 묻지 않을 것 (10/26 회의) |
 | 31 | 해산물 알레르기 + 참치김밥(참치 `role: identity`, 사장님 확인 `present`) + 이유 설명 LLM 시간 초과 | `danger`, `message.verdict`는 DANGER 템플릿, `message.reason: null`, `message.notes`에 `hard_to_remove` | LLM이 실패해도 판정 한 줄과 안내는 빠지지 않을 것 |
 | 32 | 할랄 사용자 + `no_information: false` + `confirmed_results: []` + `probability_results: []` + `proposed_variant_ingredients: []` + SAFE 금지 조건 없음 | `caution`, `evidence_basis: unknown` | 재료가 0개일 때 "모두 확인값" 조건이 저절로 참이 되어 SAFE가 나가지 않을 것 |
 | 33 | 할랄 사용자 + 가게 없는 스캔(`owner_interaction_allowed: false`, `store_context_missing` warning) + 돼지고기 확률 0.8 + `no_information: false` | `caution`, `owner_cards: []`, `high_risk_review.required: false` | 가게 없는 스캔에서 질문 카드·재검증·SAFE가 나오지 않을 것 (⓪ 테스트 2-a·35) |
@@ -530,8 +513,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [ ] **플래그 답 저장 (외부 의존)** — 사장님 답을 메뉴·플래그·물어본 태그 단위로 저장할 DB 자리. ⑦·DB 스키마 문서에는 `owner_flag_confirmations`로 반영됨 (#259). 남은 것: 백엔드 확정. ⑦이 저장하고 ③이 읽는다 (③ §1-8)
 - [x] **⓪ 반영 요청** — ⓪에 반영함 (2026-10-13: §1-3 Bundle `ontology.menu.ambiguity_flags`·`exact_feedback.exact.flag_confirmations`, §4-2, §4-3 `menu_ambiguity_flags`, §4-6 질문·답 명령, §4-7, 테스트 26·27). 원래 요청: ⓪ §4-7 ⑧ 입력에 `menu_ambiguity_flags`·`flag_confirmations`, SAFE 금지 조건(§2-2), `owner_cards`에 `ambiguity_flag`·`constraint_tags`, `reason_codes`에 `ambiguous_menu`·`unconfirmed` 추가. ③ 결과만으로 끝나는 경로(전 재료 확인 + 캐시, ④⑤ 생략)에서도 메뉴 플래그를 ⑧에 넘겨야 한다. 안 넘기면 그 경로에서 SAFE가 나간다 (FN)
 - [x] **정보 없는 메뉴의 질문 카드** — 사용자 금지 태그로 메뉴 전체를 묻는 화면 표시용 카드 한 장. 답은 판정을 바꾸지 않고(무엇이 들어가는지 모름), ⑦ 저장 요청도 없음 (2026-10-13, §1-3)
-- [x] **만료된 확인값 재질문** — 3개월 지난 확인값은 사용자 태그와 관련 있으면 다시 묻는 카드를 만든다(이유 `expired`). ⓪ §4-7 `confirmed_results`에 `expired` 필드가 필요하다 (2026-10-12, §2-1 7단계)
-- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 7개 (2026-10-12, §1-3. `ambiguous_menu`, `unconfirmed` 추가. 2026-10-19 `unknown_tag` 삭제: 태그를 모르는 재료는 카드 대상이 아니고 고위험 재검증 이유로만 쓴다). `insufficient_recipe_evidence`(원래 이름 `low_confidence`, 사진 품질 `scan_quality.status: low_confidence`와 겹쳐 ⓪ #274에서 변경) 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
+- [x] **만료된 확인값 재질문** — 삭제 (2026-10-26 회의). 사장님 답은 만료 없이 쓰고 다시 묻지 않는다 (§1-3, ③ §1-7). 처음 결정은 2026-10-12
+- [x] **질문 카드 이유 코드(`reason_codes`) 허용값** — 5개 (2026-10-26 `anomaly`·`expired` 삭제. 처음 7개는 2026-10-12, §1-3. `ambiguous_menu`, `unconfirmed` 추가. 2026-10-19 `unknown_tag` 삭제: 태그를 모르는 재료는 카드 대상이 아니고 고위험 재검증 이유로만 쓴다). `insufficient_recipe_evidence`(원래 이름 `low_confidence`, 사진 품질 `scan_quality.status: low_confidence`와 겹쳐 ⓪ #274에서 변경) 기준은 ⑤가 정함: 실질 레시피 근거 5개 미만 (`confidence < 0.59`, ⑤ §1-2-1)
 - [x] **⑤ 문서 맞추기 (외부 의존)** — ✅ ⑤ 반영됨 (#286, 2026-10-21 확인). ⑤ §1-2-1 "⑧은 `low_confidence`를 카드 이유 표시로만 쓴다"의 이유 코드 이름을 `insufficient_recipe_evidence`로 바꿔야 한다 (⓪ #274에서 변경, §1-3). `low_confidence`는 이제 사진 품질(`scan_quality.status`) 값이라 그대로 두면 둘이 헷갈린다 (2026-10-19 확인) — ⑤ 담당자 요청
 
 아래는 백엔드의 Judge 계약 검토(2026-10-13)와 결과 화면 시안에서 나온 항목이다.
@@ -545,8 +528,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [ ] **표준 재료로 못 맞춘 웹 재료의 번역 표시** — `ingredient_id: null`인 재료는 번역 이름이 없어 지금은 한국어 그대로다 (§1-2). LLM 번역을 한국어 원문과 함께 "자동 번역"으로 보여 줄지 정해야 한다. 그렇게 하면 §0-2 "재료 이름은 LLM이 바꾸지 못한다"에 화면 표시용 예외를 적는다. 이 재료는 이미 SAFE가 막혀 있어 판정에는 영향이 없다
 - [x] **기록 실시간 번역 경로** — 언어 설정을 바꾼 뒤 스캔 기록을 열 때 번역한다 (2026-10-14 회의). **번역은 백엔드가 한다** (2026-10-17 회의). AI는 다시 부르지 않는다 (§4). ⓪ 정리는 §9
 - [x] **결과 문장 `message` 나누기** — 프론트 요청(2026-10-14)으로 판정 한 줄·이유 설명·안내를 `message: {verdict, reason, notes[]}`로 나눴다 (§4 "`message` 칸"). ⓪ §1-3·§2-10·§2-13·§4-7·§6·테스트 20, ⑧ §0-2·§1-2·§2·§4에 반영 (2026-10-17). 고위험 재검증은 `reason`만 보강한다. 남은 것: 프론트가 이 모양으로 화면을 그릴 수 있는지 확인, DB 스키마 `menu_analyses.message` 저장 형식 (지금은 언어별 다국어 JSONB, §6 7번) 반영과 백엔드 확정
-- [x] **질문 카드와 질문 행 연결** — 백엔드 지적: 사장님 답을 어느 질문 행에 기록할지 정할 번호가 없었다. ⓪에 `owner_cards[]`·질문 저장 명령의 `item_id`·`card_id`(#274), 질문 차수 `round`·`previous_question_id`(#269)가 생겨 해결됨 (§1-3)
-- [x] **만료된 확정값 재질문과 `confirmed` 상태** — `confirmed`여도 확정값이 3개월 지나면 `round: 1`부터 다시 묻는다. ⓪ §4-7에 반영됨 (#274, §1-3, 테스트 30)
+- [x] **질문 카드와 질문 행 연결** — 백엔드 지적: 사장님 답을 어느 질문 행에 기록할지 정할 번호가 없었다. ⓪에 `owner_cards[]`·질문 저장 명령의 `item_id`·`card_id`(#274), 질문 차수 `round`·`previous_question_id`(#269)가 생겨 해결됨 (§1-3). 차수는 2026-10-26 회의로 없어짐(질문은 한 번만)
+- [x] **만료된 확정값 재질문과 `confirmed` 상태** — 삭제 (2026-10-26 회의). 만료와 차수가 없어 필요 없다. 처음 결정은 #274
 - [ ] **질문 카드 문구 원어민 확인** — 질문 문구(`question`)는 7개 언어 고정 템플릿으로 만든다 (`ai_decision_policy/questions.py`, 2026-10-23). `ko` 외 6개 언어(`en`·`ar`·`zh-CN`·`zh-TW`·`ja`·`es`)는 구현하며 쓴 초안이라 원어민 확인이 필요하다. 문장 틀, 태그 이름(예: `is_shellfish` → "조개류"), 플래그 위치(예: 젓갈·육수) 이름 모두 해당한다. 태그 이름을 잘못 옮기면 알레르기 정보가 틀어진다 (#135)
 - [ ] **질문 카드에 재료를 묶어 묻는 화면 (프론트·⑦·백엔드와)** — 결과 화면 시안과 시연판 프론트는 "달걀 지단, 어묵이 들어가 있나요?"처럼 재료 여러 개를 한 장으로 묻고, 답은 "네 / 아니요 / 잘 모르겠어요" 세 개다. ⑧은 카드 하나에 재료 하나다 (§1-3). 묶어서 물으면 "네"가 어느 재료인지 몰라 재료별 확인값으로 저장할 수 없다. "잘 모르겠어요"는 ⓪ `record_owner_answer.present`(boolean)에 담을 수 없다
 - [x] **결과 화면에 쓰는 값 유지** — 최종 응답 `risk_ingredients[]`의 `role`·`confidence`·`prior_source`는 결과 화면에 쓰므로 유지하고(백엔드 확인), ⑧ → Supervisor 내부 신호인 `anomaly_locked`·`high_risk_review`는 최종 응답에서만 뺀다 (⓪ #274). 남은 것: 경로(김밥 속재료 → 달걀 지단)를 그릴 상위 재료는 ⑧ 출력에 없다. 화면에 필요하면 추가를 정한다
@@ -564,4 +547,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 - [x] **⑨ Curation Tool 삭제** (2026-10-17 회의) — ⑧은 ⑨ 언급을 뺐다 (§0-1, §2-1 1단계, §5, §8). ⓪도 ⑨ node·추천·표시 순서를 지웠다 (#281). 큐레이션은 백엔드가 맡는다
 - [ ] **흐린 사진은 분석 실패** (2026-10-17 회의) — ⑧ §8 "촬영 품질 신호"에 반영했다. 지금 ⓪은 `scan_quality.status: low_confidence`면 분석을 계속하고 SAFE만 막는다 (§1-3 `scan_quality` 규칙, §2-1 Prepare 5단계). 회의 결정대로면 `needs_retake`처럼 '분석 실패'(재촬영)로 끝내야 한다. ⓪ §8 "남은 협의"의 사진 품질 항목도 닫는다
 - [x] **카드 이유 코드에서 `unknown_tag` 삭제** (2026-10-19) — ⑧ §1-3에서 뺐다 (태그를 모르는 재료는 카드를 만들지 않음). ⓪ §4-7 `reason_codes` 허용값·카드 정렬 우선순위에서 지우고 ⓪ 테스트 37을 추가함 (2026-10-20). 고위험 재검증의 `high_risk_review.reason_code` `unknown_tag`는 그대로
-- [ ] **`confirmed` 상태에서 다시 묻는 카드** (2026-10-23) — ⑧ §1-3: 확정된 답(`confirmation_state: confirmed`)이라도 이상 답변으로 잠기거나 `unknown`이라 판정에 쓸 수 없으면 카드를 만들고 `round: 1`부터 묻는다. 지금 ⓪ §4-7은 "`confirmed`이면 같은 대상에 추가 카드를 만들지 않는다. 단, 만료되면 `round: 1`부터"라고만 적혀 있어, ⓪만 보고 구현하면 이상 답변 재료(테스트 24)를 다시 묻지 않는다 (FN)
+- [x] **`confirmed` 상태에서 다시 묻는 카드** (2026-10-23) — 필요 없어짐 (2026-10-26 회의). 이상 답변으로 잠긴 재료도 다시 묻지 않기로 해서 ⓪ "확정되면 추가 카드 없음"과 같아졌다
+- [ ] **카드 이유 코드 `anomaly` 삭제** (2026-10-27) — ⑧ §1-3에서 뺐다 (이미 답한 재료는 다시 묻지 않음). ⓪ §4-7 `reason_codes` 허용값과 카드 정렬 우선순위에 `anomaly`가 남아 있다. 고위험 재검증의 `high_risk_review.reason_code` `anomaly`는 그대로 둔다
+- [ ] **고위험 재검증이 더하는 카드에서 이미 답한 재료 빼기** (2026-10-27) — ⑧ §2-3. ⓪ §4-7 `HighRiskReviewResponse.owner_cards` 설명은 "놓친 재료 중 사용자 금지 태그와 겹치는 재료의 새 카드"라서, LLM이 이미 답한 재료를 놓친 재료로 고르면 다시 묻게 된다
+- [ ] **⓪ 계약 코드에 남은 다시 묻기 필드** (2026-10-27) — ⓪ 문서에서는 빠졌지만 `ai_supervisor/contracts`에 `OwnerCard.round`·`previous_question_id`, `DecisionRequest.owner_question_states`, `ConfirmedResult.expired`, 이유 코드 `expired`가 남아 있다. 그때까지 ⑧ 코드는 `round: 1`, `previous_question_id: null`을 보내고 나머지는 읽지 않는다. 구현 가이드 §3 "기존 다차 질문·3개월 만료 필드 제거" 항목
