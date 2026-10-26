@@ -9,9 +9,7 @@ from dataclasses import dataclass, field
 
 from ai_supervisor.contracts.common import IngredientRef, NodeWarning
 from ai_supervisor.contracts.external import IngredientGraph
-from crawling.normalize_ingredients import canonicalize, clean_text
-
-from .query import _index, normalize
+from .query import _index, name_candidates
 from .tags import NODE, lookup_tags
 
 
@@ -28,15 +26,6 @@ class MappingOutcome:
     warnings: list[NodeWarning] = field(default_factory=list)
 
 
-def _candidates(name: str) -> list[str]:
-    """Raw name first, then the crawling cleaner and canonical name, the same rules
-    that built the DB seed (``crawling/normalize_ingredients.py``)."""
-
-    cleaned = clean_text(name)
-    canonical, _ = canonicalize(cleaned)
-    return [normalize(text) for text in (name, cleaned, canonical) if normalize(text)]
-
-
 def map_ingredients(
     names: list[str], graph: IngredientGraph, item_id: str | None
 ) -> MappingOutcome:
@@ -51,7 +40,7 @@ def map_ingredients(
     ids: dict[str, int | None] = {}
     for name in names:
         ids[name] = next(
-            (index.lookup[key] for key in _candidates(name) if index and key in index.lookup),
+            (index.lookup[key] for key in name_candidates(name) if index and key in index.lookup),
             None,
         )
 

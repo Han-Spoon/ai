@@ -198,7 +198,8 @@ def test_residual_option_token_becomes_variant_ingredient():
     res = query_ontology(request(residual=["돼지고기", "소고기"]), now=NOW)
     beef = by_name(res)["소고기"]
     assert beef.source == "variant_suggested"
-    assert by_name(res)["돼지고기"].source == "recipe"  # already in the recipe, not re-suggested
+    # named in the menu, so it is in it even though the recipe has it only sometimes
+    assert by_name(res)["돼지고기"].source == "variant_suggested"
 
 
 def test_unknown_menu_returns_not_in_db():  # §7-4
@@ -334,3 +335,20 @@ def test_tool_keeps_context_and_input_warnings():  # §7-17
     res = asyncio.run(OntologyTool().run(req))
     assert res.context == req.context
     assert codes(res)[0] == "store_context_missing"
+
+
+def test_path_tag_stays_on_its_path():  # §7-27
+    # 액젓 listed directly (is_fish) and under 김치 (is_fish + path is_shellfish)
+    k = knowledge(recipe=(1, 2))
+    rows = [i for i in query_ontology(request(k=k), now=NOW).ingredients if i.ingredient.ingredient_id == 2]
+    assert sorted((r.depth, tuple(r.constraint_tags)) for r in rows) == [
+        (0, ("is_fish",)),
+        (1, ("is_fish", "is_shellfish")),
+    ]
+
+
+def test_same_ingredient_same_tags_is_merged():
+    k = knowledge(recipe=(1, 2))
+    g = graph(composition_tags=())
+    rows = [i for i in query_ontology(request(k=k, g=g), now=NOW).ingredients if i.ingredient.ingredient_id == 2]
+    assert [(r.depth, r.source) for r in rows] == [(0, "recipe")]
