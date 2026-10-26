@@ -25,6 +25,8 @@ from ai_supervisor.contracts.ontology import (
     VariantSuggestion,
 )
 
+from crawling.normalize_ingredients import canonicalize, clean_text
+
 from .tags import MAX_DEPTH, NODE
 
 IDENTITY_SHARE = 0.9  # §1-2 role rule 3, revisited in QA (#192)
@@ -103,9 +105,19 @@ class _Warnings:
             )
 
 
+def name_candidates(name: str) -> list[str]:
+    """Raw name, then the crawling cleaner and canonical name, the same rules that
+    built the DB seed (``crawling/normalize_ingredients.py``). 차돌 -> 소고기."""
+
+    cleaned = clean_text(name)
+    canonical, _ = canonicalize(cleaned)
+    return list(dict.fromkeys(n for n in (normalize(name), normalize(cleaned), normalize(canonical)) if n))
+
+
 def _map_tokens(tokens: list[str], graph: _Graph) -> tuple[list[int], list[str]]:
-    """Map remain/residual tokens to ingredients: exact name/alias, else longest
-    names contained in the token. Tokens with no hit go to ``unmapped``."""
+    """Map remain/residual tokens to ingredients: exact name/alias (raw, cleaned or
+    canonical), else longest names contained in the token. Tokens with no hit go to
+    ``unmapped``."""
 
     keys = sorted(graph.lookup, key=len, reverse=True)
     found: list[int] = []
@@ -114,8 +126,9 @@ def _map_tokens(tokens: list[str], graph: _Graph) -> tuple[list[int], list[str]]
         text = normalize(token)
         if not text:
             continue
-        if text in graph.lookup:
-            hits = [graph.lookup[text]]
+        exact = next((graph.lookup[k] for k in name_candidates(token) if k in graph.lookup), None)
+        if exact is not None:
+            hits = [exact]
         else:
             hits, rest = [], text
             for key in keys:
@@ -238,16 +251,18 @@ def _drop_confirmed(nodes: list[_Node], confirmed: dict[int, str]) -> list[_Node
 
 
 def _merge(nodes: list[_Node]) -> list[_Node]:
-    """One entry per ingredient: shallowest occurrence wins, tags are unioned so a
-    path-only tag from another parent is not lost (FN)."""
+    """Merge occurrences of the same ingredient with the same tags; shallowest wins.
+
+    Occurrences with different tags stay apart. A path tag belongs to that path only:
+    식초 inside 마요네즈 carries is_egg, plain 식초 does not. Unioning them would put
+    is_egg on plain 식초 with plain 식초's (high) recipe counts. ⑧ groups the entries
+    per ingredient for cards, so no tag is lost.
+    """
 
     ordered = sorted(enumerate(nodes), key=lambda pair: (pair[1].depth, pair[0]))
-    merged: dict[int, _Node] = {}
+    merged: dict[tuple[int, frozenset[str]], _Node] = {}
     for _, node in ordered:
-        if node.ingredient_id in merged:
-            merged[node.ingredient_id].tags |= node.tags
-        else:
-            merged[node.ingredient_id] = _Node(**{**node.__dict__, "tags": set(node.tags)})
+        merged.setdefault((node.ingredient_id, frozenset(node.tags)), node)
     return list(merged.values())
 
 
@@ -399,7 +414,8 @@ def query_ontology(request: OntologyRequest, *, now: datetime | None = None) -> 
         remain_tokens = ([parsed] if parsed else []) + list(request.menu.residual_tokens)
 
     suggested_ids, unmapped = _map_tokens(remain_tokens, graph)
-    suggested_ids = [i for i in suggested_ids if i not in seed_ids]
+    # a token in the menu name means the ingredient is in it, even when the base recipe
+    # has it only sometimes (차돌된장찌개: beef in 9 of 59 된장찌개 recipes)
     if suggested_ids and origin is None:
         origin = "runtime_tagged"
         base_menu_id = menu_row.menu_id
@@ -427,8 +443,9 @@ def query_ontology(request: OntologyRequest, *, now: datetime | None = None) -> 
                 f"ingredient {ingredient_id} is not in ingredient_graph",
             )
 
-    seeds = [(i, "recipe", []) for i in seed_ids]
-    seeds += [(i, "variant_suggested", variant_refs) for i in suggested_ids]
+    # suggestions first, so they win the merge over the same base-recipe ingredient
+    seeds = [(i, "variant_suggested", variant_refs) for i in suggested_ids]
+    seeds += [(i, "recipe", []) for i in seed_ids]
     occurrences = _expand(seeds, graph, corpora, priors, warnings)
 
     confirmed = {
