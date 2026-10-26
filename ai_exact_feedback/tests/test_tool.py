@@ -13,7 +13,7 @@ from ai_supervisor.state import ItemTaskKnowledge
 
 NOW = datetime(2026, 10, 22, 3, 0, tzinfo=timezone.utc)
 RECENT = datetime(2026, 10, 8, 3, 0, tzinfo=timezone.utc)
-FOUR_MONTHS_AGO = datetime(2026, 6, 22, 3, 0, tzinfo=timezone.utc)
+YEAR_AGO = datetime(2025, 10, 8, 3, 0, tzinfo=timezone.utc)
 PORK, KIMCHI = 101, 109
 NAMES = {PORK: "돼지고기", KIMCHI: "김치"}
 
@@ -140,8 +140,7 @@ def run(tool: ExactFeedbackTool, req: ExactFeedbackRequest):
 
 def test_run_returns_contract_response() -> None:
     tool = ExactFeedbackTool(
-        knowledge([confirmation(PORK, "absent"), confirmation(KIMCHI)], ontology=ontology_with_cache(PORK, KIMCHI)),
-        clock=lambda: NOW,
+        knowledge([confirmation(PORK, "absent"), confirmation(KIMCHI)], ontology=ontology_with_cache(PORK, KIMCHI))
     )
     req = request()
     response = run(tool, req)
@@ -152,18 +151,19 @@ def test_run_returns_contract_response() -> None:
     assert response.errors == []
 
 
-def test_run_uses_the_injected_clock_for_expiry() -> None:
+def test_run_accepts_the_item_graph_clock_but_never_expires() -> None:
+    # The Item Graph still passes a clock (§8); owner answers do not expire (§1-7).
     tool = ExactFeedbackTool(
-        knowledge([confirmation(PORK, observed_at=FOUR_MONTHS_AGO)], ontology=ontology_with_cache(PORK)),
+        knowledge([confirmation(PORK, observed_at=YEAR_AGO)], ontology=ontology_with_cache(PORK)),
         clock=lambda: NOW,
     )
     response = run(tool, request())
-    assert (response.confirmations[0].expired, response.confirmations[0].override_eligible) == (True, False)
-    assert response.completeness == "unknown"
+    assert (response.confirmations[0].expired, response.confirmations[0].override_eligible) == (False, True)
+    assert response.completeness == "complete"
 
 
 def test_run_without_records_is_empty_unknown() -> None:
-    response = run(ExactFeedbackTool(knowledge(None), clock=lambda: NOW), request())
+    response = run(ExactFeedbackTool(knowledge(None)), request())
     assert response.confirmations == []
     assert response.completeness == "unknown"
 
@@ -174,24 +174,24 @@ def test_06_a_storeless_request_never_reaches_the_tool() -> None:
 
 
 def test_run_rejects_another_items_knowledge() -> None:
-    tool = ExactFeedbackTool(knowledge([confirmation(PORK)]), clock=lambda: NOW)
+    tool = ExactFeedbackTool(knowledge([confirmation(PORK)]))
     with pytest.raises(ValueError, match="own item_id"):
         run(tool, request(item_id="scan-123:1"))
 
 
 def test_run_rejects_menu_other_than_selected() -> None:
-    tool = ExactFeedbackTool(knowledge([confirmation(PORK)]), clock=lambda: NOW)
+    tool = ExactFeedbackTool(knowledge([confirmation(PORK)]))
     with pytest.raises(ValueError, match="no selected knowledge"):
         run(tool, request(menu_id=2002))
 
 
 def test_run_rejects_unmatched_item() -> None:
-    tool = ExactFeedbackTool(knowledge([confirmation(PORK)], selected=False), clock=lambda: NOW)
+    tool = ExactFeedbackTool(knowledge([confirmation(PORK)], selected=False))
     with pytest.raises(ValueError, match="no selected knowledge"):
         run(tool, request())
 
 
 def test_run_rejects_confirmations_of_another_menu() -> None:
-    tool = ExactFeedbackTool(knowledge([confirmation(PORK)], exact_menu_id=2002), clock=lambda: NOW)
+    tool = ExactFeedbackTool(knowledge([confirmation(PORK)], exact_menu_id=2002))
     with pytest.raises(ValueError, match="different menu_id"):
         run(tool, request())

@@ -6,10 +6,9 @@ the core in the ⓪ §4-2 request/response contract.
 
 from __future__ import annotations
 
-import calendar
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any, Literal
 
 from ai_supervisor.contracts.common import (
@@ -25,10 +24,6 @@ from ai_supervisor.contracts.external import (
     ItemKnowledge,
     MenuIngredientCache,
 )
-
-# Korea has no daylight saving time, so a fixed offset is exact (§1-7).
-KST = timezone(timedelta(hours=9))
-EXPIRY_MONTHS = 3
 
 Completeness = Literal["complete", "unknown"]
 
@@ -51,47 +46,27 @@ def require_store_id(store_id: int | None) -> int:
     return store_id
 
 
-def add_months(day: date, months: int) -> date:
-    """Calendar month addition; a missing day moves back to the month's last day."""
-
-    month_index = day.month - 1 + months
-    year = day.year + month_index // 12
-    month = month_index % 12 + 1
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(day.day, last_day))
-
-
-def is_expired(confirmed_at: datetime, now: datetime) -> bool:
-    """True once the KST calendar date is past ``confirmed_at`` + 3 months (§1-7)."""
-
-    if confirmed_at.tzinfo is None or now.tzinfo is None:
-        raise ValueError("confirmed_at and now must be timezone-aware")
-    confirmed_day = confirmed_at.astimezone(KST).date()
-    today = now.astimezone(KST).date()
-    return today > add_months(confirmed_day, EXPIRY_MONTHS)
-
-
 def resolve_override_eligibility(confirmation: Confirmation) -> bool:
-    """Anomalous or expired confirmations never override; they stay in the list (§1-6)."""
+    """Anomalous confirmations never override; they stay in the list (§1-6).
+    Owner answers have no expiry (§1-7)."""
 
-    return not confirmation.flagged_anomaly and not confirmation.expired
+    return not confirmation.flagged_anomaly
 
 
-def refresh_confirmation(confirmation: Confirmation, now: datetime) -> Confirmation:
-    """Recompute ③-owned fields and ignore whatever the backend sent for them."""
+def refresh_confirmation(confirmation: Confirmation) -> Confirmation:
+    """Recompute ③-owned fields and ignore whatever the backend sent for them.
+    ``expired`` stays in the ⓪ contract code until it is removed there (§8)."""
 
-    expired = is_expired(confirmation.evidence.observed_at, now)
-    refreshed = confirmation.model_copy(update={"constraint_tags": [], "expired": expired})
+    refreshed = confirmation.model_copy(update={"constraint_tags": [], "expired": False})
     return refreshed.model_copy(
         update={"override_eligible": resolve_override_eligibility(refreshed)}
     )
 
 
-def refresh_flag_confirmation(flag: FlagConfirmation, now: datetime) -> FlagConfirmation:
-    """Flag answers have no anomaly check; only expiry blocks override (§1-8)."""
+def refresh_flag_confirmation(flag: FlagConfirmation) -> FlagConfirmation:
+    """Flag answers have no anomaly check and no expiry, so they always override (§1-8)."""
 
-    expired = is_expired(flag.evidence.observed_at, now)
-    return flag.model_copy(update={"expired": expired, "override_eligible": not expired})
+    return flag.model_copy(update={"expired": False, "override_eligible": True})
 
 
 def _snapshot_ingredient_ids(cache: MenuIngredientCache) -> set[int] | None:
@@ -111,7 +86,7 @@ def check_completeness(
     confirmations: list[Confirmation], cache: MenuIngredientCache | None
 ) -> Completeness:
     """``complete`` only when the cache exists, every cached ingredient is confirmed,
-    the two lists match, and no confirmation is anomalous or expired (§2).
+    the two lists match, and no confirmation is anomalous (§2).
     Anything uncertain falls back to ``unknown`` so ④⑤ still run."""
 
     if cache is None:
@@ -119,9 +94,7 @@ def check_completeness(
     snapshot_ids = _snapshot_ingredient_ids(cache)
     if not snapshot_ids:
         return "unknown"
-    if any(
-        c.flagged_anomaly or c.expired or c.status == "unknown" for c in confirmations
-    ):
+    if any(c.flagged_anomaly or c.status == "unknown" for c in confirmations):
         return "unknown"
     confirmed_ids = {c.ingredient.ingredient_id for c in confirmations}
     return "complete" if confirmed_ids == snapshot_ids else "unknown"
@@ -140,19 +113,17 @@ def evaluate_exact_feedback(
     store_id: int | None,
     exact_feedback: ExactFeedbackSlice,
     cache: MenuIngredientCache | None,
-    now: datetime | None = None,
 ) -> ExactFeedbackOutcome:
     """Core of ③ §2-2. ``not_found`` and ``unavailable`` both read as "no records";
     the SAFE-blocking warning for ``unavailable`` is added by the Supervisor."""
 
     require_store_id(store_id)
-    now = now or datetime.now(timezone.utc)
     exact = exact_feedback.exact
     if exact is None:
         return ExactFeedbackOutcome("unknown", [], [], [])
 
-    confirmations = [refresh_confirmation(c, now) for c in exact.confirmations]
-    flag_confirmations = [refresh_flag_confirmation(f, now) for f in exact.flag_confirmations]
+    confirmations = [refresh_confirmation(c) for c in exact.confirmations]
+    flag_confirmations = [refresh_flag_confirmation(f) for f in exact.flag_confirmations]
     return ExactFeedbackOutcome(
         completeness=check_completeness(confirmations, cache),
         confirmations=confirmations,
@@ -168,6 +139,9 @@ class ExactFeedbackTool:
     item's ``ItemTaskKnowledge`` (``ItemTask.knowledge``) when it creates the tool
     (⓪ §2-6). Reading any other item's or menu's data is a contract error, never a
     silent fallback.
+
+    ``clock`` is accepted because the Item Graph still passes it; ③ no longer reads
+    the time since owner answers do not expire (§1-7, §8).
     """
 
     def __init__(
@@ -176,7 +150,6 @@ class ExactFeedbackTool:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._knowledge = knowledge
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def run(self, request: ExactFeedbackRequest) -> ExactFeedbackResponse:
         if request.context.item_id != self._knowledge.item_id:
@@ -193,7 +166,6 @@ class ExactFeedbackTool:
             request.context.store_id,
             candidate.exact_feedback,
             candidate.ontology.cache,
-            now=self._clock(),
         )
         return ExactFeedbackResponse(
             context=request.context,

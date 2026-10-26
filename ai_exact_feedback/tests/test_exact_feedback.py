@@ -1,15 +1,13 @@
 """Cases from docs/3-tool-exact.md §5. Supervisor-side cases (6-a, 14) live with ⓪."""
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 
 from ai_exact_feedback.tool import (
     StoreIdRequiredError,
-    add_months,
     evaluate_exact_feedback,
     find_candidate_knowledge,
-    is_expired,
 )
 from ai_supervisor.contracts.external import (
     ExactFeedbackSlice,
@@ -18,9 +16,8 @@ from ai_supervisor.contracts.external import (
 )
 
 STORE_ID = 123456
-NOW = datetime(2026, 10, 22, 3, 0, tzinfo=timezone.utc)
 RECENT = datetime(2026, 10, 8, 3, 0, tzinfo=timezone.utc)
-FOUR_MONTHS_AGO = datetime(2026, 6, 22, 3, 0, tzinfo=timezone.utc)
+YEAR_AGO = datetime(2025, 10, 8, 3, 0, tzinfo=timezone.utc)
 
 PORK, KIMCHI, TOFU, ONION, GARLIC = 101, 109, 120, 130, 140
 NAMES = {PORK: "돼지고기", KIMCHI: "김치", TOFU: "두부", ONION: "양파", GARLIC: "마늘"}
@@ -72,7 +69,6 @@ def flag_confirmation(observed_at: datetime = RECENT) -> dict:
 def exact_slice(
     confirmations: list[dict] | None = None,
     flags: list[dict] | None = None,
-    states: list[dict] | None = None,
     menu_id: int = 1001,
 ) -> ExactFeedbackSlice:
     return ExactFeedbackSlice.model_validate(
@@ -82,7 +78,7 @@ def exact_slice(
                 "menu_id": menu_id,
                 "confirmations": confirmations or [],
                 "flag_confirmations": flags or [],
-                "owner_question_states": states or [],
+                "owner_question_states": [],
             },
         }
     )
@@ -99,7 +95,7 @@ def cache(*ingredient_ids: int) -> MenuIngredientCache:
 
 
 def evaluate(slice_: ExactFeedbackSlice, cached: MenuIngredientCache | None = None):
-    return evaluate_exact_feedback(STORE_ID, slice_, cached, now=NOW)
+    return evaluate_exact_feedback(STORE_ID, slice_, cached)
 
 
 # 1, 2, 3 — empty result, partial confirmation, 3-State
@@ -199,7 +195,7 @@ def test_04_reads_only_requested_menu_slice() -> None:
 @pytest.mark.parametrize("store_id", [None, 0, -1])
 def test_06_missing_store_id_raises(store_id: int | None) -> None:
     with pytest.raises(StoreIdRequiredError):
-        evaluate_exact_feedback(store_id, exact_slice([confirmation(PORK)]), None, now=NOW)
+        evaluate_exact_feedback(store_id, exact_slice([confirmation(PORK)]), None)
 
 
 # 7, 8, 9 — anomaly handling and completeness
@@ -246,44 +242,28 @@ def test_09_unreadable_snapshot_is_unknown() -> None:
     assert evaluate(exact_slice([confirmation(PORK)]), broken).completeness == "unknown"
 
 
-# 10, 11 — 3-month expiry
+# 10, 11 — owner answers never expire (§1-7)
 
 
-def test_10_four_month_old_confirmation_expires_but_stays() -> None:
-    outcome = evaluate(exact_slice([confirmation(PORK, "absent", observed_at=FOUR_MONTHS_AGO)]))
+def test_10_year_old_confirmation_still_overrides() -> None:
+    outcome = evaluate(exact_slice([confirmation(PORK, "absent", observed_at=YEAR_AGO)]))
     c = outcome.confirmations[0]
-    assert (c.expired, c.override_eligible, c.flagged_anomaly) == (True, False, False)
+    assert (c.expired, c.override_eligible, c.flagged_anomaly) == (False, True, False)
 
 
 def test_10_backend_expiry_values_are_recomputed() -> None:
-    stale = confirmation(PORK, observed_at=FOUR_MONTHS_AGO, sent_override_eligible=True)
-    fresh = confirmation(KIMCHI, sent_expired=True, sent_override_eligible=False)
-    outcome = evaluate(exact_slice([stale, fresh]))
-    assert [(c.expired, c.override_eligible) for c in outcome.confirmations] == [
-        (True, False),
-        (False, True),
-    ]
+    sent = confirmation(KIMCHI, sent_expired=True, sent_override_eligible=False)
+    outcome = evaluate(exact_slice([sent]))
+    c = outcome.confirmations[0]
+    assert (c.expired, c.override_eligible) == (False, True)
 
 
-def test_11_one_expired_blocks_complete() -> None:
+def test_11_old_confirmation_does_not_block_complete() -> None:
     outcome = evaluate(
-        exact_slice([confirmation(PORK, observed_at=FOUR_MONTHS_AGO), confirmation(KIMCHI)]),
+        exact_slice([confirmation(PORK, observed_at=YEAR_AGO), confirmation(KIMCHI)]),
         cache(PORK, KIMCHI),
     )
-    assert outcome.completeness == "unknown"
-
-
-def test_expiry_counts_korean_dates() -> None:
-    # 2026-07-14T16:00Z is 07-15 in KST, so the last valid KST day is 10-15.
-    confirmed_at = datetime(2026, 7, 14, 16, 0, tzinfo=timezone.utc)
-    assert not is_expired(confirmed_at, datetime(2026, 10, 15, 14, 59, tzinfo=timezone.utc))
-    assert is_expired(confirmed_at, datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc))
-
-
-def test_expiry_month_end_moves_back() -> None:
-    assert add_months(date(2026, 11, 30), 3) == date(2027, 2, 28)
-    assert add_months(date(2027, 11, 30), 3) == date(2028, 2, 29)
-    assert add_months(date(2026, 8, 31), 3) == date(2026, 11, 30)
+    assert outcome.completeness == "complete"
 
 
 # 12, 13 — tags are left to ④, "present" is never an anomaly by itself
@@ -312,25 +292,8 @@ def test_15_flag_answer_does_not_mix_with_confirmations() -> None:
     assert outcome.completeness == "complete"
 
 
-def test_16_flag_answer_expires_too() -> None:
-    outcome = evaluate(exact_slice(flags=[flag_confirmation(FOUR_MONTHS_AGO)]))
+def test_16_old_flag_answer_still_overrides() -> None:
+    outcome = evaluate(exact_slice(flags=[flag_confirmation(YEAR_AGO)]))
     flag = outcome.flag_confirmations[0]
-    assert (flag.expired, flag.override_eligible, flag.status) == (True, False, "absent")
+    assert (flag.expired, flag.override_eligible, flag.status) == (False, True, "absent")
 
-
-# 17 — question progress passes through untouched
-
-
-def test_17_owner_question_states_pass_through() -> None:
-    state = {
-        "question_id": "question-002",
-        "ingredient": {"ingredient_id": KIMCHI, "canonical_name": NAMES[KIMCHI]},
-        "ambiguity_flag": None,
-        "constraint_tags": [],
-        "answered_round": 2,
-        "confirmation_state": "needs_third",
-    }
-    sent = exact_slice([confirmation(PORK)], states=[state])
-    outcome = evaluate(sent, cache(PORK))
-    assert outcome.owner_question_states == sent.exact.owner_question_states
-    assert outcome.completeness == "complete"
