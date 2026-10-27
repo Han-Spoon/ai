@@ -266,6 +266,11 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"은 세 곳으로 �
 3. 백엔드가 출처별 누적값을 `source_reliability`에 저장하고 신뢰도를 다시 계산한다. ⑦은 DB에 직접 쓰지 않는다.
 4. ⑤는 계산할 때마다 최신 신뢰도를 읽어 쓴다.
 
+**구현 (2026-10-27)**: `ai_db_update/reliability.py`
+- `claims_for(재료)`: ⑤에 들어가는 재료 한 줄에서 출처별 주장을 만든다. 사이트별 관측값 → `corpus:{사이트}`, 큐레이션 → `curated`, 웹 재료 → `web_search`. 키는 ⑤가 쓰는 신뢰도 키와 같다.
+- `reliability_updates(주장, 사장님 답, 질문 때 확률, 가게·메뉴·재료)`: 출처별 증가분(`update_source_reliability` payload)을 만든다. 이상 답변("없음" + 확률 0.9 이상)이면 아무것도 만들지 않는다. `trigger_evidence_ref`는 `owner_confirmation:{가게}:{메뉴}:{재료}`라서, 같은 재료에 답이 다시 와도 중복 방지 키가 같아 한 번만 센다.
+- **정해야 할 것 (⓪·백엔드)**: 사장님 답은 스캔이 끝난 뒤 들어오므로, 그때 출처별 주장을 ⑦에 어떻게 넘길지 계약이 없다. 예) 질문 명령에 `recipe_probability`처럼 출처별 주장을 같이 저장하고, 답 처리 때 백엔드가 ⑦을 부를 때 함께 넘긴다.
+
 **저장 테이블 `source_reliability` (백엔드에 생성 요청, 2026-10-10)**
 
 | 컬럼 | 타입 | 설명 |
@@ -625,7 +630,7 @@ soft evidence가 사람 승인 없이 DB에 들어가면 한 번의 잘못된 �
 
 - [ ] `create_owner_verification_request` 명령 구현
 - [ ] `record_owner_answer` 명령 구현 (이력 기록 + 2번 일치 또는 3번 중 2번이면 확정)
-- [ ] `update_source_reliability` 명령 구현 (§3-1)
+- [x] `update_source_reliability` 비교 로직과 명령 구현 (§3-1, 2026-10-27). 답 처리 때 출처별 주장을 넘기는 계약 연결은 ⓪·백엔드와 정해야 함
 - [ ] anomaly 검사와 `flagged_anomaly` 부여 구현
 - [ ] `resolved_confirmation_id` 연결 정보 포함
 - [ ] §7 테스트 케이스 3·3-b·4·6 작성
