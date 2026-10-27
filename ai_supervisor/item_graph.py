@@ -35,6 +35,7 @@ from .contracts.decision import (
     DecisionRequest,
     DecisionResponse,
     DecisionTagObservation,
+    FoundIngredient,
     LocalizedName,
     ProposedVariantIngredient,
 )
@@ -72,7 +73,13 @@ from .routers import (
     route_after_web_collect,
     route_item_start,
 )
-from .state import ItemAnalysisOutput, ItemState, ItemTask, RunContext
+from .state import (
+    ItemAnalysisOutput,
+    ItemReviewCandidate,
+    ItemState,
+    ItemTask,
+    RunContext,
+)
 
 
 class ItemGraphInvariantError(ValueError):
@@ -837,6 +844,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 "Decision returned safe while a safety restriction is active"
             )
         return {
+            "decision_request": request,
             "decision_response": response,
             "warnings": list(response.warnings),
             "errors": list(response.errors),
@@ -889,6 +897,9 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             result=result,
             evidence=tuple(evidence),
             commands=tuple(state.get("commands", [])),
+            review=_review_candidate(
+                state["decision_request"], decision
+            ),
         )
         return {"result": result, "analysis_output": output}
 
@@ -972,6 +983,48 @@ def _owner_answer_status(exact: ExactFeedbackResponse | None, cards: list[Any]) 
     if exact.completeness == "complete" and not has_unanswered_target:
         return "complete"
     return "partial"
+
+
+def _review_candidate(
+    request: DecisionRequest, response: DecisionResponse
+) -> ItemReviewCandidate | None:
+    review = response.high_risk_review
+    if not review.required:
+        return None
+    if review.reason_code is None:
+        raise ItemGraphInvariantError("required high-risk review has no reason")
+
+    found: dict[tuple[str, int | str], FoundIngredient] = {}
+    for item in [
+        *request.confirmed_results,
+        *request.probability_results,
+        *request.proposed_variant_ingredients,
+    ]:
+        key = _ingredient_key(item.ingredient)
+        previous = found.get(key)
+        tags = list(item.constraint_tags)
+        if previous is not None:
+            tags = list(dict.fromkeys([*previous.constraint_tags, *tags]))
+        found[key] = FoundIngredient(
+            ingredient=item.ingredient,
+            constraint_tags=tags,
+        )
+    answered = frozenset(
+        _ingredient_key(item.ingredient)
+        for item in request.confirmed_results
+        if item.status in {"present", "absent"}
+    )
+    return ItemReviewCandidate(
+        reason_code=review.reason_code,
+        found_ingredients=tuple(found.values()),
+        answered_ingredient_keys=answered,
+    )
+
+
+def _ingredient_key(ingredient: Any) -> tuple[str, int | str]:
+    if ingredient.ingredient_id is not None:
+        return ("id", ingredient.ingredient_id)
+    return ("name", ingredient.canonical_name)
 
 
 def _result_owner_card(card: Any) -> ResultOwnerCard:

@@ -6,15 +6,19 @@ from uuid import UUID
 
 import pytest
 
+from ai_db_update import DbUpdateTool
 from ai_normalization import CandidateSelectionAgent
 from ai_supervisor.contracts.common import NodeWarning
+from ai_supervisor.contracts.decision import HighRiskReviewResponse
 from ai_supervisor.contracts.external import (
     EvidenceRef,
+    IngredientGraph,
     ItemResult,
     JudgeRequest,
     PersistenceCommand,
     PrepareSignals,
     PreparedItem,
+    OwnerCard,
 )
 from ai_supervisor.hashing import ContractHashMismatch, prepared_items_hash
 from ai_supervisor.judge_graph import (
@@ -23,7 +27,11 @@ from ai_supervisor.judge_graph import (
     JudgeGraphInvariantError,
     build_judge_graph,
 )
-from ai_supervisor.state import ItemAnalysisOutput, RunContext
+from ai_supervisor.state import (
+    ItemAnalysisOutput,
+    ItemReviewCandidate,
+    RunContext,
+)
 
 TRACE_ID = UUID("0199a2f0-0000-7000-8000-000000000001")
 PREPARE_ID = UUID("0199a2f0-0000-7000-8000-000000000101")
@@ -239,11 +247,127 @@ class UnsafeItemAnalyzer(DelayedItemAnalyzer):
         )
 
 
-def graph(analyzer):
+class UnusedPostAdapter:
+    async def run(self, request):
+        raise AssertionError("post-processing adapter must not be called")
+
+
+class ReviewItemAnalyzer(DelayedItemAnalyzer):
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__()
+        self.reasons = reasons
+
+    async def run(self, task, run_context):
+        output = await super().run(task, run_context)
+        return ItemAnalysisOutput(
+            result=output.result,
+            evidence=output.evidence,
+            commands=output.commands,
+            review=ItemReviewCandidate(
+                reason_code=self.reasons[task.prepared_item.source_index],
+                found_ingredients=(),
+            ),
+        )
+
+
+class RecordingHighRiskReview:
+    def __init__(self, *, add_missed_card: bool = False) -> None:
+        self.add_missed_card = add_missed_card
+        self.requests = []
+
+    async def run(self, request):
+        self.requests.append(request)
+        missed = []
+        cards = list(request.decision.owner_cards)
+        if self.add_missed_card:
+            choice = request.ingredient_choices[0]
+            ingredient = {
+                "ingredient_id": choice.ingredient_id,
+                "canonical_name": choice.canonical_name,
+            }
+            missed = [ingredient]
+            cards.append(
+                OwnerCard(
+                    item_id=request.context.item_id,
+                    card_id=(
+                        f"card:{request.context.item_id}:"
+                        f"ingredient-{choice.ingredient_id}"
+                    ),
+                    menu_id=request.menu.menu_id,
+                    round=1,
+                    previous_question_id=None,
+                    ingredient=ingredient,
+                    ambiguity_flag=None,
+                    constraint_tags=[],
+                    question={"ko": f"이 메뉴에 {choice.canonical_name}이 들어가나요?"},
+                    reason_codes=["high_risk_review"],
+                    evidence_refs=[],
+                )
+            )
+        return HighRiskReviewResponse(
+            context=request.context,
+            missed_ingredients=missed,
+            reason="재검증 결과 추가 확인이 필요해요.",
+            owner_cards=cards,
+            warnings=request.warnings,
+            errors=request.errors,
+        )
+
+
+class TimeoutHighRiskReview:
+    async def run(self, request):
+        raise TimeoutError("review timeout")
+
+
+class InvalidHighRiskReview:
+    async def run(self, request):
+        return HighRiskReviewResponse(
+            context=request.context,
+            missed_ingredients=[
+                {"ingredient_id": 999, "canonical_name": "선택지 밖 재료"}
+            ],
+            reason="검증되지 않은 재료를 추가했어요.",
+            owner_cards=request.decision.owner_cards,
+            warnings=request.warnings,
+            errors=request.errors,
+        )
+
+
+def with_ingredient_graph(source: JudgeRequest) -> JudgeRequest:
+    graph = IngredientGraph.model_validate(
+        {
+            "status": "ok",
+            "ingredients": [
+                {
+                    "ingredient_id": 130,
+                    "canonical_name": "땅콩",
+                    "name_normalized": "땅콩",
+                    "localized_name": "땅콩",
+                    "taxonomy_category": "garnish",
+                }
+            ],
+            "aliases": [],
+            "tags": [{"ingredient_id": 130, "tag_code": "is_peanut"}],
+            "compositions": [],
+            "composition_tags": [],
+        }
+    )
+    return source.model_copy(
+        update={
+            "knowledge_bundle": source.knowledge_bundle.model_copy(
+                update={"ingredient_graph": graph}
+            )
+        }
+    )
+
+
+def graph(analyzer, *, reviewer=None, db_update=None):
     return build_judge_graph(
         JudgeDependencies(
             candidate_selection=CandidateSelectionAgent(),
             item_analyzer=analyzer,
+            high_risk_review=reviewer or UnusedPostAdapter(),
+            db_update=db_update or UnusedPostAdapter(),
         )
     )
 
@@ -286,7 +410,7 @@ def test_judge_graph_degrades_only_expected_item_failure() -> None:
 
 def test_storeless_judge_passes_explicit_null_and_safety_warning() -> None:
     source = request(count=1, store_id=None)
-    analyzer = DelayedItemAnalyzer()
+    analyzer = ReviewItemAnalyzer(["no_information"])
 
     result = asyncio.run(
         graph(analyzer).ainvoke({"request": source}, context=context(source))
@@ -415,4 +539,90 @@ def test_judge_graph_compiles_with_documented_phase_four_nodes() -> None:
         "select_candidates",
         "analyze_item",
         "collect_items",
+        "high_risk_review",
+        "owner_request",
+        "finalize",
     } <= set(nodes)
+
+
+def test_high_risk_review_adds_card_then_owner_request_builds_command() -> None:
+    source = with_ingredient_graph(request(count=1))
+    reviewer = RecordingHighRiskReview(add_missed_card=True)
+
+    result = asyncio.run(
+        graph(
+            ReviewItemAnalyzer(["no_information"]),
+            reviewer=reviewer,
+            db_update=DbUpdateTool(),
+        ).ainvoke({"request": source}, context=context(source))
+    )
+
+    response = result["response"]
+    item = response.items[0]
+    assert item.risk_level == "caution"
+    assert item.message.reason == "재검증 결과 추가 확인이 필요해요."
+    assert [card.card_id for card in item.owner_cards] == [
+        "card:scan-123:0:ingredient-130"
+    ]
+    assert [command.action for command in response.persistence_commands] == [
+        "create_owner_verification_request"
+    ]
+    assert response.persistence_commands[0].card_id == item.owner_cards[0].card_id
+
+
+def test_high_risk_review_selects_at_most_three_by_reason_priority() -> None:
+    source = request(count=5)
+    reviewer = RecordingHighRiskReview()
+    reasons = [
+        "insufficient_web_sources",
+        "partial_information",
+        "anomaly",
+        "no_information",
+        "unknown_tag",
+    ]
+
+    asyncio.run(
+        graph(
+            ReviewItemAnalyzer(reasons),
+            reviewer=reviewer,
+            db_update=UnusedPostAdapter(),
+        ).ainvoke({"request": source}, context=context(source))
+    )
+
+    assert [request.reason_code for request in reviewer.requests] == [
+        "anomaly",
+        "unknown_tag",
+        "no_information",
+    ]
+
+
+def test_high_risk_timeout_keeps_original_item_result() -> None:
+    source = request(count=1)
+
+    result = asyncio.run(
+        graph(
+            ReviewItemAnalyzer(["partial_information"]),
+            reviewer=TimeoutHighRiskReview(),
+            db_update=UnusedPostAdapter(),
+        ).ainvoke({"request": source}, context=context(source))
+    )
+
+    item = result["response"].items[0]
+    assert item.message.reason is None
+    assert item.owner_cards == []
+
+
+def test_invalid_high_risk_output_keeps_original_item_result() -> None:
+    source = with_ingredient_graph(request(count=1))
+
+    result = asyncio.run(
+        graph(
+            ReviewItemAnalyzer(["unknown_tag"]),
+            reviewer=InvalidHighRiskReview(),
+            db_update=UnusedPostAdapter(),
+        ).ainvoke({"request": source}, context=context(source))
+    )
+
+    item = result["response"].items[0]
+    assert item.message.reason is None
+    assert item.owner_cards == []
