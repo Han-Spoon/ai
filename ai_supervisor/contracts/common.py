@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -175,6 +175,23 @@ class Confirmation(StrictModel):
     flagged_anomaly: StrictBool
     override_eligible: StrictBool
 
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_expiry(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "expired" not in value:
+            return value
+        if type(value["expired"]) is not bool:
+            raise ValueError("legacy expired must be a boolean")
+        cleaned = dict(value)
+        cleaned.pop("expired")
+        return cleaned
+
+    @property
+    def expired(self) -> bool:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return False
+
 
 class FlagConfirmation(StrictModel):
     ambiguity_flag: AmbiguityFlag
@@ -182,3 +199,24 @@ class FlagConfirmation(StrictModel):
     status: IngredientStatus
     evidence: EvidenceRef
     override_eligible: StrictBool
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_expiry(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "expired" not in value:
+            return value
+        if type(value["expired"]) is not bool:
+            raise ValueError("legacy expired must be a boolean")
+        cleaned = dict(value)
+        cleaned.pop("expired")
+        return cleaned
+
+    @property
+    def expired(self) -> bool:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return False
+
+
+class OwnerQuestionState(StrictModel):
+    """Import-only compatibility type; multi-round state has no fields."""

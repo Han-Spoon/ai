@@ -580,6 +580,8 @@ ai_normalization/
 | Supervisor Judge Graph의 ②-B 연결 | 구현 | `ai_supervisor/judge_graph.py` |
 | 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
 
+②가 소유하는 v1 코드 범위는 구현 완료다. #164의 구체 LLM 연결과 #165의 기존 모듈 정리는 별도 후속 이슈이며, 확정 전에는 현재의 결정론적 fallback을 유지한다.
+
 구현되지 않은 항목은 암묵적 fallback으로 숨기지 않는다. 현재 LLM Resolver가 없으면 규칙 결과를 유지하고, 후보 생성은 빈 목록을 AI가 만들어 대신하지 않고 백엔드의 `candidate_status`를 그대로 받는다.
 
 기존 `ai_ocr`의 텍스트 구조화와 `ai_ruleengine`의 표기 정리 코드는 동작을 조사해 재사용하되, ①과 ④가 같은 문자열을 다시 정규화하지 않도록 책임을 한곳으로 모은다.

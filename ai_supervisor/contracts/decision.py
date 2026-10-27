@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import StrictBool, model_validator
 
@@ -20,6 +20,7 @@ from .common import (
     NodeError,
     NodeWarning,
     NonEmptyString,
+    OwnerQuestionState,
     PositiveInt,
     Probability,
     StrictModel,
@@ -53,6 +54,23 @@ class ConfirmedResult(StrictModel):
     status: IngredientStatus
     override_eligible: StrictBool
     evidence_refs: list[NonEmptyString]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_expiry(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "expired" not in value:
+            return value
+        if type(value["expired"]) is not bool:
+            raise ValueError("legacy expired must be a boolean")
+        cleaned = dict(value)
+        cleaned.pop("expired")
+        return cleaned
+
+    @property
+    def expired(self) -> bool:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return False
 
 
 class DecisionProbabilityResult(StrictModel):
@@ -102,6 +120,23 @@ class DecisionRequest(StrictModel):
     localized_names: list[LocalizedName]
     warnings: list[NodeWarning]
     errors: list[NodeError]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_empty_legacy_question_states(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "owner_question_states" not in value:
+            return value
+        if value["owner_question_states"] != []:
+            raise ValueError("multi-round owner question state is no longer supported")
+        cleaned = dict(value)
+        cleaned.pop("owner_question_states")
+        return cleaned
+
+    @property
+    def owner_question_states(self) -> list[OwnerQuestionState]:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return []
 
     @model_validator(mode="after")
     def validate_request(self) -> "DecisionRequest":

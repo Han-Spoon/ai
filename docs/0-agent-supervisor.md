@@ -892,6 +892,8 @@ Supervisor는 JudgeResponse를 반환하기 직전에 다음 참조 정합성을
 
 질문은 대상마다 한 번만 생성하므로 `owner_cards[].round`, `previous_question_id`, `owner_question_states`를 만들지 않는다. `risk_ingredients[].confirmation`도 기존 `status`, `evidence_refs`, `EvidenceRef.observed_at`과 중복되므로 만들지 않는다.
 
+기존 내부 모듈의 순차 전환을 위해 Supervisor 모델은 입력에서 `expired`, 빈 `owner_question_states`, `round: 1`·`previous_question_id: null`만 호환 처리해 즉시 버린다. 다차 값은 거부하며, 이 필드들은 canonical schema와 직렬화 출력에 포함되지 않는다.
+
 ---
 
 ## 2. 처리 로직
