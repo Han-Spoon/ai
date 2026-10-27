@@ -1086,6 +1086,7 @@ Item Graph — 메뉴 하나
 
 ```text
 ai_supervisor/
+├── api.py              # Prepare/Judge FastAPI router
 ├── service.py          # Prepare/Judge 서비스 진입점
 ├── prepare_graph.py    # ① → 품질 분기 → ②-A
 ├── judge_graph.py      # 검증 → ②-B → fan-out → collect → finalize
@@ -1099,12 +1100,12 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦의 결정론적 구현은 서비스 기본 의존성으로 연결된다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`, `api.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. FastAPI router는 `app.state.supervisor_service`의 같은 서비스 인스턴스를 사용해 `POST /v1/analyze/prepare`, `POST /v1/analyze/judge`만 노출한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 결정론적 구현은 서비스 기본 의존성으로 연결된다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - ① OCR runner의 실제 storage/CLOVA client 설정
-- ⑥ 수집의 실제 검색 provider·reader 설정과 ⑧의 `DecisionResponse`·고위험 재검증 adapter
+- ⑥ 수집의 실제 검색 provider·reader 설정과 ⑧의 고위험 재검증 adapter
 - `chains/`의 실제 LangChain/provider 연결
-- `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
+- 기존 `app.py` lifespan의 실제 client·`SupervisorService` 생성 및 `api.router` 등록
 
 Normalization의 ②-A는 Prepare Graph에, ②-B는 Judge Graph의 fan-out 직전에 각각 `NodeAdapter` 계약으로 연결됐다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
 
@@ -1236,11 +1237,13 @@ collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anom
 외부 router는 다음 두 서비스 메서드만 호출한다.
 
 ```python
-await supervisor.prepare(prepare_input, run_context)
-await supervisor.judge(judge_input, run_context)
+await supervisor.prepare(prepare_input)
+await supervisor.judge(judge_input)
 ```
 
 등록 경로는 `POST /v1/analyze/prepare`와 `POST /v1/analyze/judge`뿐이다. endpoint는 §1-3 모델을 검증하고 graph 입력으로 변환한 뒤 결과를 외부 응답 모델로 다시 검증한다.
+
+`ai_supervisor.api.router`는 FastAPI lifespan에서 `app.state.supervisor_service`에 저장한 단일 서비스 인스턴스를 읽는다. 서비스가 설정되지 않았으면 `503 supervisor_not_configured`, 요청 모델·closed schema 검증 실패는 FastAPI 기본 `422`, `prepared_items_hash` 또는 응답 `bundle_hash` 불일치는 `409`와 해당 오류 코드를 반환한다. 그 밖의 프로그래밍 오류와 invariant 위반은 정상 응답으로 숨기지 않고 500으로 전파해 서버 로그에 남긴다. 기존 애플리케이션은 lifespan에서 실제 OCR·검색·고위험 재검증 adapter로 `SupervisorService`를 한 번 만들고 `app.include_router(api.router)`로 등록한다.
 
 Prepare와 Judge 사이 상태는 AI 메모리나 checkpoint로 공유하지 않는다. 백엔드가 Prepare 결과와 KnowledgeBundle을 Judge에 다시 보내야 한다.
 
