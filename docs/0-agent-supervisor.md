@@ -1099,10 +1099,9 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items`까지 구현되어 있다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - `service.py`
-- Judge의 `high_risk_review → owner_request → finalize` 후처리
 - ①의 레거시 OCR 출력 변환 adapter와 ④~⑧의 실제 구현 adapter
 - `chains/`의 실제 LangChain/provider 연결
 - `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
@@ -3029,7 +3028,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 
 - `missed_ingredients`는 LLM이 `ingredient_choices` 안에서 고른 재료다. 추적용이며 `risk_ingredients`·`matched_tags` 같은 판정 값에는 넣지 않는다.
 - `reason`은 보강한 뒤의 이유 설명 전체다. 원래 `decision.message.reason`이 있으면 이어서 쓰고, `null`이면 새로 쓴다. 확인되지 않은 내용이라 "~수 있어요" 말투로만 쓴다. 자동 검수(⑧ §4)를 통과하지 못하면 원래 `decision.message.reason`을 그대로 돌려준다. 판정 한 줄(`verdict`)과 안내(`notes`)는 재검증이 다루지 않으므로 응답에 없다.
-- `owner_cards`는 보강한 뒤의 이 메뉴 카드 전체다. 원래 카드와 다듬은 질문, 놓친 재료 중 사용자 금지 태그와 겹치는 재료의 새 카드(`reason_codes`에 `high_risk_review`)를 담는다. 카드 순서는 ⑧ §1-3 규칙을 따른다. 새 카드의 `item_id`·`card_id`도 원래 카드와 같은 내용 기반 규칙(§4-7)으로 만든다.
+- `owner_cards`는 보강한 뒤의 이 메뉴 카드 전체다. 원래 카드와 다듬은 질문, 놓친 재료 중 사용자 금지 태그와 겹치는 재료의 새 카드(`reason_codes`에 `high_risk_review`)를 담는다. 카드 순서는 ⑧ §1-3 규칙을 따른다. 새 카드의 `item_id`·`card_id`도 원래 카드와 같은 내용 기반 규칙(§4-7)으로 만든다. 이미 ③에서 `present` 또는 `absent` 답변을 받은 대상에는 새 질문 카드를 만들지 않는다.
 - Supervisor는 이 메뉴의 `message.reason`·`owner_cards`만 응답 값으로 바꾼다. `message.verdict`·`message.notes`는 그대로 둔다. `risk_level`·`evidence_basis`·`risk_ingredients`·`matched_tags`는 바꾸지 않는다. 그 뒤 `owner_request`가 바뀐 카드까지 질문 저장 명령을 만든다 (§2-10).
 - timeout·LLM 오류·형식 오류면 Supervisor는 원래 ⑧ 결과를 그대로 쓴다 (§6).
 

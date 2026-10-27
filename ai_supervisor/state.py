@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypedDict
 from uuid import UUID
 
 from .contracts.common import Locale, NodeContext, NodeError, NodeWarning, PositiveInt
+from .contracts.decision import FoundIngredient, ReviewReason
 from .contracts.external import (
     EvidenceRef,
     ImageRef,
@@ -163,6 +164,14 @@ class ItemAnalysisOutput:
     result: ItemResult
     evidence: tuple[EvidenceRef, ...] = ()
     commands: tuple[PersistenceCommand, ...] = ()
+    review: "ItemReviewCandidate | None" = None
+
+
+@dataclass(frozen=True)
+class ItemReviewCandidate:
+    reason_code: ReviewReason
+    found_ingredients: tuple[FoundIngredient, ...]
+    answered_ingredient_keys: frozenset[tuple[str, int | str]] = frozenset()
 
 
 def merge_item_updates(
@@ -195,6 +204,7 @@ class ItemState(TypedDict, total=False):
     ingredient_mapping_response: Any
     web_aggregate_response: Any
     db_update_response: Any
+    decision_request: Any
     decision_response: Any
     result: ItemResult
     analysis_output: ItemAnalysisOutput
@@ -216,7 +226,9 @@ class JudgeState(TypedDict, total=False):
     item_task: ItemTask
     item_updates: Annotated[list[ItemAnalysisOutput], merge_item_updates]
     ordered_items: list[ItemResult]
+    review_candidates: dict[str, ItemReviewCandidate]
     evidence: Annotated[list[EvidenceRef], merge_evidence]
     persistence_commands: Annotated[list[PersistenceCommand], merge_commands]
     warnings: Annotated[list[NodeWarning], merge_signals]
     errors: Annotated[list[NodeError], merge_signals]
+    response: Any
