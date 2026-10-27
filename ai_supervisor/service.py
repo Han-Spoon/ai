@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from ai_bayesian import BayesianTool
 from ai_db_update import DbUpdateTool
+from ai_decision_policy import DecisionTool
 from ai_normalization import CandidateSelectionAgent, NameCleaningAgent
 from ai_normalization.contracts import (
     CandidateSelectionRequest,
@@ -53,15 +54,17 @@ from .state import RunContext
 class SupervisorServiceDependencies:
     """Lifespan-scoped adapters used to assemble the two public workflows.
 
-    OCR, web collection, decision response construction, and expensive review need
-    application/provider configuration, so callers inject them explicitly. Existing
-    deterministic ②/④/⑤/⑥-aggregate/⑦ implementations are used by default.
+    OCR, web collection, and expensive review need application/provider
+    configuration, so callers inject them explicitly. Existing deterministic
+    ②/④/⑤/⑥-aggregate/⑦/⑧ implementations are used by default.
     """
 
     ocr: NodeAdapter[OcrRequest, OcrResponse]
     web_collect: NodeAdapter[WebCollectRequest, WebCollectResponse]
-    decision: NodeAdapter[DecisionRequest, DecisionResponse]
     high_risk_review: NodeAdapter[HighRiskReviewRequest, HighRiskReviewResponse]
+    decision: NodeAdapter[DecisionRequest, DecisionResponse] = field(
+        default_factory=DecisionTool
+    )
     normalization: NodeAdapter[NameCleaningRequest, NameCleaningResponse] = field(
         default_factory=NameCleaningAgent
     )
