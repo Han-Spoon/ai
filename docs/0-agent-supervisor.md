@@ -1099,10 +1099,10 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`와 단위 테스트가 있다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦의 결정론적 구현은 서비스 기본 의존성으로 연결된다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
-- `service.py`
-- ①의 레거시 OCR 출력 변환 adapter와 ④~⑧의 실제 구현 adapter
+- ① OCR runner의 실제 storage/CLOVA client 설정
+- ⑥ 수집의 실제 검색 provider·reader 설정과 ⑧의 `DecisionResponse`·고위험 재검증 adapter
 - `chains/`의 실제 LangChain/provider 연결
 - `/v1/analyze/prepare`, `/v1/analyze/judge` FastAPI 연결
 
@@ -1391,7 +1391,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 }
 ```
 
-Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_ko`, `price_text`, `price_options`, `display_order`, `scan_quality`, `is_spicy`를 위 형식으로 변환한다. 기존 품질 점수가 0~100이면 0~1로 나눠 변환한다. `item_id`는 `scan_session_id:source_index`로 한 번만 발급한다. OCR은 메뉴명을 의미적으로 정규화하지 않는다.
+Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_ko`, `price_text`, `price_options`, `display_order`, `scan_quality`, `is_spicy`를 위 형식으로 변환한다. 기존 품질 점수와 메뉴별 신뢰도가 0~100이면 0~1로 나눠 변환한다. 메뉴별 신뢰도가 없으면 `ocr_confidence: 0.0`과 `ocr_confidence_missing` caution warning을 만들어 SAFE를 막고, 범위 밖 값은 계약 오류로 거부한다. `display_order`로 정렬한 뒤 0부터 연속된 `source_index`를 부여하고 `item_id`는 `scan_session_id:source_index`로 한 번만 발급한다. OCR runner는 이미지 storage 접근과 CLOVA client 호출을 소유하며 FastAPI lifespan에서 `LegacyOcrAdapter`에 주입한다. OCR은 메뉴명을 의미적으로 정규화하지 않는다.
 
 `price_options` 원소는 `{ "label": string, "price_text": string, "inferred": boolean }`이다. 설명이나 가격을 읽지 못하면 각각 `description: null`, `price_text: null`로 반환한다. `risk_tag_observations`에는 **긍정적으로 감지한 태그만** 넣으며 감지하지 못한 것을 `absent` 근거로 만들지 않는다. 현재 허용 태그는 `is_spicy`이고, 이 값은 soft evidence이므로 단독으로 DANGER 확정에 사용하지 않는다.
 
