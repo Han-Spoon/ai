@@ -3008,7 +3008,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
   "owner_cards": [
     {
       "item_id": "scan-123:2",
-      "card_id": "card:scan-123:2:ingredient-130:r1",
+      "card_id": "card:scan-123:2:ingredient-130",
       "menu_id": null,
       "ingredient": {
         "ingredient_id": 130,

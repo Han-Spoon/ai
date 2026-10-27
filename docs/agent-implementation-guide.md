@@ -116,7 +116,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
 - [x] `owner_answer_status` 계산과 최종 응답 전달 — Supervisor가 ③ 확인값과 필요한 전체 대상을 비교해 계산하고, 프론트는 `none`만 답변 없음으로 표시
-- [ ] 기존 다차 질문·3개월 만료 필드 제거 — 사장님 답변 1건 즉시 확정 및 무기한 사용 계약으로 모델·라우팅·테스트 동기화
+- [ ] 기존 다차 질문·3개월 만료 필드 제거 — Supervisor 모델·라우팅·테스트는 반영 완료. 공유 계약을 사용하는 ③·⑦·⑧ 구현과 테스트 동기화 필요
 - [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4-7 소유
 - [ ] 모델 변경 절차 — `schema_version`을 올리는 기준과 리뷰 담당
 

@@ -14,7 +14,6 @@ from .common import (
     NodeError,
     NodeWarning,
     NonEmptyString,
-    OwnerQuestionState,
     PositiveInt,
     StrictModel,
 )
@@ -46,7 +45,6 @@ class ExactFeedbackResponse(StrictModel):
     completeness: Literal["complete", "unknown"]
     confirmations: list[Confirmation]
     flag_confirmations: list[FlagConfirmation]
-    owner_question_states: list[OwnerQuestionState]
     warnings: list[NodeWarning]
     errors: list[NodeError]
 

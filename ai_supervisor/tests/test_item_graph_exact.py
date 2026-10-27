@@ -45,7 +45,6 @@ def confirmation(
         "evidence": owner_evidence,
         "flagged_anomaly": False,
         "override_eligible": True,
-        "expired": False,
     }
 
 
@@ -57,7 +56,6 @@ def exact_slice(*confirmations: dict) -> ExactFeedbackSlice:
                 "menu_id": 1001,
                 "confirmations": list(confirmations),
                 "flag_confirmations": [],
-                "owner_question_states": [],
             },
         }
     )
@@ -113,10 +111,10 @@ def test_only_eligible_known_confirmations_skip_bayesian() -> None:
     assert request.anomaly_locked_ingredients == []
     assert tags.requests[0].ingredient_ids == [101, 102, 103]
     confirmed = decision.requests[0].confirmed_results
-    assert [(item.status, item.expired, item.override_eligible) for item in confirmed] == [
-        ("present", False, True),
-        ("unknown", False, True),
-        ("absent", False, True),
+    assert [(item.status, item.override_eligible) for item in confirmed] == [
+        ("present", True),
+        ("unknown", True),
+        ("absent", True),
     ]
     assert all(item.constraint_tags == ["is_pork"] for item in confirmed)
     assert output.result.route == "db_bayes"

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from ai_supervisor.contracts import JudgeRequest, JudgeResponse, PrepareRequest, UserProfile
-from ai_supervisor.contracts.common import NodeWarning, OwnerQuestionState
+from ai_supervisor.contracts.common import NodeWarning
 from ai_supervisor.contracts.external import ResultOwnerCard
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
@@ -206,20 +206,6 @@ def test_safety_warning_must_force_caution() -> None:
         NodeWarning.model_validate({**store_warning(), "forces_caution": False})
 
 
-def test_owner_question_state_enforces_round_progression() -> None:
-    with pytest.raises(ValidationError):
-        OwnerQuestionState.model_validate(
-            {
-                "question_id": "question-1",
-                "ingredient": {"ingredient_id": 1, "canonical_name": "액젓"},
-                "ambiguity_flag": None,
-                "constraint_tags": [],
-                "answered_round": 1,
-                "confirmation_state": "needs_third",
-            }
-        )
-
-
 def test_storeless_judge_request_accepts_only_empty_store_slices() -> None:
     request = JudgeRequest.model_validate(base_judge_request())
     assert request.store_id is None
@@ -246,7 +232,6 @@ def test_storeless_judge_request_accepts_only_empty_store_slices() -> None:
                     "menu_id": 1001,
                     "confirmations": [],
                     "flag_confirmations": [],
-                    "owner_question_states": [],
                 },
             },
             "ontology": empty_ontology(),
@@ -307,3 +292,8 @@ def test_result_owner_card_has_no_multi_round_fields() -> None:
     )
     assert "round" not in card.model_dump()
     assert "previous_question_id" not in card.model_dump()
+
+    with pytest.raises(ValidationError):
+        ResultOwnerCard.model_validate(
+            {**card.model_dump(mode="python"), "round": 1}
+        )

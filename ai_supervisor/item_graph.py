@@ -742,7 +742,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     role=tagged.role,
                     status=confirmation.status,
                     override_eligible=confirmation.override_eligible,
-                    expired=confirmation.expired,
                     evidence_refs=[confirmation.evidence.evidence_id],
                 )
             )
@@ -803,9 +802,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             menu_ambiguity_flags=_menu_ambiguity_flags(task, ontology),
             flag_confirmations=(
                 list(exact.flag_confirmations) if exact else []
-            ),
-            owner_question_states=(
-                list(exact.owner_question_states) if exact else []
             ),
             no_information=state.get("route") == "no_information",
             information_status=_information_status(
@@ -1040,9 +1036,6 @@ def _result_owner_card(card: Any) -> ResultOwnerCard:
         target = f"flag-{card.ambiguity_flag}-{tags}"
     else:
         target = "menu"
-    reasons = [reason for reason in card.reason_codes if reason != "expired"]
-    if not reasons:
-        reasons = ["unconfirmed"]
     return ResultOwnerCard(
         item_id=card.item_id,
         card_id=f"card:{card.item_id}:{target}",
@@ -1051,7 +1044,7 @@ def _result_owner_card(card: Any) -> ResultOwnerCard:
         ambiguity_flag=card.ambiguity_flag,
         constraint_tags=card.constraint_tags,
         question=card.question,
-        reason_codes=reasons,
+        reason_codes=card.reason_codes,
         evidence_refs=card.evidence_refs,
     )
 

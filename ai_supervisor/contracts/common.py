@@ -174,7 +174,6 @@ class Confirmation(StrictModel):
     evidence: EvidenceRef
     flagged_anomaly: StrictBool
     override_eligible: StrictBool
-    expired: StrictBool
 
 
 class FlagConfirmation(StrictModel):
@@ -183,25 +182,3 @@ class FlagConfirmation(StrictModel):
     status: IngredientStatus
     evidence: EvidenceRef
     override_eligible: StrictBool
-    expired: StrictBool
-
-
-class OwnerQuestionState(StrictModel):
-    question_id: NonEmptyString
-    ingredient: IngredientRef | None
-    ambiguity_flag: AmbiguityFlag | None
-    constraint_tags: list[ConstraintTag]
-    answered_round: Literal[1, 2, 3]
-    confirmation_state: Literal["confirmed", "needs_second", "needs_third"]
-
-    @model_validator(mode="after")
-    def validate_target_and_round(self) -> "OwnerQuestionState":
-        if (self.ingredient is None) == (self.ambiguity_flag is None):
-            raise ValueError("exactly one question target is required")
-        if self.confirmation_state == "needs_second" and self.answered_round != 1:
-            raise ValueError("needs_second requires answered_round 1")
-        if self.confirmation_state == "needs_third" and self.answered_round != 2:
-            raise ValueError("needs_third requires answered_round 2")
-        if self.answered_round == 3 and self.confirmation_state != "confirmed":
-            raise ValueError("round 3 must be confirmed")
-        return self

@@ -294,8 +294,6 @@ class RecordingHighRiskReview:
                         f"ingredient-{choice.ingredient_id}"
                     ),
                     menu_id=request.menu.menu_id,
-                    round=1,
-                    previous_question_id=None,
                     ingredient=ingredient,
                     ambiguity_flag=None,
                     constraint_tags=[],

@@ -56,8 +56,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
     item_id: NonEmptyString
     card_id: NonEmptyString
     menu_id: PositiveInt | None
-    round: Literal[1, 2, 3]
-    previous_question_id: NonEmptyString | None
     ingredient: IngredientRef | None
     ambiguity_flag: AmbiguityFlag | None
     constraint_tags: list[ConstraintTag]
@@ -68,7 +66,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
             "insufficient_recipe_evidence",
             "anomaly",
             "no_information",
-            "expired",
             "high_risk_review",
             "ambiguous_menu",
             "unconfirmed",
@@ -84,10 +81,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
             raise ValueError("ingredient owner request must use empty constraint_tags")
         if self.ambiguity_flag is not None and not self.constraint_tags:
             raise ValueError("flag owner request requires constraint_tags")
-        if self.round == 1 and self.previous_question_id is not None:
-            raise ValueError("round 1 must not have previous_question_id")
-        if self.round > 1 and self.previous_question_id is None:
-            raise ValueError("round 2/3 requires previous_question_id")
         if "ko" not in self.question or not self.reason_codes:
             raise ValueError("owner request requires Korean text and a reason")
         if self.ambiguity_flag is not None and self.recipe_probability is not None:

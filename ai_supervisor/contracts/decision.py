@@ -20,7 +20,6 @@ from .common import (
     NodeError,
     NodeWarning,
     NonEmptyString,
-    OwnerQuestionState,
     PositiveInt,
     Probability,
     StrictModel,
@@ -53,7 +52,6 @@ class ConfirmedResult(StrictModel):
     role: IngredientRole | None
     status: IngredientStatus
     override_eligible: StrictBool
-    expired: StrictBool
     evidence_refs: list[NonEmptyString]
 
 
@@ -96,7 +94,6 @@ class DecisionRequest(StrictModel):
     risk_tag_observations: list[DecisionTagObservation]
     menu_ambiguity_flags: list[AmbiguityFlag]
     flag_confirmations: list[FlagConfirmation]
-    owner_question_states: list[OwnerQuestionState]
     no_information: StrictBool
     information_status: InformationStatus
     owner_interaction_allowed: StrictBool
