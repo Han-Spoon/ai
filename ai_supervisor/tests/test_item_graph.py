@@ -124,7 +124,6 @@ def item_task(*, exact_complete: bool, flagged_anomaly: bool = False) -> ItemTas
         "evidence": evidence("owner:pork", "owner_feedback"),
         "flagged_anomaly": flagged_anomaly,
         "override_eligible": True,
-        "expired": False,
     }
     selected = CandidateKnowledge.model_validate(
         {
@@ -135,7 +134,6 @@ def item_task(*, exact_complete: bool, flagged_anomaly: bool = False) -> ItemTas
                     "menu_id": 1001,
                     "confirmations": [confirmation],
                     "flag_confirmations": [],
-                    "owner_question_states": [],
                 },
             },
             "ontology": ontology_slice(cache=exact_complete),

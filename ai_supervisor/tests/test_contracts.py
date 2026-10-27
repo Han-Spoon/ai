@@ -5,8 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from ai_supervisor.contracts import JudgeRequest, JudgeResponse, PrepareRequest, UserProfile
-from ai_supervisor.contracts.common import NodeWarning, OwnerQuestionState
-from ai_supervisor.contracts.external import ResultOwnerCard
+from ai_supervisor.contracts.common import Confirmation, NodeWarning
+from ai_supervisor.contracts.db_update import CreateOwnerVerificationRequestPayload
+from ai_supervisor.contracts.decision import ConfirmedResult, DecisionRequest
+from ai_supervisor.contracts.external import ExactFeedbackData, OwnerCard, ResultOwnerCard
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
 PREPARE_ID = "0199a2f0-0000-7000-8000-000000000101"
@@ -206,20 +208,6 @@ def test_safety_warning_must_force_caution() -> None:
         NodeWarning.model_validate({**store_warning(), "forces_caution": False})
 
 
-def test_owner_question_state_enforces_round_progression() -> None:
-    with pytest.raises(ValidationError):
-        OwnerQuestionState.model_validate(
-            {
-                "question_id": "question-1",
-                "ingredient": {"ingredient_id": 1, "canonical_name": "액젓"},
-                "ambiguity_flag": None,
-                "constraint_tags": [],
-                "answered_round": 1,
-                "confirmation_state": "needs_third",
-            }
-        )
-
-
 def test_storeless_judge_request_accepts_only_empty_store_slices() -> None:
     request = JudgeRequest.model_validate(base_judge_request())
     assert request.store_id is None
@@ -246,7 +234,6 @@ def test_storeless_judge_request_accepts_only_empty_store_slices() -> None:
                     "menu_id": 1001,
                     "confirmations": [],
                     "flag_confirmations": [],
-                    "owner_question_states": [],
                 },
             },
             "ontology": empty_ontology(),
@@ -307,3 +294,58 @@ def test_result_owner_card_has_no_multi_round_fields() -> None:
     )
     assert "round" not in card.model_dump()
     assert "previous_question_id" not in card.model_dump()
+
+    with pytest.raises(ValidationError):
+        ResultOwnerCard.model_validate(
+            {**card.model_dump(mode="python"), "round": 1}
+        )
+
+
+def test_removed_owner_fields_are_not_in_canonical_schemas() -> None:
+    assert "expired" not in Confirmation.model_json_schema()["properties"]
+    assert "expired" not in ConfirmedResult.model_json_schema()["properties"]
+    assert (
+        "owner_question_states"
+        not in ExactFeedbackData.model_json_schema()["properties"]
+    )
+    assert (
+        "owner_question_states"
+        not in DecisionRequest.model_json_schema()["properties"]
+    )
+    assert "round" not in OwnerCard.model_json_schema()["properties"]
+    assert "previous_question_id" not in OwnerCard.model_json_schema()["properties"]
+    assert (
+        "round"
+        not in CreateOwnerVerificationRequestPayload.model_json_schema()["properties"]
+    )
+
+
+def test_old_single_round_defaults_are_input_only() -> None:
+    card = OwnerCard.model_validate(
+        {
+            "item_id": "scan-123:0",
+            "card_id": "card:scan-123:0:ingredient-101",
+            "menu_id": 1001,
+            "round": 1,
+            "previous_question_id": None,
+            "ingredient": {"ingredient_id": 101, "canonical_name": "돼지고기"},
+            "ambiguity_flag": None,
+            "constraint_tags": [],
+            "question": {"ko": "이 메뉴에 돼지고기가 들어가나요?"},
+            "reason_codes": ["unconfirmed"],
+            "evidence_refs": [],
+        }
+    )
+    assert card.round == 1
+    assert card.previous_question_id is None
+    assert "round" not in card.model_dump()
+    assert "previous_question_id" not in card.model_dump()
+
+    with pytest.raises(ValidationError, match="multi-round"):
+        OwnerCard.model_validate(
+            {
+                **card.model_dump(mode="python"),
+                "round": 2,
+                "previous_question_id": "question-1",
+            }
+        )

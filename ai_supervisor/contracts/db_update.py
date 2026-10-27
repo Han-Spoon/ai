@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 from pydantic import StrictBool, field_validator, model_validator
 
@@ -56,8 +56,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
     item_id: NonEmptyString
     card_id: NonEmptyString
     menu_id: PositiveInt | None
-    round: Literal[1, 2, 3]
-    previous_question_id: NonEmptyString | None
     ingredient: IngredientRef | None
     ambiguity_flag: AmbiguityFlag | None
     constraint_tags: list[ConstraintTag]
@@ -68,13 +66,38 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
             "insufficient_recipe_evidence",
             "anomaly",
             "no_information",
-            "expired",
             "high_risk_review",
             "ambiguous_menu",
             "unconfirmed",
         ]
     ]
     evidence_refs: list[NonEmptyString]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_single_round_legacy_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if "round" not in value and "previous_question_id" not in value:
+            return value
+        if value.get("round", 1) != 1 or value.get("previous_question_id") is not None:
+            raise ValueError("multi-round owner requests are no longer supported")
+        cleaned = dict(value)
+        cleaned.pop("round", None)
+        cleaned.pop("previous_question_id", None)
+        return cleaned
+
+    @property
+    def round(self) -> Literal[1]:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return 1
+
+    @property
+    def previous_question_id(self) -> None:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return None
 
     @model_validator(mode="after")
     def validate_card(self) -> "CreateOwnerVerificationRequestPayload":
@@ -84,10 +107,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
             raise ValueError("ingredient owner request must use empty constraint_tags")
         if self.ambiguity_flag is not None and not self.constraint_tags:
             raise ValueError("flag owner request requires constraint_tags")
-        if self.round == 1 and self.previous_question_id is not None:
-            raise ValueError("round 1 must not have previous_question_id")
-        if self.round > 1 and self.previous_question_id is None:
-            raise ValueError("round 2/3 requires previous_question_id")
         if "ko" not in self.question or not self.reason_codes:
             raise ValueError("owner request requires Korean text and a reason")
         if self.ambiguity_flag is not None and self.recipe_probability is not None:

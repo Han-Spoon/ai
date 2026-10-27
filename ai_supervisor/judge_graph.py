@@ -387,7 +387,7 @@ def _build_high_risk_request(
             risk_level=item.risk_level,
             evidence_basis=item.evidence_basis,
             message=item.message,
-            owner_cards=[_legacy_owner_card(card) for card in item.owner_cards],
+            owner_cards=[_decision_owner_card(card) for card in item.owner_cards],
         ),
         found_ingredients=list(candidate.found_ingredients),
         ingredient_choices=_ingredient_choices(state, candidate),
@@ -488,18 +488,12 @@ def _apply_high_risk_response(
     )
 
 
-def _legacy_owner_card(card: ResultOwnerCard) -> OwnerCard:
-    return OwnerCard(
-        **card.model_dump(mode="python"),
-        round=1,
-        previous_question_id=None,
-    )
+def _decision_owner_card(card: ResultOwnerCard) -> OwnerCard:
+    return OwnerCard.model_validate(card.model_dump(mode="python"))
 
 
 def _result_owner_card(card: OwnerCard) -> ResultOwnerCard:
-    return ResultOwnerCard.model_validate(
-        card.model_dump(exclude={"round", "previous_question_id"})
-    )
+    return ResultOwnerCard.model_validate(card.model_dump(mode="python"))
 
 
 def _stored_card(card: ResultOwnerCard) -> bool:
@@ -525,8 +519,6 @@ def _owner_request_payload(
         item_id=card.item_id,
         card_id=card.card_id,
         menu_id=card.menu_id,
-        round=1,
-        previous_question_id=None,
         ingredient=card.ingredient,
         ambiguity_flag=card.ambiguity_flag,
         constraint_tags=card.constraint_tags,

@@ -2,6 +2,8 @@
 
 `docs/2-agent-normalization.md`의 ② Menu Normalization Agent 구현입니다.
 
+문서에서 확정된 v1 범위인 ②-A 결정론적 정제와 ②-B 후보 선택 구현은 완료됐습니다. 구체 LLM 연결은 미확정 이슈 #164이며, 연결 전에는 보수적인 결정론적 fallback을 사용합니다.
+
 - ②-A `NameCleaningAgent`: OCR 원문에서 장식·가격·인분·크기 옵션을 분리하고, 위험 가능 토큰을 보존한 검색명을 만듭니다.
 - ②-B `CandidateSelectionAgent`: 백엔드가 전달한 최대 5개 후보 안에서 문서의 v1 점수 정책으로 후보를 선택합니다.
 - 모든 입출력은 `extra="forbid"` Pydantic 모델이며 `context`, `warnings`, `errors`를 보존합니다.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import model_validator
 
@@ -14,8 +14,8 @@ from .common import (
     NodeError,
     NodeWarning,
     NonEmptyString,
-    OwnerQuestionState,
     PositiveInt,
+    OwnerQuestionState,
     StrictModel,
 )
 
@@ -46,9 +46,25 @@ class ExactFeedbackResponse(StrictModel):
     completeness: Literal["complete", "unknown"]
     confirmations: list[Confirmation]
     flag_confirmations: list[FlagConfirmation]
-    owner_question_states: list[OwnerQuestionState]
     warnings: list[NodeWarning]
     errors: list[NodeError]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_empty_legacy_question_states(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "owner_question_states" not in value:
+            return value
+        if value["owner_question_states"] != []:
+            raise ValueError("multi-round owner question state is no longer supported")
+        cleaned = dict(value)
+        cleaned.pop("owner_question_states")
+        return cleaned
+
+    @property
+    def owner_question_states(self) -> list[OwnerQuestionState]:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return []
 
     @model_validator(mode="after")
     def validate_context(self) -> "ExactFeedbackResponse":

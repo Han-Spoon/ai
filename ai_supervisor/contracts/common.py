@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -174,7 +174,23 @@ class Confirmation(StrictModel):
     evidence: EvidenceRef
     flagged_anomaly: StrictBool
     override_eligible: StrictBool
-    expired: StrictBool
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_expiry(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "expired" not in value:
+            return value
+        if type(value["expired"]) is not bool:
+            raise ValueError("legacy expired must be a boolean")
+        cleaned = dict(value)
+        cleaned.pop("expired")
+        return cleaned
+
+    @property
+    def expired(self) -> bool:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return False
 
 
 class FlagConfirmation(StrictModel):
@@ -183,25 +199,24 @@ class FlagConfirmation(StrictModel):
     status: IngredientStatus
     evidence: EvidenceRef
     override_eligible: StrictBool
-    expired: StrictBool
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_expiry(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "expired" not in value:
+            return value
+        if type(value["expired"]) is not bool:
+            raise ValueError("legacy expired must be a boolean")
+        cleaned = dict(value)
+        cleaned.pop("expired")
+        return cleaned
+
+    @property
+    def expired(self) -> bool:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return False
 
 
 class OwnerQuestionState(StrictModel):
-    question_id: NonEmptyString
-    ingredient: IngredientRef | None
-    ambiguity_flag: AmbiguityFlag | None
-    constraint_tags: list[ConstraintTag]
-    answered_round: Literal[1, 2, 3]
-    confirmation_state: Literal["confirmed", "needs_second", "needs_third"]
-
-    @model_validator(mode="after")
-    def validate_target_and_round(self) -> "OwnerQuestionState":
-        if (self.ingredient is None) == (self.ambiguity_flag is None):
-            raise ValueError("exactly one question target is required")
-        if self.confirmation_state == "needs_second" and self.answered_round != 1:
-            raise ValueError("needs_second requires answered_round 1")
-        if self.confirmation_state == "needs_third" and self.answered_round != 2:
-            raise ValueError("needs_third requires answered_round 2")
-        if self.answered_round == 3 and self.confirmation_state != "confirmed":
-            raise ValueError("round 3 must be confirmed")
-        return self
+    """Import-only compatibility type; multi-round state has no fields."""

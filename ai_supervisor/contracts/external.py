@@ -226,7 +226,23 @@ class ExactFeedbackData(StrictModel):
     menu_id: PositiveInt
     confirmations: list[Confirmation]
     flag_confirmations: list[FlagConfirmation]
-    owner_question_states: list[OwnerQuestionState]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_empty_legacy_question_states(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "owner_question_states" not in value:
+            return value
+        if value["owner_question_states"] != []:
+            raise ValueError("multi-round owner question state is no longer supported")
+        cleaned = dict(value)
+        cleaned.pop("owner_question_states")
+        return cleaned
+
+    @property
+    def owner_question_states(self) -> list[OwnerQuestionState]:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return []
 
 
 class ExactFeedbackSlice(StrictModel):
@@ -467,8 +483,6 @@ class OwnerCard(StrictModel):
     item_id: NonEmptyString
     card_id: NonEmptyString
     menu_id: PositiveInt | None
-    round: Literal[1, 2, 3]
-    previous_question_id: NonEmptyString | None
     ingredient: IngredientRef | None
     ambiguity_flag: AmbiguityFlag | None
     constraint_tags: list[ConstraintTag]
@@ -478,7 +492,6 @@ class OwnerCard(StrictModel):
             "insufficient_recipe_evidence",
             "anomaly",
             "no_information",
-            "expired",
             "high_risk_review",
             "ambiguous_menu",
             "unconfirmed",
@@ -486,12 +499,34 @@ class OwnerCard(StrictModel):
     ]
     evidence_refs: list[NonEmptyString]
 
+    @model_validator(mode="before")
+    @classmethod
+    def discard_single_round_legacy_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if "round" not in value and "previous_question_id" not in value:
+            return value
+        if value.get("round", 1) != 1 or value.get("previous_question_id") is not None:
+            raise ValueError("multi-round owner cards are no longer supported")
+        cleaned = dict(value)
+        cleaned.pop("round", None)
+        cleaned.pop("previous_question_id", None)
+        return cleaned
+
+    @property
+    def round(self) -> Literal[1]:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return 1
+
+    @property
+    def previous_question_id(self) -> None:
+        """Compatibility view for old internal adapters; never serialized."""
+
+        return None
+
     @model_validator(mode="after")
     def validate_card(self) -> "OwnerCard":
-        if self.round == 1 and self.previous_question_id is not None:
-            raise ValueError("round 1 must not have previous_question_id")
-        if self.round > 1 and self.previous_question_id is None:
-            raise ValueError("round 2/3 requires previous_question_id")
         if not self.reason_codes:
             raise ValueError("owner card requires at least one reason")
         if "ko" not in self.question:

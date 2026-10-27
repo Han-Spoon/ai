@@ -314,7 +314,6 @@ def test_storeless_decision_requires_warning_and_disables_owner_interaction() ->
         "risk_tag_observations": [],
         "menu_ambiguity_flags": [],
         "flag_confirmations": [],
-        "owner_question_states": [],
         "no_information": True,
         "information_status": "none",
         "owner_interaction_allowed": False,

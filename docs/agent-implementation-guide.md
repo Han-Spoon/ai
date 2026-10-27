@@ -116,7 +116,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - [x] 제한 태그 전달 구조 — `constraint_tags`와 ⑧의 `matched_tags`로 확정
 - [x] 3-State 전달 구조 — `confirmed_results[].status`로 ⑧까지 유지
 - [x] `owner_answer_status` 계산과 최종 응답 전달 — Supervisor가 ③ 확인값과 필요한 전체 대상을 비교해 계산하고, 프론트는 `none`만 답변 없음으로 표시
-- [ ] 기존 다차 질문·3개월 만료 필드 제거 — 사장님 답변 1건 즉시 확정 및 무기한 사용 계약으로 모델·라우팅·테스트 동기화
+- [x] 기존 다차 질문·3개월 만료 필드 제거 — canonical schema·출력에서 제거. 기존 ③·⑦·⑧은 단일 응답 기본값만 읽고 버리는 호환 경계로 연결
 - [ ] `anomaly_locked`(통계적 이상 답변으로 override가 잠긴 상태)를 모든 노드가 손대지 않고 그대로 전달하도록 모델에서 보장하는 방법 — 누가 이 값을 만들고 누가 해석하는지는 [`0-agent-supervisor.md`](0-agent-supervisor.md) §4-7 소유
 - [ ] 모델 변경 절차 — `schema_version`을 올리는 기준과 리뷰 담당
 
@@ -131,7 +131,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
 | [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare/Judge 서비스·레거시 OCR 변환 adapter·Judge 후처리·Item Graph 전체 경로·FastAPI router. 실제 OCR/검색/고위험 재검증 provider 설정과 기존 앱 등록은 후속 구현 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
-| [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책 |
+| [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책. 확정된 v1 범위 구현 완료 |
 | [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core와 canonical adapter. Supervisor Item Graph의 선택 후보 slice 읽기 경로에 연결됨 |
 | [`../ai_decision_policy/`](../ai_decision_policy/README.md) | ⑧ 규칙 기반 판정 core와 canonical 계약. Item Graph 호출 경계는 연결됐고 실제 응답 adapter는 후속 구현 |
 | [`../ai_ruleengine/`](../ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
