@@ -19,6 +19,22 @@ GPT는 아래 두 케이스에서만 사용합니다.
 - `unknown_menu`: DB에 없는 메뉴
 - `unknown_remain`: 베이스 메뉴는 잡혔지만 variant 토큰이 미인식된 메뉴
 
+## 새 ⑧ 규칙과 다른 점
+
+이 모듈은 지금 배포된 `/v1/result`가 쓰는 **옛 판정 경로**입니다. 새 판정 규칙은 [`ai_decision_policy/`](../ai_decision_policy/README.md)(⑧, [`docs/8-agent-xai.md`](../docs/8-agent-xai.md))에 있고, Supervisor의 `/v1/analyze/judge`가 연결되면 그쪽을 씁니다. `/v1/result`를 언제 내릴지는 아직 정하지 않았습니다 (⑧ §8).
+
+`tests/`는 이 옛 동작을 지키는 테스트라, 아래 테스트는 새 규칙과 기대값이 다릅니다. 새 규칙을 확인하려면 `ai_decision_policy/tests/`를 보세요. 이 테스트를 새 규칙에 맞게 고치면 배포 중인 `/v1/result` 동작이 바뀌므로 그대로 둡니다.
+
+| 옛 테스트 | 옛 동작 | 새 규칙 (⑧) |
+|---|---|---|
+| `test_caution.py::test_caution_with_no_hidden_rule_hits_becomes_safe` | 숨은 재료 규칙에 안 걸리면 `safe` | SAFE는 사장님 확인값으로만 (§3, 테스트 12·32) |
+| `test_danger.py`, `test_case_router.py::test_danger_has_priority_over_escalation_case` | 룰엔진 `hit_tags`만으로 `danger` | DANGER도 사장님 확인값으로만. 확인값이 없으면 `caution` (§3, 테스트 11) |
+| `test_caution.py::test_caution_with_hidden_rule_hits_keeps_caution_and_owner_card`, `test_unknown_menu.py`, `test_unknown_remain.py` | 질문 카드 `owner_card` 한 장, 질문은 GPT가 쓰거나 `ko`·`en`·`ar` | 카드는 `owner_cards` 여러 장, 고정 템플릿, `ko` + 사용자 언어 (§1-3) |
+| `test_unknown_menu.py::test_unknown_menu_uses_gpt_template` | GPT가 `hit_tags`를 정함 | 판정 값은 LLM이 정하지 않음 (§0-2) |
+| `test_template_builder.py` | 결과 문구를 `ko`·`en`·`ar` 세 언어로 | 사용자 언어 하나로, `message: {verdict, reason, notes[]}` (§4) |
+
+`test_gpt_client.py`(API 키·시간 제한 검사, 호출 횟수 예산)는 판정 규칙과 관계없는 GPT 호출 설정 테스트입니다. 새 ⑧에서 이유 설명 LLM을 붙일 때 다시 쓸 수 있습니다.
+
 ## 폴더 구조
 
 ```text
@@ -53,6 +69,7 @@ ai_result/
 
   tests/
     test_case_router.py
+    test_gpt_client.py
     test_danger.py
     test_caution.py
     test_unknown_menu.py

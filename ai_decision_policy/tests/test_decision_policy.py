@@ -1,7 +1,8 @@
 """Verdict and high-risk review cases from docs/8-agent-xai.md §7.
 
-Owner cards are in test_owner_cards.py. Message text comes later; for cases that
-also check it (13~15, 31) only the verdict part is covered here.
+Owner cards are in test_owner_cards.py, note choices in test_notes.py and message
+text in test_messages.py; for cases that also check text (13~15, 31) only the
+verdict part is covered here.
 """
 
 from datetime import datetime, timezone
@@ -79,11 +80,12 @@ def probability(
     posterior_mean: float,
     *,
     anomaly_locked: bool = False,
+    role: str | None = None,
 ) -> DecisionProbabilityResult:
     return DecisionProbabilityResult(
         ingredient=ingredient,
         constraint_tags=tags,
-        role=None,
+        role=role,
         posterior_mean=posterior_mean,
         confidence=0.55,
         prior_source="global",
