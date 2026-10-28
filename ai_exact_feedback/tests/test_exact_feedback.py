@@ -201,19 +201,19 @@ def test_06_missing_store_id_raises(store_id: int | None) -> None:
 # 7, 8, 9 — anomaly handling and completeness
 
 
-def test_07_anomaly_is_kept_but_not_eligible() -> None:
+def test_07_anomaly_still_overrides() -> None:
     outcome = evaluate(exact_slice([confirmation(PORK, "absent", flagged_anomaly=True)]))
     assert len(outcome.confirmations) == 1
     assert outcome.confirmations[0].flagged_anomaly is True
-    assert outcome.confirmations[0].override_eligible is False
+    assert outcome.confirmations[0].override_eligible is True
 
 
-def test_08_one_anomaly_blocks_complete() -> None:
+def test_08_anomaly_does_not_block_complete() -> None:
     outcome = evaluate(
         exact_slice([confirmation(PORK, "absent", flagged_anomaly=True), confirmation(KIMCHI)]),
         cache(PORK, KIMCHI),
     )
-    assert outcome.completeness == "unknown"
+    assert outcome.completeness == "complete"
 
 
 def test_09_cache_and_all_confirmed_is_complete() -> None:

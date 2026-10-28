@@ -260,11 +260,10 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 )
                 for confirmation in eligible
             ],
-            anomaly_locked_ingredients=[
-                confirmation.ingredient
-                for confirmation in (exact.confirmations if exact else [])
-                if confirmation.flagged_anomaly
-            ],
+            # Owner answers are never locked any more, even when flagged as
+            # anomalous (10/27 meeting, ③ §1-6). The field stays until #340 decides
+            # whether the anomaly flag itself goes away.
+            anomaly_locked_ingredients=[],
             knowledge=knowledge,
             ingredient_graph=task.ingredient_graph,
             warnings=list(state.get("warnings", [])),

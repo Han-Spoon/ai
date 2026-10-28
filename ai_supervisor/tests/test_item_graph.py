@@ -608,20 +608,22 @@ def test_storeless_db_path_skips_exact_and_blocks_safe() -> None:
     assert output.commands == ()
 
 
-def test_anomaly_confirmation_is_forwarded_to_ontology_lock() -> None:
+def test_anomaly_flagged_confirmation_still_overrides() -> None:
+    # Owner answers are never locked, even when ⑦ flagged them (10/27 meeting, ③ §1-6).
     item_analyzer, ontology, _, _, decision = analyzer()
 
-    output = asyncio.run(
+    asyncio.run(
         item_analyzer.run(
             item_task(exact_complete=True, flagged_anomaly=True), context()
         )
     )
 
-    request = ontology.requests[0]
-    assert request.confirmed_ingredients == []
-    assert request.anomaly_locked_ingredients[0].ingredient_id == 101
-    assert decision.requests[0].confirmed_results[0].override_eligible is False
-    assert output.result.risk_level != "safe"
+    confirmed = decision.requests[0].confirmed_results
+    assert [(c.ingredient.ingredient_id, c.override_eligible) for c in confirmed] == [
+        (101, True)
+    ]
+    assert not any(r.anomaly_locked for r in decision.requests[0].probability_results)
+    assert all(not r.anomaly_locked_ingredients for r in ontology.requests)
 
 
 def test_runtime_variant_reviews_then_continues_to_bayesian_and_decision() -> None:

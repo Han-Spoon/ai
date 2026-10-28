@@ -31,7 +31,7 @@ response = await tool.run(request)         # ExactFeedbackRequest → ExactFeedb
 | 규칙 | 문서 |
 |---|---|
 | `store_id`가 없거나 0 이하면 `StoreIdRequiredError` | §1-1 |
-| 이상 답변(`flagged_anomaly`) 재료는 `override_eligible: false`로 표시하되 목록에서 빼지 않음 | §1-6 |
+| 이상 답변(`flagged_anomaly`)도 `override_eligible: true`. 표시는 그대로 넘기고 `completeness`에도 쓰지 않음 (10/27 회의) | §1-6 |
 | 사장님 답은 기간 만료 없이 씀. 오래된 답도 다시 묻거나 막지 않음. `expired`는 ⓪ 계약 코드에서 빠질 때까지 항상 `false` | §1-7 |
 | 백엔드가 보낸 `expired`·`override_eligible`은 쓰지 않고 다시 계산 | §1-2 |
 | 캐시가 있고, 캐시 재료가 전부 확인됐고, 이상 답변이 0건일 때만 `complete`. 애매하면 `unknown` | §2 |

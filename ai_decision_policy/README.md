@@ -54,7 +54,7 @@ ItemGraphDependencies(..., decision=DecisionTool(), ...)
 
 | `reason_code` | 신호 | 이 사용자와 관련 있을 때만 |
 |---|---|---|
-| `anomaly` | `anomaly_locked` 재료 | 그 재료 태그가 금지 태그와 겹칠 때 |
+| `anomaly` | `anomaly_locked` 재료 (10/27 회의로 잠금이 없어져 지금은 오지 않음) | 그 재료 태그가 금지 태그와 겹칠 때 |
 | `unknown_tag` | ④ 경고 `unmapped_constraint_tags`, `constraint_tags_lookup_failed` | 항상 (겹치는지 알 수 없음) |
 | `no_information` | `no_information`, 또는 재료 0개 | 금지 태그가 하나라도 있을 때 |
 | `partial_information` | `information_status`가 `complete`가 아님 | 금지 태그가 하나라도 있을 때 |
@@ -76,7 +76,7 @@ cards = build_owner_cards(request, outcome)
 | 메뉴 카드 | 정보 없는 메뉴(또는 재료 0개)에 한 장. 화면 표시용이라 저장하지 않음 | `no_information` |
 
 - 태그를 모르는 재료는 겹치는지 알 수 없어 카드를 만들지 않습니다
-- 사장님에게는 대상마다 한 번만 묻습니다 (10/26 회의). 이미 답한 재료는 그 답이 이상 답변으로 잠겼어도 다시 묻지 않고, 만료·2·3차 질문도 없습니다. ⓪ 계약 코드에 `round`가 남아 있어 항상 `round: 1`, `previous_question_id: null`을 보냅니다 (§9)
+- 사장님에게는 대상마다 한 번만 묻습니다 (10/26 회의). 이미 답한 재료는 이상 답변 표시가 있어도 다시 묻지 않고, 만료·2·3차 질문도 없습니다. ⓪ 계약 코드에 `round`가 남아 있어 항상 `round: 1`, `previous_question_id: null`을 보냅니다 (§9)
 - `card_id`는 `card:{item_id}:{대상}`으로, 같은 요청이면 항상 같은 값입니다
 - 순서: `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 같은 이유끼리는 확률이 높은 재료, 확률이 없으면 `ingredient_id` 순, 플래그는 이름 순
 - 문구: 한국어 `ko`와 사용자 언어(한국어 사용자면 `ko` 하나). LLM 없이 고정 템플릿으로 만듭니다. 재료 이름은 `localized_names`에서 가져오고, 없으면 한국어 이름을 씁니다. `ko` 외 6개 언어는 원어민 확인 전 초안입니다 (#135)

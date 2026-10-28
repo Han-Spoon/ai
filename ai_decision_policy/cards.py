@@ -3,7 +3,7 @@
 Rules only, no LLM. A card goes out for every ingredient that overlaps the user's
 forbidden tags and has no owner answer yet, whatever its probability. The owner is
 asked once per target: an answered ingredient is never asked again, even when its
-answer is anomaly-locked (10/26 meeting, §1-3). Unresolved menu ambiguity flags get
+answer was flagged as anomalous (10/26 meeting, §1-3). Unresolved menu ambiguity flags get
 one card each, and a menu with no information gets one display-only card that asks
 about every forbidden tag.
 """

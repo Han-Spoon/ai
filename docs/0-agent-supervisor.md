@@ -221,7 +221,8 @@ Prepare는 DB의 `menu_id`를 임의로 만들거나 확정하지 않는다. Jud
 ```text
 ③ ExactFeedbackResponse.confirmations[]
   → override 가능한 값은 ⑧ confirmed_results[]
-  → anomaly 등 override 불가 값은 버리지 않고 ④·⑤ 경로
+  → override 불가 값(`status: unknown` 등)은 버리지 않고 ④·⑤ 경로
+    (이상 답변 표시가 있어도 override 가능, 10/27 회의)
 
 ③ ExactFeedbackResponse.flag_confirmations[]
   → ⑧ DecisionRequest.flag_confirmations[]
@@ -694,7 +695,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
 
-`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)와 이상 답변 규칙으로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). 사장님 답변은 한 번 받은 `present`/`absent`를 즉시 확정하며 기간 만료 없이 사용한다. `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. 다차 질문 진행 상태인 `owner_question_states`는 사용하지 않는다. 사용하지 않는 `exact_feedback.inherited`는 외부 계약에 넣지 않고, 백엔드는 기본 메뉴의 사장님 답변을 조회하지 않는다. `confirmations[]`·`flag_confirmations[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
+`exact_feedback.exact`는 해당 후보의 확인값이며 `{menu_id, confirmations, flag_confirmations}`를 사용한다. `completeness`는 ③이 캐시(`ontology.cache`)로 계산하므로 백엔드는 보내지 않는다 (같은 규칙을 두 곳에 두지 않기 위해, ③ §2). 사장님 답변은 한 번 받은 `present`/`absent`를 즉시 확정하며 기간 만료 없이 사용한다. `flag_confirmations`는 메뉴 애매함 플래그에 대한 사장님 답이며 없으면 `[]`다. 다차 질문 진행 상태인 `owner_question_states`는 사용하지 않는다. 사용하지 않는 `exact_feedback.inherited`는 외부 계약에 넣지 않고, 백엔드는 기본 메뉴의 사장님 답변을 조회하지 않는다. `confirmations[]`·`flag_confirmations[]`와 `web_search_cache.cached_sources[]`는 각각 §4-2, §4-5의 동일 이름 closed schema를 사용한다.
 
 `ingredient_graph`는 한 Bundle에 한 번만 보내는 공통 read-only 재료 그래프이며 `{status, ingredients, aliases, tags, compositions, composition_tags}`의 closed schema다. `ingredients[]`는 `{ingredient_id, canonical_name, name_normalized, localized_name, taxonomy_category}`, `aliases[]`는 `{ingredient_id, alias_normalized}`, `tags[]`는 `{ingredient_id, tag_code}`, `compositions[]`는 `{parent_ingredient_id, child_ingredient_id, ambiguity_flag}`, `composition_tags[]`는 `{parent_ingredient_id, child_ingredient_id, tag_code}`다. `localized_name`은 JudgeRequest `locale`의 재료 이름으로, 백엔드가 DB `ingredients.name_i18n`에서 꺼낸다. 그 언어 이름이 없으면 `null`이다. 재료 확장에는 쓰지 않으므로 Supervisor는 이 값을 ④ 요청의 그래프에 넣지 않고, ⑧ 요청의 `localized_names`로만 전달한다 (§4-7). `compositions[]`에는 `part_of` 관계만 넣는다. ④는 이 그래프로 재귀 확장·순환 차단·깊이 제한·태그와 `role` 부착을 수행하며 백엔드는 펼친 결과를 만들지 않는다.
 
@@ -1216,7 +1217,7 @@ START → prepare_item → §2-8의 조건 분기
 
 `validate_knowledge`는 DB를 조회하지 않고 §1-3의 ID·status·hash·item/candidate 대응만 검사한다. graph는 애플리케이션 시작 때 한 번 compile하고 초기 버전은 영속 checkpointer를 쓰지 않는다.
 
-collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anomaly → unknown_tag → no_information → partial_information → insufficient_web_sources → source_index` 순으로 고른다. 재검증은 판정을 바꾸지 않고 질문 카드와 이유 설명(`message.reason`)만 보강한다. 재검증 대상은 이미 SAFE가 금지된 메뉴이고 DANGER는 사장님 확인값으로만 나오므로 판정을 바꿀 경우가 없다 (⑧ §2-3, #234). timeout이면 기존 결과를 유지한다.
+collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anomaly → unknown_tag → no_information → partial_information → insufficient_web_sources → source_index` 순으로 고른다 (`anomaly`는 10/27 회의로 이상 답변 잠금이 없어져 지금은 나오지 않는다). 재검증은 판정을 바꾸지 않고 질문 카드와 이유 설명(`message.reason`)만 보강한다. 재검증 대상은 이미 SAFE가 금지된 메뉴이고 DANGER는 사장님 확인값으로만 나오므로 판정을 바꿀 경우가 없다 (⑧ §2-3, #234). timeout이면 기존 결과를 유지한다.
 
 `db_update`는 재검증이 끝난 뒤 모든 메뉴의 저장 대상 카드마다 질문 저장 operation(`create_owner_verification_request`)을 만든다. 재검증이 더한 카드도 포함하고, 재검증이 다듬은 질문은 다듬은 문구로 저장한다. 정보 없는 메뉴의 화면 표시용 카드는 저장하지 않는다. Item Graph에서 모은 변형 검토·웹 검토·웹 캐시 operation과 합친 뒤 내용 키가 같은 operation을 제거하고, `out_of_band` context(`item_id: null`)로 ⑦을 정확히 한 번 호출한다. Supervisor는 내부의 `operation_id → item_id` 매핑을 보존했다가 검증된 command를 최종 `persistence_commands`로 옮길 때 원래 `item_id`를 복원한다.
 
@@ -1862,9 +1863,9 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 
 ③의 출력 중 `status != unknown` AND `override_eligible: true`인 재료만 `confirmed_ingredients`로 전달한다. 원소는 `{ingredient: IngredientRef, status: present | absent}`다.
 
-`override_eligible: false`인 재료는 누락하지 않고 ⑤ 계산 대상에 남긴다. `anomaly_locked: true`는 `flagged_anomaly: true`인 재료에만 부여한다. 기간 만료로 override를 거부하는 경로는 없다.
+③은 이상 답변(`flagged_anomaly: true`)도 `override_eligible: true`로 보낸다 (10/27 회의, ③ §1-6). 기간 만료로 override를 거부하는 경로도 없다. `override_eligible: false`가 오면 누락하지 않고 ⑤ 계산 대상에 남긴다.
 
-`anomaly_locked_ingredients`에도 `flagged_anomaly: true`인 재료만 넣는다. `not override_eligible` 전체를 이 배열로 복사하지 않는다. 원소는 `IngredientRef`다.
+`anomaly_locked_ingredients`는 항상 `[]`다. 10/27 회의로 이상 답변 잠금이 없어졌다 (③ §1-6). 칸과 ④⑤의 `anomaly_locked`를 지울지는 #340에서 정한다. 원소 형식은 `IngredientRef`다.
 
 `cache_command`는 ④가 만든 `save_menu_ingredient_cache` 저장 명령이다. 캐시를 쓰지 않고 새로 펼쳤을 때만 채우고, 캐시를 그대로 썼거나 `knowledge.menu`가 null이면 `null`이다. 형식은 §4-6 `DbUpdateResponse.commands[]` 원소와 같다 (`operation_id`는 ⑦ 요청이 없으므로 `null`). Supervisor는 이 명령을 ⑦ 명령과 함께 `persistence_commands`에 넣는다. 관리자 게이트를 거치지 않는 파생 캐시라 ⑦을 거치지 않는다 (AGENTS.md 예외).
 
@@ -2891,9 +2892,9 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `reason_codes` 허용값은 `insufficient_recipe_evidence`(확률 근거 부족: 실질 레시피 근거 5개 미만), `anomaly`(이상 답변), `no_information`(정보 없음), `high_risk_review`(재검증 발견), `ambiguous_menu`(메뉴 재료 목록 밖에 사용자 제한에 걸릴 재료가 있을 수 있음), `unconfirmed`(사장님 확인값 없음. 다른 이유가 하나도 없을 때만)이며 한 카드에 여러 값을 넣을 수 있다. 모든 카드에는 이유가 하나 이상 있다. 카드 정렬 우선순위는 `anomaly → ambiguous_menu → high_risk_review → insufficient_recipe_evidence → no_information → unconfirmed`이다. 태그를 모르는 재료(④ warning `unmapped_constraint_tags`, `constraint_tags_lookup_failed`)는 사용자 금지 태그와 겹치는지 알 수 없어 카드를 만들지 않는다. 이 재료는 warning으로 SAFE를 막고, 아래 고위험 재검증 이유 `unknown_tag`로만 쓴다 (⑧ §1-3). 사진 품질 신호인 `scan_quality.status: low_confidence`와 레시피 근거 부족 이유 코드를 혼동하지 않는다.
 
-`high_risk_review.required`는 해당 메뉴가 고가 모델 재검증 후보인지 나타낸다. `reason_code`는 `anomaly | unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
+`high_risk_review.required`는 해당 메뉴가 고위험 재검증 후보인지 나타낸다 (재검증도 저가 모델, 10/27 회의). `reason_code`는 `anomaly | unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
 
-`probability_results`의 `anomaly_locked`는 ③이 override 거부한 재료가 ④를 거쳐 ⑤까지 온 값을 그대로 옮긴다. Supervisor나 ⑧이 이 값을 제거하지 않는다.
+`probability_results`의 `anomaly_locked`는 ④를 거쳐 ⑤까지 온 값을 그대로 옮긴다. Supervisor나 ⑧이 이 값을 제거하지 않는다. 10/27 회의로 이상 답변 잠금이 없어져 지금은 항상 `false`이고, 그래서 재검증 이유 `anomaly`도 나오지 않는다 (⑧ §8).
 
 `runtime_tagged`의 `variant_suggestion.suggested_ingredients[]`는 `proposed_variant_ingredients[]`로 옮기고 제안 근거 ID를 각 `evidence_refs`에 넣는다. 같은 재료를 ⑤ `probability_results[]`에도 중복해서 넣으면 ⑧의 위험 재료가 두 번 만들어지므로, `source: variant_suggested`인 ⑤ 결과는 확률 계산·scale 검증까지만 수행하고 ⑧ 경계에서는 제안 목록 하나로 합친다. 나머지 ⑤ 결과는 `probability_results[]`로 전달한다.
 
@@ -2902,7 +2903,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - `forces_caution: true` warning이 있음
 - `no_information: true`
 - `information_status != complete`
-- `anomaly_locked: true`
+- `anomaly_locked: true` (10/27 회의 뒤로는 오지 않음)
 - `probability_results`가 비어 있지 않음
 - `owner_interaction_allowed: false`
 - `proposed_variant_ingredients`가 비어 있지 않음
@@ -2918,7 +2919,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 #### 고위험 재검증 요청 — `HighRiskReviewRequest`
 
-Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤, `high_risk_review.required: true`인 메뉴 중 최대 3개(§2-10)에 대해 ⑧을 한 번 더 부를 때 쓴다. 고가 모델 LLM이 놓친 재료를 찾고, 근거 충돌을 설명하고, 질문을 다듬는다 (⑧ §2-3).
+Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤, `high_risk_review.required: true`인 메뉴 중 최대 3개(§2-10)에 대해 ⑧을 한 번 더 부를 때 쓴다. LLM(저가 모델, 10/27 회의)이 놓친 재료를 찾고, 근거 충돌을 설명하고, 질문을 다듬는다 (⑧ §2-3).
 
 ```json
 {
@@ -3095,7 +3096,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 2-b | `store_id: null` + exact/store prior/가게 캐시 포함 | HTTP 422 `storeless_scope_violation` | 가게 없는 스캔에 다른 가게 데이터가 섞이지 않음 |
 | 3 | Exact complete 메뉴 | 확장·⑤는 스킵하고 ④ tag lookup 후 ⑧ | confirmed 기반 판정과 태그 유지 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
-| 5 | `flagged_anomaly` 포함 | override 금지, ⑤와 ⑧까지 anomaly 신호 유지 | SAFE로 내려가지 않음 |
+| 5 | `flagged_anomaly` 포함 | 다른 확인값처럼 override, `anomaly_locked_ingredients: []` (10/27 회의) | 이상 답도 확정값으로 쓰이고 ④⑤에서 잠기지 않음 |
 | 5-a | 사장님 확인값이 3개월보다 오래됨 | 기간과 관계없이 기존 hard evidence로 사용 | 시간 경과만으로 확인값을 만료하거나 재질문하지 않음 |
 | 6 | 차돌된장찌개 런타임 변형 | ④ variant_suggested → ⑤ scale 0.5 → ⑧ caution 가능 | DB 자동 INSERT 없음 |
 | 7 | unknown 메뉴 + 웹서치 실패 | ⑧에 `no_information: true` | CAUTION 이상 |
@@ -3131,7 +3132,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 36 | `no_information: false` + ⑧ 요청의 세 재료 목록이 모두 빔 + 다른 SAFE 금지 조건 없음 | ⑧ CAUTION, `evidence_basis: unknown` | 재료가 0개일 때 SAFE로 새지 않음 (⑧ 테스트 32) |
 | 37 | 할랄 사용자 + 웹 재료가 표준 재료로 매핑되지 않음(`unmapped_constraint_tags`) | ⑧ CAUTION, 그 재료의 질문 카드 없음, `high_risk_review.reason_code: unknown_tag` | 태그를 모르는 재료로 카드를 만들지 않고 재검증 이유로만 씀 |
 | 38 | 사장님 확인값 없음 / 일부 있음 / 필요한 대상 전체 있음 | 최종 `owner_answer_status`가 각각 `none` / `partial` / `complete` | 프론트가 다른 판정 필드를 역해석하지 않고 답변 상태를 표시할 수 있음 |
-| 39 | `store_id: null` / anomaly로 답이 override 불가 | 각각 `owner_answer_status: none` / `partial`, SAFE 금지 | 답변 존재 여부와 SAFE에 쓸 수 있는 완료 상태를 구분함 |
+| 39 | `store_id: null` / 답했지만 `status: unknown`인 재료가 남음 (예전 예시: 이상 답변으로 override 불가, 10/27 회의로 폐지) | 각각 `owner_answer_status: none` / `partial`, SAFE 금지 | 답변 존재 여부와 SAFE에 쓸 수 있는 완료 상태를 구분함 |
 
 ---
 

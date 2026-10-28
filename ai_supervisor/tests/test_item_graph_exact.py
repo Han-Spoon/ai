@@ -6,10 +6,8 @@ import asyncio
 from dataclasses import replace
 
 from ai_supervisor.contracts.external import ExactFeedbackSlice
-from ai_supervisor.contracts.ontology import OntologyIngredient
 from ai_supervisor.routers import route_item_start
 from ai_supervisor.tests.test_item_graph import (
-    RecordingOntology,
     analyzer,
     context,
     evidence,
@@ -121,45 +119,19 @@ def test_only_eligible_known_confirmations_skip_bayesian() -> None:
     assert output.result.owner_answer_status == "partial"
 
 
-def test_anomaly_lock_reaches_decision_through_ontology_and_bayesian() -> None:
-    item_analyzer, ontology, bayesian, _, decision = analyzer()
-
-    async def lock_anomalies(request):
-        response = await RecordingOntology().run(request)
-        locked = [
-            OntologyIngredient(
-                ingredient=ref,
-                taxonomy_category="base",
-                constraint_tags=["is_pork"],
-                role="identity",
-                depth=0,
-                parent_ingredient=None,
-                source="recipe",
-                curated=True,
-                observation_basis="direct",
-                observations=[{"corpus": "recipes", "k_count": 9, "n_total": 10}],
-                anomaly_locked=True,
-                evidence_refs=["recipe:fish"],
-            )
-            for ref in request.anomaly_locked_ingredients
-        ]
-        return response.model_copy(
-            update={"ingredients": [*locked, *response.ingredients]}
-        )
-
-    ontology.run = lock_anomalies
-
-    output = asyncio.run(
-        item_analyzer.run(
-            item_task(exact_complete=True, flagged_anomaly=True), context()
-        )
+def test_flagged_answer_reaches_ontology_as_a_confirmation() -> None:
+    # No anomaly lock (10/27 meeting): a flagged answer is confirmed like any other,
+    # so ④ drops it from the probability list instead of locking it.
+    item_analyzer, ontology, _, _, decision = analyzer()
+    flagged = {**confirmation(101, status="absent"), "flagged_anomaly": True}
+    task = with_exact(
+        item_task(exact_complete=False),
+        exact_slice(flagged, confirmation(102, status="unknown")),
     )
 
-    assert bayesian.requests[0].ingredients[0].anomaly_locked is True
-    locked = [
-        item.ingredient.ingredient_id
-        for item in decision.requests[0].probability_results
-        if item.anomaly_locked
-    ]
-    assert locked == [101]
-    assert output.result.risk_level != "safe"
+    asyncio.run(item_analyzer.run(task, context()))
+
+    request = ontology.requests[0]
+    assert [item.ingredient.ingredient_id for item in request.confirmed_ingredients] == [101]
+    assert request.anomaly_locked_ingredients == []
+    assert not any(r.anomaly_locked for r in decision.requests[0].probability_results)
