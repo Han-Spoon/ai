@@ -7,6 +7,8 @@
 엔드포인트:
     POST /v1/ocr        : S3 IAM 조회(우선) 또는 image_url 다운로드 → OCR 파이프라인 → 최종 dict
     POST /v1/ruleengine : ocr_result + profile → 위험도 판정 dict
+    POST /v1/analyze/prepare : Supervisor Prepare Graph
+    POST /v1/analyze/judge   : Supervisor Judge Graph
 
 실행:
     uvicorn app:app --host 0.0.0.0 --port 8000
@@ -21,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -64,8 +67,28 @@ from ocr_client import (  # noqa: E402
     OCRServiceError,
     validate_clova_config,
 )
+from ai_supervisor.adapters import LegacyOcrAdapter  # noqa: E402
+from ai_supervisor.api import router as supervisor_router  # noqa: E402
+from ai_supervisor.service import (  # noqa: E402
+    SupervisorService,
+    SupervisorServiceDependencies,
+)
+from ai_web_search_agent import StaticSearchProvider, WebCollectAgent  # noqa: E402
 
-app = FastAPI(title="Hanspoon AI", version="1.0.0")
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Create one compiled Supervisor and reuse it for every request."""
+
+    application.state.supervisor_service = _build_supervisor_service()
+    try:
+        yield
+    finally:
+        application.state.supervisor_service = None
+
+
+app = FastAPI(title="Hanspoon AI", version="1.0.0", lifespan=_lifespan)
+app.include_router(supervisor_router)
 logger = logging.getLogger(__name__)
 _OCR_CONCURRENCY = max(1, int(os.getenv("OCR_MAX_CONCURRENT_SCANS", "2")))
 _OCR_SEMAPHORE = threading.BoundedSemaphore(_OCR_CONCURRENCY)
@@ -184,6 +207,39 @@ def run_ocr(req: OcrRequest):
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
         _OCR_SEMAPHORE.release()
+
+
+class _UnavailableHighRiskReviewAdapter:
+    """Use Judge's documented conservative fallback until its provider exists."""
+
+    async def run(self, request):
+        raise TimeoutError("high-risk review provider is not configured")
+
+
+def _run_supervisor_ocr(image):
+    """Reuse the existing storage download and CLOVA OCR request path."""
+
+    return run_ocr(
+        OcrRequest(
+            source=image.source,
+            storage_key=image.storage_key,
+            image_url=image.image_url,
+            version_id=image.version_id,
+            expected_etag=image.expected_etag,
+        )
+    )
+
+
+def _build_supervisor_service() -> SupervisorService:
+    """Assemble the lifespan-scoped Supervisor from current implementations."""
+
+    return SupervisorService(
+        SupervisorServiceDependencies(
+            ocr=LegacyOcrAdapter(_run_supervisor_ocr),
+            web_collect=WebCollectAgent(StaticSearchProvider()),
+            high_risk_review=_UnavailableHighRiskReviewAdapter(),
+        )
+    )
 
 
 # ── 2) Rule Engine ────────────────────────────────────────────────────────────

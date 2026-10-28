@@ -128,8 +128,8 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 
 | 경로 | 현재 역할 |
 |---|---|
-| [`../app.py`](../app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
-| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare/Judge 서비스·레거시 OCR 변환 adapter·Judge 후처리·Item Graph 전체 경로·FastAPI router. 실제 OCR/검색/고위험 재검증 provider 설정과 기존 앱 등록은 후속 구현 |
+| [`../app.py`](../app.py) | FastAPI 진입점. 기존 API와 `/v1/analyze/prepare`, `/v1/analyze/judge`를 노출하고 lifespan에서 Supervisor를 한 번 생성 |
+| [`../ai_supervisor/`](../ai_supervisor/) | ⓪ canonical 계약·hash 검증·state·Prepare/Judge 서비스·레거시 OCR 변환 adapter·Judge 후처리·Item Graph 전체 경로·FastAPI router. 기존 OCR runner와 앱 등록은 연결됐고, 실제 ⑥ 검색/⑧ 고위험 재검증 provider는 각 담당 구현 후 주입 |
 | [`../ai_ocr/`](../ai_ocr/README.md) | ① 메뉴판 이미지 → 메뉴명 추출 |
 | [`../ai_normalization/`](../ai_normalization/README.md) | ②-A 문자열 정제와 ②-B 후보 선택 정책. 확정된 v1 범위 구현 완료 |
 | [`../ai_exact_feedback/`](../ai_exact_feedback/README.md) | ③ 확정 정보 판정 core와 canonical adapter. Supervisor Item Graph의 선택 후보 slice 읽기 경로에 연결됨 |
@@ -139,7 +139,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 | [`../ai_web_search_agent/`](../ai_web_search_agent/README.md) | ⑥ 재료 후보 수집 |
 | [`../crawling/`](../crawling/README.md) | 메뉴·재료 데이터 수집·전처리 |
 
-현재 디렉터리는 아직 **⓪~⑧ 번호와 완전히 1:1로 대응하지 않습니다.** Supervisor 서비스는 ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 canonical 구현을 기본 의존성으로 연결하고, ① OCR runner·⑥ 수집 provider·⑧ 고위험 재검증 adapter는 애플리케이션 lifespan에서 주입받습니다. Supervisor router는 `app.state.supervisor_service`만 읽으며 실제 client 생성이나 기존 `app.py` 등록을 요청마다 반복하지 않습니다.
+현재 디렉터리는 아직 **⓪~⑧ 번호와 완전히 1:1로 대응하지 않습니다.** Supervisor 서비스는 ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 canonical 구현을 기본 의존성으로 연결하고, `app.py` lifespan이 기존 ① OCR runner와 안전 fallback adapter를 주입합니다. Supervisor router는 `app.state.supervisor_service`만 읽으며 client·Graph를 요청마다 다시 만들지 않습니다. ⑥ 실제 검색 provider와 ⑧ 고위험 재검증 provider는 각 담당 구현 후 같은 lifespan 경계에 교체 주입합니다.
 
 ### 여기에 적을 것
 

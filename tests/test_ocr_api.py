@@ -1,12 +1,66 @@
 import importlib
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 app_module = importlib.import_module("app")
+
+
+def test_app_registers_supervisor_prepare_and_judge_routes():
+    paths = {route.path for route in app_module.app.routes}
+
+    assert "/v1/analyze/prepare" in paths
+    assert "/v1/analyze/judge" in paths
+
+
+def test_lifespan_builds_one_supervisor_service(monkeypatch):
+    service = object()
+    calls = []
+
+    def build_service():
+        calls.append(True)
+        return service
+
+    monkeypatch.setattr(app_module, "_build_supervisor_service", build_service)
+
+    with TestClient(app_module.app):
+        assert app_module.app.state.supervisor_service is service
+
+    assert calls == [True]
+    assert app_module.app.state.supervisor_service is None
+
+
+def test_supervisor_ocr_runner_reuses_existing_ocr_endpoint(monkeypatch):
+    captured = {}
+
+    def run_ocr(request):
+        captured.update(request.model_dump())
+        return {"scan_quality": {}, "menu_analyses": []}
+
+    monkeypatch.setattr(app_module, "run_ocr", run_ocr)
+    image = SimpleNamespace(
+        source="upload",
+        storage_key="scans/00000000-0000-0000-0000-000000000000/menu.jpg",
+        image_url=None,
+        version_id=None,
+        expected_etag='"etag"',
+    )
+
+    result = app_module._run_supervisor_ocr(image)
+
+    assert result == {"scan_quality": {}, "menu_analyses": []}
+    assert captured == {
+        "store_id": None,
+        "source": "upload",
+        "storage_key": image.storage_key,
+        "image_url": None,
+        "version_id": None,
+        "expected_etag": '"etag"',
+    }
 
 
 def test_health_rejects_placeholder_clova_configuration(monkeypatch):
