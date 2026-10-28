@@ -30,6 +30,8 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
+from .profile import forbidden_tags
+from .questions import TAG_NAMES
 
 TRANSLATIONS_PATH = (
     Path(__file__).resolve().parent.parent / "crawling" / "ingredient_translations.csv"
@@ -59,7 +61,16 @@ SAFE_CLAIMS: dict[str, tuple[str, ...]] = {
 _WORD_LOCALES = {"en", "es"}
 _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 _PERCENT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
-_EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩٪", "0123456789%")
+# Arabic-Indic and full-width digits and percent signs read as plain ones.
+_EASTERN_DIGITS = str.maketrans(
+    "٠١٢٣٤٥٦٧٨٩٪０１２３４５６７８９％", "0123456789%0123456789%"
+)
+# A percentage written as a word counts as "%", so "80 percent" is checked too.
+_PERCENT_WORD_RE = re.compile(
+    r"\s*(?:percent|per cent|por ciento|퍼센트|프로|パーセント|بالمئة|في المئة)", re.IGNORECASE
+)
+# "百分之80" puts the word first; with Chinese numerals it cannot be checked at all.
+_ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 
 INSTRUCTIONS = """You write the short "why" line under a food safety verdict for a tourist
 at a Korean restaurant. Code already decided the verdict; you only explain it.
@@ -68,13 +79,31 @@ Write one or two short, friendly sentences in {language}, speaking to the touris
   "component" is a regular ingredient, "hidden" is inside a sauce or base.
   If role is null, do not say what part it plays.
 - Use only ingredients from the input, with the given names. Never add others.
-- If you give a percentage, copy one from the input exactly. Never write 0% or 100%.
+- State only what the input says. Do not name other dishes, cooking methods, sauces,
+  broths, or serving styles, and do not invent examples of how it is used.
+- If you give a percentage, copy one from the input exactly, with the % sign.
+  Never write 0% or 100%.
 - For evidence_basis "estimated", speak of a possibility, never a certainty.
-- Never say or imply the dish is safe. Never soften or change the verdict.
+- If known_limits is not empty, also say in plain words why the result is less
+  certain, using only those facts.
+- Never say or imply the dish is safe. Do not use the word "safe" (or its translation)
+  at all, not even in "we can't say it is safe". Never soften or change the verdict.
 - Write every word in {language}. Call the dish "this dish" in {language}, not by
   its Korean name.
 - Do not mention the input, data, codes, or field names. Do not repeat
-  verdict_sentence. No medical advice. In Korean, end sentences with -요."""
+  verdict_sentence. No medical advice.{style}"""
+
+# Added only for Korean: told to every language, the model put "요" after Chinese.
+KOREAN_STYLE = "\n- Write in polite 해요체, like ~있어요 and ~해요. Do not add an extra 요."
+# "~없어요요": the style rule once made the model add 요 twice at a sentence end.
+_DOUBLE_YO_RE = re.compile(r"요요(?=[.!?。\s]|$)")
+_SENTENCE_RE = re.compile(r"[^.!?。！？]+[.!?。！？]*")
+
+
+def instructions(template: str, locale: str) -> str:
+    return template.format(
+        language=LANGUAGE_NAMES[locale], style=KOREAN_STYLE if locale == "ko" else ""
+    )
 
 
 class ReasonOutput(BaseModel):
@@ -118,13 +147,26 @@ def with_translations(korean_names: Iterable[str]) -> set[str]:
     return names
 
 
+def restriction_names(tags: Iterable[str]) -> set[str]:
+    """The user's restriction names (생선, fish, 魚 ...) in every language. Saying "if
+    you avoid fish" names the restriction, not a new ingredient."""
+
+    names: set[str] = set()
+    for tag in tags:
+        names |= set(TAG_NAMES.get(tag, {}).values())
+    return names
+
+
 def _mentions(text: str, name: str, locale: str) -> bool:
     if locale == "ko":
         runs = _HANGUL_RUN_RE.findall(text)
         # A one-letter name (김, 무, 파) only counts as a whole word, as in ⑥'s dictionary.
         if len(name) == 1:
             return name in runs
-        return any(name in run for run in runs) or name in text
+        if not _HANGUL_RUN_RE.fullmatch(name):
+            return name in text
+        # Only at the start of a word: "라면을" names 라면, "분이라면" does not.
+        return any(run.startswith(name) for run in runs)
     if locale in _WORD_LOCALES:
         return re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text) is not None
     return name in text
@@ -145,21 +187,32 @@ def check_reason(
     if text is None:
         return None
     text = " ".join(text.split())
+    if locale == "ko":
+        text = _DOUBLE_YO_RE.sub("요", text)
     if not text or len(text) > MAX_REASON_CHARS:
         return None
 
     shown = set(percents)
-    for match in _PERCENT_RE.finditer(text.translate(_EASTERN_DIGITS)):
+    numbers = _ZH_PERCENT_RE.sub(r"%", text.translate(_EASTERN_DIGITS))
+    numbers = _PERCENT_WORD_RE.sub("%", numbers)
+    if "百分之" in numbers:
+        return None
+    for match in _PERCENT_RE.finditer(numbers):
         number = match.group(1).replace(",", ".")
         if "." in number or int(number) not in shown:
             return None
 
+    if verdict:
+        # Drop each sentence that repeats the verdict, so "이 음식에는 새우가 들어 있어요."
+        # goes as a whole instead of leaving "이 음식에는" behind.
+        core = verdict.strip().rstrip(".。!！").lower()
+        sentences = [s.strip() for s in _SENTENCE_RE.findall(text) if s.strip()]
+        kept = [s for s in sentences if core not in s.lower()]
+        if len(kept) != len(sentences):
+            text = " ".join(kept)
+            if not text:
+                return None
     lowered = text.lower()
-    if verdict and verdict.lower() in lowered:
-        lowered = lowered.replace(verdict.lower(), " ")
-        text = " ".join(text.replace(verdict, " ").split())
-        if not text:
-            return None
     if risk_level != "safe" and any(claim in lowered for claim in SAFE_CLAIMS[locale]):
         return None
 
@@ -191,6 +244,33 @@ def request_names(request: DecisionRequest) -> set[str]:
     names = with_translations(ref.canonical_name for ref in refs)
     names |= {localized[ref.ingredient_id] for ref in refs if ref.ingredient_id in localized}
     return names
+
+
+# Why the result is uncertain, as plain facts the LLM may retell (never the codes
+# themselves). Only signals the user can understand; anything else is left out.
+WARNING_FACTS: dict[str, str] = {
+    "insufficient_sources": "Only a few web recipes were found for this dish.",
+    "web_search_deadline_exceeded": "The web search ran out of time, so only some recipes were read.",
+    "web_llm_extraction_failed": "Some web recipes could not be read fully, so ingredients may be missing.",
+    "knowledge_slice_unavailable": "Some saved information about this dish could not be loaded.",
+    "unmapped_constraint_tags": "For some ingredients it is unclear which food restrictions they affect.",
+    "constraint_tags_lookup_failed": "For some ingredients it is unclear which food restrictions they affect.",
+    "max_depth_reached": "Ingredients inside sauces or bases could not be traced all the way.",
+    "cycle_detected": "Ingredients inside sauces or bases could not be traced all the way.",
+}
+INFORMATION_FACTS: dict[str, str] = {
+    "partial": "Part of the ingredient information could not be loaded.",
+    "none": "The ingredient information could not be loaded.",
+}
+
+
+def reason_facts(request: DecisionRequest) -> list[str]:
+    """Plain reasons the result is less certain: warnings and ``information_status``."""
+
+    facts = [WARNING_FACTS[w.code] for w in request.warnings if w.code in WARNING_FACTS]
+    if request.information_status in INFORMATION_FACTS:
+        facts.append(INFORMATION_FACTS[request.information_status])
+    return list(dict.fromkeys(facts))
 
 
 def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict:
@@ -225,14 +305,18 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
             {name(r.ingredient) for r in request.probability_results}
             | {name(r.ingredient) for r in request.confirmed_results}
         ),
+        "known_limits": reason_facts(request),
     }
 
 
-def needs_reason(response: DecisionResponse) -> bool:
-    """Explain only when some ingredient drives the verdict; otherwise the verdict
-    sentence already says everything (no information, or nothing to avoid)."""
+def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
+    """Explain when an ingredient drives the verdict or the result has known limits
+    (few web recipes, missing information). A menu with no information at all, or a
+    safe one, is already said by the verdict sentence."""
 
-    return response.risk_level != "safe" and bool(response.risk_ingredients)
+    if response.risk_level == "safe" or request.no_information:
+        return False
+    return bool(response.risk_ingredients) or bool(reason_facts(request))
 
 
 class ReasonWriter:
@@ -243,12 +327,12 @@ class ReasonWriter:
         self.timeout_seconds = timeout_seconds
 
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
-        if not needs_reason(response):
+        if not needs_reason(request, response):
             return None
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
-                    INSTRUCTIONS.format(language=LANGUAGE_NAMES[request.locale]),
+                    instructions(INSTRUCTIONS, request.locale),
                     reason_payload(request, response),
                     ReasonOutput,
                     MAX_OUTPUT_TOKENS,
@@ -266,7 +350,8 @@ class ReasonWriter:
                 for item in response.risk_ingredients
                 if item.posterior_mean is not None
             ],
-            allowed_names=request_names(request),
+            allowed_names=request_names(request)
+            | restriction_names(forbidden_tags(request.user_profile)),
             menu_names=[request.menu.normalized_menu_name],
             verdict=response.message.verdict,
         )
