@@ -107,7 +107,7 @@ Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입
 - 여러 메뉴의 결과는 reducer로 모으고, 최종 출력 전에 `source_index`로 다시 정렬한다. 병렬 완료 순서를 사용자 출력 순서로 사용하지 않는다.
 - 초기 버전은 `compile(checkpointer=False)` 또는 checkpointer 없이 요청 단위 휘발성 state로 실행한다. checkpoint 도입은 §8 결정 뒤에 한다.
 - Supervisor orchestration은 팀 결정에 따라 LangGraph를 사용하며 Python 3.11 기준 `langgraph==1.2.16`으로 고정한다. Supervisor 자체는 LLM으로 라우팅하지 않으므로 LangChain이 graph 구현의 선행 조건은 아니다.
-- `langchain`, `langchain-core`, 모델 provider 패키지(예: `langchain-openai`)는 아직 `requirements.txt`에 추가하지 않는다. ②·⑥·⑧의 구체 모델·provider·timeout이 각 담당 문서와 이슈에서 확정될 때 `openai==3.8.0` 호환성을 확인하고 해당 Agent 내부에만 도입한다. ②의 후속 범위는 #164다.
+- ②는 `openai==3.8.0`의 Responses API Structured Outputs를 사용하며 기본 모델은 `gpt-5.4-mini`다. OpenAI client는 Supervisor 서비스 생성 시 한 번 만들고 ②-A·②-B가 공유한다. ⑥·⑧의 구체 provider·모델·timeout은 각 담당 문서에서 별도로 확정한다.
 
 이 문서의 코드 예시는 현재 고정된 LangGraph 1.2.16의 `StateGraph`, `context_schema`, reducer, conditional edge, `Send`, `compile()`, `ainvoke()`를 기준으로 구현하고 테스트한다.
 
@@ -683,7 +683,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - 모든 `knowledge_bundle.items[].candidate_knowledge[].exact_feedback`은 `{status: "not_found", exact: null}`이어야 한다.
 - 모든 `priors`는 `{status: "not_found", store: [], evidence: []}`이어야 하며 가게별 확정값·store prior를 다른 fallback 이름으로 넣지 않는다.
 - `ontology.cache`와 `fallback_ontology.cache`는 `null`이어야 하며 가게별 `menu_ingredient_cache`를 읽지 않는다.
-- Supervisor는 ③ Exact Feedback Tool, ⑦ DB Update Tool, `owner_request`, `high_risk_review`를 호출하지 않는다.
+- Supervisor는 ③ Exact Feedback Tool, ⑦ DB Update Tool, `db_update`, `high_risk_review`를 호출하지 않는다.
 - ⑧에는 `owner_interaction_allowed: false`를 전달하고 최종 `owner_cards`는 항상 `[]`로 만든다.
 - 최종 `persistence_commands`는 항상 `[]`이며 가게별·전역 저장을 모두 수행하지 않는다.
 - 모든 메뉴에 `store_context_missing` warning(`forces_caution: true`)을 추가해 SAFE를 금지한다. 현재 DANGER는 사장님 hard evidence로만 확정하므로 가게 없는 스캔의 최종 판정은 CAUTION이다.
@@ -935,21 +935,19 @@ flowchart TD
     WEB --> FOUND{"수집·캐시 결과가 있는가?"}
     FOUND -->|Yes| MAP["④ map_ingredients<br/>표준 재료·태그 매핑"]
     MAP --> WAGG["⑥ Web Search Agent 2단계<br/>표준 재료 기준 집계"]
-    WAGG --> STORE_WRITE{"store_id 있음?"}
-    STORE_WRITE -->|Yes| DBUP2["⑦ DB Update Tool<br/>관리자 검토 명령 생성"]
-    STORE_WRITE -->|No| BAYES2
-    DBUP2 --> BAYES2["⑤ Bayesian Tool<br/>웹서치 후보 기반"]
+    WAGG --> OP2["웹 검토·캐시 operation 수집"]
+    OP2 --> BAYES2["⑤ Bayesian Tool<br/>웹서치 후보 기반"]
     BAYES2 --> TAG3["④ lookup_tags<br/>확인값 태그 조회"]
     TAG3 --> XAI3["⑧ Decision Policy / XAI Agent"]
     FOUND -->|No| XAI4["⑧ Decision Policy / XAI Agent<br/>no_information: true"]
 
-    ONTO -. "soft evidence + store_id 있음" .-> DBUP1["⑦ DB Update Tool<br/>관리자 검토 항목 생성"]
-    WEB -. "soft evidence + store_id 있음" .-> DBUP1
+    ONTO -. "soft evidence + store_id 있음" .-> OP1["변형 검토 operation 수집"]
     XAI1 --> OUT["메뉴별 결과 취합"]
     XAI2 --> OUT
     XAI3 --> OUT
     XAI4 --> OUT
-    OUT --> USER["Judge 결과 반환"]
+    OUT --> DBUP["⑦ DB Update Tool<br/>모든 operation 단일 호출"]
+    DBUP --> USER["Judge 결과 반환"]
     end
 ```
 
@@ -977,8 +975,8 @@ flowchart TD
 6. ⑥ 1단계가 출처별 재료명을 수집하면 ④가 표준 재료·태그로 매핑하고, ⑥ 2단계가 표준 재료 기준으로 집계한다. 수집 결과와 캐시가 모두 없을 때만 ⑧에 `no_information: true`를 전달한다.
 7. ⑧을 호출하기 직전에 모든 경로가 ④ `lookup_tags`를 거친다. ③ 확인값이 없으면 no-op이고, 있으면 `confirmed_results[].constraint_tags`를 채운다.
 8. 각 Item Graph의 오류는 해당 메뉴를 `partial_failed` 또는 `failed`로 만들고 SAFE를 금지한다. 다른 메뉴의 실행은 취소하지 않는다.
-9. 가게가 있는 경로만 고위험 재검증과 `owner_request`를 실행한다. 가게 없는 경로는 두 node와 ⑦을 건너뛰고 모든 `owner_cards`·`persistence_commands`를 빈 배열로 확정한다.
-10. 결과를 `source_index`로 정렬하고 근거·경고·저장 명령을 중복 제거한다.
+9. 가게가 있는 경로만 고위험 재검증을 실행한다. Item Graph에서 모은 변형 검토·웹 검토·웹 캐시 operation과 최종 사장님 카드의 질문 저장 operation을 합쳐 Judge 끝에서 ⑦을 정확히 한 번 호출한다. 가게 없는 경로는 고위험 재검증과 ⑦을 건너뛰고 모든 `owner_cards`·`persistence_commands`를 빈 배열로 확정한다.
+10. 결과를 `source_index`로 정렬하고 근거·경고·operation·저장 명령을 중복 제거한다.
 11. 판정, 근거, 위험 재료, 확인 질문, 저장 명령, 오류를 Judge 결과로 반환한다. 추천과 표시 순서는 백엔드가 별도로 계산한다.
 
 ### 2-2. 배치 처리 원칙
@@ -1102,7 +1100,7 @@ ai_supervisor/
 └── chains/             # ②·⑥·⑧의 제한적 LangChain
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`, `api.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. FastAPI router는 `app.state.supervisor_service`의 같은 서비스 인스턴스를 사용해 `POST /v1/analyze/prepare`, `POST /v1/analyze/judge`만 노출한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → owner_request → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 ⑦을 호출해 카드별 저장 명령을 만든다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 결정론적 구현은 서비스 기본 의존성으로 연결된다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`, `api.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. FastAPI router는 `app.state.supervisor_service`의 같은 서비스 인스턴스를 사용해 `POST /v1/analyze/prepare`, `POST /v1/analyze/judge`만 노출한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → db_update → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 Item Graph가 수집한 operation까지 합쳐 ⑦을 한 번 호출한다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 결정론적 구현은 서비스 기본 의존성으로 연결된다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - ① OCR runner의 실제 storage/CLOVA client 설정
 - ⑥ 수집의 실제 검색 provider·reader 설정과 ⑧의 고위험 재검증 adapter
@@ -1124,9 +1122,9 @@ Normalization의 ②-A는 Prepare Graph에, ②-B는 Judge Graph의 fan-out 직�
 | 내부 타입 | 필수 핵심 값 |
 |---|---|
 | `PrepareState` | image, locale, OCR response, scan quality, prepared items, warnings/errors |
-| `JudgeState` | prepared items, KnowledgeBundle, profile, candidate result, item updates, ordered items, evidence, commands |
+| `JudgeState` | prepared items, KnowledgeBundle, profile, candidate result, item updates, ordered items, evidence, pending operations, commands |
 | `ItemTask` | normalized item, ②-B 선택 결과, 선택 후보 한 건 또는 fallback 지식, 공통 ingredient graph·source reliability, profile, locale, item 신호 |
-| `ItemState` | ItemTask 값 + exact/ontology/bayesian/web/decision 응답 + route + commands |
+| `ItemState` | ItemTask 값 + exact/ontology/bayesian/web/decision 응답 + route + pending operations + ④ 캐시 commands |
 | `ItemResult` | 메뉴 하나의 최종 판정·근거·경고·저장 명령 |
 
 `ItemTaskKnowledge`는 `KnowledgeBundle.items[]`에서 같은 `item_id`의 자료를 다시 잘라 만든 read-only view다. ②-B가 후보를 선택하면 선택된 `menu_id`의 `CandidateKnowledge` 한 건만 넣고, 미매칭이면 `selected: null`과 `fallback_ontology`를 넣는다. Item Graph는 다른 메뉴나 선택되지 않은 후보의 지식을 볼 수 없다. Bundle 공통 `ingredient_graph`는 모든 Item Graph가 변경 없이 공유하고 ④ adapter에만 전달한다.
@@ -1180,9 +1178,9 @@ Router는 외부 호출이나 LLM 호출이 없는 순수 함수다.
 | `tag_lookup` | 항상 | `decision` |
 | `decision*` | 항상 | `finish_item` |
 
-`variant_review`, `web_review`, `owner_request`는 모두 ⑦ adapter를 사용하지만 trace에서 원인을 구분하기 위해 node 이름을 나눈다. 질문 저장 명령을 만드는 `owner_request`는 메뉴별 Item Graph가 아니라 Judge Graph의 고위험 재검증 뒤에 한 번 실행한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
+`variant_review`와 `web_review`는 ⑦을 호출하지 않고 원인별 operation만 state에 모은다. Judge Graph의 `db_update`가 고위험 재검증 뒤 최종 사장님 카드의 operation까지 합쳐 ⑦ adapter를 한 번만 호출한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
 
-현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 런타임 변형의 ⑦ `variant_review` 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 런타임 변형은 ④의 `variant_suggestion`을 바꾸지 않고 ⑦ `create_review_item(review_origin: variant_suggestion)` operation으로 전달한 뒤 ⑤·⑧ 분석을 계속한다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 ⑦ `web_review`에 관리자 검토와 캐시 저장 operation을 함께 보내고, `store_id: null`이면 두 검토 경로 모두 분석만 수행하며 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다.
+현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 런타임 변형의 `variant_review` operation 수집 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 런타임 변형은 ④의 `variant_suggestion`을 바꾸지 않고 `create_review_item(review_origin: variant_suggestion)` operation으로 모은 뒤 ⑤·⑧ 분석을 계속한다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 `web_review`가 관리자 검토와 캐시 저장 operation을 모으고, `store_id: null`이면 두 검토 경로 모두 분석만 수행하며 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다.
 
 ### 2-9. 메뉴 fan-out과 collect
 
@@ -1192,7 +1190,7 @@ Judge는 ②-B 결과를 메뉴별 `Send("analyze_item", task)`로 fan-out한다
 
 1. `source_index` 오름차순 정렬
 2. evidence ID 중복 제거
-3. `idempotency_key` 기준 저장 명령 중복 제거
+3. ⑦의 내용 키 기준 pending operation 중복 제거 후 `idempotency_key` 기준 저장 명령 중복 제거
 4. `(code, node, item_id)` 기준 warning/error 중복 제거
 5. `ordered_items`에 저장
 
@@ -1210,7 +1208,7 @@ START → ocr → (needs_retake ? finalize_retake : clean_names)
 Judge Graph
 START → validate_knowledge → select_candidates
       → analyze_item fan-out → collect_items
-      → high_risk_review(max 3) → owner_request → finalize → END
+      → high_risk_review(max 3) → db_update(single call) → finalize → END
 
 Item Graph
 START → prepare_item → §2-8의 조건 분기
@@ -1221,7 +1219,7 @@ START → prepare_item → §2-8의 조건 분기
 
 collect 뒤 `high_risk_review.required: true`인 메뉴 중 최대 3개를 `anomaly → unknown_tag → no_information → partial_information → insufficient_web_sources → source_index` 순으로 고른다. 재검증은 판정을 바꾸지 않고 질문 카드와 이유 설명(`message.reason`)만 보강한다. 재검증 대상은 이미 SAFE가 금지된 메뉴이고 DANGER는 사장님 확인값으로만 나오므로 판정을 바꿀 경우가 없다 (⑧ §2-3, #234). timeout이면 기존 결과를 유지한다.
 
-`owner_request`는 재검증이 끝난 뒤 모든 메뉴의 저장 대상 카드마다 질문 저장 명령(`create_owner_verification_request`)을 만든다. 재검증이 더한 카드도 포함하고, 재검증이 다듬은 질문은 다듬은 문구로 저장한다. 정보 없는 메뉴의 화면 표시용 카드는 저장하지 않는다. ⑦ 호출의 `context`는 카드가 속한 메뉴의 `item` context(`item_id` 포함)를 쓴다.
+`db_update`는 재검증이 끝난 뒤 모든 메뉴의 저장 대상 카드마다 질문 저장 operation(`create_owner_verification_request`)을 만든다. 재검증이 더한 카드도 포함하고, 재검증이 다듬은 질문은 다듬은 문구로 저장한다. 정보 없는 메뉴의 화면 표시용 카드는 저장하지 않는다. Item Graph에서 모은 변형 검토·웹 검토·웹 캐시 operation과 합친 뒤 내용 키가 같은 operation을 제거하고, `out_of_band` context(`item_id: null`)로 ⑦을 정확히 한 번 호출한다. Supervisor는 내부의 `operation_id → item_id` 매핑을 보존했다가 검증된 command를 최종 `persistence_commands`로 옮길 때 원래 `item_id`를 복원한다.
 
 ### 2-11. LangChain 사용 경계
 
@@ -1902,8 +1900,8 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
     "trace_id": "0199a2f0-0000-7000-8000-000000000001",
     "scan_session_id": "scan-123",
     "store_id": 123456,
-    "call_scope": "item",
-    "item_id": "scan-123:0"
+    "call_scope": "out_of_band",
+    "item_id": null
   },
   "ingredient_names": ["소고기", "마라소스"],
   "ingredient_graph": {
@@ -2567,7 +2565,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 ```
 
 - `create_review_item.review_origin`은 `web_search | variant_suggestion`이다. `web_search`이면 `web_sources`가 비어 있지 않고 `variant_suggestion`은 `null`; `variant_suggestion`이면 `web_sources: []`이고 ④가 반환한 `variant_suggestion` 객체를 그대로 넣는다.
-- 런타임 변형의 `variant_review` node는 위 `create_review_item` operation 하나만 ⑦에 보낸다. ⑦ 응답은 `origin_node: ontology`, `source_type: ocr_variant_tag`, `evidence_class: soft`, `evidence_refs: [variant_suggestion.evidence.evidence_id]`를 보존해야 한다. `store_id: null`이면 ⑦을 호출하지 않지만 같은 변형 제안을 ⑤·⑧ 분석에서는 유지한다.
+- 런타임 변형의 `variant_review` node는 위 `create_review_item` operation 하나를 state에 모은다. Judge 마지막 `db_update`가 다른 operation과 함께 ⑦에 보낸다. ⑦ 응답은 `origin_node: ontology`, `source_type: ocr_variant_tag`, `evidence_class: soft`, `evidence_refs: [variant_suggestion.evidence.evidence_id]`를 보존해야 한다. `store_id: null`이면 ⑦을 호출하지 않지만 같은 변형 제안을 ⑤·⑧ 분석에서는 유지한다.
 - `create_review_item.review_notes`는 ⑥ 응답을 그대로 보존한다. 검토 화면에만 사용하며 위험 판정이나 확률 계산에는 사용하지 않는다.
 - `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. `create_owner_verification_request.item_id`와 `card_id`는 원래 `owner_cards[]`의 같은 값을 보존해 화면 카드와 저장 명령을 잇는다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
 - `create_owner_verification_request.question`은 한국어 `ko`와 Judge 요청 `locale`의 문구만 보존한다. 요청 언어가 한국어면 `ko` 하나만 보낸다.
@@ -2576,9 +2574,9 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
 - `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수이며 ⑥ 1단계 응답의 `next_rank`를 그대로 쓴다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
-- 신규 웹 출처가 있으면 Supervisor는 같은 `DbUpdateRequest`에 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 함께 넣는다. ⑦은 두 저장 명령을 만들고, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
+- 신규 웹 출처가 있으면 Supervisor는 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 모은다. 최종 `DbUpdateRequest`에는 모든 메뉴의 변형 검토·웹 검토·웹 캐시·사장님 질문 operation을 함께 넣는다. ⑦은 Judge당 한 번만 호출하며, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
 - 백엔드는 `record_owner_answer`의 `present`/`absent` 답변 한 건을 같은 트랜잭션에서 `ingredient_confirmations` 또는 `owner_flag_confirmations`에 즉시 반영하고 확정값 ID를 질문 행에 연결한다. 후속 확인 질문이나 다수결은 만들지 않으며, 확정값은 기간 만료 없이 다음 Judge의 `confirmations[]` 또는 `flag_confirmations[]`로 전달한다.
-- 스캔 중 생긴 작업은 원래 `item` context를 사용한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 `call_scope: out_of_band`, `item_id: null`로 별도 요청한다.
+- Judge 중 생긴 저장 operation은 원래 `item_id`를 Supervisor 내부 state에 보존한 채 `call_scope: out_of_band`, `item_id: null`인 한 요청으로 합친다. ⑦ 응답 command의 `item_id`는 null이며, Supervisor가 `operation_id`로 원래 item scope를 검증·복원한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 이 Judge 배치와 별도 요청이다.
 
 ⑦이 command에 추가하는 `provenance`는 다음 closed schema다.
 
@@ -2689,7 +2687,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 
 command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.
 
-soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 백엔드가 검증할 기록 명령을 만든다. ⑦은 저장 완료를 가장하지 않으며 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다. 응답 `commands`는 Supervisor의 `persistence_commands`에 그대로 누적한다.
+soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 백엔드가 검증할 기록 명령을 만든다. ⑦은 저장 완료를 가장하지 않으며 실제 쓰기는 백엔드가 권한·FK·멱등성을 검증한 뒤 수행한다. Supervisor는 응답 `commands`의 payload·provenance·operation 대응을 검증하고 원래 `item_id`를 복원한 뒤 `persistence_commands`에 누적한다.
 
 `store_id: null`인 Judge에서는 ⑦을 호출하지 않고 ④의 `cache_command`도 버리며, 전역 캐시를 포함한 어떤 저장 명령도 최종 `persistence_commands`에 넣지 않는다.
 
@@ -3034,7 +3032,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 - `missed_ingredients`는 LLM이 `ingredient_choices` 안에서 고른 재료다. 추적용이며 `risk_ingredients`·`matched_tags` 같은 판정 값에는 넣지 않는다.
 - `reason`은 보강한 뒤의 이유 설명 전체다. 원래 `decision.message.reason`이 있으면 이어서 쓰고, `null`이면 새로 쓴다. 확인되지 않은 내용이라 "~수 있어요" 말투로만 쓴다. 자동 검수(⑧ §4)를 통과하지 못하면 원래 `decision.message.reason`을 그대로 돌려준다. 판정 한 줄(`verdict`)과 안내(`notes`)는 재검증이 다루지 않으므로 응답에 없다.
 - `owner_cards`는 보강한 뒤의 이 메뉴 카드 전체다. 원래 카드와 다듬은 질문, 놓친 재료 중 사용자 금지 태그와 겹치는 재료의 새 카드(`reason_codes`에 `high_risk_review`)를 담는다. 카드 순서는 ⑧ §1-3 규칙을 따른다. 새 카드의 `item_id`·`card_id`도 원래 카드와 같은 내용 기반 규칙(§4-7)으로 만든다. 이미 ③에서 `present` 또는 `absent` 답변을 받은 대상에는 새 질문 카드를 만들지 않는다.
-- Supervisor는 이 메뉴의 `message.reason`·`owner_cards`만 응답 값으로 바꾼다. `message.verdict`·`message.notes`는 그대로 둔다. `risk_level`·`evidence_basis`·`risk_ingredients`·`matched_tags`는 바꾸지 않는다. 그 뒤 `owner_request`가 바뀐 카드까지 질문 저장 명령을 만든다 (§2-10).
+- Supervisor는 이 메뉴의 `message.reason`·`owner_cards`만 응답 값으로 바꾼다. `message.verdict`·`message.notes`는 그대로 둔다. `risk_level`·`evidence_basis`·`risk_ingredients`·`matched_tags`는 바꾸지 않는다. 그 뒤 `db_update`가 바뀐 카드까지 질문 저장 operation에 포함한다 (§2-10).
 - timeout·LLM 오류·형식 오류면 Supervisor는 원래 ⑧ 결과를 그대로 쓴다 (§6).
 
 ## 5. 라우팅 규칙
@@ -3094,7 +3092,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 |---|---|---|---|
 | 1 | 이미지 + 실행 문맥 | Prepare ①→②-A | Prepare 요청·응답과 ①·②-A 호출에 `store_id` 없음 |
 | 2 | Judge의 `store_id` 누락/문자열/0 이하 | 즉시 검증 실패 | ②-B~⑧ 호출 없음. 명시적 null과 누락을 구분 |
-| 2-a | `store_id: null` + storeless Bundle | ③·⑦·고위험 재검증·owner_request를 건너뛰고 ④⑤⑥⑧ 분석 | 모든 메뉴 CAUTION, `owner_cards: []`, `persistence_commands: []`, `store_context_missing` |
+| 2-a | `store_id: null` + storeless Bundle | ③·⑦·고위험 재검증·db_update를 건너뛰고 ④⑤⑥⑧ 분석 | 모든 메뉴 CAUTION, `owner_cards: []`, `persistence_commands: []`, `store_context_missing` |
 | 2-b | `store_id: null` + exact/store prior/가게 캐시 포함 | HTTP 422 `storeless_scope_violation` | 가게 없는 스캔에 다른 가게 데이터가 섞이지 않음 |
 | 3 | Exact complete 메뉴 | 확장·⑤는 스킵하고 ④ tag lookup 후 ⑧ | confirmed 기반 판정과 태그 유지 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
@@ -3123,11 +3121,11 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 25 | 여러 corpus 관측치와 신뢰도 weight | ⑤가 corpus별 가중 후 posterior와 90% 신용구간 반환 | 관측치가 Bundle→④→⑤에서 손실되지 않음 |
 | 26 | 생선 알레르기 + 김치찌개 모든 재료 사장님 확인(exact complete) + `ontology.menu.ambiguity_flags: [has_unclear_jeotgal]` | ④ 확장을 건너뛰어도 ⑧에 `menu_ambiguity_flags` 전달, CAUTION + 플래그 질문 카드 + ⑦ 명령(`ingredient: null`) | 플래그가 빠져 SAFE로 새지 않음 |
 | 27 | 26번 + `flag_confirmations`에 `is_fish` `absent` 답 | ⑧ SAFE 가능 | 플래그 답이 Bundle→③→⑧에서 손실되지 않음 |
-| 28 | 할랄 사용자 + unknown 메뉴 + 웹서치 실패 | ⑧ CAUTION + 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`), ⑦ 명령 없음, `owner_request` node 건너뜀 | 화면 표시용 카드로 저장 요청을 만들지 않음 |
+| 28 | 할랄 사용자 + unknown 메뉴 + 웹서치 실패 | ⑧ CAUTION + 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`), ⑦ 명령 없음 | 화면 표시용 카드로 저장 요청을 만들지 않음 |
 | 29 | 같은 대상에 사장님이 `present` 또는 `absent`로 한 번 답변 | 백엔드가 즉시 확정값 upsert, 다음 Judge의 ③→⑧에서 사용, 후속 질문 없음 | 한 번의 답변이 판정에 반영되고 2·3차 질문이 생성되지 않음 |
 | 30 | 오래전에 저장된 사장님 확정값 | 기간만으로 만료하거나 재질문하지 않고 동일 hard evidence로 사용 | 시간 경과 때문에 SAFE 근거가 사라지거나 불필요한 질문이 생기지 않음 |
 | 31 | 같은 Judge 요청을 두 번 실행 (재시도) | 두 번 모두 같은 `card_id`와 같은 질문 저장 명령 `idempotency_key` | 무작위 `card_id`로 같은 질문이 두 번 저장되지 않음 |
-| 32 | 고위험 재검증이 놓친 재료(땅콩) 카드를 더함 | 재검증 뒤 `owner_request`가 땅콩 카드의 질문 저장 명령도 만듦, 카드와 명령의 `card_id`가 같음 | 화면 카드에 답을 기록할 질문 행이 없는 일이 없음 |
+| 32 | 고위험 재검증이 놓친 재료(땅콩) 카드를 더함 | 재검증 뒤 `db_update`가 땅콩 카드의 질문 저장 operation도 단일 ⑦ 호출에 포함, 카드와 명령의 `card_id`가 같음 | 화면 카드에 답을 기록할 질문 행이 없는 일이 없음 |
 | 33 | `locale: en` + 번역 이름이 없는 재료(웹 재료, `ingredient_id: null`) | 그 재료의 `localized_name`은 한국어 `canonical_name` 그대로 | LLM으로 재료 이름을 번역하지 않음 |
 | 34 | 최종 응답의 근거·카드·명령이 존재하지 않는 ID를 참조 | finalize에서 invariant 오류로 종료 | 끊어진 `evidence_refs`, `item_id`, `card_id`를 정상 응답으로 반환하지 않음 |
 | 35 | `store_id: null`인데 ⑧ 또는 adapter가 카드·명령·SAFE를 반환 | finalize에서 invariant 오류로 종료 | 가게 없는 결과에 사장님 기능·저장·SAFE가 노출되지 않음 |

@@ -10,7 +10,11 @@ from uuid import UUID, uuid4
 from ai_bayesian import BayesianTool
 from ai_db_update import DbUpdateTool
 from ai_decision_policy import DecisionTool
-from ai_normalization import CandidateSelectionAgent, NameCleaningAgent
+from ai_normalization import (
+    CandidateSelectionAgent,
+    NameCleaningAgent,
+    OpenAINormalizationResolver,
+)
 from ai_normalization.contracts import (
     CandidateSelectionRequest,
     CandidateSelectionResponse,
@@ -65,12 +69,10 @@ class SupervisorServiceDependencies:
     decision: NodeAdapter[DecisionRequest, DecisionResponse] = field(
         default_factory=DecisionTool
     )
-    normalization: NodeAdapter[NameCleaningRequest, NameCleaningResponse] = field(
-        default_factory=NameCleaningAgent
-    )
+    normalization: NodeAdapter[NameCleaningRequest, NameCleaningResponse] | None = None
     candidate_selection: NodeAdapter[
         CandidateSelectionRequest, CandidateSelectionResponse
-    ] = field(default_factory=CandidateSelectionAgent)
+    ] | None = None
     ontology: NodeAdapter[OntologyRequest, OntologyResponse] = field(
         default_factory=OntologyTool
     )
@@ -106,6 +108,21 @@ class SupervisorService:
     """Stateless Prepare/Judge entry point for a FastAPI lifespan container."""
 
     def __init__(self, dependencies: SupervisorServiceDependencies) -> None:
+        normalization_resolver = None
+        if (
+            dependencies.normalization is None
+            or dependencies.candidate_selection is None
+        ):
+            normalization_resolver = (
+                OpenAINormalizationResolver.from_env_if_configured()
+            )
+        normalization = dependencies.normalization or NameCleaningAgent(
+            normalization_resolver
+        )
+        candidate_selection = (
+            dependencies.candidate_selection
+            or CandidateSelectionAgent(normalization_resolver)
+        )
         item_analyzer = ItemGraphAnalyzer(
             ItemGraphDependencies(
                 ontology=dependencies.ontology,
@@ -115,7 +132,6 @@ class SupervisorService:
                 web_collect=dependencies.web_collect,
                 ingredient_mapping=dependencies.ingredient_mapping,
                 web_aggregate=dependencies.web_aggregate,
-                db_update=dependencies.db_update,
                 max_concurrent_web_searches=(
                     dependencies.max_concurrent_web_searches
                 ),
@@ -125,13 +141,13 @@ class SupervisorService:
         self.prepare_graph = build_prepare_graph(
             PrepareDependencies(
                 ocr=dependencies.ocr,
-                normalization=dependencies.normalization,
+                normalization=normalization,
                 prepare_id_factory=dependencies.prepare_id_factory,
             )
         )
         self.judge_graph = build_judge_graph(
             JudgeDependencies(
-                candidate_selection=dependencies.candidate_selection,
+                candidate_selection=candidate_selection,
                 item_analyzer=item_analyzer,
                 high_risk_review=dependencies.high_risk_review,
                 db_update=dependencies.db_update,

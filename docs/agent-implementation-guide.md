@@ -165,6 +165,8 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - [ ] 호출량·비용 기록 방식
 - [ ] 입력에 사용자 프로필·메뉴 원문을 어디까지 넣을지 (로그 마스킹과 함께 결정)
 
+② Normalization은 `openai==3.8.0` Responses API와 Pydantic Structured Outputs를 사용한다. 기본 모델은 `gpt-5.4-mini`, timeout 5초, SDK 재시도 최대 1회, 최대 출력 256 token이다. `OPENAI_API_KEY`가 있을 때만 Resolver를 만들며 실패 시 규칙 결과로 보수적으로 fallback한다. client는 Supervisor 서비스 생성 시 한 번 만들고 ②-A·②-B가 공유한다.
+
 ---
 
 ## 6. 결정론적 Tool 구현 규칙
@@ -178,6 +180,7 @@ Canonical wire JSON은 Supervisor 문서 §4에 확정되어 있다. 이 문서�
 - 물리 DB 쓰기는 백엔드만 수행한다. ⑦ DB Update Tool은 저장할 명령과 근거를 반환할 뿐이다.
 - `ingredient_risk_scores`는 직접 UPDATE 금지. 항상 `ingredient_evidence_log` INSERT → 재계산 순서.
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다.
+- Judge의 ⑦ 호출은 Item Graph마다 실행하지 않는다. Supervisor가 모든 pending operation을 모아 고위험 재검증 뒤 한 번 호출하고, operation별 원래 `item_id`를 최종 명령에 복원한다.
 
 ### 여기에 적을 것
 

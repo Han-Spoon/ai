@@ -629,11 +629,11 @@ def test_runtime_variant_reviews_then_continues_to_bayesian_and_decision() -> No
 
     output = asyncio.run(item_analyzer.run(runtime_variant_task(), context()))
 
-    request = db_update.requests[0]
-    assert [operation.operation_type for operation in request.operations] == [
+    assert db_update.requests == []
+    assert [item.operation.operation_type for item in output.operations] == [
         "create_review_item"
     ]
-    payload = request.operations[0].payload
+    payload = output.operations[0].operation.payload
     assert payload.review_origin == "variant_suggestion"
     assert payload.web_sources == []
     assert payload.review_notes == []
@@ -649,9 +649,7 @@ def test_runtime_variant_reviews_then_continues_to_bayesian_and_decision() -> No
     ] == [102]
     assert output.result.route == "db_variant_bayes"
     assert output.result.risk_level == "caution"
-    assert [command.action for command in output.commands] == [
-        "create_review_item"
-    ]
+    assert output.commands == ()
     assert "variant:beef" in [item.evidence_id for item in output.evidence]
 
 
@@ -668,17 +666,17 @@ def test_storeless_runtime_variant_skips_review_but_keeps_analysis() -> None:
     assert output.result.route == "db_variant_bayes"
     assert output.result.risk_level == "caution"
     assert output.commands == ()
+    assert output.operations == ()
 
 
-def test_runtime_variant_rejects_changed_review_provenance() -> None:
+def test_runtime_variant_does_not_call_db_update_inside_item_graph() -> None:
     item_analyzer, *_ = variant_analyzer(
         VariantDbUpdate(source_type="web_search")
     )
 
-    with pytest.raises(
-        ItemGraphInvariantError, match="changed operation provenance"
-    ):
-        asyncio.run(item_analyzer.run(runtime_variant_task(), context()))
+    output = asyncio.run(item_analyzer.run(runtime_variant_task(), context()))
+
+    assert len(output.operations) == 1
 
 
 def test_item_graph_rejects_safe_result_from_probability_path() -> None:

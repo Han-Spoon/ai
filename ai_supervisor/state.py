@@ -8,6 +8,7 @@ from uuid import UUID
 
 from .contracts.common import Locale, NodeContext, NodeError, NodeWarning, PositiveInt
 from .contracts.decision import FoundIngredient, ReviewReason
+from .contracts.db_update import DbOperation
 from .contracts.external import (
     EvidenceRef,
     ImageRef,
@@ -74,6 +75,32 @@ def merge_commands(
         if previous is None:
             merged.append(command)
             by_key[key] = command
+    return merged
+
+
+@dataclass(frozen=True)
+class PendingDbOperation:
+    """One ⑦ operation together with its original item scope."""
+
+    item_id: str
+    operation: DbOperation
+
+
+def merge_db_operations(
+    current: list[PendingDbOperation], update: list[PendingDbOperation]
+) -> list[PendingDbOperation]:
+    """Collect each deterministic operation once by operation_id."""
+
+    merged = list(current)
+    by_id = {item.operation.operation_id: item for item in current}
+    for item in update:
+        operation_id = item.operation.operation_id
+        previous = by_id.get(operation_id)
+        if previous is not None and previous != item:
+            raise ValueError(f"conflicting DB operation: {operation_id}")
+        if previous is None:
+            merged.append(item)
+            by_id[operation_id] = item
     return merged
 
 
@@ -164,6 +191,7 @@ class ItemAnalysisOutput:
     result: ItemResult
     evidence: tuple[EvidenceRef, ...] = ()
     commands: tuple[PersistenceCommand, ...] = ()
+    operations: tuple[PendingDbOperation, ...] = ()
     review: "ItemReviewCandidate | None" = None
 
 
@@ -203,13 +231,13 @@ class ItemState(TypedDict, total=False):
     web_collect_response: Any
     ingredient_mapping_response: Any
     web_aggregate_response: Any
-    db_update_response: Any
     decision_request: Any
     decision_response: Any
     result: ItemResult
     analysis_output: ItemAnalysisOutput
     evidence: Annotated[list[EvidenceRef], merge_evidence]
     commands: Annotated[list[PersistenceCommand], merge_commands]
+    operations: Annotated[list[PendingDbOperation], merge_db_operations]
     warnings: Annotated[list[NodeWarning], merge_signals]
     errors: Annotated[list[NodeError], merge_signals]
 
@@ -228,6 +256,7 @@ class JudgeState(TypedDict, total=False):
     ordered_items: list[ItemResult]
     review_candidates: dict[str, ItemReviewCandidate]
     evidence: Annotated[list[EvidenceRef], merge_evidence]
+    pending_operations: Annotated[list[PendingDbOperation], merge_db_operations]
     persistence_commands: Annotated[list[PersistenceCommand], merge_commands]
     warnings: Annotated[list[NodeWarning], merge_signals]
     errors: Annotated[list[NodeError], merge_signals]

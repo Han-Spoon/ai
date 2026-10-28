@@ -9,6 +9,7 @@ import pytest
 from ai_db_update import DbUpdateTool
 from ai_normalization import CandidateSelectionAgent
 from ai_supervisor.contracts.common import NodeWarning
+from ai_supervisor.contracts.db_update import CreateReviewItemPayload, DbOperation
 from ai_supervisor.contracts.decision import HighRiskReviewResponse
 from ai_supervisor.contracts.external import (
     EvidenceRef,
@@ -27,9 +28,12 @@ from ai_supervisor.judge_graph import (
     JudgeGraphInvariantError,
     build_judge_graph,
 )
+from ai_supervisor.contracts.ontology import VariantSuggestion
+from ai_supervisor.contracts.web_search import WebMenu
 from ai_supervisor.state import (
     ItemAnalysisOutput,
     ItemReviewCandidate,
+    PendingDbOperation,
     RunContext,
 )
 
@@ -234,6 +238,74 @@ class SharedEvidenceAnalyzer(DelayedItemAnalyzer):
         )
 
 
+class PendingOperationAnalyzer(DelayedItemAnalyzer):
+    async def run(self, task, run_context):
+        output = await super().run(task, run_context)
+        index = task.prepared_item.source_index
+        evidence = EvidenceRef(
+            evidence_id=f"variant:{index}",
+            evidence_class="soft",
+            source_type="ocr_variant_tag",
+            source_ref=f"차돌{index}",
+            verification_status="pending_review",
+            reliability_weight=None,
+            observed_at=datetime(2026, 10, 23, tzinfo=timezone.utc),
+        )
+        operation = DbOperation(
+            operation_id=f"operation:{task.prepared_item.item_id}:variant-review",
+            operation_type="create_review_item",
+            payload=CreateReviewItemPayload(
+                review_origin="variant_suggestion",
+                menu=WebMenu(
+                    menu_id=None,
+                    normalized_menu_name=task.prepared_item.normalized_menu_name,
+                ),
+                web_sources=[],
+                review_notes=[],
+                variant_suggestion=VariantSuggestion(
+                    base_menu_id=1000 + index,
+                    remain_token=f"차돌{index}",
+                    suggested_ingredients=[],
+                    evidence=evidence,
+                ),
+            ),
+        )
+        return ItemAnalysisOutput(
+            result=output.result,
+            evidence=(evidence,),
+            operations=(
+                PendingDbOperation(
+                    item_id=task.prepared_item.item_id,
+                    operation=operation,
+                ),
+            ),
+        )
+
+
+class PendingReviewOperationAnalyzer(PendingOperationAnalyzer):
+    async def run(self, task, run_context):
+        output = await super().run(task, run_context)
+        return ItemAnalysisOutput(
+            result=output.result,
+            evidence=output.evidence,
+            operations=output.operations,
+            review=ItemReviewCandidate(
+                reason_code="no_information",
+                found_ingredients=(),
+            ),
+        )
+
+
+class RecordingDbUpdate:
+    def __init__(self) -> None:
+        self.requests = []
+        self.tool = DbUpdateTool()
+
+    async def run(self, request):
+        self.requests.append(request)
+        return await self.tool.run(request)
+
+
 class BrokenItemAnalyzer:
     async def run(self, task, run_context):
         raise RuntimeError("programming error")
@@ -263,6 +335,7 @@ class ReviewItemAnalyzer(DelayedItemAnalyzer):
             result=output.result,
             evidence=output.evidence,
             commands=output.commands,
+            operations=output.operations,
             review=ItemReviewCandidate(
                 reason_code=self.reasons[task.prepared_item.source_index],
                 found_ingredients=(),
@@ -505,6 +578,47 @@ def test_collect_deduplicates_shared_evidence_and_commands() -> None:
     ]
 
 
+def test_judge_calls_db_update_once_for_all_item_operations() -> None:
+    source = request(count=2)
+    db_update = RecordingDbUpdate()
+
+    result = asyncio.run(
+        graph(PendingOperationAnalyzer(), db_update=db_update).ainvoke(
+            {"request": source}, context=context(source)
+        )
+    )
+
+    assert len(db_update.requests) == 1
+    request_value = db_update.requests[0]
+    assert request_value.context.call_scope == "out_of_band"
+    assert request_value.context.item_id is None
+    assert len(request_value.operations) == 2
+    assert [
+        command.item_id for command in result["response"].persistence_commands
+    ] == ["scan-123:0", "scan-123:1"]
+
+
+def test_judge_combines_item_and_owner_operations_in_one_db_update_call() -> None:
+    source = with_ingredient_graph(request(count=1))
+    db_update = RecordingDbUpdate()
+
+    result = asyncio.run(
+        graph(
+            PendingReviewOperationAnalyzer(),
+            reviewer=RecordingHighRiskReview(add_missed_card=True),
+            db_update=db_update,
+        ).ainvoke({"request": source}, context=context(source))
+    )
+
+    assert len(db_update.requests) == 1
+    assert [
+        operation.operation_type for operation in db_update.requests[0].operations
+    ] == ["create_review_item", "create_owner_verification_request"]
+    assert [
+        command.action for command in result["response"].persistence_commands
+    ] == ["create_review_item", "create_owner_verification_request"]
+
+
 def test_judge_graph_rejects_changed_prepare_hash_before_downstream_calls() -> None:
     source = request(count=1)
     changed = source.model_copy(
@@ -538,12 +652,12 @@ def test_judge_graph_compiles_with_documented_phase_four_nodes() -> None:
         "analyze_item",
         "collect_items",
         "high_risk_review",
-        "owner_request",
+        "db_update",
         "finalize",
     } <= set(nodes)
 
 
-def test_high_risk_review_adds_card_then_owner_request_builds_command() -> None:
+def test_high_risk_review_adds_card_then_db_update_builds_command() -> None:
     source = with_ingredient_graph(request(count=1))
     reviewer = RecordingHighRiskReview(add_missed_card=True)
 

@@ -78,6 +78,7 @@ from .state import (
     ItemReviewCandidate,
     ItemState,
     ItemTask,
+    PendingDbOperation,
     RunContext,
 )
 
@@ -97,7 +98,8 @@ class ItemGraphDependencies:
         IngredientMappingRequest, IngredientMappingResponse
     ]
     web_aggregate: NodeAdapter[WebAggregateRequest, WebAggregateResponse]
-    db_update: NodeAdapter[DbUpdateRequest, DbUpdateResponse]
+    # Compatibility-only constructor field. Judge Graph owns the single ⑦ call.
+    db_update: NodeAdapter[DbUpdateRequest, DbUpdateResponse] | None = None
     max_concurrent_web_searches: int = 5
     now_factory: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
 
@@ -310,7 +312,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
     def ontology_route(state: ItemState) -> str:
         return route_after_ontology(state["ontology_response"])
 
-    async def variant_review_node(
+    def variant_review_node(
         state: ItemState, runtime: Runtime[RunContext]
     ) -> dict[str, Any]:
         task = state["task"]
@@ -333,46 +335,30 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         if runtime.context.store_id is None:
             return {}
 
-        context = runtime.context.node_context(
-            "item", task.prepared_item.item_id, include_store=True
-        )
-        request = DbUpdateRequest(
-            context=context,
-            operations=[
-                DbOperation(
-                    operation_id=(
-                        f"operation:{task.prepared_item.item_id}:variant-review"
-                    ),
-                    operation_type="create_review_item",
-                    payload=CreateReviewItemPayload(
-                        review_origin="variant_suggestion",
-                        menu=WebMenu(
-                            menu_id=None,
-                            normalized_menu_name=(
-                                task.prepared_item.normalized_menu_name
-                            ),
-                        ),
-                        web_sources=[],
-                        review_notes=[],
-                        variant_suggestion=suggestion,
-                    ),
-                )
-            ],
-            warnings=list(state.get("warnings", [])),
-            errors=list(state.get("errors", [])),
-        )
-        response = await dependencies.db_update.run(request)
-        _validate_db_update_response(request, response)
         return {
-            "db_update_response": response,
-            "commands": [
-                PersistenceCommand.model_validate(
-                    command.model_dump(mode="python")
+            "operations": [
+                PendingDbOperation(
+                    item_id=task.prepared_item.item_id,
+                    operation=DbOperation(
+                        operation_id=(
+                            f"operation:{task.prepared_item.item_id}:variant-review"
+                        ),
+                        operation_type="create_review_item",
+                        payload=CreateReviewItemPayload(
+                            review_origin="variant_suggestion",
+                            menu=WebMenu(
+                                menu_id=None,
+                                normalized_menu_name=(
+                                    task.prepared_item.normalized_menu_name
+                                ),
+                            ),
+                            web_sources=[],
+                            review_notes=[],
+                            variant_suggestion=suggestion,
+                        ),
+                    ),
                 )
-                for command in response.commands
             ],
-            "warnings": list(response.warnings),
-            "errors": list(response.errors),
         }
 
     async def web_collect_node(
@@ -523,7 +509,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
     def web_aggregate_route(state: ItemState) -> str:
         return route_after_web_aggregate(state["web_aggregate_response"])
 
-    async def web_review_node(
+    def web_review_node(
         state: ItemState, runtime: Runtime[RunContext]
     ) -> dict[str, Any]:
         task = state["task"]
@@ -531,9 +517,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         aggregate: WebAggregateResponse = state["web_aggregate_response"]
         if runtime.context.store_id is None or not collect.sources:
             return {}
-        context = runtime.context.node_context(
-            "item", task.prepared_item.item_id, include_store=True
-        )
         menu = WebMenu(
             menu_id=None,
             normalized_menu_name=task.prepared_item.normalized_menu_name,
@@ -563,24 +546,14 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                 ),
             ),
         ]
-        request = DbUpdateRequest(
-            context=context,
-            operations=operations,
-            warnings=list(state.get("warnings", [])),
-            errors=list(state.get("errors", [])),
-        )
-        response = await dependencies.db_update.run(request)
-        _validate_db_update_response(request, response)
         return {
-            "db_update_response": response,
-            "commands": [
-                PersistenceCommand.model_validate(
-                    command.model_dump(mode="python")
+            "operations": [
+                PendingDbOperation(
+                    item_id=task.prepared_item.item_id,
+                    operation=operation,
                 )
-                for command in response.commands
+                for operation in operations
             ],
-            "warnings": list(response.warnings),
-            "errors": list(response.errors),
         }
 
     async def bayesian_node(
@@ -893,6 +866,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             result=result,
             evidence=tuple(evidence),
             commands=tuple(state.get("commands", [])),
+            operations=tuple(state.get("operations", [])),
             review=_review_candidate(
                 state["decision_request"], decision
             ),
@@ -1152,77 +1126,6 @@ def _validate_web_aggregate_response(
     _validate_response_signals(request, response, "Web aggregate")
     if response.menu != request.menu:
         raise ItemGraphInvariantError("Web aggregate changed menu identity")
-
-
-def _validate_db_update_response(
-    request: DbUpdateRequest, response: DbUpdateResponse
-) -> None:
-    _validate_response_signals(request, response, "DB update")
-    operations = {
-        operation.operation_id: operation.operation_type
-        for operation in request.operations
-    }
-    actual = {
-        command.operation_id: command.action for command in response.commands
-    }
-    if len(response.commands) != len(request.operations) or actual != operations:
-        raise ItemGraphInvariantError(
-            "DB update must return one matching command per operation"
-        )
-    if any(
-        command.item_id != request.context.item_id or command.card_id is not None
-        for command in response.commands
-    ):
-        raise ItemGraphInvariantError("DB commands changed item scope")
-    by_operation = {
-        operation.operation_id: operation for operation in request.operations
-    }
-    for command in response.commands:
-        operation = by_operation[command.operation_id]
-        source_payload = operation.payload.model_dump(mode="json")
-        command_payload = command.payload.model_dump(
-            mode="json", exclude={"provenance"}
-        )
-        if command_payload != source_payload:
-            raise ItemGraphInvariantError("DB update changed operation payload")
-        provenance = command.payload.provenance
-        if operation.operation_type == "create_review_item":
-            payload = operation.payload
-            if payload.review_origin == "web_search":
-                expected_origin = "web_search"
-                expected_source_type = "web_search"
-                expected_refs = [
-                    source.evidence.evidence_id
-                    for source in payload.web_sources
-                ]
-            else:
-                if payload.variant_suggestion is None:
-                    raise ItemGraphInvariantError(
-                        "variant review operation omitted its suggestion"
-                    )
-                expected_origin = "ontology"
-                expected_source_type = "ocr_variant_tag"
-                expected_refs = [
-                    payload.variant_suggestion.evidence.evidence_id
-                ]
-        elif operation.operation_type == "save_web_search_cache":
-            expected_origin = "web_search"
-            expected_source_type = "web_search"
-            expected_refs = [
-                source.evidence.evidence_id
-                for source in operation.payload.sources
-            ]
-        else:
-            raise ItemGraphInvariantError(
-                "Item Graph received an unsupported DB operation"
-            )
-        if (
-            provenance.origin_node != expected_origin
-            or provenance.source_type != expected_source_type
-            or provenance.evidence_class != "soft"
-            or provenance.evidence_refs != expected_refs
-        ):
-            raise ItemGraphInvariantError("DB update changed operation provenance")
 
 
 def _unique_ingredient_names(sources: list[WebSource]) -> list[str]:

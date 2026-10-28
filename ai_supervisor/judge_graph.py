@@ -49,6 +49,7 @@ from .state import (
     ItemTask,
     ItemTaskKnowledge,
     JudgeState,
+    PendingDbOperation,
     RunContext,
     merge_commands,
     merge_evidence,
@@ -110,6 +111,7 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
             "bundle_hash": knowledge_bundle_hash(request.knowledge_bundle),
             "item_updates": [],
             "evidence": [],
+            "pending_operations": [],
             "persistence_commands": [],
             "warnings": list(request.prepare_signals.warnings),
             "errors": [],
@@ -185,11 +187,13 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
         )
         evidence: list[EvidenceRef] = []
         commands: list[PersistenceCommand] = []
+        operations: list[PendingDbOperation] = []
         warnings: list[NodeWarning] = []
         errors: list[NodeError] = []
         for update in ordered_updates:
             evidence = merge_evidence(evidence, list(update.evidence))
             commands = merge_commands(commands, list(update.commands))
+            operations.extend(update.operations)
             warnings = merge_signals(
                 warnings, list(update.result.warnings)
             )  # type: ignore[assignment]
@@ -206,6 +210,7 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
                 if update.review is not None
             },
             "evidence": evidence,
+            "pending_operations": operations,
             "persistence_commands": commands,
             "warnings": warnings,
             "errors": errors,
@@ -257,55 +262,55 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
             "errors": [error for _, _, values in reviewed for error in values],
         }
 
-    async def owner_request_node(
+    async def db_update_node(
         state: JudgeState, runtime: Runtime[RunContext]
     ) -> dict[str, Any]:
         if runtime.context.store_id is None:
             return {}
 
-        async def build_for_item(
-            item: ItemResult,
-        ) -> tuple[list[PersistenceCommand], list[Any], list[Any]]:
-            cards = [card for card in item.owner_cards if _stored_card(card)]
-            if not cards:
-                return [], [], []
-            request = DbUpdateRequest(
-                context=runtime.context.node_context(
-                    "item", item.item_id, include_store=True
-                ),
-                operations=[
-                    DbOperation(
+        pending = list(state.get("pending_operations", []))
+        for item in state["ordered_items"]:
+            pending.extend(
+                PendingDbOperation(
+                    item_id=item.item_id,
+                    operation=DbOperation(
                         operation_id=f"operation:{item.item_id}:owner-request:{card.card_id}",
                         operation_type="create_owner_verification_request",
                         payload=_owner_request_payload(item, card),
-                    )
-                    for card in cards
-                ],
-                warnings=list(item.warnings),
-                errors=list(item.errors),
+                    ),
+                )
+                for card in item.owner_cards
+                if _stored_card(card)
             )
-            response = await dependencies.db_update.run(request)
-            _validate_owner_request_response(request, response, cards)
-            return (
-                [
-                    PersistenceCommand.model_validate(
-                        command.model_dump(mode="python")
-                    )
-                    for command in response.commands
-                ],
-                list(response.warnings),
-                list(response.errors),
-            )
+        pending = _dedupe_pending_operations(pending)
+        if not pending:
+            return {}
 
-        outputs = await asyncio.gather(
-            *(build_for_item(item) for item in state["ordered_items"])
+        request = DbUpdateRequest(
+            context=runtime.context.node_context(
+                "out_of_band", None, include_store=True
+            ),
+            operations=[item.operation for item in pending],
+            warnings=list(state.get("warnings", [])),
+            errors=list(state.get("errors", [])),
         )
+        response = await dependencies.db_update.run(request)
+        _validate_db_update_response(request, response, pending)
+        scope_by_operation = {
+            item.operation.operation_id: item.item_id for item in pending
+        }
         return {
             "persistence_commands": [
-                command for commands, _, _ in outputs for command in commands
+                PersistenceCommand.model_validate(
+                    {
+                        **command.model_dump(mode="python"),
+                        "item_id": scope_by_operation[command.operation_id],
+                    }
+                )
+                for command in response.commands
             ],
-            "warnings": [warning for _, values, _ in outputs for warning in values],
-            "errors": [error for _, _, values in outputs for error in values],
+            "warnings": list(response.warnings),
+            "errors": list(response.errors),
         }
 
     def finalize_node(state: JudgeState) -> dict[str, Any]:
@@ -334,15 +339,15 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
     graph.add_node("analyze_item", analyze_item_node)
     graph.add_node("collect_items", collect_items_node)
     graph.add_node("high_risk_review", high_risk_review_node)
-    graph.add_node("owner_request", owner_request_node)
+    graph.add_node("db_update", db_update_node)
     graph.add_node("finalize", finalize_node)
     graph.add_edge(START, "validate_knowledge")
     graph.add_edge("validate_knowledge", "select_candidates")
     graph.add_conditional_edges("select_candidates", fan_out_items)
     graph.add_edge("analyze_item", "collect_items")
     graph.add_edge("collect_items", "high_risk_review")
-    graph.add_edge("high_risk_review", "owner_request")
-    graph.add_edge("owner_request", "finalize")
+    graph.add_edge("high_risk_review", "db_update")
+    graph.add_edge("db_update", "finalize")
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=False, name="judge_graph")
 
@@ -529,25 +534,124 @@ def _owner_request_payload(
     )
 
 
-def _validate_owner_request_response(
+def _dedupe_pending_operations(
+    pending: list[PendingDbOperation],
+) -> list[PendingDbOperation]:
+    """Remove operations that ⑦ would assign the same idempotency key."""
+
+    unique: list[PendingDbOperation] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in pending:
+        operation = item.operation
+        payload = operation.payload
+        if operation.operation_type == "create_review_item":
+            if payload.review_origin == "web_search":
+                menu_key: tuple[Any, ...] = (
+                    payload.menu.normalized_menu_name,
+                    tuple(sorted(source.source_url for source in payload.web_sources)),
+                )
+            else:
+                suggestion = payload.variant_suggestion
+                if suggestion is None:
+                    raise JudgeGraphInvariantError(
+                        "variant review operation omitted its suggestion"
+                    )
+                menu_key = (suggestion.base_menu_id, suggestion.remain_token, ())
+            key = (operation.operation_type, payload.review_origin, *menu_key)
+        elif operation.operation_type == "save_web_search_cache":
+            key = (
+                operation.operation_type,
+                payload.normalized_menu_name,
+                payload.next_rank,
+            )
+        elif operation.operation_type == "create_owner_verification_request":
+            key = (
+                operation.operation_type,
+                payload.item_id,
+                payload.card_id,
+                payload.menu_id,
+            )
+        else:
+            key = (
+                operation.operation_type,
+                operation.payload.model_dump_json(),
+            )
+        if key not in seen:
+            unique.append(item)
+            seen.add(key)
+    return unique
+
+
+def _validate_db_update_response(
     request: DbUpdateRequest,
     response: DbUpdateResponse,
-    cards: list[ResultOwnerCard],
+    pending: list[PendingDbOperation],
 ) -> None:
-    _validate_response_signals(request, response, "Owner request")
-    expected = [
-        (operation.operation_id, operation.payload.card_id)
+    _validate_response_signals(request, response, "DB update")
+    expected = {
+        operation.operation_id: operation.operation_type
         for operation in request.operations
-    ]
-    actual = [
-        (command.operation_id, command.card_id)
-        for command in response.commands
-        if command.action == "create_owner_verification_request"
-    ]
-    if len(response.commands) != len(cards) or actual != expected:
+    }
+    actual = {
+        command.operation_id: command.action for command in response.commands
+    }
+    if len(response.commands) != len(request.operations) or actual != expected:
         raise JudgeGraphInvariantError(
-            "owner request must return one matching command per stored card"
+            "DB update must return one matching command per operation"
         )
+    if any(command.item_id is not None for command in response.commands):
+        raise JudgeGraphInvariantError("batched DB commands changed scan scope")
+
+    operations = {
+        item.operation.operation_id: item.operation for item in pending
+    }
+    for command in response.commands:
+        operation = operations[command.operation_id]
+        payload = operation.payload
+        source_payload = payload.model_dump(mode="json")
+        command_payload = command.payload.model_dump(
+            mode="json", exclude={"provenance"}
+        )
+        if command_payload != source_payload:
+            raise JudgeGraphInvariantError("DB update changed operation payload")
+
+        provenance = command.payload.provenance
+        if operation.operation_type == "create_review_item":
+            if payload.review_origin == "web_search":
+                origin = source_type = "web_search"
+                refs = [
+                    source.evidence.evidence_id for source in payload.web_sources
+                ]
+            else:
+                suggestion = payload.variant_suggestion
+                if suggestion is None:
+                    raise JudgeGraphInvariantError(
+                        "variant review operation omitted its suggestion"
+                    )
+                origin, source_type = "ontology", "ocr_variant_tag"
+                refs = [suggestion.evidence.evidence_id]
+            evidence_class = "soft"
+        elif operation.operation_type == "save_web_search_cache":
+            origin = source_type = "web_search"
+            evidence_class = "soft"
+            refs = [source.evidence.evidence_id for source in payload.sources]
+        elif operation.operation_type == "create_owner_verification_request":
+            origin, source_type = "decision", "decision_policy"
+            evidence_class = None
+            refs = list(payload.evidence_refs)
+            if command.card_id != payload.card_id:
+                raise JudgeGraphInvariantError("DB update changed owner card scope")
+        else:
+            raise JudgeGraphInvariantError(
+                "Judge received an unsupported batched DB operation"
+            )
+        if (
+            provenance.origin_node != origin
+            or provenance.source_type != source_type
+            or provenance.evidence_class != evidence_class
+            or provenance.evidence_refs != refs
+        ):
+            raise JudgeGraphInvariantError("DB update changed operation provenance")
 
 
 def _validate_response_signals(request: Any, response: Any, node: str) -> None:
