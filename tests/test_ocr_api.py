@@ -11,7 +11,11 @@ app_module = importlib.import_module("app")
 
 
 def test_app_registers_supervisor_prepare_and_judge_routes():
-    paths = {route.path for route in app_module.app.routes}
+    paths = {
+        path
+        for route in app_module.app.routes
+        if (path := getattr(route, "path", None)) is not None
+    }
 
     assert "/v1/analyze/prepare" in paths
     assert "/v1/analyze/judge" in paths
