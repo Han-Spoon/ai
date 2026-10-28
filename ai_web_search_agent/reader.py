@@ -1,7 +1,8 @@
 """⑥ stage 1 LLM: which search results are this menu's recipes, and their ingredients
 (docs/6-agent-websearch.md §2-1 step 2, §3-0).
 
-One call per search batch. Code still does the rest: ``collect.py`` keeps every result
+One call per group of results (``collect.py`` sends three at a time, side by side). Code
+still does the rest: ``collect.py`` keeps every result
 the LLM is unsure about, unions LLM names with the dictionary, and drops LLM names the
 text does not contain. Same client shape as ② ``ai_normalization/openai_resolver.py``;
 the SDK reads ``OPENAI_BASE_URL`` itself, so a gateway such as BAZE needs no code here.
@@ -25,7 +26,10 @@ MAX_OUTPUT_TOKENS = 2000
 INSTRUCTIONS = """You read Korean web search results for one restaurant menu.
 For every result, by its index:
 - is_menu_recipe: false only for restaurant reviews, ads, shopping pages, or a recipe
-  that is clearly a different dish (for 김치찌개: 김치찜 or 김치볶음밥). If unsure, true.
+  that is clearly a different dish. A title naming another dish is a different dish
+  even when ingredients overlap (for 김치찌개: 김치찜, 김치볶음밥, 애호박찌개, 김치쌀국수;
+  for 닭한마리: 닭가슴살 샐러드, 닭볶음탕). The same dish with an added or swapped
+  ingredient is the same dish (for 김치찌개: 참치김치찌개, 돼지고기 김치찌개). If unsure, true.
 - ingredients: ingredient names exactly as written in that result's text, in Korean.
   Do not translate, normalize, or add ingredients that are not written there.
 Return one entry for every index you were given."""

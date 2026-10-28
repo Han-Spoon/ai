@@ -1,10 +1,12 @@
-"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~10, 13, 14, 17, 18, 20, 22)."""
+"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~14, 17, 18, 20, 22)."""
 
 import asyncio
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from ai_supervisor.contracts.web_search import WebCollectRequest
+from ai_web_search_agent.aggregate import PRIORITY_DOMAINS
 from ai_web_search_agent import (
     RecipeReading,
     SearchProvider,
@@ -76,10 +78,10 @@ class Reader:
     def __init__(self, drop: set[str] = frozenset(), extra: list[str] = ()) -> None:
         self.drop = drop
         self.extra = list(extra)
-        self.calls = 0
+        self.sizes: list[int] = []
 
     async def read(self, menu_name, results):
-        self.calls += 1
+        self.sizes.append(len(results))
         return [
             RecipeReading(is_menu_recipe=r.title not in self.drop, ingredients=self.extra)
             for r in results
@@ -152,14 +154,32 @@ def test_02_14_nothing_found_without_cache_is_no_information() -> None:
 
 
 def test_07_20_dropped_results_are_replaced_by_next_ones() -> None:
-    results = [result(i, title="김치찜 레시피" if i < 3 else "김치찌개") for i in range(15)]
+    results = [result(i, title="김치찜 레시피" if i < 12 else "김치찌개") for i in range(30)]
     reader = Reader(drop={"김치찜 레시피"})
 
     response = run(WebCollectAgent(provider(results), reader), request())
 
-    assert len(response.sources) == 10
-    assert all(s.title == "김치찌개" for s in response.sources)
-    assert reader.calls == 2
+    assert [s.source_url for s in response.sources] == [r.url for r in results[12:22]]
+    # Twice what is missing each time (20, then 4 for the 2 still missing), read three
+    # at a time.
+    assert reader.sizes == [3, 3, 3, 3, 3, 3, 2, 3, 1]
+
+
+def test_a_failed_llm_call_leaves_only_its_own_results_unread() -> None:
+    class SecondCallFails(Reader):
+        async def read(self, menu_name, results):
+            if self.sizes:
+                self.sizes.append(len(results))
+                raise RuntimeError("llm down")
+            return await super().read(menu_name, results)
+
+    results = [result(i, title="김치찜 레시피") for i in range(6)]
+
+    response = run(WebCollectAgent(provider(results), SecondCallFails(drop={"김치찜 레시피"})), request())
+
+    # The first three are judged another dish; the next three are kept unread.
+    assert [s.source_url for s in response.sources] == [r.url for r in results[3:]]
+    assert codes(response.warnings) == ["web_llm_extraction_failed"]
 
 
 def test_results_without_ingredients_are_not_valid_sources() -> None:
@@ -196,7 +216,7 @@ def test_13_deadline_mid_search_adds_warning() -> None:
     class HalfThenSlow(SearchProvider):
         def search(self, query, start, count, sites=()):
             if start == 1:
-                return [result(i, title="김치찜 레시피" if i < 7 else "김치찌개") for i in range(count)]
+                return [result(i, title="김치찜 레시피" if i < count - 3 else "김치찌개") for i in range(count)]
             time.sleep(0.5)
             return []
 
@@ -214,15 +234,18 @@ class RecordingProvider(StaticSearchProvider):
     def __init__(self, results: list[SearchResult]) -> None:
         super().__init__({QUERY: results})
         self.calls: list[tuple[int, int]] = []
+        self.sites: list[tuple[str, ...]] = []
 
     def search(self, query, start, count, sites=()):
         self.calls.append((start, count))
+        if sites not in self.sites:
+            self.sites.append(sites)
         return super().search(query, start, count, sites)
 
 
 def test_17_cache_reads_from_rank_one_and_skips_cached_urls() -> None:
-    # 10/27 meeting: no stored rank. Read from 1, ask for 10 more than the cache holds,
-    # and skip the cached URLs; the request's next_rank is ignored and echoed (§2-4).
+    # 10/27 meeting: no stored rank. Read from 1, ask for twice 10 more than the cache
+    # holds, and skip the cached URLs; the request's next_rank is ignored and echoed (§2-4).
     results = [result(i) for i in range(20)]
     search = RecordingProvider(results)
 
@@ -232,7 +255,7 @@ def test_17_cache_reads_from_rank_one_and_skips_cached_urls() -> None:
     )
 
     assert [s.source_url for s in response.sources] == [r.url for r in results[10:20]]
-    assert search.calls == [(1, 20)]
+    assert search.calls == [(1, 30)]
     assert response.next_rank == 11
 
 
@@ -268,6 +291,121 @@ def test_18_search_failure_with_cache_is_not_an_error() -> None:
     assert response.found is False
     assert response.errors == []
     assert response.next_rank == 11
+
+
+def test_read_recipes_come_first_and_unread_ones_only_fill_the_rest() -> None:
+    class SecondCallFails(Reader):
+        async def read(self, menu_name, results):
+            if len(self.sizes) == 1:
+                self.sizes.append(len(results))
+                raise TimeoutError("llm slow")
+            return await super().read(menu_name, results)
+
+    results = [result(i) for i in range(15)]
+
+    response = run(WebCollectAgent(provider(results), SecondCallFails()), request())
+
+    # Results 3~5 went unread; twelve read recipes are enough, so they are left out.
+    assert [s.source_url for s in response.sources] == [
+        r.url for r in results[:3] + results[6:13]
+    ]
+    assert response.warnings == []
+
+
+def test_priority_sites_keep_recipe_urls_only() -> None:
+    # §2-3-1: profiles, counseling pages and other domains are dropped before reading.
+    def at(url: str) -> SearchResult:
+        return SearchResult(query=QUERY, title="김치찌개", url=url, content=RECIPE_TEXT)
+
+    kept = [
+        "https://www.10000recipe.com/recipe/6864674",
+        "https://wtable.co.kr/recipes/zNcioPqkvQZ7q2TtHDFJeCDu",
+        "https://semie.cooking/cooking/id/6219",
+        "https://semie.cooking/recipe-lab/archive/dwaejigogikimchijjigae",
+        "https://www.semie.cooking/semie/archive/tofunoodle-mushroom-japchae?code=r6-7",
+    ]
+    dropped = [
+        "https://www.10000recipe.com/profile/recipe.html?uid=suwolhan",
+        "https://wtable.co.kr/recipes",
+        "https://wtable.co.kr/",
+        "https://semie.cooking/counseling/worry/id/702",
+        "https://semie.cooking/recipe-lab/list/recipe",
+        "https://story.kakao.com/ch/10000recipe",
+    ]
+
+    class Mixed(SearchProvider):
+        def search(self, query, start, count, sites=()):
+            return [at(u) for u in kept + dropped][start - 1 : start - 1 + count] if sites else []
+
+    reader = Reader()
+    response = run(WebCollectAgent(Mixed(), reader), request())
+
+    assert [s.source_url for s in response.sources] == kept
+
+
+def test_11_general_web_fills_what_the_priority_sites_lack() -> None:
+    blog = [
+        SearchResult(query=QUERY, title="김치찌개", url=f"https://blog.naver.com/a/{i}", content=RECIPE_TEXT)
+        for i in range(10)
+    ]
+    search = RecordingProvider([result(i) for i in range(3)] + blog)
+
+    response = run(WebCollectAgent(search, Reader()), request())
+
+    urls = [s.source_url for s in response.sources]
+    assert urls[:3] == [result(i).url for i in range(3)]
+    assert urls[3:] == [b.url for b in blog[:7]]
+    assert search.sites == [PRIORITY_DOMAINS, ()]
+
+
+def test_12_enough_priority_recipes_skip_the_general_web() -> None:
+    search = RecordingProvider([result(i) for i in range(10)])
+
+    run(WebCollectAgent(search, Reader()), request())
+
+    assert search.sites == [PRIORITY_DOMAINS]
+
+
+def test_page_bodies_are_read_for_kept_results_only() -> None:
+    class Pages:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        def fetch(self, result):
+            self.urls.append(result.url)
+            return replace(result, content=RECIPE_TEXT)
+
+    profile = SearchResult(
+        query=QUERY, title="김치찌개", url="https://www.10000recipe.com/profile/recipe.html?uid=a"
+    )
+    bare = [result(i, content="") for i in range(2)]
+    pages = Pages()
+
+    response = run(
+        WebCollectAgent(provider([profile, *bare]), Reader(), pages=pages), request()
+    )
+
+    assert sorted(pages.urls) == sorted(r.url for r in bare)
+    assert len(response.sources) == 2
+
+
+def test_a_slow_page_keeps_search_text_and_the_others_are_used() -> None:
+    class OneSlowPage:
+        def fetch(self, result):
+            if result.url.endswith("/0"):
+                time.sleep(0.5)
+            return replace(result, content=RECIPE_TEXT)
+
+    bare = [result(i, content="") for i in range(2)]
+
+    response = run(
+        WebCollectAgent(provider(bare), Reader(), pages=OneSlowPage(), page_seconds=0.1),
+        request(),
+    )
+
+    names = [[i.canonical_name for i in s.ingredients] for s in response.sources]
+    # The slow page has only its title ("김치찌개 황금레시피" gives 김치).
+    assert names == [["김치"], ["김치", "돼지고기", "두부", "양파", "대파"]]
 
 
 def test_input_signals_are_kept() -> None:

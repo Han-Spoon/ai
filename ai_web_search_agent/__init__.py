@@ -5,13 +5,22 @@ DB (the backend does, from ⑦ commands).
 """
 
 from .aggregate import WebAggregateAgent, aggregate_sources
-from .collect import RecipeReader, RecipeReading, WebCollectAgent
+from .collect import PageFetcher, RecipeReader, RecipeReading, WebCollectAgent
 from .dictionary import find_ingredient_names, load_dictionary
-from .providers import SearchProvider, SearchResult, StaticSearchProvider
+from .pages import HttpPageFetcher
+from .providers import (
+    NaverSearchProvider,
+    SearchProvider,
+    SearchResult,
+    StaticSearchProvider,
+)
 from .reader import OpenAIRecipeReader
 
 __all__ = [
+    "HttpPageFetcher",
+    "NaverSearchProvider",
     "OpenAIRecipeReader",
+    "PageFetcher",
     "RecipeReader",
     "RecipeReading",
     "SearchProvider",
