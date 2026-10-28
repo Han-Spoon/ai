@@ -374,14 +374,12 @@ def test_web_path_maps_aggregates_reviews_and_calculates() -> None:
     assert bayesian.requests[0].ingredients[0].constraint_tags == ["is_beef"]
     assert tags.requests == []
     assert decision.requests[0].probability_results[0].prior_source == "uninformative"
-    assert [command.action for command in output.commands] == [
+    assert output.commands == ()
+    assert [item.operation.operation_type for item in output.operations] == [
         "create_review_item",
         "save_web_search_cache",
     ]
-    assert [operation.operation_type for operation in db_update.requests[0].operations] == [
-        "create_review_item",
-        "save_web_search_cache",
-    ]
+    assert db_update.requests == []
     assert [item.evidence_id for item in output.evidence] == [
         "web:https://www.10000recipe.com/recipe/1"
     ]
@@ -403,6 +401,7 @@ def test_cached_sources_continue_without_new_storage_commands() -> None:
     assert db_update.requests == []
     assert output.result.route == "web_bayes"
     assert output.commands == ()
+    assert output.operations == ()
 
 
 def test_web_no_information_skips_mapping_and_bayesian() -> None:
@@ -431,6 +430,7 @@ def test_storeless_web_path_analyzes_without_commands() -> None:
     assert decision.requests[0].owner_interaction_allowed is False
     assert output.result.risk_level == "caution"
     assert output.commands == ()
+    assert output.operations == ()
     assert any(warning.code == "store_context_missing" for warning in output.result.warnings)
 
 

@@ -269,6 +269,7 @@ Prepare(store_id 없음)
 ### ⑦ DB Update Tool
 - **역할 개요**: AI 판단 결과를 어떤 저장 명령으로 전달할지 결정하는 관문. 증거의 신뢰도에 따라 즉시 반영 요청(hard evidence)과 관리자 검토 요청(soft evidence)을 명확히 구분한다. 물리 DB 쓰기와 트랜잭션은 백엔드가 담당한다.
 - **입력**: Supervisor로부터 전달받은 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
+- **호출 방식**: Judge에서는 메뉴별 변형 검토·웹 검토·웹 캐시·사장님 질문 operation을 Supervisor가 모두 모은 뒤, 고위험 재검증이 끝난 마지막 단계에서 ⑦을 한 번만 호출한다. `store_id: null`이면 호출하지 않는다.
 - **처리**:
   - **웹서치/변형 태깅 결과(신규 메뉴·재료, soft evidence)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
   - **사장님 답변 피드백(확정 저장, hard evidence)**: 대상별 답변을 한 번만 받고 `ingredient_confirmations` 또는 `owner_flag_confirmations` upsert 명령을 만든다. 백엔드는 권한·FK·멱등성을 검증한 뒤 즉시 반영하며 2·3차 확인이나 다수결을 수행하지 않는다. 확정값은 기간 만료 없이 유지한다. base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly`를 포함해 SAFE 근거로 사용하지 않는다.

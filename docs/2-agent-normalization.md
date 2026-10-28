@@ -352,7 +352,7 @@ v1 옵션 사전은 다음으로 고정한다.
 
 1. 검증된 다국어 별칭 사전
 2. 한글·Latin 혼합 표기의 결정론적 정리
-3. 둘로 해석되지 않을 때만 LangChain 구조화 출력
+3. 둘로 해석되지 않을 때만 OpenAI Responses API 구조화 출력
 
 ②-A의 LLM은 `normalized_menu_name` 후보와 confidence만 반환한다. confidence가 0.90 미만이거나 빈 문자열·과도한 삭제·schema 위반이면 결과를 폐기하고 정제된 원문을 사용한다. LLM은 `menu_id`를 받거나 만들지 않는다.
 
@@ -362,7 +362,9 @@ v1에서 “과도한 삭제”는 다음처럼 검증한다.
 - `residual_tokens`의 모든 토큰이 LLM 결과에도 있어야 한다.
 - 하나라도 사라지면 `name_llm_failed` warning을 남기고 결정론적 검색명을 유지한다.
 
-현재 구현은 구조화 LLM을 직접 생성하지 않고 `NameResolver` 인터페이스로 주입받는다. Resolver가 주입되지 않은 배포에서는 검증된 사전까지만 사용하고, 해석되지 않은 외국어·혼합 표기는 정제된 원문 검색명을 유지한다. 구체 모델·timeout 연결은 #164 범위다.
+현재 구현은 `OpenAINormalizationResolver`를 `NameResolver` 인터페이스로 주입한다. `OPENAI_API_KEY`가 있으면 Supervisor 서비스 생성 시 Resolver를 한 번 만들고 ②-A·②-B가 공유한다. 키가 없으면 검증된 사전·점수 규칙만 사용하며, 해석되지 않은 외국어·혼합 표기는 정제된 원문 검색명을 유지한다.
+
+기본 모델은 `gpt-5.4-mini`, API는 Responses API, 출력은 Pydantic Structured Outputs다. 기본 timeout은 5초, SDK 재시도는 최대 1회, 최대 출력은 256 token이다. 모델만 바꾸려면 `NORMALIZATION_OPENAI_MODEL`을 설정하며, 일반 실행에는 `OPENAI_API_KEY` 외 설정이 필요 없다. reasoning·temperature는 별도로 지정하지 않고 모델 기본값을 사용한다.
 
 Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin 문자가 하나 이상 포함된 경우 ②-A LLM 대상이 된다. 순수 Latin 메뉴도 `locale_hint` 값과 관계없이 대상이며, 한글·숫자만 있는 이름은 호출하지 않는다.
 
@@ -560,11 +562,12 @@ ai_normalization/
 ├── cleaning.py        # NFKC·장식·가격·옵션·표기 사전
 ├── option_rules.py    # 크기/인분/조리/재료 옵션 분류
 ├── candidate_policy.py# §4의 순수 판정 함수
+├── openai_resolver.py # Responses API 구조화 LLM adapter
 ├── dictionaries/      # `2026-10-v1` 표기·헤더·다국어 사전
 └── tests/
 ```
 
-`contracts.py`의 `NameResolver`와 `CandidateResolver`가 제한적 LLM 경계다. 실제 provider adapter가 추가되면 별도 모듈에 구현하되 두 Protocol과 closed schema를 따라야 한다. ②의 두 실행 객체는 Supervisor의 비동기 adapter 규칙에 맞게 `async run(request) -> response` 형태로 제공한다.
+`contracts.py`의 `NameResolver`와 `CandidateResolver`가 제한적 LLM 경계다. `openai_resolver.py`의 한 lifespan-scoped adapter가 두 Protocol을 구현하며, 요청마다 client를 다시 만들지 않는다. ②의 두 실행 객체는 Supervisor의 비동기 adapter 규칙에 맞게 `async run(request) -> response` 형태로 제공한다.
 
 `CandidatePolicy`의 v1 기본값은 §4-1의 네 값이다. 테스트나 다음 정책 버전 검증에서는 객체를 주입할 수 있지만, 운영에서 값을 바꾸려면 문서·정책 버전·고정 검증 결과를 같은 PR에서 갱신한다.
 
@@ -575,14 +578,14 @@ ai_normalization/
 | ②-A 결정론적 정제·사전·invalid | 구현 | `ai_normalization` |
 | ②-B 후보 검증·상태 판정 | 구현 | `ai_normalization` |
 | 후보 exact·alias·fuzzy 조회와 score 생성 | AI에서 구현하지 않음 | 백엔드가 §3 계약으로 제공 |
-| 구체 LLM provider·모델·timeout | 미연결, Resolver 주입 경계만 구현 | #164에서 확정 후 문서와 함께 구현 |
+| OpenAI provider·모델·timeout | 구현 | `OpenAINormalizationResolver`, 기본 `gpt-5.4-mini`·5초·재시도 1회 |
 | Supervisor Prepare Graph의 ②-A 연결 | 구현 | `ai_supervisor/prepare_graph.py` |
 | Supervisor Judge Graph의 ②-B 연결 | 구현 | `ai_supervisor/judge_graph.py` |
 | 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
 
-②가 소유하는 v1 코드 범위는 구현 완료다. #164의 구체 LLM 연결과 #165의 기존 모듈 정리는 별도 후속 이슈이며, 확정 전에는 현재의 결정론적 fallback을 유지한다.
+②가 소유하는 v1 코드와 #164의 OpenAI 연결은 구현 완료다. #165의 기존 모듈 정리는 별도 후속 이슈다. API 오류·timeout·schema 위반 시에는 현재의 결정론적 fallback을 유지한다.
 
-구현되지 않은 항목은 암묵적 fallback으로 숨기지 않는다. 현재 LLM Resolver가 없으면 규칙 결과를 유지하고, 후보 생성은 빈 목록을 AI가 만들어 대신하지 않고 백엔드의 `candidate_status`를 그대로 받는다.
+Resolver가 없거나 호출이 실패하면 규칙 결과를 유지한다. 후보 생성은 빈 목록을 AI가 만들어 대신하지 않고 백엔드의 `candidate_status`를 그대로 받는다.
 
 기존 `ai_ocr`의 텍스트 구조화와 `ai_ruleengine`의 표기 정리 코드는 동작을 조사해 재사용하되, ①과 ④가 같은 문자열을 다시 정규화하지 않도록 책임을 한곳으로 모은다.
 
@@ -667,7 +670,7 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 다음은 현재 코드에서 임의로 선택하지 않는다. 값이 정해지면 이 절을 먼저 수정한 뒤 같은 PR에서 구현·테스트를 추가한다.
 
 - 후보 조회의 fuzzy 문자열 유사도 라이브러리와 버전은 후보 조회를 소유한 백엔드가 고정하고, AI는 0~1 score와 최대 0.94 계약만 검증한다.
-- 다국어 구조화 LLM 모델·provider 패키지 버전과 ②-A·②-B timeout은 #164에서 확정한다. 확정 전 운영 배포에서는 Resolver를 주입하지 않는다.
+- 운영 배포는 `OPENAI_API_KEY`를 secret으로 주입한다. 모델 변경은 `NORMALIZATION_OPENAI_MODEL`로만 수행하고 문서·회귀 테스트를 같은 PR에서 갱신한다.
 - 고정 검증셋 위치와 정책 수치 변경 승인 절차
 
 ---

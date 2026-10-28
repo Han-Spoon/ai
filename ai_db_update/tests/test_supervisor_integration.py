@@ -1,10 +1,11 @@
-"""The real ⑦ adapter (with real ④⑤) inside the Supervisor item graph."""
+"""Item Graph operations materialized by the real ⑦ adapter."""
 
 import asyncio
 
 from ai_bayesian import BayesianTool
 from ai_db_update import DbUpdateTool
 from ai_ontology import IngredientMappingTool, OntologyTool, TagLookupTool
+from ai_supervisor.contracts.db_update import DbUpdateRequest
 from ai_supervisor.item_graph import ItemGraphAnalyzer, ItemGraphDependencies
 from ai_supervisor.tests.test_item_graph import NOW, RuleDecision, UnusedAdapter, context
 from ai_supervisor.tests.test_item_graph_web import (
@@ -13,6 +14,19 @@ from ai_supervisor.tests.test_item_graph_web import (
     unknown_task,
     web_source,
 )
+
+
+def materialize_operations(output):
+    run_context = context()
+    request = DbUpdateRequest(
+        context=run_context.node_context(
+            "out_of_band", None, include_store=True
+        ),
+        operations=[pending.operation for pending in output.operations],
+        warnings=[],
+        errors=[],
+    )
+    return asyncio.run(DbUpdateTool().run(request))
 
 
 def test_web_path_builds_real_review_and_cache_commands():
@@ -25,14 +39,25 @@ def test_web_path_builds_real_review_and_cache_commands():
             web_collect=RecordingCollect([web_source()]),
             ingredient_mapping=IngredientMappingTool(),
             web_aggregate=RecordingAggregate(),
-            db_update=DbUpdateTool(),
             now_factory=lambda: NOW,
         )
     )
     output = asyncio.run(analyzer.run(unknown_task(), context()))
     assert output.result.route == "web_bayes"
-    assert [c.action for c in output.commands] == ["create_review_item", "save_web_search_cache"]
-    assert all(c.idempotency_key.startswith("sha256:") for c in output.commands)
+    assert output.commands == ()
+    assert [
+        pending.operation.operation_type for pending in output.operations
+    ] == ["create_review_item", "save_web_search_cache"]
+
+    response = materialize_operations(output)
+    assert [command.action for command in response.commands] == [
+        "create_review_item",
+        "save_web_search_cache",
+    ]
+    assert all(
+        command.idempotency_key.startswith("sha256:")
+        for command in response.commands
+    )
 
 
 def test_runtime_variant_review_with_real_tools():
@@ -51,11 +76,21 @@ def test_runtime_variant_review_with_real_tools():
             web_collect=UnusedAdapter(),
             ingredient_mapping=UnusedAdapter(),
             web_aggregate=UnusedAdapter(),
-            db_update=DbUpdateTool(),
             now_factory=lambda: NOW,
         )
     )
     output = asyncio.run(analyzer.run(replace(task, prepared_item=prepared), context()))
     assert output.result.route == "db_variant_bayes"
-    review = [c for c in output.commands if c.action == "create_review_item"]
-    assert review and review[0].payload["provenance"]["source_type"] == "ocr_variant_tag"
+    assert output.commands == ()
+    assert [
+        pending.operation.operation_type for pending in output.operations
+    ] == ["create_review_item"]
+
+    response = materialize_operations(output)
+    review = [
+        command
+        for command in response.commands
+        if command.action == "create_review_item"
+    ]
+    assert review
+    assert review[0].payload.provenance.source_type == "ocr_variant_tag"
