@@ -9,7 +9,7 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 
 | 파일 | 내용 |
 |---|---|
-| `collect.py` | **1단계(수집)** `await WebCollectAgent(provider, reader).run(WebCollectRequest)` → `WebCollectResponse`. 우선 사이트 3곳을 `next_rank`부터 읽고, 이 메뉴의 레시피로 남은 글에서 재료 이름을 사전(규칙)과 LLM으로 뽑아 합친다(LLM 이름은 본문에 있을 때만). 빠진 글만큼 다음 결과를 더 읽어 유효 레시피 10개를 채운다. 시간 제한 7초(검색 3초·LLM 3초), 캐시 URL은 다시 세지 않음. LLM이 없거나 실패하면 모든 글을 남기고 사전 결과만 쓴 뒤 `web_llm_extraction_failed`. 새 레시피도 캐시도 없으면 `found: false` + `web_search_timeout` |
+| `collect.py` | **1단계(수집)** `await WebCollectAgent(provider, reader).run(WebCollectRequest)` → `WebCollectResponse`. 우선 사이트 3곳을 매번 1위부터 읽고(캐시에 있는 URL은 건너뜀, 요청 `next_rank`는 읽지 않고 그대로 돌려줌 — 10/27 회의), 이 메뉴의 레시피로 남은 글에서 재료 이름을 사전(규칙)과 LLM으로 뽑아 합친다(LLM 이름은 본문에 있을 때만). 빠진 글만큼 다음 결과를 더 읽어 유효 레시피 10개를 채운다. 시간 제한 7초(검색 3초·LLM 3초), 캐시 URL은 다시 세지 않음. LLM이 없거나 실패하면 모든 글을 남기고 사전 결과만 쓴 뒤 `web_llm_extraction_failed`. 새 레시피도 캐시도 없으면 `found: false` + `web_search_timeout` |
 | `aggregate.py` | **2단계(집계)** `await WebAggregateAgent().run(WebAggregateRequest)` → `WebAggregateResponse`. ④가 표준 재료로 맞춘 레시피를 재료·사이트별로 세고(`observations`), 유효 레시피가 10개 미만이면 `insufficient_sources` 경고, 관리자 검토 문구(`review_notes`) 규칙 1·2·3·4·6·7 |
 | `reader.py` | 1단계의 **LLM** 쪽. `OpenAIRecipeReader`가 검색 결과 묶음을 한 번에 읽어 글마다 "이 메뉴의 레시피인지"와 적힌 재료 이름을 돌려준다. 애매하면 남긴다. 답이 빠지거나 형식이 틀리면 예외 → `collect.py`가 전부 남기고 `web_llm_extraction_failed`. `OpenAIRecipeReader.from_env_if_configured()`는 `OPENAI_API_KEY`가 없으면 `None` (환경 변수는 `.env.example`) |
 | `providers.py` | 검색 도구 틀(`SearchProvider.search(query, start, count, sites)`: 한 검색 순위 목록의 `start`위부터 `count`개)과 테스트용 `StaticSearchProvider` |
@@ -18,7 +18,7 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 
 ## 아직 없는 것
 
-- **일반 웹으로 넓히기** (⑥ §2-3-1): 우선 사이트에서 10개를 못 채울 때. 그때 `next_rank`가 어느 검색의 순위인지(⑥ §5)를 정한 뒤 붙입니다. 지금은 우선 사이트만 읽습니다
+- **일반 웹으로 넓히기** (⑥ §2-3-1): 우선 사이트에서 10개를 못 채울 때. 지금은 우선 사이트만 읽습니다
 - **네이버 검색 연결** (#254). 이게 없으면 읽을 검색 결과가 없어 LLM도 쓰이지 않습니다
 - **⓪ 조립**: `app.py` `_build_supervisor_service()`의 `web_collect=WebCollectAgent(StaticSearchProvider())`를 `WebCollectAgent(네이버_provider, OpenAIRecipeReader.from_env_if_configured())`로 바꾸는 일 (⑥ §6)
 - **LLM 검토 문구**: 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
