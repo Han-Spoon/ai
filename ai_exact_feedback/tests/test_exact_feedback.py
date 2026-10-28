@@ -179,7 +179,7 @@ def test_04_reads_only_requested_menu_slice() -> None:
                 "menu_ingredient_priors": [],
                 "cache": None,
             },
-            "web_search_cache": {"status": "not_found", "cached_sources": [], "next_rank": 1},
+            "web_search_cache": {"status": "not_found", "cached_sources": []},
         }
     )
     knowledge = find_candidate_knowledge(item, 2002)
