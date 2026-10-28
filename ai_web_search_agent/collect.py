@@ -7,9 +7,8 @@ The priority sites are read first, keeping only their recipe URLs (``RECIPE_PATH
 when they run out before ``max_sources``, the general web fills the rest (§2-3-1). Page
 bodies are read only for the results that are kept (``pages.py``).
 
-Every search starts from rank 1; results already in the cache are skipped by URL. The
-``next_rank`` contract field is no longer read or moved (10/27 meeting, §2-4); it is
-echoed back until ⓪ drops it.
+Every search starts from rank 1; results already in the cache are skipped by URL, so no
+search rank is stored or passed around (10/27 meeting, §2-4).
 
 The LLM sits behind ``RecipeReader`` (OpenAI version in ``reader.py``). Without a reader,
 or when it fails, every result is kept and only dictionary names are used, with
@@ -224,8 +223,6 @@ class WebCollectAgent:
             ),
             found=bool(collection.sources),
             sources=collection.sources,
-            # Kept only for the ⓪ contract (§6): ⑥ no longer reads or moves it.
-            next_rank=request.next_rank,
             warnings=warnings,
             errors=errors,
         )

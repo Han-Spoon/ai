@@ -80,8 +80,8 @@ PPT 7쪽은 ⑥을 "내부 근거가 부족하거나 DB 미등록 메뉴일 때 
 - `context.store_id`는 로그·추적용이다. 가게 없는 스캔이면 `null`이다 (⓪ §1-3). 웹 캐시는 가게와 무관하다. `context`는 수정하지 않고 그대로 반환한다.
 - `menu.menu_id`는 DB에 없는 메뉴라 항상 `null`이다. 검색어는 `menu.normalized_menu_name`(②가 정규화한 이름)으로 만들고 `menu.locale_hint`(메뉴판 언어)를 참고한다.
 - `max_sources`는 한 번 검색할 때 **새로** 모을 최대 출처 수 `10`이다 (§2-3). 캐시 레시피(`cached_sources`)는 이 수와 별개로 함께 쓴다 (§2-4).
-- 검색은 **매번 1위부터** 한다. 캐시에 이미 있는 URL은 건너뛰고 그만큼 더 읽는다 (§2-4, 2026-10-27 회의). 요청 `next_rank`는 읽지 않는다.
-- 응답 `next_rank`에는 요청 값을 그대로 돌려준다. 순위를 저장하지 않기로 해서(2026-10-27 회의) 쓰는 곳이 없고, ⓪ 계약에서 칸이 빠질 때까지만 둔다 (§6).
+- 검색은 **매번 1위부터** 한다. 캐시에 이미 있는 URL은 건너뛰고 그만큼 더 읽는다 (§2-4, 2026-10-27 회의). 요청·응답에 검색 순위(`next_rank`)를 담지 않는다.
+- 예전 `next_rank`(다음에 읽을 순위)는 ⓪ 계약에서 지웠다 (2026-10-28). ⑦ 저장 명령에는 ⑦ 코드가 정리될 때까지 선택 칸으로만 남아 있다 (§6).
 - 응답 `sources[]`에는 **이번에 새로 검색한 출처만** 넣는다. 출처마다 원문 재료명을 그대로 뽑고, 이름을 합치거나 개수를 세지 않는다.
 - `sources[].evidence`는 항상 `evidence_class: soft`, `source_type: web_search`, `verification_status: pending_review`(관리자 검토 대기)다. 출처 신뢰도 `reliability_weight`는 계산하지 않고 `null`로 보낸다 (#194).
 - 입력 `warnings`·`errors`는 보존하고 ⑥의 신호를 덧붙인다 (§3-2).
@@ -419,7 +419,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 | 14 | 7초까지 레시피 0개 | `found: false` + `web_search_timeout` | 정보 없음 경로로 갈 것 |
 | 15 | 관리자 페이지에 올라간 웹서치 결과, 땅콩(`is_peanut`)이 22개 중 3개에만 나옴 | 검토 문구 C에 땅콩 표시 | 위험 태그 재료가 검토 문구에서 빠지지 않을 것 |
 | 16 | 검토 문구 생성 중 LLM 실패 | 규칙 이름을 그대로 문구로 표시 | 검토 이유가 사라지지 않을 것 |
-| 17 | 같은 메뉴 2번째 웹서치, 캐시에 1~10위 레시피 10개 | 1위부터 20개를 검색해 캐시 URL 10개는 건너뛰고, 새 10개를 캐시 10개와 합쳐 20개로 판정. `sources`에는 새 10개만 | 저장된 순위 없이(요청 `next_rank`와 무관) 캐시 레시피를 다시 세거나 `sources`에 넣지 않을 것 (2026-10-27 회의) |
+| 17 | 같은 메뉴 2번째 웹서치, 캐시에 1~10위 레시피 10개 | 1위부터 20개를 검색해 캐시 URL 10개는 건너뛰고, 새 10개를 캐시 10개와 합쳐 20개로 판정. `sources`에는 새 10개만 | 저장된 순위 없이 캐시 레시피를 다시 세거나 `sources`에 넣지 않을 것 (2026-10-27 회의) |
 | 18 | 캐시 레시피 10개 + 새 검색 실패 | 캐시 10개로 판정 (`found: true`) | 캐시가 있는데 정보 없음으로 떨어지지 않을 것 |
 | 19 | 가게 없는 스캔(`store_id: null`) + 캐시 레시피 10개 | 1위부터 검색해 캐시 URL을 건너뛰고 캐시와 합쳐 판정, `sources`에는 새 10개만. ⑥ 출력은 가게 있는 스캔과 같음 | 웹 캐시는 그대로 읽어 쓸 것. 저장·관리자 검토가 없는 것은 Supervisor 몫이다 (⓪ 테스트 2-a) |
 | 20 | 김치찌개 검색 결과 10개 중 3개가 김치찜 레시피 | 김치찜 3개는 제외하고 다음 결과를 더 읽어 김치찌개 레시피 10개를 채움 | 다른 음식이 이번 판정에 섞이지 않고, 유효 출처 수가 줄지 않을 것 |
@@ -507,4 +507,4 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 
 - [x] **2단계 응답 `sources`를 채울 자료가 2단계 요청에 없음** (2026-10-23, 구현 중 발견) — 2단계 응답에서 `sources`를 뺐다. 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 쓴다 (다은님 확인, 2026-10-23). ⓪ §4-5·`contracts/web_search.py` 반영
 - [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(NaverSearchProvider.from_env_if_configured(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꿔야 검색과 LLM이 쓰인다. 네이버 키가 없으면 지금처럼 `StaticSearchProvider()`를 쓴다. 네이버 검색과 본문 읽기는 #254에서 만들었다 (2026-10-28). 배포 환경에 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`도 넣어야 한다
-- [ ] **`next_rank` 칸 빼기** (2026-10-28, 10/27 회의) — ⑥은 매번 1위부터 읽고 캐시 URL만 건너뛰며, 요청 `next_rank`를 읽지 않고 응답에는 요청 값을 그대로 돌려준다 (§2-4). ⓪ 계약 `WebCollectRequest.next_rank`·`WebCollectResponse.next_rank`(`ai_supervisor/contracts/web_search.py`), Judge 요청 `web_search_cache.next_rank`(`contracts/external.py`), Item Graph의 전달·"뒤로 가지 않음" 검사, ⓪ 문서 §1-3·§4-5에 칸이 남아 있다. ⑦ `save_web_search_cache.next_rank`와 DB `web_search_cache` 칸은 각 담당자 몫이다
+- [x] **`next_rank` 칸 빼기** (2026-10-28, 10/27 회의) — ⓪에 반영함 (2026-10-28): `WebCollectRequest`·`WebCollectResponse`와 Judge 요청 `web_search_cache`에서 칸을 지웠다 (예전 백엔드가 보내면 받아서 버림). Item Graph의 전달·"뒤로 가지 않음" 검사, ⓪ 문서 §1-3·§4-5·§4-6과 테스트도 고쳤다. 남은 것: ⑦ `save_web_search_cache.next_rank`(⑦ 코드가 읽고 있어 ⓪ 계약에 선택 칸으로 남김, 윤지님께 요청함)와 DB `web_search_cache` 칸(백엔드)
