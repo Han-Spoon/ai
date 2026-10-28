@@ -135,7 +135,7 @@ review = HighRiskReviewAgent.from_env()     # ⓪ high_risk_review 자리. 키�
 
 ## 아직 없는 것
 
-- **⓪ 조립**: `SupervisorServiceDependencies`에 `decision=DecisionTool.from_env()`, `high_risk_review=HighRiskReviewAgent.from_env()`를 넣는 코드. 지금 서비스 기본값 `DecisionTool()`은 이유 문장 없이 돕니다
+- **⓪ 조립**: `app.py` `_build_supervisor_service()`에 `decision=DecisionTool.from_env()`, `high_risk_review=HighRiskReviewAgent.from_env()`를 넣는 일 (⑧ §9). 지금은 이유 문장 없는 `DecisionTool()`과 항상 실패하는 임시 재검증 어댑터가 들어 있습니다
 - 고위험 재검증의 **질문 다듬기** (§2-3 세 번째 역할): 카드 문구는 템플릿 그대로 둡니다
 - 질문 문구 원어민 확인 (#135)
 

@@ -20,7 +20,7 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 
 - **일반 웹으로 넓히기** (⑥ §2-3-1): 우선 사이트에서 10개를 못 채울 때. 그때 `next_rank`가 어느 검색의 순위인지(⑥ §5)를 정한 뒤 붙입니다. 지금은 우선 사이트만 읽습니다
 - **네이버 검색 연결** (#254). 이게 없으면 읽을 검색 결과가 없어 LLM도 쓰이지 않습니다
-- **⓪ 조립**: `WebCollectAgent(네이버_provider, OpenAIRecipeReader.from_env_if_configured())`를 `SupervisorServiceDependencies.web_collect`에 넣는 코드
+- **⓪ 조립**: `app.py` `_build_supervisor_service()`의 `web_collect=WebCollectAgent(StaticSearchProvider())`를 `WebCollectAgent(네이버_provider, OpenAIRecipeReader.from_env_if_configured())`로 바꾸는 일 (⑥ §6)
 - **LLM 검토 문구**: 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
 
 옛 코드(룰엔진 결과에 웹 태그를 덧붙이고 SQLite에 저장하던 구조, Tavily 검색, CLI)는 새 설계와 맞지 않아 지웠습니다.

@@ -466,4 +466,4 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
 - [x] **2단계 응답 `sources`를 채울 자료가 2단계 요청에 없음** (2026-10-23, 구현 중 발견) — 2단계 응답에서 `sources`를 뺐다. 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 쓴다 (다은님 확인, 2026-10-23). ⓪ §4-5·`contracts/web_search.py` 반영
-- [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ `SupervisorServiceDependencies.web_collect`는 호출하는 쪽이 넣어야 하는데 조립 코드가 아직 없다. `WebCollectAgent(검색 provider, OpenAIRecipeReader.from_env_if_configured())`를 넣어야 한다. 검색 provider는 네이버(#254) 전까지 없다
+- [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(검색 provider, OpenAIRecipeReader.from_env_if_configured())`로 바꿔야 LLM이 쓰인다. 검색 provider는 네이버(#254) 전까지 없다
