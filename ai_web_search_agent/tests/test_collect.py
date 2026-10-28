@@ -120,7 +120,8 @@ def test_01_success_returns_sources_with_names_as_written() -> None:
         "김치", "돼지고기", "두부", "양파", "대파",
     ]
     assert all(i.ingredient_id is None for i in response.sources[0].ingredients)
-    assert response.next_rank == 11
+    # ⑥ no longer moves next_rank; it is echoed until ⓪ drops the field (§2-4).
+    assert response.next_rank == 1
     assert response.warnings == [] and response.errors == []
 
 
@@ -158,7 +159,6 @@ def test_07_20_dropped_results_are_replaced_by_next_ones() -> None:
 
     assert len(response.sources) == 10
     assert all(s.title == "김치찌개" for s in response.sources)
-    assert response.next_rank == 14
     assert reader.calls == 2
 
 
@@ -208,19 +208,45 @@ def test_13_deadline_mid_search_adds_warning() -> None:
 
     assert len(response.sources) == 3
     assert codes(response.warnings) == ["web_search_deadline_exceeded"]
-    assert response.next_rank == 11
 
 
-def test_17_cache_reads_next_ranks_and_returns_only_new_sources() -> None:
+class RecordingProvider(StaticSearchProvider):
+    def __init__(self, results: list[SearchResult]) -> None:
+        super().__init__({QUERY: results})
+        self.calls: list[tuple[int, int]] = []
+
+    def search(self, query, start, count, sites=()):
+        self.calls.append((start, count))
+        return super().search(query, start, count, sites)
+
+
+def test_17_cache_reads_from_rank_one_and_skips_cached_urls() -> None:
+    # 10/27 meeting: no stored rank. Read from 1, ask for 10 more than the cache holds,
+    # and skip the cached URLs; the request's next_rank is ignored and echoed (§2-4).
     results = [result(i) for i in range(20)]
+    search = RecordingProvider(results)
 
     response = run(
-        WebCollectAgent(provider(results), Reader()),
+        WebCollectAgent(search, Reader()),
         request(next_rank=11, cached=results[:10]),
     )
 
     assert [s.source_url for s in response.sources] == [r.url for r in results[10:20]]
-    assert response.next_rank == 21
+    assert search.calls == [(1, 20)]
+    assert response.next_rank == 11
+
+
+def test_cache_entries_off_the_ranking_still_fill_ten_new_sources() -> None:
+    # A cached URL that no longer shows up only makes the first ask bigger.
+    results = [result(i) for i in range(12)]
+    search = RecordingProvider(results)
+
+    response = run(
+        WebCollectAgent(search, Reader()),
+        request(cached=[result(99), results[0]]),
+    )
+
+    assert [s.source_url for s in response.sources] == [r.url for r in results[1:11]]
 
 
 def test_cached_url_is_not_counted_again() -> None:
@@ -231,7 +257,6 @@ def test_cached_url_is_not_counted_again() -> None:
     )
 
     assert [s.source_url for s in response.sources] == [results[1].url]
-    assert response.next_rank == 3
 
 
 def test_18_search_failure_with_cache_is_not_an_error() -> None:

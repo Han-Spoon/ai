@@ -3,8 +3,12 @@
 No DB and no tags. Each new recipe comes back with the ingredient names as written;
 ④ maps them between stage 1 and stage 2. Not here yet:
 
-- Widening to the general web when the priority sites run out (§2-3-1). Which search
-  ``next_rank`` then points into is still open (§5), so only priority sites are read.
+- Widening to the general web when the priority sites run out (§2-3-1). Only priority
+  sites are read.
+
+Every search starts from rank 1; results already in the cache are skipped by URL. The
+``next_rank`` contract field is no longer read or moved (10/27 meeting, §2-4); it is
+echoed back until ⓪ drops it.
 
 The LLM sits behind ``RecipeReader`` (OpenAI version in ``reader.py``). Without a reader,
 or when it fails, every result is kept and only dictionary names are used, with
@@ -175,32 +179,36 @@ class WebCollectAgent:
             ),
             found=bool(collection.sources),
             sources=collection.sources,
-            next_rank=request.next_rank + collection.read_count,
+            # Kept only for the ⓪ contract (§6): ⑥ no longer reads or moves it.
+            next_rank=request.next_rank,
             warnings=warnings,
             errors=errors,
         )
 
     async def _collect(self, request: WebCollectRequest) -> _Collection:
-        """Read priority-site results from ``next_rank`` until ``max_sources`` are valid.
+        """Read priority-site results from rank 1 until ``max_sources`` new ones are valid.
 
         A result is valid when it is kept as this menu's recipe and has at least one
-        ingredient name (§2-3). Dropped results are replaced by the next ones.
+        ingredient name (§2-3). Dropped results are replaced by the next ones. Cached URLs
+        come back too and are skipped, so each batch asks for that many more (§2-4).
         """
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.total_seconds
         menu_name = request.menu.normalized_menu_name
         query = search_query(menu_name)
-        seen = {source.source_url for source in request.cached_sources}
+        cached_urls = {source.source_url for source in request.cached_sources}
+        seen = set(cached_urls)
+        cached_left = len(cached_urls)
         collection = _Collection(sources=[])
-        rank = request.next_rank
+        rank = 1
 
         while len(collection.sources) < request.max_sources:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 collection.timed_out = True
                 break
-            wanted = request.max_sources - len(collection.sources)
+            wanted = request.max_sources - len(collection.sources) + cached_left
             try:
                 batch = await asyncio.wait_for(
                     asyncio.to_thread(
@@ -219,6 +227,7 @@ class WebCollectAgent:
             rank += len(batch)
             collection.read_count += len(batch)
 
+            cached_left = max(0, cached_left - sum(r.url in cached_urls for r in batch))
             fresh = [r for r in batch if r.url not in seen]
             seen.update(r.url for r in batch)
             readings = await self._read(menu_name, fresh, deadline, collection)
