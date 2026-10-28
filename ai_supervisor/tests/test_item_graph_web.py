@@ -73,7 +73,6 @@ def unknown_task(*, cached_sources: list[dict] | None = None):
         {
             "status": "ok" if sources else "not_found",
             "cached_sources": sources,
-            "next_rank": 11 if sources else 1,
         }
     )
     return replace(
@@ -143,7 +142,6 @@ class RecordingCollect:
                 },
                 "found": bool(self.sources),
                 "sources": self.sources,
-                "next_rank": request.next_rank + len(self.sources),
                 "warnings": [item.model_dump(mode="json") for item in request.warnings],
                 "errors": [item.model_dump(mode="json") for item in request.errors],
             }
@@ -395,7 +393,7 @@ def test_cached_sources_continue_without_new_storage_commands() -> None:
         )
     )
 
-    assert collect.requests[0].next_rank == 11
+    assert len(collect.requests[0].cached_sources) == 1
     assert mapper.requests[0].ingredient_names == ["소고기"]
     assert bayesian.requests
     assert db_update.requests == []

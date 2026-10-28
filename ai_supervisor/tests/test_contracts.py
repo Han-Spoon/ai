@@ -74,7 +74,6 @@ def base_judge_request() -> dict:
                     "web_search_cache": {
                         "status": "not_found",
                         "cached_sources": [],
-                        "next_rank": 1,
                     },
                 }
             ],

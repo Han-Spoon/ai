@@ -105,7 +105,6 @@ def request(*, count: int = 3, store_id: int | None = 123) -> JudgeRequest:
                 "web_search_cache": {
                     "status": "not_found",
                     "cached_sources": [],
-                    "next_rank": 1,
                 },
             }
         )

@@ -186,7 +186,6 @@ def item_task(*, exact_complete: bool, flagged_anomaly: bool = False) -> ItemTas
             web_search_cache={
                 "status": "not_found",
                 "cached_sources": [],
-                "next_rank": 1,
             },
         ),
         ingredient_graph=graph,

@@ -380,7 +380,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             ),
             max_sources=10,
             cached_sources=list(cache.cached_sources),
-            next_rank=cache.next_rank,
             warnings=_dedupe_signals(warnings),
             errors=list(state.get("errors", [])),
         )
@@ -540,7 +539,6 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     original_menu_name=task.prepared_item.raw_menu_name,
                     search_status="searched",
                     sources=list(collect.sources),
-                    next_rank=collect.next_rank,
                     searched_at=dependencies.now_factory(),
                 ),
             ),
@@ -1082,8 +1080,6 @@ def _validate_web_collect_response(
         != request.menu.normalized_menu_name
     ):
         raise ItemGraphInvariantError("Web collect changed menu identity")
-    if response.next_rank < request.next_rank:
-        raise ItemGraphInvariantError("Web collect moved next_rank backwards")
     cached_urls = {source.source_url for source in request.cached_sources}
     if any(source.source_url in cached_urls for source in response.sources):
         raise ItemGraphInvariantError("Web collect returned an already cached source")

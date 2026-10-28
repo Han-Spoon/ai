@@ -350,14 +350,28 @@ class WebSource(StrictModel):
 class WebSearchCache(StrictModel):
     status: SliceStatus
     cached_sources: list[WebSource]
-    next_rank: PositiveInt
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_next_rank(cls, value: Any) -> Any:
+        """⑥ reads from rank 1 and skips cached URLs (10/27 meeting), so the stored
+        rank is unused. An old backend may still send it; accept and drop it."""
+
+        if not isinstance(value, dict) or "next_rank" not in value:
+            return value
+        rank = value["next_rank"]
+        if type(rank) is not int or rank < 1:
+            raise ValueError("legacy next_rank must be a positive integer")
+        cleaned = dict(value)
+        cleaned.pop("next_rank")
+        return cleaned
 
     @model_validator(mode="after")
     def validate_cache_shape(self) -> "WebSearchCache":
         if self.status == "ok" and not self.cached_sources:
             raise ValueError("ok web_search_cache requires cached_sources")
-        if self.status == "not_found" and (self.cached_sources or self.next_rank != 1):
-            raise ValueError("not_found web_search_cache must be empty with next_rank 1")
+        if self.status == "not_found" and self.cached_sources:
+            raise ValueError("not_found web_search_cache must be empty")
         return self
 
 

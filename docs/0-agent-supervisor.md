@@ -642,8 +642,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
         },
         "web_search_cache": {
           "status": "not_found",
-          "cached_sources": [],
-          "next_rank": 1
+          "cached_sources": []
         }
       }
     ],
@@ -714,7 +713,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 | `exact_feedback` | `exact` 필수(`confirmations`, `flag_confirmations` 포함) | `exact: null`, heavy path로 진행 | `exact: null`, 확정값이 없다고 간주하지 않고 SAFE 금지 |
 | `ontology` / `fallback_ontology` | `menu`, 원재료 행 세 배열, `cache` 제공 | `menu: null`, 세 배열 `[]`, `cache: null` | 같은 빈 형태와 warning을 만들고 SAFE 금지 |
 | `priors` | `store[]`와 `evidence[]` 제공 | 두 배열 모두 `[]`, ⑤가 관측값 또는 uninformative prior 사용 | 두 배열 모두 `[]`, 가능한 관측값으로 계산하되 SAFE 금지 |
-| `web_search_cache` | `cached_sources[]` 1개 이상, `next_rank`는 다음 양의 정수 | `cached_sources: []`, `next_rank: 1` | 캐시 없음으로 오인하지 않고 필요 시 새 검색하되 warning 유지 |
+| `web_search_cache` | `cached_sources[]` 1개 이상 | `cached_sources: []` | 캐시 없음으로 오인하지 않고 필요 시 새 검색하되 warning 유지 |
 | `source_reliability` | `weights[]` 제공 | `weights: []`, 기본 신뢰도 정책 사용 | 관측치 가중 불가 상태로 SAFE 금지 |
 
 `bundle_schema_version`, `ingredient_graph`, `items`, `source_reliability`는 항상 존재해야 한다. `knowledge_bundle.items[]`의 `item_id` 집합은 `prepared_items[]`와 중복 없이 정확히 같아야 한다. status와 무관하게 표에 정한 객체·배열 필드는 생략하지 않는다. 구조 또는 필수 slice가 빠진 `bundle_miss`는 부분 판정으로 넘기지 않고 Judge 요청 자체를 거부한다.
@@ -2169,7 +2168,6 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
   },
   "max_sources": 10,
   "cached_sources": [],
-  "next_rank": 1,
   "warnings": [],
   "errors": []
 }
@@ -2214,13 +2212,12 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       ]
     }
   ],
-  "next_rank": 11,
   "warnings": [],
   "errors": []
 }
 ```
 
-`cached_sources`는 백엔드가 `JudgeRequest.knowledge_bundle.items[].web_search_cache`에서 꺼내 전달하며 1단계 응답의 `sources[]`와 같은 closed schema를 사용한다. 캐시가 없으면 `[]`이고 `next_rank`는 `1`이다. 캐시가 있으면 마지막으로 수집한 다음 검색 순위를 보내며, 예를 들어 1~10위가 저장되어 있으면 `11`이다.
+`cached_sources`는 백엔드가 `JudgeRequest.knowledge_bundle.items[].web_search_cache`에서 꺼내 전달하며 1단계 응답의 `sources[]`와 같은 closed schema를 사용한다. 캐시가 없으면 `[]`다. 검색 순위는 넘기지 않는다. ⑥은 매번 1위부터 읽고 이 목록에 있는 URL만 건너뛴다 (10/27 회의, ⑥ §2-4). 예전 백엔드가 Judge 요청 `web_search_cache`에 `next_rank`를 보내도 받아서 버린다.
 
 KnowledgeBundle의 웹 캐시 영역은 다음 형식으로 고정한다.
 
@@ -2231,8 +2228,7 @@ KnowledgeBundle의 웹 캐시 영역은 다음 형식으로 고정한다.
       "item_id": "scan-123:0",
       "web_search_cache": {
         "status": "not_found",
-        "cached_sources": [],
-        "next_rank": 1
+        "cached_sources": []
       }
     }
   ]
@@ -2243,7 +2239,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 
 1단계는 출처별 원문과 추출한 재료명만 반환한다. 이 단계에서는 이름을 합치거나 `k_count`, `n_total`을 계산하지 않는다. Supervisor는 `sources[].ingredients`를 ④ `map_ingredients`에 보내 표준 `ingredient_id`, `canonical_name`, `constraint_tags`를 채운다.
 
-`next_rank`는 ⑥이 이번 호출에서 실제로 읽은 검색 결과의 다음 순위다. 우선 사이트에서 모자라 일반 웹으로 넓히거나(⑥ §2-3-1), 판별에서 빠진 글(후기·광고·다른 음식·재료 없는 글)만큼 더 읽거나(⑥ §2-3), 시간 제한으로 덜 읽으면(⑥ §2-5) "요청 `next_rank` + 10"과 달라질 수 있으므로 ⑥이 직접 알려 준다. 새로 읽은 결과가 없으면 요청의 `next_rank`를 그대로 돌려준다. Supervisor는 이 값을 ⑦ `save_web_search_cache.next_rank`에 그대로 넣는다 (§4-6, ⑥ §2-4).
+1단계 응답에는 검색 순위를 담지 않는다. 다음 검색도 1위부터 읽고 캐시 URL을 건너뛰므로 저장할 순위가 없다 (10/27 회의, ⑥ §2-4).
 
 #### 2단계 요청 — `WebAggregateRequest`
 
@@ -2438,7 +2434,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
             }
           }
         ],
-        "next_rank": 11,
         "searched_at": "2026-10-08T03:00:00Z"
       }
     }
@@ -2558,7 +2553,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
         }
       }
     ],
-    "next_rank": 11,
     "searched_at": "2026-10-08T03:00:00Z"
   }
 }
@@ -2573,7 +2567,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 - `create_owner_verification_request.recipe_probability`는 Supervisor가 같은 스캔의 ⑤ 결과에서 그 재료의 `posterior_mean`을 그대로 넣는다 (0~1). ⑧ 카드에는 이 필드가 없다. 플래그 카드는 `null`이다. 백엔드가 질문 행에 저장했다가, 사장님 답을 확정할 때 이상 답변(`flagged_anomaly`: 이 값 0.9 이상 + "없음") 판정에 쓴다 (⑦ §2-3).
 - `record_owner_answer.present`만 사장님이 답한 yes/no 사실이므로 boolean을 쓴다. 재료 판정 상태로 변환된 뒤에는 반드시 `present | absent | unknown`을 사용한다.
 - `update_source_reliability`의 두 delta는 0 이상의 정수이며 `correct_count_delta <= comparison_count_delta`여야 한다. 신뢰도는 `source_type` 단위로만 센다 (`corpus:semie`, `web_search` 등). 사이트 도메인별로 나누지 않는다 (DB 스키마 `source_reliability`).
-- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, `next_rank`는 다음 검색 시작 순위인 1 이상의 정수이며 ⑥ 1단계 응답의 `next_rank`를 그대로 쓴다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
+- `save_web_search_cache.sources`에는 이번 호출에서 새로 찾은 ⑥ `sources[]`만 넣는다. 기존 캐시를 다시 넣지 않는다. `search_status`는 `searched | unresolved`, 검색 순위(`next_rank`)는 넣지 않는다 (10/27 회의, ⑥ §2-4). ⑦ 코드가 아직 읽고 있어 계약에는 선택 칸으로만 남아 있고, ⑦이 정리되면 지운다. `searched_at`은 UTC ISO 8601 문자열이다. 캐시 유효기간을 두지 않으므로 항상 `null`이던 `expires_at`은 외부 명령에 넣지 않는다 (⑥ §2-4).
 - 신규 웹 출처가 있으면 Supervisor는 `create_review_item`과 `save_web_search_cache`를 각각 하나의 operation으로 모은다. 최종 `DbUpdateRequest`에는 모든 메뉴의 변형 검토·웹 검토·웹 캐시·사장님 질문 operation을 함께 넣는다. ⑦은 Judge당 한 번만 호출하며, 백엔드는 캐시 원본은 관리자 승인 없이 저장하되 지식 DB 반영은 검토가 통과된 자료에만 수행한다.
 - 백엔드는 `record_owner_answer`의 `present`/`absent` 답변 한 건을 같은 트랜잭션에서 `ingredient_confirmations` 또는 `owner_flag_confirmations`에 즉시 반영하고 확정값 ID를 질문 행에 연결한다. 후속 확인 질문이나 다수결은 만들지 않으며, 확정값은 기간 만료 없이 다음 Judge의 `confirmations[]` 또는 `flag_confirmations[]`로 전달한다.
 - Judge 중 생긴 저장 operation은 원래 `item_id`를 Supervisor 내부 state에 보존한 채 `call_scope: out_of_band`, `item_id: null`인 한 요청으로 합친다. ⑦ 응답 command의 `item_id`는 null이며, Supervisor가 `operation_id`로 원래 item scope를 검증·복원한다. 사장님 답변처럼 스캔 흐름 밖에서 들어오는 작업은 이 Judge 배치와 별도 요청이다.
@@ -2682,7 +2676,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 | `create_owner_verification_request` | `store_id`, `scan_session_id`, `item_id`, `card_id`, `menu_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
 | `record_owner_answer` | `question_id` |
 | `update_source_reliability` | `source_type`, `trigger_evidence_ref` |
-| `save_web_search_cache` | `normalized_menu_name`, `next_rank` |
+| `save_web_search_cache` | `normalized_menu_name` |
 | `save_menu_ingredient_cache` (④) | `store_id`, `menu_id`, `menu_revision` |
 
 command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.

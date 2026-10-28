@@ -30,7 +30,6 @@ class NoSourceWebCollect:
             ),
             found=False,
             sources=[],
-            next_rank=request.next_rank,
             warnings=request.warnings,
             errors=request.errors,
         )
