@@ -2,7 +2,8 @@
 
 사용자 제한과 재료 근거를 대조해 DANGER / CAUTION / SAFE를 정하고, 결과 문장과 사장님께 물을 질문 카드를 만듭니다. 규칙은 [`docs/8-agent-xai.md`](../docs/8-agent-xai.md) §2·§3이 기준입니다.
 
-- 판정은 코드(규칙)로만 정합니다. LLM은 쓰지 않습니다. 같은 입력이면 항상 같은 판정입니다.
+- 판정은 코드(규칙)로만 정합니다. 같은 입력이면 항상 같은 판정입니다.
+- LLM은 판정 뒤의 **이유 문장**(`message.reason`)과 **고위험 재검증**에만 씁니다. `OPENAI_API_KEY`가 없으면 둘 다 꺼지고 규칙만으로 돕니다.
 - DANGER·SAFE는 사장님 확인값으로만 나옵니다. 확률은 아무리 높거나 낮아도 CAUTION입니다.
 
 ## 파일
@@ -117,11 +118,25 @@ message = build_message(request, outcome)  # DecisionMessage(verdict, reason, no
 - 확률은 정수 퍼센트입니다. 1% 미만은 "1% 미만", 99% 초과는 "99% 이상"으로 써서 0%·100%로 보이지 않게 합니다
 - 같은 재료가 태그 묶음별로 두 번 와도(④ #327) 한 번만 쓰고, 확률은 높은 쪽을 씁니다
 - 안내: `ambiguous_menu`는 "젓갈에 생선이 들어갈 수 있어 확인이 필요해요.", `hard_to_remove`는 "참치는 이 메뉴의 주재료라 빼기 어려울 수 있어요." / "새우는 양념이나 소스 같은 다른 재료 안에 들어 있어 빼기 어려울 수 있어요."
-- `reason`(이유 설명)은 LLM 몫이라 지금은 항상 `null`입니다. 판정 한 줄과 안내는 그대로 나갑니다 (§4 "LLM 실패")
+- `reason`(이유 설명)은 아래 LLM이 씁니다. LLM이 없거나 실패·검수 탈락이면 `null`이고, 판정 한 줄과 안내는 그대로 나갑니다 (§4 "LLM 실패")
+
+## LLM (§0-2, §2-3, §4)
+
+```python
+tool = DecisionTool.from_env()              # 키가 있으면 이유 문장 LLM을 붙임
+review = HighRiskReviewAgent.from_env()     # ⓪ high_risk_review 자리. 키가 없으면 그대로 돌려줌
+```
+
+| 파일 | 하는 일 |
+|---|---|
+| `llm.py` | OpenAI 클라이언트 하나(Responses API + Pydantic 출력 형식). ②와 같은 방식. 환경 변수 `XAI_OPENAI_*` (`.env.example`) |
+| `reason.py` | 이유 문장. 위험 재료가 있는 DANGER·CAUTION에만 부름. 자동 검수(#174): 판정 한 줄에 없는 퍼센트·0%·100%, 요청에 없는 재료 이름(번역 사전 324개 기준), CAUTION·DANGER에 "안전해요" 류, 사용자 언어가 아닌데 남은 한글이면 버림. 판정 한 줄을 그대로 베낀 부분은 잘라냄 |
+| `review.py` | 고위험 재검증. 사용자 금지 태그와 겹치는 표준 재료만 LLM에 보여 주고, 고른 재료마다 질문 카드(`high_risk_review`)를 더함. 이유 문장은 같은 검수를 거치고, 탈락하면 원래 문장을 둠. 실패하면 원래 카드·문장 그대로 |
 
 ## 아직 없는 것
 
-- 이유 설명 LLM(`reason`)과 자동 검수: 공통 LLM 규칙(`docs/agent-implementation-guide.md` §5)이 정해지면 붙입니다
+- **⓪ 조립**: `app.py` `_build_supervisor_service()`에 `decision=DecisionTool.from_env()`, `high_risk_review=HighRiskReviewAgent.from_env()`를 넣는 일 (⑧ §9). 지금은 이유 문장 없는 `DecisionTool()`과 항상 실패하는 임시 재검증 어댑터가 들어 있습니다
+- 고위험 재검증의 **질문 다듬기** (§2-3 세 번째 역할): 카드 문구는 템플릿 그대로 둡니다
 - 질문 문구 원어민 확인 (#135)
 
 ## 테스트
