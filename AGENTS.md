@@ -52,8 +52,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 
 ### 확정 정보 처리
 - `status`는 **3값** `present` / `absent` / `unknown`. 2값으로 축약 금지.
-- anomaly 판정된 재료는 override를 거부하고 **CAUTION 이상을 강제 유지**한다 (FN 최소화 우선).
-- anomaly 재료도 확률 계산은 수행하되 `anomaly_locked`로 잠근다.
+- 사장님 답변에 **이상 답변 잠금(`anomaly_locked`)을 걸지 않는다.** 통계상 이상해 보여도 override를 거부하거나 CAUTION을 강제하지 않고, 답을 그대로 확정 정보로 쓴다 (10/27 회의).
 - 사장님 있음/없음 답변은 **1회만** 받는다. 신뢰성 이슈가 있어도 다시 묻지 않는다 (10/26 회의).
 - 사장님 답변은 **만료 없이** 계속 확정 정보로 쓴다. 사장님 페이지는 만들지 않고, 답변은 질문 카드로만 받는다 (10/26 회의).
 
@@ -68,6 +67,10 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 - 예외: `menu_ingredient_cache` 쓰기는 ④가 수행한다 (파생 캐시이므로 ⑦ 승인 대상 아님).
 - 가게 검색·선택·공공데이터 매칭은 백엔드 책임. Prepare는 `store_id`를 받지 않는다. Judge는 백엔드가 확정한 양의 정수 `store_id` 또는 가게 없는 스캔을 뜻하는 `null`을 받는다. `store_id: null`이면 가게별 확정값·store prior·가게 캐시를 사용하지 않고, 사장님 질문·답변과 저장 명령을 만들지 않으며 SAFE 판정을 금지한다.
 - 웹 레시피는 **자동 등록이 기본**이다. 이상 신호가 잡힌 레시피만 운영자 페이지에 올라가고, 운영자가 예(DB에 넣기)/아니오(빼기)로 정한다. 백엔드는 레시피 승인 API만 둔다 (10/26 회의).
+- 웹서치 캐시는 다음에 읽을 검색 순위(`next_rank`)를 **저장하지 않는다.** 매번 1위부터 읽고, 캐시에 이미 있는 URL만 건너뛴다 (10/27 회의).
+
+### 모델
+- 고위험 재검증(⑧)도 다른 Agent와 같은 **저가 모델**을 쓴다. 제출 PPT 8·10쪽의 "고가 모델 재검증"과 다르다 (10/27 회의).
 
 ## 용어
 
@@ -75,7 +78,7 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행합니다. Python 3.11
 |---|---|
 | hard evidence | 사장님이 직접 확인해준 확정 정보. 확률 계산을 거치지 않고 override. 사장님 답은 대상마다 한 번만 받아 즉시 확정하고, 기간 만료 없이 쓴다 (새 답이 오면 덮어씀) |
 | soft evidence | 웹서치 등 미검증 정보. 기본은 자동으로 DB 반영, 이상 신호가 잡힌 레시피만 운영자가 예/아니오로 승인한 뒤 반영 |
-| `anomaly_locked` | 통계적으로 이상한 답변으로 판정되어 override가 잠긴 상태. CAUTION 이상 강제 |
+| `anomaly_locked` | **(폐기, 10/27 회의)** 통계적으로 이상한 사장님 답을 잠가 CAUTION 이상을 강제하던 상태. 더 쓰지 않는다. 코드·문서에 남은 곳은 #340에서 정리한다 |
 | `variant_origin` | 변형 메뉴의 출처. ⑤가 신뢰도를 차등 적용하는 근거 |
 | `prior_source` | prior를 어느 단계에서 가져왔는지 (`store` / `cluster` / `global` / `uninformative`) |
 | Agent / Tool | **기준 문서(PPT) 표기**를 따른다. AI 실행 범위는 ⓪ Supervisor Agent · ① OCR Tool · ② Menu Normalization Agent · ③ Exact Feedback Tool · ④ DB / Ontology Tool · ⑤ Bayesian Tool · ⑥ Web Search Agent · ⑦ DB Update Tool · ⑧ Decision Policy / XAI Agent다. 기존 ⑨ Curation 기능은 백엔드가 담당한다. |
@@ -133,8 +136,8 @@ docs: add API specification draft
 읽는 사람은 이 작업의 맥락을 모르는 팀원이다. 코드 내부 용어를 아는 사람만 이해할 글은 쓰지 않는다.
 
 - **첫 문장에 "무엇이 문제이고 / 무엇을 하려는지"를 평문으로 쓴다.** 필드명·함수명으로 시작하지 않는다.
-- **사용자나 팀에게 어떤 영향이 있는지** 한 줄로 적는다. (예: "이대로면 anomaly 재료가 SAFE로 판정될 수 있다")
-- 코드 용어(`anomaly_locked`, `prior_source` 등)는 처음 나올 때 **한 줄로 뜻을 풀어쓴다.** 용어 표는 위 "용어" 절을 가리켜도 된다.
+- **사용자나 팀에게 어떤 영향이 있는지** 한 줄로 적는다. (예: "이대로면 가게 없는 스캔(`store_id: null`)에서 SAFE가 나올 수 있다")
+- 코드 용어(`variant_origin`, `prior_source` 등)는 처음 나올 때 **한 줄로 뜻을 풀어쓴다.** 용어 표는 위 "용어" 절을 가리켜도 된다.
 - 해결 방법이 정해지지 않았으면 단정하지 말고 **"정해야 할 것"** 으로 적는다. 미확정 항목을 이슈 본문에서 결정해 버리지 않는다.
 - 완료 조건은 **체크리스트로, 확인 가능한 문장**으로 쓴다. ("개선한다" ✗ → "`status` 3값이 ③→④ 출력까지 유지된다" ○)
 
