@@ -25,7 +25,7 @@ from ai_supervisor.contracts.external import OwnerCard
 from .llm import XaiLLM
 from .profile import forbidden_tags
 from .questions import ingredient_question
-from .reason import LANGUAGE_NAMES, check_reason, with_translations
+from .reason import check_reason, instructions, restriction_names, with_translations
 
 MAX_OUTPUT_TOKENS = 600
 _NUMBER_RE = re.compile(r"\d+")
@@ -34,16 +34,19 @@ INSTRUCTIONS = """You double-check one Korean restaurant menu for a tourist with
 Code already decided the verdict; you must not change it.
 1. missed_ingredient_ids: ids from ingredient_choices that this dish very often
    contains but found_ingredients does not list. Only common ones, never rare
-   additions. Use an empty list when nothing is commonly missed.
+   additions. ingredient_choices lists only what could matter to this user, so
+   usually none of them belongs to this dish; an empty list is the normal answer.
 2. reason: one or two short, friendly sentences in {language}, speaking to the
    tourist, about why this dish needs care for them. A missed ingredient may only be
    described as a possibility. Use only ingredients from the input, with the given
-   names (localized_name for choices). Copy any percentage from verdict_sentence
-   exactly; never write 0% or 100%. Never say or imply the dish is safe.
+   names (localized_name for choices). Do not name other dishes, cooking methods,
+   sauces, or broths, and do not invent examples. Copy any percentage from verdict_sentence
+   exactly, with the % sign; never write 0% or 100%. Never say or imply the dish is
+   safe, and do not use the word "safe" (or its translation) at all.
    Write every word in {language}. Call the dish "this dish" in {language}, not by
    its Korean name.
    Do not mention the input, data, codes, or field names, and do not repeat
-   verdict_sentence. In Korean, end sentences with -요."""
+   verdict_sentence.{style}"""
 
 
 class ReviewOutput(BaseModel):
@@ -121,7 +124,7 @@ class HighRiskReviewAgent:
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
-                    INSTRUCTIONS.format(language=LANGUAGE_NAMES[request.locale]),
+                    instructions(INSTRUCTIONS, request.locale),
                     _payload(request, choices, forbidden),
                     ReviewOutput,
                     MAX_OUTPUT_TOKENS,
@@ -162,7 +165,8 @@ class HighRiskReviewAgent:
 
         message = request.decision.message
         names = with_translations(i.ingredient.canonical_name for i in request.found_ingredients)
-        names |= {n for c in missed for n in (c.canonical_name, c.localized_name)}
+        names |= with_translations(c.canonical_name for c in missed)
+        names |= {c.localized_name for c in missed} | restriction_names(forbidden)
         shown = [int(n) for n in _NUMBER_RE.findall(message.verdict)]
         reason = check_reason(
             output.reason,

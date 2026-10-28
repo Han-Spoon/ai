@@ -6,9 +6,12 @@ import asyncio
 import pytest
 
 from ai_decision_policy import DecisionTool, HighRiskReviewAgent, ReasonWriter, XaiLLM, check_reason, judge
-from ai_decision_policy.reason import ReasonOutput
+from ai_decision_policy.reason import INSTRUCTIONS as REASON_INSTRUCTIONS
+from ai_decision_policy.reason import ReasonOutput, instructions
 from ai_decision_policy.review import ReviewOutput
 from ai_decision_policy.tests.test_decision_policy import (
+    warning,
+    FISH_ALLERGY,
     HALAL,
     KIMCHI_STEW_CONFIRMED,
     PORK,
@@ -65,6 +68,37 @@ def test_reason_check_drops_a_percent_the_verdict_does_not_show(text) -> None:
     assert check(text) is None
 
 
+@pytest.mark.parametrize(
+    ("locale", "text"),
+    [
+        ("ja", "豚肉が入っている確率は約80％です。"),
+        ("zh-CN", "可能含有猪肉，概率约为８０%。"),
+        ("zh-CN", "约百分之八十的食谱含有猪肉。"),
+        ("en", "There is an 80 percent chance of pork."),
+        ("ko", "돼지고기가 80퍼센트 확률로 들어 있어요."),
+        ("es", "Hay un 80 por ciento de probabilidad de cerdo."),
+    ],
+)
+def test_reason_check_reads_full_width_and_word_percentages(locale, text) -> None:
+    # A wrong number must not slip through as "８０%", "80％", "80 percent" or 百分之.
+    names = ("돼지고기", "pork", "豚肉", "猪肉", "cerdo")
+    assert check(text, locale=locale, names=names) is None
+
+
+@pytest.mark.parametrize(
+    ("locale", "text"),
+    [
+        ("ja", "豚肉は約62％のレシピに入っています。"),
+        ("zh-CN", "约百分之62的食谱含有猪肉。"),
+        ("en", "About 62 percent of recipes use pork."),
+        ("ar", "يوجد لحم الخنزير في حوالي ٦٢٪ من الوصفات."),
+    ],
+)
+def test_reason_check_keeps_the_shown_percentage_in_any_form(locale, text) -> None:
+    names = ("pork", "豚肉", "猪肉", "لحم الخنزير")
+    assert check(text, locale=locale, names=names) is not None
+
+
 def test_reason_check_drops_a_safe_claim_on_caution() -> None:
     assert check("돼지고기가 적게 들어가서 안전해요.") is None
     assert check("Pork is rare here, so it is safe to eat.", locale="en", names=("pork",)) is None
@@ -93,6 +127,43 @@ def test_reason_check_cuts_a_copy_of_the_verdict() -> None:
     kwargs = dict(locale="ko", risk_level="caution", percents=[62], allowed_names=["돼지고기"], verdict=verdict)
     assert check_reason(f"{verdict} 국물에 넣는 경우가 많아요.", **kwargs) == "국물에 넣는 경우가 많아요."
     assert check_reason(verdict, **kwargs) is None
+
+
+def test_reason_check_reads_korean_names_only_at_the_start_of_a_word() -> None:
+    # "분이라면" is not 라면 (ramen); a real "라면을" still is.
+    assert check("돼지고기를 피하시는 분이라면 주의해 주세요.") is not None
+    assert check("돼지고기와 라면을 같이 먹는 경우가 많아요.") is None
+
+
+def test_reason_check_drops_the_whole_sentence_that_repeats_the_verdict() -> None:
+    verdict = "참치가 들어 있어요."
+    text = "이 요리에는 참치가 들어 있어요. 참치는 주재료라 빼기 어려워요."
+    kwargs = dict(locale="ko", risk_level="danger", percents=[], allowed_names=["참치"], verdict=verdict)
+    assert check_reason(text, **kwargs) == "참치는 주재료라 빼기 어려워요."
+
+
+def test_reason_may_name_the_users_restriction() -> None:
+    # "if you avoid fish" names the restriction, not an ingredient the request lacks.
+    fish_sauce = IngredientRef(ingredient_id=110, canonical_name="액젓")
+    for locale, text in (
+        ("ko", "액젓은 숨은 재료라서 생선을 피하시면 확인이 필요해요."),
+        ("en", "This dish may contain 액젓, which can be made with fish."),
+    ):
+        req = request(FISH_ALLERGY, probability_results=[probability(fish_sauce, ["is_fish"], 0.8, role="hidden")], locale=locale)
+        llm = FakeLLM(ReasonOutput(reason=text))
+        assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == text
+
+
+def test_reason_check_trims_a_doubled_korean_ending() -> None:
+    text = "추정 결과라서 단정할 수 없어요요. 레시피도 몇 개뿐이라 덜 확실해요요."
+    assert check(text) == "추정 결과라서 단정할 수 없어요. 레시피도 몇 개뿐이라 덜 확실해요."
+
+
+def test_korean_style_rule_goes_only_to_korean() -> None:
+    # Told to every language, the model put "요" after Chinese sentences.
+    assert "해요체" in instructions(REASON_INSTRUCTIONS, "ko")
+    assert "해요체" not in instructions(REASON_INSTRUCTIONS, "zh-TW")
+    assert "Traditional Chinese" in instructions(REASON_INSTRUCTIONS, "zh-TW")
 
 
 def test_reason_check_drops_empty_or_long_text() -> None:
@@ -142,6 +213,39 @@ def test_decision_tool_skips_the_llm_when_nothing_drives_the_verdict() -> None:
     safe = request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, locale="ko")
     no_info = request(HALAL, no_information=True, locale="ko")
     for req in (safe, no_info):
+        assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
+    assert llm.calls == []
+
+
+def test_known_limits_reach_the_llm_as_plain_facts() -> None:
+    # Warnings and information_status become plain facts; codes never reach the LLM.
+    llm = FakeLLM(ReasonOutput(reason="웹에서 찾은 레시피가 적어서 더 불확실해요."))
+    req = request(
+        HALAL,
+        probability_results=[probability(PORK, ["is_pork"], 0.62)],
+        warnings=[warning("insufficient_sources"), warning("insufficient_sources"), warning("some_internal_code")],
+        information_status="partial",
+        locale="ko",
+    )
+    response = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    assert llm.calls[0]["payload"]["known_limits"] == [
+        "Only a few web recipes were found for this dish.",
+        "Part of the ingredient information could not be loaded.",
+    ]
+    assert "insufficient_sources" not in str(llm.calls[0]["payload"])
+    assert response.message.reason == "웹에서 찾은 레시피가 적어서 더 불확실해요."
+
+
+def test_known_limits_alone_are_worth_a_reason() -> None:
+    # No ingredient hits the user, but the result is uncertain for a reason the user
+    # can understand: the LLM explains it. No information at all, or safe, still skips.
+    llm = FakeLLM(ReasonOutput(reason="재료 정보 일부를 불러오지 못해서 확실하지 않아요."))
+    uncertain = request(HALAL, probability_results=[probability(TOFU, [], 0.8)], information_status="partial", locale="ko")
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(uncertain)).message.reason is not None
+    llm.calls.clear()
+    no_info = request(HALAL, no_information=True, information_status="none", locale="ko")
+    safe = request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, locale="ko")
+    for req in (no_info, safe):
         assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
     assert llm.calls == []
 

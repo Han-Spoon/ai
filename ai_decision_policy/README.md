@@ -130,7 +130,7 @@ review = HighRiskReviewAgent.from_env()     # ⓪ high_risk_review 자리. 키�
 | 파일 | 하는 일 |
 |---|---|
 | `llm.py` | OpenAI 클라이언트 하나(Responses API + Pydantic 출력 형식). ②와 같은 방식. 환경 변수 `XAI_OPENAI_*` (`.env.example`) |
-| `reason.py` | 이유 문장. 위험 재료가 있는 DANGER·CAUTION에만 부름. 자동 검수(#174): 판정 한 줄에 없는 퍼센트·0%·100%, 요청에 없는 재료 이름(번역 사전 324개 기준), CAUTION·DANGER에 "안전해요" 류, 사용자 언어가 아닌데 남은 한글이면 버림. 판정 한 줄을 그대로 베낀 부분은 잘라냄 |
+| `reason.py` | 이유 문장. DANGER·CAUTION에서 위험 재료가 있거나 결과가 덜 확실한 이유(웹 레시피 부족, 정보 일부 실패 등 경고·`information_status`)가 있을 때 부름. 이유는 코드명이 아니라 쉬운 사실 문장(`known_limits`)으로 넘김. 자동 검수(#174): 판정 한 줄에 없는 퍼센트·0%·100%, 요청에 없는 재료 이름(번역 사전 324개 기준), CAUTION·DANGER에 "안전해요" 류, 사용자 언어가 아닌데 남은 한글이면 버림. 판정 한 줄을 그대로 베낀 부분은 잘라냄 |
 | `review.py` | 고위험 재검증. 사용자 금지 태그와 겹치는 표준 재료만 LLM에 보여 주고, 고른 재료마다 질문 카드(`high_risk_review`)를 더함. 이유 문장은 같은 검수를 거치고, 탈락하면 원래 문장을 둠. 실패하면 원래 카드·문장 그대로 |
 
 ## 아직 없는 것

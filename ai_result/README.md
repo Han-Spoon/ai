@@ -33,7 +33,7 @@ GPT는 아래 두 케이스에서만 사용합니다.
 | `test_unknown_menu.py::test_unknown_menu_uses_gpt_template` | GPT가 `hit_tags`를 정함 | 판정 값은 LLM이 정하지 않음 (§0-2) |
 | `test_template_builder.py` | 결과 문구를 `ko`·`en`·`ar` 세 언어로 | 사용자 언어 하나로, `message: {verdict, reason, notes[]}` (§4) |
 
-`test_gpt_client.py`(API 키·시간 제한 검사, 호출 횟수 예산)는 판정 규칙과 관계없는 GPT 호출 설정 테스트입니다. 새 ⑧에서 이유 설명 LLM을 붙일 때 다시 쓸 수 있습니다.
+`test_gpt_client.py`(API 키·시간 제한 검사, 호출 횟수 예산)는 판정 규칙과 관계없는 GPT 호출 설정 테스트입니다. 새 ⑧의 이유 설명 LLM은 이 코드를 쓰지 않고 `ai_decision_policy/llm.py`·`reason.py`로 새로 만들었습니다 (#347).
 
 ## 폴더 구조
 
