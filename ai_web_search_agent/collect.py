@@ -1,13 +1,14 @@
 """⑥ stage 1: search, keep this menu's recipes, pull ingredient names (docs/6-agent-websearch.md §2-1, §3).
 
 No DB and no tags. Each new recipe comes back with the ingredient names as written;
-④ maps them between stage 1 and stage 2. Two things are not here yet:
+④ maps them between stage 1 and stage 2. Not here yet:
 
 - Widening to the general web when the priority sites run out (§2-3-1). Which search
   ``next_rank`` then points into is still open (§5), so only priority sites are read.
-- The real LLM. ``RecipeReader`` is the slot for it; model and prompt rules are not
-  fixed yet (agent-implementation-guide §5). Without a reader, or when it fails, every
-  result is kept and only dictionary names are used, with ``web_llm_extraction_failed``.
+
+The LLM sits behind ``RecipeReader`` (OpenAI version in ``reader.py``). Without a reader,
+or when it fails, every result is kept and only dictionary names are used, with
+``web_llm_extraction_failed``.
 """
 
 from __future__ import annotations
