@@ -39,7 +39,6 @@ class WebCollectRequest(StrictModel):
     menu: WebCollectMenu
     max_sources: Literal[10]
     cached_sources: list[WebSource]
-    next_rank: PositiveInt
     warnings: list[NodeWarning]
     errors: list[NodeError]
 
@@ -54,7 +53,6 @@ class WebCollectResponse(StrictModel):
     menu: WebMenu
     found: StrictBool
     sources: list[WebSource]
-    next_rank: PositiveInt
     warnings: list[NodeWarning]
     errors: list[NodeError]
 

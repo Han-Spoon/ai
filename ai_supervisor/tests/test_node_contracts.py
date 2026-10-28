@@ -18,6 +18,7 @@ from ai_supervisor.contracts import (
     WebCollectRequest,
     WebCollectResponse,
 )
+from ai_supervisor.contracts.external import WebSearchCache
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
 
@@ -226,7 +227,6 @@ def test_web_collect_uses_documented_source_limit() -> None:
         "menu": {"menu_id": None, "normalized_menu_name": "마라탕", "locale_hint": "ko"},
         "max_sources": 10,
         "cached_sources": [],
-        "next_rank": 1,
         "warnings": [],
         "errors": [],
     }
@@ -236,20 +236,31 @@ def test_web_collect_uses_documented_source_limit() -> None:
         WebCollectRequest.model_validate(payload)
 
 
-def test_web_collect_response_reports_next_rank() -> None:
+def test_web_collect_has_no_search_rank() -> None:
+    # ⑥ reads from rank 1 and skips cached URLs, so no rank is passed (10/27 meeting).
     payload = {
         "context": item_context(None),
         "menu": {"menu_id": None, "normalized_menu_name": "마라탕"},
         "found": False,
         "sources": [],
-        "next_rank": 14,
         "warnings": [],
         "errors": [],
     }
-    assert WebCollectResponse.model_validate(payload).next_rank == 14
-    del payload["next_rank"]
+    WebCollectResponse.model_validate(payload)
     with pytest.raises(ValidationError, match="next_rank"):
-        WebCollectResponse.model_validate(payload)
+        WebCollectResponse.model_validate({**payload, "next_rank": 14})
+
+
+def test_judge_web_cache_drops_a_legacy_next_rank() -> None:
+    # An old backend may still send the stored rank; it is accepted and dropped.
+    cache = WebSearchCache.model_validate(
+        {"status": "not_found", "cached_sources": [], "next_rank": 11}
+    )
+    assert "next_rank" not in cache.model_dump()
+    with pytest.raises(ValidationError, match="next_rank"):
+        WebSearchCache.model_validate(
+            {"status": "not_found", "cached_sources": [], "next_rank": 0}
+        )
 
 
 def test_web_aggregate_sources_carry_title() -> None:

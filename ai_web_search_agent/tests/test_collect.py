@@ -34,7 +34,7 @@ def provider(results: list[SearchResult]) -> StaticSearchProvider:
     return StaticSearchProvider({QUERY: results})
 
 
-def request(*, next_rank: int = 1, cached: list[SearchResult] = ()) -> WebCollectRequest:
+def request(*, cached: list[SearchResult] = ()) -> WebCollectRequest:
     return WebCollectRequest.model_validate(
         {
             "context": {
@@ -65,7 +65,6 @@ def request(*, next_rank: int = 1, cached: list[SearchResult] = ()) -> WebCollec
                 }
                 for r in cached
             ],
-            "next_rank": next_rank,
             "warnings": [],
             "errors": [],
         }
@@ -122,8 +121,6 @@ def test_01_success_returns_sources_with_names_as_written() -> None:
         "김치", "돼지고기", "두부", "양파", "대파",
     ]
     assert all(i.ingredient_id is None for i in response.sources[0].ingredients)
-    # ⑥ no longer moves next_rank; it is echoed until ⓪ drops the field (§2-4).
-    assert response.next_rank == 1
     assert response.warnings == [] and response.errors == []
 
 
@@ -146,7 +143,6 @@ def test_02_14_nothing_found_without_cache_is_no_information() -> None:
 
         assert response.found is False
         assert response.sources == []
-        assert response.next_rank == 1
         error = response.errors[0]
         assert (error.code, error.retryable, error.fallback) == (
             "web_search_timeout", True, "no_information",
@@ -245,18 +241,17 @@ class RecordingProvider(StaticSearchProvider):
 
 def test_17_cache_reads_from_rank_one_and_skips_cached_urls() -> None:
     # 10/27 meeting: no stored rank. Read from 1, ask for twice 10 more than the cache
-    # holds, and skip the cached URLs; the request's next_rank is ignored and echoed (§2-4).
+    # holds, and skip the cached URLs (§2-4).
     results = [result(i) for i in range(20)]
     search = RecordingProvider(results)
 
     response = run(
         WebCollectAgent(search, Reader()),
-        request(next_rank=11, cached=results[:10]),
+        request(cached=results[:10]),
     )
 
     assert [s.source_url for s in response.sources] == [r.url for r in results[10:20]]
     assert search.calls == [(1, 30)]
-    assert response.next_rank == 11
 
 
 def test_cache_entries_off_the_ranking_still_fill_ten_new_sources() -> None:
@@ -285,12 +280,11 @@ def test_cached_url_is_not_counted_again() -> None:
 def test_18_search_failure_with_cache_is_not_an_error() -> None:
     response = run(
         WebCollectAgent(FailingProvider(), Reader()),
-        request(next_rank=11, cached=[result(0)]),
+        request(cached=[result(0)]),
     )
 
     assert response.found is False
     assert response.errors == []
-    assert response.next_rank == 11
 
 
 def test_read_recipes_come_first_and_unread_ones_only_fill_the_rest() -> None:

@@ -559,11 +559,7 @@ def _dedupe_pending_operations(
                 menu_key = (suggestion.base_menu_id, suggestion.remain_token, ())
             key = (operation.operation_type, payload.review_origin, *menu_key)
         elif operation.operation_type == "save_web_search_cache":
-            key = (
-                operation.operation_type,
-                payload.normalized_menu_name,
-                payload.next_rank,
-            )
+            key = (operation.operation_type, payload.normalized_menu_name)
         elif operation.operation_type == "create_owner_verification_request":
             key = (
                 operation.operation_type,

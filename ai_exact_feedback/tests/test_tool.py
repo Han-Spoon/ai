@@ -103,7 +103,7 @@ def knowledge(
         item_id="scan-123:0",
         selected=candidate if selected else None,
         fallback_ontology=OntologySlice.model_validate(EMPTY_ONTOLOGY),
-        web_search_cache=WebSearchCache(status="not_found", cached_sources=[], next_rank=1),
+        web_search_cache=WebSearchCache(status="not_found", cached_sources=[]),
     )
 
 
