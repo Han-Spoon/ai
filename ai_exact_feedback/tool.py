@@ -47,10 +47,10 @@ def require_store_id(store_id: int | None) -> int:
 
 
 def resolve_override_eligibility(confirmation: Confirmation) -> bool:
-    """Anomalous confirmations never override; they stay in the list (§1-6).
-    Owner answers have no expiry (§1-7)."""
+    """Owner answers always override, even when ⑦ flagged them as anomalous (§1-6,
+    10/27 meeting). Owner answers have no expiry (§1-7)."""
 
-    return not confirmation.flagged_anomaly
+    return True
 
 
 def refresh_confirmation(confirmation: Confirmation) -> Confirmation:
@@ -86,7 +86,7 @@ def check_completeness(
     confirmations: list[Confirmation], cache: MenuIngredientCache | None
 ) -> Completeness:
     """``complete`` only when the cache exists, every cached ingredient is confirmed,
-    the two lists match, and no confirmation is anomalous (§2).
+    and the two lists match (§2). Anomaly flags no longer matter (§1-6).
     Anything uncertain falls back to ``unknown`` so ④⑤ still run."""
 
     if cache is None:
@@ -94,7 +94,7 @@ def check_completeness(
     snapshot_ids = _snapshot_ingredient_ids(cache)
     if not snapshot_ids:
         return "unknown"
-    if any(c.flagged_anomaly or c.status == "unknown" for c in confirmations):
+    if any(c.status == "unknown" for c in confirmations):
         return "unknown"
     confirmed_ids = {c.ingredient.ingredient_id for c in confirmations}
     return "complete" if confirmed_ids == snapshot_ids else "unknown"
