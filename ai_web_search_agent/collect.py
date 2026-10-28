@@ -38,7 +38,7 @@ from ai_supervisor.contracts.web_search import (
 
 from .aggregate import PRIORITY_DOMAINS
 from .dictionary import find_ingredient_names
-from .providers import SearchProvider, SearchResult, domain_of
+from .providers import SearchNotConfiguredError, SearchProvider, SearchResult, domain_of
 
 NODE = "web_search"
 TOTAL_SECONDS = 7.0
@@ -136,6 +136,7 @@ class _Collection:
     read_count: int = 0
     timed_out: bool = False
     search_failed: bool = False
+    not_configured: bool = False
     llm_failed: bool = False
 
     def keep_read_first(self, max_sources: int) -> None:
@@ -199,7 +200,27 @@ class WebCollectAgent:
                 message="웹 검색 시간이 초과되어 모은 레시피만 사용했어요",
                 forces_caution=True,
             ))
-        if not collection.sources and not has_cache:
+        if collection.not_configured:
+            # No search key (dev or test run): say so, so it is not read as a real
+            # search that found nothing (#120). The verdict path is the same.
+            if has_cache:
+                warnings.append(NodeWarning(
+                    code="web_search_not_configured",
+                    node=NODE,
+                    item_id=item_id,
+                    message="검색 키가 없어 새 검색 없이 캐시 레시피만 썼어요",
+                    forces_caution=False,
+                ))
+            else:
+                errors.append(NodeError(
+                    code="web_search_not_configured",
+                    node=NODE,
+                    item_id=item_id,
+                    message="검색 키가 없어 웹 검색을 하지 않았습니다.",
+                    retryable=False,
+                    fallback="no_information",
+                ))
+        elif not collection.sources and not has_cache:
             if collection.timed_out:
                 message = "웹 검색 시간이 초과되었습니다."
             elif collection.search_failed:
@@ -263,6 +284,9 @@ class WebCollectAgent:
                 except asyncio.TimeoutError:
                     collection.timed_out = True
                     break
+                except SearchNotConfiguredError:
+                    collection.not_configured = True
+                    break
                 except Exception:
                     collection.search_failed = True
                     break
@@ -294,7 +318,7 @@ class WebCollectAgent:
                             collection.unread_urls.add(result.url)
                 if len(batch) < wanted:
                     break
-            if collection.timed_out or collection.search_failed:
+            if collection.timed_out or collection.search_failed or collection.not_configured:
                 break
         collection.keep_read_first(request.max_sources)
         return collection

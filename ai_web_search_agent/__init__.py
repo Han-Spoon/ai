@@ -10,9 +10,12 @@ from .dictionary import find_ingredient_names, load_dictionary
 from .pages import HttpPageFetcher
 from .providers import (
     NaverSearchProvider,
+    SearchNotConfiguredError,
     SearchProvider,
     SearchResult,
     StaticSearchProvider,
+    UnconfiguredSearchProvider,
+    search_provider_from_env,
 )
 from .reader import OpenAIRecipeReader
 
@@ -23,12 +26,15 @@ __all__ = [
     "PageFetcher",
     "RecipeReader",
     "RecipeReading",
+    "SearchNotConfiguredError",
     "SearchProvider",
     "SearchResult",
     "StaticSearchProvider",
+    "UnconfiguredSearchProvider",
     "WebAggregateAgent",
     "WebCollectAgent",
     "aggregate_sources",
     "find_ingredient_names",
     "load_dictionary",
+    "search_provider_from_env",
 ]

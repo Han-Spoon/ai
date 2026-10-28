@@ -12,6 +12,7 @@ from ai_web_search_agent import (
     SearchProvider,
     SearchResult,
     StaticSearchProvider,
+    UnconfiguredSearchProvider,
     WebCollectAgent,
 )
 
@@ -285,6 +286,31 @@ def test_18_search_failure_with_cache_is_not_an_error() -> None:
 
     assert response.found is False
     assert response.errors == []
+
+
+def test_no_search_key_is_told_apart_from_a_real_failure() -> None:
+    # #120: without a search key nothing is searched. That gets its own code and is not
+    # retryable; a real search failure stays web_search_timeout. Both end in no_information.
+    no_key = run(WebCollectAgent(UnconfiguredSearchProvider(), Reader()), request())
+    failed = run(WebCollectAgent(FailingProvider(), Reader()), request())
+
+    assert no_key.found is False and failed.found is False
+    assert [(e.code, e.retryable, e.fallback) for e in no_key.errors] == [
+        ("web_search_not_configured", False, "no_information")
+    ]
+    assert [(e.code, e.retryable) for e in failed.errors] == [("web_search_timeout", True)]
+
+
+def test_no_search_key_with_cache_judges_on_the_cache_and_says_why() -> None:
+    response = run(
+        WebCollectAgent(UnconfiguredSearchProvider(), Reader()),
+        request(cached=[result(0)]),
+    )
+
+    assert response.errors == []
+    assert [(w.code, w.forces_caution) for w in response.warnings] == [
+        ("web_search_not_configured", False)
+    ]
 
 
 def test_read_recipes_come_first_and_unread_ones_only_fill_the_rest() -> None:

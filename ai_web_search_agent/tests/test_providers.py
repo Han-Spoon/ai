@@ -6,7 +6,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from ai_web_search_agent import NaverSearchProvider, SearchResult, StaticSearchProvider
+from ai_web_search_agent import (
+    NaverSearchProvider,
+    SearchNotConfiguredError,
+    SearchResult,
+    StaticSearchProvider,
+    UnconfiguredSearchProvider,
+    search_provider_from_env,
+)
 from ai_web_search_agent.providers import NaverSearchConfigError
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -73,6 +80,19 @@ def test_naver_errors_are_raised() -> None:
 
     with pytest.raises(httpx.HTTPStatusError):
         provider.search("김치찌개 레시피", 1, 10)
+
+
+def test_search_provider_from_env_falls_back_to_unconfigured(monkeypatch) -> None:
+    monkeypatch.delenv("NAVER_SEARCH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_SEARCH_CLIENT_SECRET", raising=False)
+    provider = search_provider_from_env()
+    assert isinstance(provider, UnconfiguredSearchProvider)
+    with pytest.raises(SearchNotConfiguredError):
+        provider.search("김치찌개 레시피", 1, 10)
+
+    monkeypatch.setenv("NAVER_SEARCH_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_SEARCH_CLIENT_SECRET", "secret")
+    assert isinstance(search_provider_from_env(), NaverSearchProvider)
 
 
 def test_naver_from_env_needs_both_keys(monkeypatch) -> None:

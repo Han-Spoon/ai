@@ -76,6 +76,24 @@ class StaticSearchProvider(SearchProvider):
         return results[start - 1 : start - 1 + count]
 
 
+class SearchNotConfiguredError(RuntimeError):
+    """No search key is set (a dev or test run), so nothing was searched."""
+
+
+class UnconfiguredSearchProvider(SearchProvider):
+    """Stands in when no search key is set. Every search raises instead of returning an
+    empty list, so "never searched" is not mistaken for "searched and found nothing" (#120)."""
+
+    name = "unconfigured"
+
+    def search(
+        self, query: str, start: int, count: int, sites: tuple[str, ...] = ()
+    ) -> list[SearchResult]:
+        raise SearchNotConfiguredError(
+            "NAVER_SEARCH_CLIENT_ID and NAVER_SEARCH_CLIENT_SECRET are not set"
+        )
+
+
 NAVER_API_URL = "https://naverapihub.apigw.ntruss.com/search/v1/{kind}"
 NAVER_MAX_DISPLAY = 100
 NAVER_TIMEOUT_SECONDS = 3.0
@@ -169,3 +187,9 @@ class NaverSearchProvider(SearchProvider):
             for item in response.json().get("items", [])
             if item.get("link")
         ]
+
+
+def search_provider_from_env(**kwargs: Any) -> SearchProvider:
+    """Naver when its key is set, otherwise ``UnconfiguredSearchProvider``."""
+
+    return NaverSearchProvider.from_env_if_configured(**kwargs) or UnconfiguredSearchProvider()

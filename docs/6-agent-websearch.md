@@ -385,6 +385,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 | 상황 | 처리 |
 |---|---|
 | 검색 실패, 또는 7초 안에 레시피를 하나도 못 모음 | (캐시가 없는 메뉴) `found: false`, `sources: []`, `ingredients: []`. `errors`에 `web_search_timeout`(`retryable: true`, `fallback: no_information`)을 넣는다. 재시도 여부는 ⓪이 정한다 |
+| 검색 키가 없음 (개발·테스트 환경) | 검색 자체를 하지 않았다는 것을 실제 실패와 구분한다 (#120). 키가 없으면 검색기 자리에 `UnconfiguredSearchProvider`를 두고, 검색할 때 `SearchNotConfiguredError`를 낸다. (캐시가 없는 메뉴) `found: false` + `errors`에 `web_search_not_configured`(`retryable: false` — 다시 해도 결과가 같다, `fallback: no_information`). (캐시가 있는 메뉴) 캐시로 판정하고 `warnings`에 `web_search_not_configured`(`forces_caution: false`). 판정 경로는 검색 실패와 같다 |
 | 7초를 넘겼지만 모은 레시피가 있음 | 모은 만큼으로 결과를 반환하고 `warnings`에 `web_search_deadline_exceeded`(`forces_caution: true`)를 붙인다 (§2-5) |
 | 웹 캐시를 못 가져옴 (`web_search_cache.status: unavailable`, 백엔드 조회 실패) | 캐시가 없다고 단정하지 않는다. 받은 캐시 레시피 없이 새로 검색하고, 백엔드가 붙인 warning은 그대로 보존한다 (⓪ §1-3 KnowledgeBundle 표) |
 | 유효 출처 10개 미만 | 결과는 그대로 반환하고 `warnings`에 `insufficient_sources`(`forces_caution: true`)를 붙인다. ⑧은 이 경고가 있으면 SAFE를 내지 않는다 |
@@ -421,6 +422,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 | 16 | 검토 문구 생성 중 LLM 실패 | 규칙 이름을 그대로 문구로 표시 | 검토 이유가 사라지지 않을 것 |
 | 17 | 같은 메뉴 2번째 웹서치, 캐시에 1~10위 레시피 10개 | 1위부터 20개를 검색해 캐시 URL 10개는 건너뛰고, 새 10개를 캐시 10개와 합쳐 20개로 판정. `sources`에는 새 10개만 | 저장된 순위 없이 캐시 레시피를 다시 세거나 `sources`에 넣지 않을 것 (2026-10-27 회의) |
 | 18 | 캐시 레시피 10개 + 새 검색 실패 | 캐시 10개로 판정 (`found: true`) | 캐시가 있는데 정보 없음으로 떨어지지 않을 것 |
+| 18-a | 검색 키 없음, 캐시 없음 / 캐시 있음 (#120) | `found: false` + `web_search_not_configured`(`retryable: false`) 오류 / 캐시로 판정 + 같은 코드 warning(`forces_caution: false`) | 검색 키가 없는 것과 검색했는데 실패한 것(`web_search_timeout`, `retryable: true`)이 구분될 것 |
 | 19 | 가게 없는 스캔(`store_id: null`) + 캐시 레시피 10개 | 1위부터 검색해 캐시 URL을 건너뛰고 캐시와 합쳐 판정, `sources`에는 새 10개만. ⑥ 출력은 가게 있는 스캔과 같음 | 웹 캐시는 그대로 읽어 쓸 것. 저장·관리자 검토가 없는 것은 Supervisor 몫이다 (⓪ 테스트 2-a) |
 | 20 | 김치찌개 검색 결과 10개 중 3개가 김치찜 레시피 | 김치찜 3개는 제외하고 다음 결과를 더 읽어 김치찌개 레시피 10개를 채움 | 다른 음식이 이번 판정에 섞이지 않고, 유효 출처 수가 줄지 않을 것 |
 | 21 | 제목에 메뉴명이 없지만 본문은 김치찌개 레시피 ("엄마표 얼큰 찌개") | 남김 (관리자 검토 규칙 2에는 표시) | 애매한 레시피를 빼서 재료를 놓치지 않을 것 |
@@ -506,5 +508,5 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
 - [x] **2단계 응답 `sources`를 채울 자료가 2단계 요청에 없음** (2026-10-23, 구현 중 발견) — 2단계 응답에서 `sources`를 뺐다. 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 쓴다 (다은님 확인, 2026-10-23). ⓪ §4-5·`contracts/web_search.py` 반영
-- [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(NaverSearchProvider.from_env_if_configured(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꿔야 검색과 LLM이 쓰인다. 네이버 키가 없으면 지금처럼 `StaticSearchProvider()`를 쓴다. 네이버 검색과 본문 읽기는 #254에서 만들었다 (2026-10-28). 배포 환경에 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`도 넣어야 한다
+- [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(search_provider_from_env(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꿔야 검색과 LLM이 쓰인다. `search_provider_from_env()`는 네이버 키가 있으면 네이버, 없으면 `UnconfiguredSearchProvider`를 줘서, 키가 없는 것을 `web_search_not_configured`로 알린다 (#120, §3-2). 지금의 `StaticSearchProvider()`는 키가 없을 때 "검색했는데 못 찾음"으로 보인다. 네이버 검색과 본문 읽기는 #254에서 만들었다 (2026-10-28). 배포 환경에 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`도 넣어야 한다
 - [x] **`next_rank` 칸 빼기** (2026-10-28, 10/27 회의) — ⓪에 반영함 (2026-10-28): `WebCollectRequest`·`WebCollectResponse`와 Judge 요청 `web_search_cache`에서 칸을 지웠다 (예전 백엔드가 보내면 받아서 버림). Item Graph의 전달·"뒤로 가지 않음" 검사, ⓪ 문서 §1-3·§4-5·§4-6과 테스트도 고쳤다. 남은 것: ⑦ `save_web_search_cache.next_rank`(⑦ 코드가 읽고 있어 ⓪ 계약에 선택 칸으로 남김, 윤지님께 요청함)와 DB `web_search_cache` 칸(백엔드)
