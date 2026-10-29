@@ -29,7 +29,7 @@
 - **soft evidence는 사람 승인 전에는 DB에 들어가지 않는다.** 웹 검색 결과와 런타임 변형 제안은 관리자 검토 항목으로만 만든다.
 - **이력은 지우지 않는다.** 확정 테이블은 최신값으로 덮어써도, 사장님 답변은 질문 행(answered)에 매번 남는다.
 - **모든 명령에 출처와 검증 상태를 붙인다** (§3).
-- **저장과 신뢰 판단을 분리한다.** ⑦은 이상 답변 표시를 붙여 저장할 뿐, 그 값을 믿을지는 ③ 이후 단계가 정한다.
+- **사장님 답은 그대로 믿는다.** 이상 답변 잠금은 폐기됐다 (10/27 회의, AGENTS.md). ⑦은 답을 그대로 확정 명령으로 만든다.
 - **명령은 멱등이어야 한다.** 같은 명령이 두 번 와도 한 번만 반영되도록 `idempotency_key`를 붙이고, Supervisor는 ⑦ 명령을 자동 재시도하지 않는다 (⓪ §6-1).
 - **외부 경계는 Pydantic 모델로 검증한다** (⓪ §1-3).
 
@@ -176,31 +176,26 @@ flowchart TD
 - 정보 없는 메뉴의 화면 표시용 카드(`ingredient: null`, `ambiguity_flag: null`)는 저장 명령을 만들지 않는다 (⓪ §4-6).
 - 백엔드가 이 단계에서 발급한 `question_id`가 이후 "사장님 답변" 트리거(§1-1)에서 그대로 쓰인다 — 답변 처리는 질문이 이미 존재한다고 전제하므로, 이 단계가 빠지면 사장님 답변을 저장할 대상 행 자체가 없다.
 
-### 2-3. hard evidence 처리 (이력 즉시 기록, 확정은 2번 일치 또는 3번 중 2번)
+### 2-3. hard evidence 처리 (이력 즉시 기록, 답 1번으로 즉시 확정)
 
 ```mermaid
 flowchart TD
     IN["사장님 답변<br/>(질문 행에 answered로 기록)"] --> KIND{"답이 있음/없음인가?"}
     KIND -->|모름| SKIP["이력만 남김, 확정값 없음"]
-    KIND -->|있음/없음| CHECK{"이상 여부 검사<br/>레시피 확률 ≥ 0.9 인데<br/>답이 '없음'?"}
-    CHECK -->|Yes| FLAG["ingredient_confirmations UPSERT<br/>flagged_anomaly: true"]
-    CHECK -->|No| NORMAL["ingredient_confirmations UPSERT<br/>flagged_anomaly: false"]
-    FLAG --> LINK["owner_verification_requests.resolved_confirmation_id<br/>갱신"]
-    NORMAL --> LINK
+    KIND -->|있음/없음| NORMAL["ingredient_confirmations UPSERT"]
+    NORMAL --> LINK["owner_verification_requests.resolved_confirmation_id<br/>갱신"]
     NORMAL --> REL["출처별 과거 주장과 비교<br/>update_source_reliability 명령 (§3-1)"]
 ```
 
-- **확정 조건 (결정, 단일 확인 정책, ⓪ #151)**: 같은 재료에 대한 사장님 답은 **한 번만** 받는다. `present`/`absent` 답이 오면 이상 여부 검사를 거쳐 **바로 확정**한다. 2·3차 질문과 다수결은 없다 (2026-10-10 #193의 n=2 규칙을 대체).
+- **확정 조건 (결정, 단일 확인 정책, ⓪ #151)**: 같은 재료에 대한 사장님 답은 **한 번만** 받는다. `present`/`absent` 답이 오면 **바로 확정**한다. 2·3차 질문과 다수결은 없다 (2026-10-10 #193의 n=2 규칙을 대체).
   - "모름" 답변은 확정값을 만들지 않고 이력에만 남는다.
-  - 한 번 잘못 누른 답(오조작)은 따로 거르지 않는다. 대신 레시피상 거의 확실한 재료에 "없음"을 누르면 이상 답변으로 잠겨 SAFE로 새지 않는다 (아래).
+  - 한 번 잘못 누른 답(오조작)은 따로 거르지 않는다. 사장님 답은 그대로 믿는다는 전제다 (이상 답변 잠금 폐기, 10/27 회의). "없음"을 잘못 누르면 그 재료는 SAFE 쪽으로 갈 수 있고, 이 리스크는 전제에 포함된다
 - 확정값이 아직 없는 동안 ③은 해당 재료를 미확인으로 본다. 그동안 ⑤의 확률 계산과 ⑧의 CAUTION 판정이 유지되어 SAFE로 새지 않는다.
 - **이미 확정값이 있을 때**: 같은 대상에 새 답이 오면 **가장 최근 답으로 바로 덮어쓴다.** 이전 답은 질문 행 이력에 남는다.
 - **유효기간 없음 (⓪ #151):** 사장님 확정값은 기간이 지났다는 이유만으로 만료하거나 다시 묻지 않는다. `confirmed_at`은 감사·이력 표시용이다. 사장님 답변은 확률 계산에도 쓰지 않는다 (10/10 회의, ⑤ §1-1).
 - `ingredient_confirmations`는 UNIQUE `(store_id, menu_id, ingredient_id)` — `present`/`absent` 답이 오면 **upsert(덮어씀)**. 이 테이블은 항상 "현재값 스냅샷" 1행만 유지하고, 과거 답변은 남기지 않는다.
 - **답변 이력은 질문 행(`owner_verification_requests`의 answered 행)으로 충분하다.** 증거 로그(`ingredient_evidence_log`)에는 사장님 답변을 남기지 않는다 (2026-10-26). 예전에는 확률에 안 쓰는 이력 행(δ=0)을 매번 한 줄씩 더 남겼는데, 같은 내용이 질문 행에 이미 있어 중복이었다. 증거 로그에는 확률에 쓰는 가게 증거(`ocr_variant_tag`)만 남는다.
-- `flagged_anomaly=true`여도 **⑦은 저장 명령만 만듦, "그대로 신뢰할지"는 ⑦의 책임이 아님.** AGENTS.md 확정 정책에 따라 anomaly 재료는 override가 거부된다. ③이 `override_eligible: false`로 반환하고, Supervisor가 `anomaly_locked: true`를 붙여 ⑤ 확률 계산으로 보내며, ⑧은 **확률 값과 무관하게 CAUTION 이상을 강제**한다 (③ §1-6, ⑤ §1-4). 저장(⑦)과 신뢰 판단(③ 이후)의 책임을 분리한 것.
-- **이상 답변 기준 (결정, 2026-10-06, #193)**: 레시피상 그 재료가 들어갈 확률(⑤ `posterior_mean`)이 **0.9 이상**인데 답이 **"없음"**이면 `flagged_anomaly: true`를 붙인다. **"있음" 답변은 이상 답변으로 보지 않는다.** "있음"을 믿는 것은 더 조심하는 쪽이라 위험을 놓치지 않고, "있음"에 표시를 붙이면 override가 거부돼 DANGER 근거가 CAUTION으로 내려가기 때문이다.
-- **비교할 확률은 질문을 만들 때 저장한다 (결정, 2026-10-13).** 사장님 답은 스캔 밖에서 들어와 그 순간에는 ⑤ 결과가 없다. 그래서 Supervisor가 `create_owner_verification_request`에 그 스캔의 ⑤ `posterior_mean`을 `recipe_probability`로 넣고, 백엔드가 `owner_verification_requests.recipe_probability`에 저장한다. 답을 확정할 때는 **그 답이 달린 질문**의 값을 쓴다. 질문 시점의 값이라 그 사이 레시피 데이터가 바뀌어도 다시 계산하지 않는다. 플래그 질문은 비교할 확률이 없어 `NULL`이다 (§2-4).
+- **이상 답변 잠금은 폐기됐다** (10/27 회의, AGENTS.md). 예전에는 레시피 확률 0.9 이상인 재료에 "없음"이면 `flagged_anomaly`를 붙여 override를 막았다. 이제 답을 그대로 확정값으로 쓰므로, 질문 때 확률을 저장하거나 답을 비교하지 않는다.
 - 답이 확정되면 `owner_verification_requests.resolved_confirmation_id`를 방금 만든 confirmation 행으로 갱신 (`present`/`absent` 답은 항상 채운다, DB 스키마 §6 16번) — ⑧이 생성한 질문과 실제 반영 결과를 연결하기 위함.
 
 ### 2-4. 메뉴 애매함 플래그 답 처리 (결정, 2026-10-13)
@@ -212,7 +207,6 @@ flowchart TD
 | 확정 단위 | `(가게, 메뉴, 재료)` | `(가게, 메뉴, 플래그, 물어본 태그)`. 같은 플래그라도 다른 태그로 물은 답은 따로 |
 | 확정 조건 | 답 1번으로 즉시 확정 | **같음** |
 | 유효기간 | 없음 | **같음** |
-| 이상 답변 표시 | 레시피 확률 ≥ 0.9 + "없음" | **없음.** 비교할 확률이 없다 |
 | 확정값 저장 | `ingredient_confirmations` | `owner_flag_confirmations` (신규 제안, `caution-db-schema.md` §3) |
 | 증거 로그 | 기록하지 않음. 이력은 `owner_verification_requests` answered 행 | **같음** |
 | 출처 신뢰도 갱신 | 있음 (§3-1) | **없음.** 플래그에 대해 주장한 출처가 없다 |
@@ -251,7 +245,7 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"은 세 곳으로 �
 
 **무엇을 비교하나**
 
-- **정답:** 사장님 확정값이다. 확정 조건(§2-3)을 채워 확정된 값만 쓰고, 이상 답변 표시(`flagged_anomaly`)가 붙은 확정값은 쓰지 않는다.
+- **정답:** 사장님 확정값이다. 이상 답변 잠금이 폐기돼(10/27 회의) 모든 `present`/`absent` 답을 쓴다.
 - **출처의 주장:** 같은 가게·메뉴·재료에 대해 그 출처가 앞서 남긴 정보다 (`ingredient_evidence_log`).
   - 웹 검색(`web_search`): 후보 재료 목록에 그 재료가 있으면 "있음" 주장이다. 목록에 없다고 "없음"으로 보지는 않는다.
   - 크롤링 코퍼스(`corpus:semie` / `corpus:wtable` / `corpus:10000recipe`): 사이트마다 따로 센다. 그 사이트 레시피상 확률(`(k+1)/(n+2)`)이 0.5 이상이면 "있음", 미만이면 "없음" 주장이다.
@@ -268,7 +262,7 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"은 세 곳으로 �
 
 **구현 (2026-10-27)**: `ai_db_update/reliability.py`
 - `claims_for(재료)`: ⑤에 들어가는 재료 한 줄에서 출처별 주장을 만든다. 사이트별 관측값 → `corpus:{사이트}`, 큐레이션 → `curated`, 웹 재료 → `web_search`. 키는 ⑤가 쓰는 신뢰도 키와 같다.
-- `reliability_updates(주장, 사장님 답, 질문 때 확률, 가게·메뉴·재료)`: 출처별 증가분(`update_source_reliability` payload)을 만든다. 이상 답변("없음" + 확률 0.9 이상)이면 아무것도 만들지 않는다. `trigger_evidence_ref`는 `owner_confirmation:{가게}:{메뉴}:{재료}`라서, 같은 재료에 답이 다시 와도 중복 방지 키가 같아 한 번만 센다.
+- `reliability_updates(주장, 사장님 답, 가게·메뉴·재료)`: 출처별 증가분(`update_source_reliability` payload)을 만든다. `trigger_evidence_ref`는 `owner_confirmation:{가게}:{메뉴}:{재료}`라서, 같은 재료에 답이 다시 와도 중복 방지 키가 같아 한 번만 센다.
 - **정해야 할 것 (⓪·백엔드)**: 사장님 답은 스캔이 끝난 뒤 들어오므로, 그때 출처별 주장을 ⑦에 어떻게 넘길지 계약이 없다. 예) 질문 명령에 `recipe_probability`처럼 출처별 주장을 같이 저장하고, 답 처리 때 백엔드가 ⑦을 부를 때 함께 넘긴다.
 
 **저장 테이블 `source_reliability` (백엔드에 생성 요청, 2026-10-10)**
@@ -285,7 +279,7 @@ PPT 7쪽 "출처·신뢰도·검증 상태와 함께 저장"은 세 곳으로 �
 **신뢰도 세부 (결정, 2026-10-12)**
 
 - **시작값 0.5**: 비교한 적이 없으면 `(0 + 1) / (0 + 2) = 0.5`. 따로 정하지 않고 공식 그대로 쓴다.
-- **"있음"과 "없음" 정확도를 나누지 않는다.** 초기에는 비교 건수가 적어 둘로 나누면 둘 다 0.5 근처에 머문다. "없음"을 틀리는 위험은 이미 anomaly 검사(§2-3)와 "확률만으로는 SAFE 없음"(⑧ §3)이 막는다.
+- **"있음"과 "없음" 정확도를 나누지 않는다.** 초기에는 비교 건수가 적어 둘로 나누면 둘 다 0.5 근처에 머문다. "확률만으로는 SAFE 없음"(⑧ §3)이 확률 쪽 FN을 막는다.
 - **최소 비교 건수를 두지 않는다.** 공식의 +1/+2가 비교 수가 적을 때 신뢰도를 0.5 쪽으로 잡아 준다.
 - 영향: 처음에는 크롤링 근거가 절반만 반영된다. 확률이 0.5 쪽으로 가고 신용구간이 넓어져 사장님 질문 후보가 늘어난다 (⑤ §1-2-2). FN 쪽으로는 안전한 방향이다.
 
@@ -315,11 +309,10 @@ RETURNING action;   -- 반환 행이 없으면 이미 처리한 명령 → 아�
 ```sql
 -- 재료 질문: :ingredient_id 값, :ambiguity_flag·:asked_tags NULL
 -- 플래그 질문: :ingredient_id NULL, :ambiguity_flag·:asked_tags 값 (asked_tags는 정렬)
--- :recipe_probability = 질문 시점 ⑤ posterior_mean (재료 질문만, 플래그 질문은 NULL)
 INSERT INTO owner_verification_requests
-       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags, recipe_probability,
+       (id, store_id, scan_session_id, menu_id, ingredient_id, ambiguity_flag, asked_tags,
         card_id, question_text, status)
-VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags, :recipe_probability,
+VALUES (:id, :store_id, :scan_session_id, :menu_id, :ingredient_id, :ambiguity_flag, :asked_tags,
         :card_id, :question_text, 'pending')
 ON CONFLICT DO NOTHING;
 ```
@@ -332,12 +325,11 @@ SET status = 'answered', answer = :answer, answered_at = now()
 WHERE id = :question_id AND status = 'pending';
 
 -- answer가 unknown이면 여기서 끝 (확정값 없음)
--- :flagged_anomaly = (:answer = 'absent') AND (이 질문의 recipe_probability >= 0.9)
 
-INSERT INTO ingredient_confirmations (store_id, menu_id, ingredient_id, present, source, flagged_anomaly, confirmed_at)
-VALUES (:store_id, :menu_id, :ingredient_id, :present, 'owner_confirmed', :flagged_anomaly, now())
+INSERT INTO ingredient_confirmations (store_id, menu_id, ingredient_id, present, source, confirmed_at)
+VALUES (:store_id, :menu_id, :ingredient_id, :present, 'owner_confirmed', now())
 ON CONFLICT (store_id, menu_id, ingredient_id)
-DO UPDATE SET present = EXCLUDED.present, flagged_anomaly = EXCLUDED.flagged_anomaly,
+DO UPDATE SET present = EXCLUDED.present,
               confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 RETURNING id;   -- → owner_verification_requests.resolved_confirmation_id에 기록
 ```
@@ -390,17 +382,17 @@ DO UPDATE SET agree_count      = source_reliability.agree_count + EXCLUDED.agree
 **`save_web_search_cache`**
 
 ```sql
-INSERT INTO web_search_cache (normalized_menu_name, original_menu_name, search_status, payload, next_rank, searched_at, expires_at)
-VALUES (normalize_food_name(:menu_name), :menu_name, :search_status, :sources, :next_rank, :searched_at, NULL)
+INSERT INTO web_search_cache (normalized_menu_name, original_menu_name, search_status, payload, searched_at, expires_at)
+VALUES (normalize_food_name(:menu_name), :menu_name, :search_status, :sources, :searched_at, NULL)
 ON CONFLICT (normalized_menu_name)
 DO UPDATE SET search_status = EXCLUDED.search_status,
               payload       = web_search_cache.payload || EXCLUDED.payload,   -- 덮어쓰지 않고 이어 붙인다
-              next_rank     = EXCLUDED.next_rank,
               searched_at   = EXCLUDED.searched_at, updated_at = now();
 ```
 
 - `payload`는 출처 배열(JSONB array)이다. 명령에는 이번에 새로 찾은 `sources`만 들어 있으므로 기존 배열 뒤에 붙인다. 덮어쓰면 2번째 검색 때 1~10위 레시피가 사라져 30개가 모이지 않는다 (⑥ §2-4).
-- `next_rank`는 다음 검색 시작 순위다. Supervisor가 ⑥ 1단계 응답의 `next_rank`를 그대로 넣는다 (⓪ §4-5). 다음 Judge 때 백엔드가 이 값을 ⑥ 입력으로 넘긴다.
+- 검색 순위(`next_rank`)는 저장하지 않는다 (10/27 회의, AGENTS.md). ⑥은 매번 1위부터 읽고 캐시에 있는 주소만 건너뛴다.
+- 중복 방지 키는 메뉴 이름 + **이번에 새로 찾은 출처 주소 목록(정렬)**이다 (⓪ §4-6). 메뉴 이름만 쓰면 같은 메뉴의 두 번째 저장부터 백엔드가 중복으로 보고 버려, 레시피가 30개까지 쌓이지 않는다. 같은 스캔 재시도는 주소 목록이 같아 한 번만 반영된다.
 - `expires_at`은 항상 NULL이다 (⑥은 캐시 유효기간을 두지 않음).
 
 ---
@@ -427,7 +419,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 |---|---|
 | soft evidence `action: create_review_item` | 멱등 검증 후 검토 항목 저장. 사용자 분석 응답과 분리 |
 | `action: create_owner_verification_request` | 질문 행 저장 후 `question_id` 응답 |
-| hard evidence `action: record_owner_answer` | 권한·FK 검증 후 트랜잭션 저장. 이력 기록은 항상, 확정값 upsert는 확정 조건(2번 일치 또는 3번 중 2번)을 채울 때. 커밋 성공 뒤에만 반영 완료 응답 |
+| hard evidence `action: record_owner_answer` | 권한·FK 검증 후 트랜잭션 저장. 질문 행에 답 기록, `present`/`absent`면 확정값 즉시 upsert |
 | `action: update_source_reliability` | 출처별 맞춘 수·비교한 수 누적 후 신뢰도 재계산 (⑦ §3-1) |
 
 **⑦이 직접 호출하지 않는 것**: 어떤 Agent·Tool도 직접 호출하지 않는다. 명령을 만들어 Supervisor에 반환하고 종료한다.
@@ -462,10 +454,7 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 3-b | 사장님 답 "모름" | 이력만 기록 | `ingredient_confirmations` 변경 없음, ③은 미확인 유지 |
 | 3-d | 확정값 "없음" + 새 답 "있음" 1번 | "있음"으로 바로 덮어씀 | 2·3차 질문 없이 최근 답을 쓸 것 |
 | 3-e | 오래전에 확정한 "있음" | 그대로 확정값으로 사용 | 기간 경과만으로 만료하지 않을 것 |
-| 4-b | 레시피 확률 0.95 + "없음" | `flagged_anomaly: true` | 0.9 이상 "없음"이면 표시 |
-| 4-c | 레시피 확률 0.95 + "있음" | `flagged_anomaly: false` | "있음"은 이상 답변이 아님 |
-| 4-d | 질문 생성 요청에 `recipe_probability: 0.95` → 나중에 "없음" | 확정 시 `flagged_anomaly: true` | 스캔 밖 답변도 질문 시점 확률로 판정할 것 |
-| 4 | 사장님 이상 답변 (돈까스 + "돼지고기 없음") | `flagged_anomaly: true`로 저장, ③이 `override_eligible: false` 반환 | **확률 값과 무관하게** ⑧에서 CAUTION 이상 유지될 것 |
+| 4 | 사장님 "없음" (돈까스 + "돼지고기 없음") | 그대로 `present: false` 확정 | 이상 답변 잠금 없이 답을 그대로 쓸 것 (10/27 회의) |
 | 5 | 변형 태깅 제안 승인 | `base_menu_id`로 연결된 새 `menus` 행 생성, 원본 메뉴 risk score 불변 | 원본과 변형의 evidence가 안 섞일 것 |
 | 6 | ⑧ 질문 생성 요청 | `create_owner_verification_request` 명령만 반환 | ⑦ 출력에 `question_id`·저장 완료 표시가 없을 것 (백엔드가 발급) |
 | 7 | 모든 명령 | `payload.provenance` 포함 | `origin_node`·`source_type`·`evidence_class`·`evidence_refs`만 있고 `verification_status`·`reliability_weight`는 없을 것 (⓪ §4-6) |
@@ -475,7 +464,6 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 | 9 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`trace_id`를 수정하지 않을 것 |
 | 10 | 비교 기록 없는 새 출처 | 신뢰도 0.5 | (0+1)/(0+2) |
 | 11 | 웹 검색이 "있음", 사장님 확정 "있음" | 웹 검색 비교 +1, 맞춤 +1 | `update_source_reliability` 명령만 만들고 DB에 직접 쓰지 않을 것 |
-| 12 | 이상 답변 표시가 붙은 확정값 | 신뢰도 비교에 쓰지 않음 | 출처 신뢰도가 바뀌지 않을 것 |
 | 13 | ⑧ 플래그 카드 (`ingredient: null`, `ambiguity_flag: has_unclear_jeotgal`, `constraint_tags: [is_fish]`) | `create_owner_verification_request`에 `ambiguity_flag`·`asked_tags` 포함, `ingredient_id` 없음 | 재료 질문으로 저장되지 않을 것 |
 | 14 | 플래그 질문에 "없음" 1번 | `owner_flag_confirmations`에 `present: false` 즉시 확정 | 재료 확정값 테이블에 쓰지 않을 것, 증거 로그를 남기지 않을 것 |
 | 15 | 같은 플래그를 `[is_fish]`와 `[is_shellfish]`로 각각 물음 | 두 답을 따로 확정 | 한 답이 다른 태그 답을 덮어쓰지 않을 것 |
@@ -490,12 +478,12 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **웹 레시피 30개 등록 때 통계 함께 저장 (백엔드와)** — `corpus: web_search`로 `menu_recipe_corpora`·`menu_ingredient_priors`에 넣을지 (§2-1, `caution-db-schema.md` §6 22번)
 - [x] **10개 후보의 병합/선택 규칙** — 관리자 화면은 레시피 10개를 하나씩 보여주지 않고 **재료별로 합쳐서** 보여준다 (예: "돼지고기 8/10, 새우 2/10", 고유 레시피 기준, ⑥ §1-2 `observations`). 관리자는 재료 단위로 체크해 승인하고, 자동 채택은 하지 않는다 (2026-10-12)
 - [x] **관리자 컨펌 SLA** — 두지 않는다. 검토 항목은 승인·반려될 때까지 `pending`으로 쌓이고, 대기 일수 표시나 자동 만료도 없다 (2026-10-12)
-- [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 거르지 않는다. 레시피상 거의 확실한 재료의 "없음"은 이상 답변으로 잠긴다 (단일 확인 정책, ⓪ #151)
+- [x] **사장님 오조작(버튼 잘못 누름) 대비** — 따로 거르지 않는다. 사장님 답을 믿는 전제 (이상 답변 잠금 폐기, 10/27 회의)
 - [x] **`ingredient_confirmations` 재답변 시 이력 보존 여부** — 확정 테이블은 최신 1행만 두고, 이력은 질문 행(`owner_verification_requests` answered)으로 본다. 증거 로그에는 남기지 않는다 (2026-10-26, 중복 제거)
 - [x] **사장님 확인 최소 건수 n** — n=1. 답 한 번으로 즉시 확정 (단일 확인 정책, ⓪ #151, §2-3. 2026-10-10 #193의 n=2를 대체)
 - [x] **모순 답변 처리** — 새 답으로 바로 덮어씀 (⓪ #151)
 - [x] **확정값 유효기간** — 없음. 기간 경과만으로 만료하거나 다시 묻지 않음 (⓪ #151, §2-3)
-- [x] **anomaly 판정 기준** — 레시피 확률 0.9 이상 + "없음"이면 표시, "있음"은 대상 아님 (2026-10-06, #193, §2-3). ③ §6(#168)에도 같은 결정 전달 필요
+- [x] **anomaly 판정 기준** — 폐기 (10/27 회의). 이상 답변 잠금을 쓰지 않는다
 - [x] **사용자 피드백 트리거** — 두지 않는다. 확인 정보는 사장님 답변만 다룬다 (③ 결정, 2026-10-09)
 - [x] **`reliability_weight` 계산 위치** — ⑦이 사장님 확정값과 비교해 계산 명령을 만들고, ⑤가 사용한다. 0~1 범위 (2026-10-06, §3-1, #194). ⑥ 담당자에게 공유 필요 (⑥ §5, #125, #171)
 - [x] **출처 신뢰도 세부** — 시작값 0.5(공식 그대로), "있음"/"없음" 정확도는 나누지 않음, 최소 비교 건수 없음 (2026-10-12, §3-1)
@@ -509,8 +497,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 - [ ] **플래그 답 저장 테이블 (외부 의존)** — `owner_flag_confirmations` 신설과 `owner_verification_requests`의 `ingredient_id` NULL 허용·`ambiguity_flag`·`asked_tags` 추가를 백엔드에 요청함 (`caution-db-schema.md` §6 11·12번). 테이블 이름과 최종 컬럼은 백엔드가 정한다 (⓪ §8)
 - [x] **2·3차 질문 연결** — 삭제. 질문은 대상마다 한 번만 만든다 (⓪ #151)
 - [ ] **질문 카드 연결 컬럼 (외부 의존)** — `owner_verification_requests`에 `card_id`만 추가 요청. 차수·사슬 컬럼은 만들지 않음 (`caution-db-schema.md` §6 20번)
-- [x] **이상 답변 판정용 레시피 확률** — 질문 생성 때 ⑤ `posterior_mean`을 `recipe_probability`로 저장하고, 답 확정 때 그 답이 달린 질문의 값으로 판정 (2026-10-13, §2-3). ⑧은 바뀌지 않는다 (Supervisor가 ⑤ 결과에서 채움)
-- [ ] **`owner_verification_requests.recipe_probability` 컬럼 (외부 의존)** — `caution-db-schema.md` §6 15번으로 백엔드에 요청
+- [x] **이상 답변 판정용 레시피 확률** — 폐기 (10/27 회의). 질문 때 확률을 저장하지 않는다
+- [x] **`owner_verification_requests.recipe_probability` 컬럼** — 요청 철회 (10/27 회의, `caution-db-schema.md` §6 15번)
 
 ---
 
@@ -533,9 +521,9 @@ PPT는 사장님 확인이 n건 이상일 때 확정한다고 제출했다 (n=2�
 **세부 작업**
 
 - [x] 최소 확인 건수 n과 재확인 주기 결정 (③ #168과 함께) — n=1, 유효기간 없음 (⓪ #151로 변경)
-- [x] anomaly 판정 임계값과 `present: true` 포함 여부 결정 — 0.9, "없음"만
+- [x] anomaly 판정 임계값과 `present: true` 포함 여부 결정 — 폐기 (10/27 회의)
 - [x] 사용자 피드백 트리거와 신뢰도 등급 결정 — 쓰지 않음
-- [x] 사장님 오조작 대비 방안 정리 — 따로 거르지 않음, 이상 답변 잠금만 유지
+- [x] 사장님 오조작 대비 방안 정리 — 따로 거르지 않음 (사장님 답을 믿는 전제)
 - [x] 사장님 답변의 공통 문맥(`item_id: null`) 허용 여부를 ⓪ 담당자와 확정
 
 **관련 서비스**
@@ -629,9 +617,8 @@ soft evidence가 사람 승인 없이 DB에 들어가면 한 번의 잘못된 �
 **세부 작업**
 
 - [ ] `create_owner_verification_request` 명령 구현
-- [ ] `record_owner_answer` 명령 구현 (이력 기록 + 2번 일치 또는 3번 중 2번이면 확정)
+- [x] `record_owner_answer` 명령 구현 (이력 기록 + 즉시 확정)
 - [x] `update_source_reliability` 비교 로직과 명령 구현 (§3-1, 2026-10-27). 답 처리 때 출처별 주장을 넘기는 계약 연결은 ⓪·백엔드와 정해야 함
-- [ ] anomaly 검사와 `flagged_anomaly` 부여 구현
 - [ ] `resolved_confirmation_id` 연결 정보 포함
 - [ ] §7 테스트 케이스 3·3-b·4·6 작성
 
@@ -696,7 +683,7 @@ soft evidence가 사람 승인 없이 DB에 들어가면 한 번의 잘못된 �
 
 - [ ] §7 테스트 케이스 전체 통과
 - [ ] 승인·반려·대기 각 상태에서 DB 변경 여부 검증
-- [ ] 확정 전 답변·이상 답변이 SAFE로 이어지지 않는지 통합 검증
+- [ ] "모름" 답변이 확정값을 만들지 않는지 통합 검증
 - [ ] 중복 명령 멱등성 검증
 
 **관련 서비스**
@@ -722,4 +709,4 @@ AGENTS.md "변경 금지 — 팀 확정 결정" 중 ⑦에 해당하는 항목�
 - **물리 DB 쓰기는 백엔드만 수행한다.** ⑦은 저장할 명령과 근거를 반환할 뿐이고, 권한·FK·멱등성 검증과 트랜잭션은 백엔드 몫이다
 - **`ingredient_risk_scores`는 직접 UPDATE 금지.** 항상 `ingredient_evidence_log` INSERT → 재계산 순서
 - **`menu_ingredient_cache` 쓰기는 ④가 수행한다** (파생 캐시이므로 ⑦ 승인 대상 아님)
-- **anomaly 판정된 재료는 override를 거부하고 CAUTION 이상을 강제 유지한다**
+- **사장님 답변에 이상 답변 잠금을 걸지 않는다** (10/27 회의, AGENTS.md)

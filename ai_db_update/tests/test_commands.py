@@ -95,7 +95,6 @@ WEB_CACHE = {
     "original_menu_name": "마라탕",
     "search_status": "searched",
     "sources": [web_source(URL_A)],
-    "next_rank": 11,
     "searched_at": "2026-10-26T01:00:00Z",
 }
 RELIABILITY = {
@@ -232,3 +231,12 @@ def test_tool_keeps_context_and_warnings():  # ⑦ test 9
     res = asyncio.run(DbUpdateTool().run(req))
     assert res.context == req.context
     assert [w.code for w in res.warnings] == ["insufficient_sources"]
+
+
+def test_web_cache_key_changes_with_new_sources():  # 10/27: no search rank to tell saves apart
+    later = {**WEB_CACHE, "sources": [web_source(URL_B)]}
+    assert command("save_web_search_cache", WEB_CACHE).idempotency_key != command(
+        "save_web_search_cache", later
+    ).idempotency_key
+    retry = command("save_web_search_cache", WEB_CACHE, trace="0199a2f0-0000-7000-8000-000000000002")
+    assert retry.idempotency_key == command("save_web_search_cache", WEB_CACHE).idempotency_key

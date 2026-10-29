@@ -24,12 +24,10 @@ def ingredient(*, source="recipe", obs=(), curated=False):
     )
 
 
-def updates(claims, present=True, p=None):
+def updates(claims, present=True):
     return {
         u.source_type: (u.correct_count_delta, u.comparison_count_delta)
-        for u in reliability_updates(
-            claims, present=present, recipe_probability=p, store_id=1, menu_id=1001, ingredient_id=4
-        )
+        for u in reliability_updates(claims, present=present, store_id=1, menu_id=1001, ingredient_id=4)
     }
 
 
@@ -53,12 +51,11 @@ def test_corpus_with_no_recipes_makes_no_claim():
 def test_agree_and_disagree_counts():  # ⑦ §7-11
     claims = [SourceClaim("corpus:10000recipe", True), SourceClaim("corpus:semie", False)]
     assert updates(claims, present=True) == {"corpus:10000recipe": (1, 1), "corpus:semie": (0, 1)}
-    assert updates(claims, present=False, p=0.4) == {"corpus:10000recipe": (0, 1), "corpus:semie": (1, 1)}
+    assert updates(claims, present=False) == {"corpus:10000recipe": (0, 1), "corpus:semie": (1, 1)}
 
 
-def test_anomaly_answer_updates_nothing():  # ⑦ §7-12
-    assert updates([SourceClaim("curated", True)], present=False, p=0.95) == {}
-    assert updates([SourceClaim("curated", True)], present=True, p=0.95) == {"curated": (1, 1)}
+def test_every_answer_counts_no_anomaly_lock():  # 10/27: owner answers are trusted as-is
+    assert updates([SourceClaim("curated", True)], present=False) == {"curated": (0, 1)}
 
 
 def test_same_source_counted_once():
@@ -69,11 +66,11 @@ def test_same_source_counted_once():
 def test_commands_dedupe_on_store_menu_ingredient():
     # a later answer for the same ingredient yields the same key: the backend counts it once
     payloads = reliability_updates(
-        [SourceClaim("curated", True)], present=True, recipe_probability=None,
+        [SourceClaim("curated", True)], present=True,
         store_id=1, menu_id=1001, ingredient_id=4,
     )
     again = reliability_updates(
-        [SourceClaim("curated", True)], present=False, recipe_probability=0.2,
+        [SourceClaim("curated", True)], present=False,
         store_id=1, menu_id=1001, ingredient_id=4,
     )
 
