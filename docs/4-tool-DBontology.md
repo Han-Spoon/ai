@@ -50,7 +50,7 @@
 ### 0-1. 설계 원칙
 
 - **가게 스코프를 지킨다.** `store_id`는 양의 정수 또는 가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)의 `null`만 받는다. 그 외 값(누락·문자열·0 이하)은 즉시 실패한다. 다른 가게나 전역 데이터로 대신하지 않는다.
-- **재료를 버리지 않는다.** 미등록 재료, 매핑 실패 토큰, anomaly 재료 모두 결과에 남긴다. 재료 누락은 곧 FN이다.
+- **재료를 버리지 않는다.** 미등록 재료, 매핑 실패 토큰 모두 결과에 남긴다. 재료 누락은 곧 FN이다.
 - **변형 판별은 DB 컬럼이 먼저다.** 문자열 파싱은 DB에 메뉴가 없을 때만 한다.
 - **관측 불가능한 위험은 추정하지 않는다.** 교차오염은 확률 모델 범위 밖이며 사장님 질문 경로로 넘긴다.
 - **위험 태그는 하나의 어휘를 쓴다.** `ingredient_tags.tag_code`와 ⑧이 쓰는 `is_*` 값을 그대로 쓴다.
@@ -114,9 +114,9 @@ graph TB
 - **가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)**: 재료 펼치기는 그대로 한다(메뉴·재료·레시피는 가게와 무관한 전역 데이터). 가게 캐시는 읽지 않고(`knowledge.cache`는 `null`로 옴), 캐시 저장 명령도 만들지 않는다(`cache_command: null`). SAFE 금지 경고(`store_context_missing`)는 Supervisor가 붙인다.
 - `knowledge`와 `ingredient_graph`만으로 동작한다. 판정 단계에서 DB를 조회하지 않는다 (§0-0).
 - `menu.normalized_menu_name`은 ②의 출력이며 ④는 다시 정규화하지 않는다. `menu.menu_id`·`match_candidates`·`residual_tokens`는 ②가 정의한 값이다 (④ 승인, 2026-10-12).
-- `confirmed_ingredients`는 ③ 출력 중 `status != unknown` **AND** `override_eligible: true`인 재료만이다. 확인 재료를 빼는 규칙은 §2-1 표.
-- `override_eligible: false`인 재료는 `confirmed_ingredients`에 **들어오지 않는다.** 확장 대상에 남아 ⑤로 넘어가야 CAUTION 판정이 가능하다. false가 되는 이유는 이상 답변(`flagged_anomaly: true`)이다 (③ §1-6). 사장님 확정값에는 기간 만료가 없다 (⓪ #151).
-- `anomaly_locked_ingredients`에는 **이상 답변 재료만** 들어온다. ④는 이 값을 가공하거나 다시 판단하지 않고 해당 노드에 `anomaly_locked: true`로 그대로 실어 보낸다.
+- `confirmed_ingredients`는 ③ 출력 중 `status != unknown`인 재료다. 이상 답변 잠금이 폐기돼(10/27 회의) 사장님 확정값은 모두 여기로 온다. 확인 재료를 빼는 규칙은 §2-1 표.
+- 사장님 확정값에는 기간 만료도 없다 (⓪ #151).
+- `anomaly_locked_ingredients` (폐기, 10/27 회의). 계약 칸이 남아 있는 동안 Supervisor는 빈 목록을 보내고 ④⑤는 받은 값을 그대로 옮기기만 한다. 계약에서 칸이 빠지면 같이 지운다.
 
 ### 1-2. 출력 값을 정하는 규칙
 
@@ -266,7 +266,7 @@ def query_ontology(
     residual_tokens: list[str] | None = None,
     unconfirmed_only: bool = True,
     confirmed_ingredients: list[ConfirmedIngredient] | None = None,   # {name, status}
-    anomaly_locked_ingredients: list[str] | None = None,  # Supervisor가 부여, ④는 보존만
+    anomaly_locked_ingredients: list[str] | None = None,  # 폐기 (10/27). 항상 빈 목록
     knowledge: OntologySlice,                # 고른 후보의 ontology 또는 fallback_ontology (§0-0)
     ingredient_graph: IngredientGraph,       # 묶음 전체 공통 재료 그래프 (§0-0)
 ) -> OntologyResult:
@@ -320,7 +320,7 @@ if suggested and variant_origin is None:
 paths = expand(seeds + suggested, graph, max_depth=5)                 # 캐시가 있어도 매번 펼침
 full  = merge_same_ingredient(paths)                                  # 같은 재료·같은 태그만 합침, 얕은 위치
 kept  = merge_same_ingredient(drop_confirmed(paths, confirmed))       # present 하위는 남기고 absent 경로만 제외
-mark anomaly_locked from anomaly_locked_ingredients                   # 받은 값 보존만
+mark anomaly_locked from anomaly_locked_ingredients                   # 폐기 (10/27). 항상 false
 
 cache_command = save_cache(full) if store_id and not valid_cache and variant_origin != "runtime_tagged" else None
 return OntologyResult(ingredients=kept, cache_command=cache_command, ...)
@@ -533,8 +533,7 @@ graph TB
 |---|---|---|
 | **1) DB 존재 + 피드백 없음** | 전체 재귀 확장 | `exists_in_db: true`, `source: recipe/expanded` |
 | **2) DB 존재 + 피드백 일부** | 전체 확장 후 확인 재료를 반환에서 제외. `present` 재료의 하위 재료는 남김 (§2-1) | 부분 리스트. 캐시는 전체 목록 |
-| **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** | — |
-| **2-c) 피드백 전부 (anomaly 포함)** | 정상 호출됨. anomaly 재료 포함 확장 | ⑤로 전달되어 CAUTION 확보 |
+| **2-b) 피드백 전부** | **호출되지 않음** | — |
 | **3-a) DB 등록 변형 (차돌된장찌개)** | 컬럼 조회 → `db_registered` | `base_menu_id`/`remain_token`, `source: recipe` |
 | **3-b) 신규 변형 (DB 없음)** | ②-B가 고른 후보 이름을 뺀 나머지 토큰 매핑 → `runtime_tagged` | `variant_suggestion` 채움, **DB INSERT·캐시 명령 없음** |
 | **3-c) ②-B가 후보를 못 고름** | `fallback_ontology`를 쓰지 않음 (§2-2 (C)) | `exists_in_db: false` → Supervisor가 ⑥ |
@@ -576,7 +575,7 @@ graph TB
 | 7-b | `김치: present` 확인 | 김치는 제외, 액젓·새우는 반환 | **확인된 복합 재료의 하위 재료가 빠지지 않을 것** |
 | 7-c | `김치: absent` 확인 | 김치를 거친 액젓·새우는 제외 | 다른 부모를 통해 오는 같은 재료는 남을 것 |
 | 7-d | 일부 확인 상태에서 호출 | 캐시 저장 명령에 전체 목록 | ③의 분모가 부분 목록이 되지 않을 것 |
-| 8 | ③에서 anomaly 재료 포함 | anomaly 재료도 확장 대상 | **확장에서 빠지지 않을 것** |
+| 8 | (삭제, 10/27 회의: 이상 답변 잠금 폐기) | — | — |
 | 9 | `우리집된장찌개` | base 처리 + remain 매핑 실패 | `unmapped_token` 기록, 에러 없을 것 |
 | 10 | taxonomy 미등록 재료 | `unknown` 부여 | 재료 드롭되지 않을 것, `base`로 채우지 않을 것 |
 | 11 | `base_menu_id` 참조 깨짐 | 일반 메뉴 처리 + 로그 | 크래시 없을 것 |
@@ -590,7 +589,7 @@ graph TB
 | 19 | 김치 → 액젓 경로 | 액젓에 경로 태그 `is_shellfish` 포함 | 노드 태그만 보고 경로 태그를 빠뜨리지 않을 것 |
 | 20 | 메뉴 레시피 변경 후 호출 | 리비전이 다른 캐시는 쓰지 않음 | 옛 캐시로 재료가 빠지지 않을 것 |
 | 15 | `menu_id` 입력 + 다른 이름 | `menu_id` 행 사용 | ③과 ④가 같은 메뉴를 볼 것 |
-| 16 | `anomaly_locked_ingredients=["돼지고기"]` | 해당 노드 `anomaly_locked: true` | 값이 ④에서 끊기지 않을 것 |
+| 16 | `anomaly_locked_ingredients`로 받은 값 | 해당 노드에 그대로 옮김 | 폐기된 칸이지만 계약에 남아 있는 동안 값이 끊기지 않을 것 |
 | 17 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
 | 23 | 참치김밥: 참치·밥·단무지·마요네즈 속 달걀 | `role`: 참치·밥 `identity`, 단무지 `component`, 달걀 `hidden` | 같은 메뉴는 매번 같은 role일 것 |
 | 24 | 리비전이 같은 캐시가 `knowledge`에 있음 | 그래프에서 다시 펼치고, 캐시 저장 명령은 없음 | 같은 캐시를 두 번 저장하지 않을 것, `absent` 경로 제외가 캐시 때문에 틀리지 않을 것 |

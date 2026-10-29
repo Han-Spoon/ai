@@ -26,7 +26,7 @@
 - **불확실은 낮은 확률이 아니다.** 근거가 약하면 확률 평균을 낮추지 않고 분포를 넓힌다 (§2-1). 평균을 낮추면 SAFE 쪽으로 기우는 FN이 생긴다.
 - **근거가 없으면 무정보로 표시한다.** 관측 0건은 0.5와 낮은 `confidence`로 내보내며, SAFE 쪽 기본값을 쓰지 않는다.
 - **판정하지 않는다.** ⑤의 출력은 확률 수치이고 해석은 ⑧이 한다.
-- **받은 플래그를 바꾸지 않는다.** `anomaly_locked`는 그대로 옮긴다.
+- **받은 플래그를 바꾸지 않는다.** `anomaly_locked`는 그대로 옮긴다 (폐기, 10/27 회의). 계약 칸이 남아 있는 동안 Supervisor는 빈 목록을 보내고 ④⑤는 받은 값을 그대로 옮기기만 한다. 계약에서 칸이 빠지면 같이 지운다.
 - **부작용이 없다.** 같은 입력에는 같은 결과를 내고, DB에 쓰지 않는다.
 - **외부 경계는 Pydantic 모델로 검증한다** (⓪ §1-3).
 
@@ -78,7 +78,7 @@
 | 구분 | ⑤에 오는가 | 이유 |
 |---|---|---|
 | `scope: exact` + `override_eligible: true` | ❌ 오지 않음 | Supervisor가 override 처리 후 제외 |
-| `scope: exact` + `flagged_anomaly: true` (이상 답변) | ✅ **온다** | override 거부됐으므로 확률 계산이 필요. `anomaly_locked: true`로 CAUTION 이상 유지 |
+| 사장님 확정값 ("있음"/"없음") | ❌ 오지 않음 | 이상 답변 잠금이 폐기돼(10/27 회의) 모든 확정값을 override로 쓴다 |
 | 미확인 재료 | ✅ 온다 | 기본 계산 대상 |
 
 ### 1-2. 출력 값을 정하는 규칙
@@ -129,9 +129,8 @@ confidence = 1 − 1 / √(ν + 1)
 
 ### 1-4. `anomaly_locked`
 
-③이 **`flagged_anomaly: true`(이상 답변)** 로 반환한 재료에만 Supervisor가 `true`를 부여하고, ④가 그대로 보존해 ⑤로 넘긴다 (④ §1-1, ③ §1-6).
-**⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.**
-⑧은 이 플래그가 있으면 **posterior_mean과 무관하게 CAUTION 이상을 유지**한다.
+**폐기 (10/27 회의, AGENTS.md).** 사장님 답변에 이상 답변 잠금을 걸지 않으므로 이 값은 항상 `false`로 온다. 계약 칸이 남아 있는 동안만 그대로 옮긴다.
+**⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.** 계약에서 칸이 빠지면 같이 지운다.
 
 ---
 
@@ -157,10 +156,7 @@ flowchart TD
     UP --> INH
     INH --> BB["Beta-Binomial 업데이트<br/>α=k+α₀, β=(n−k)+β₀"]
     BB --> SRC["source별 scale<br/>최종 α·β 동일 비율<br/>recipe 1.0 / variant_suggested 0.5<br/>expanded 0.5^depth, 하한 0.125"]
-    SRC --> LOCK{"anomaly_locked?"}
-    LOCK -->|Yes| MARK["플래그 유지<br/>⑧에서 CAUTION 이상 강제"]
-    LOCK -->|No| OUT[Supervisor에 반환]
-    MARK --> OUT
+    SRC --> OUT[Supervisor에 반환]
 ```
 
 ### 2-1. 근거 강도별 처리 — **scale은 α·β 동일 비율 축소**
@@ -410,8 +406,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 |---|---|
 | **1) DB 존재 + 피드백 없음** | store prior로 전 재료 확률 계산 |
 | **2) DB 존재 + 피드백 일부** | 미확인 재료만 계산. override 재료는 Supervisor가 제외 |
-| **2-b) 피드백 전부 (anomaly 없음)** | **호출되지 않음** |
-| **2-c) 피드백 전부 (anomaly 포함)** | anomaly 재료만 계산 + `anomaly_locked: true` |
+| **2-b) 피드백 전부** | **호출되지 않음** |
 | **3-a) DB 등록 변형** | 재료 `source: recipe` → scale 1.0. 원본 메뉴 확정값은 쓰지 않음 (보류) |
 | **3-b) 신규 변형** | `variant_suggested` 재료는 `observations: []`(④ §1-5) → mean 0.5, 낮은 `confidence`, scale 0.5 (mean 보존) |
 | **4) DB에 없는 unknown 메뉴** | Supervisor가 ⑥ 결과로 ⑦ 검토 명령을 만든 뒤 ⑤를 호출한다(⓪ §2). 웹 근거는 관리자 검토 전이라 미검증 상태다. `menu_category_id`가 없으므로 `prior_source`는 `global` 또는 `uninformative` |
@@ -436,7 +431,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | `posterior_mean` | → ⑧이 판정 정책에 따라 해석. ⑤의 결과는 확률 수치일 뿐 판정이 아니다. PPT 8쪽 6은 hard evidence가 없으면 DANGER/SAFE를 확정하지 않고 CAUTION과 확률 수치를 제공한다고 정한다. threshold 적용 방식은 ⑧ 소관이다 (#173, #139) |
 | `prior_source: uninformative` | → ⑧에서 CAUTION 이상 강제 유지 |
 | 낮은 `confidence` | → ⑧이 카드 이유 `insufficient_recipe_evidence`로 표시한다. 카드를 만들지 정하는 조건은 아니다 (⑧ §2-1 7단계) |
-| `anomaly_locked: true` | → ⑧이 **확률과 무관하게 CAUTION 이상 강제** |
 
 > ⚠️ `prior_source`와 `confidence`가 ⑧까지 도달해야 위 두 줄이 동작한다. ⓪ §4-7과 ⑧ §1 입력 형식에 `confidence`와 `prior_source`를 반영했다.
 
@@ -457,7 +451,6 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | `observations` 필드 부재 또는 `[]` | 크롤링 근거 없음. 큐레이션·가게 증거도 없으면 `uninformative` |
 | `source_reliability`에 그 출처가 없음 | 처음 보는 출처는 신뢰도 0.5(`(0+1)/(0+2)`)로 쓴다 |
 | 재료 리스트 빈 배열 | 빈 결과 + `warnings`에 `empty_ingredients`. ⑧에서 CAUTION 이상 유지 |
-| `anomaly_locked` 재료의 확률이 낮게 나옴 | **확률과 무관하게 플래그 유지.** ⑧이 CAUTION 이상 강제 |
 
 오류는 ⓪ §6-1 공통 오류 모델(`code`, `node`, `item_id`, `retryable`, `fallback`)로 Supervisor에 반환한다.
 
@@ -477,7 +470,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 | 7 | depth 0 vs depth 3 동일 관측값 (`inherited`) | scale 1.0 vs 0.125, mean 같음 | depth가 무시되지 않고, mean이 내려가지 않을 것 |
 | 7-b | depth 2, `observation_basis: direct` | scale 1.0 | 직접 관측을 깊이 때문에 깎지 않을 것 |
 | 8 | 삭제됨 (2026-10-13, ③ §3-1). 원본 메뉴 확인값 입력이 없어졌다 | — | — |
-| 9 | `anomaly_locked: true` 재료 | 확률 계산 + 플래그 유지 | 재료가 누락되지 않을 것 |
+| 9 | (삭제, 10/27 회의: 이상 답변 잠금 폐기) | — | — |
 | 10 | `context.store_id` 누락 또는 0 | 즉시 에러 | 전역 fallback 없을 것 |
 | 10-b | `context.store_id: null` + 관측값 있는 재료 | `prior_source: global`로 계산 | 에러가 나지 않고, 가게 prior를 쓰지 않을 것 |
 | 11 | `n_total = 0` | mean 0.5 + 낮은 `confidence` | 0 나눗셈 없을 것, SAFE 처리 안 될 것 |
@@ -705,7 +698,7 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 **세부 작업**
 
 - [ ] §7 테스트 케이스 전체 통과
-- [ ] 무정보·anomaly 재료가 ⑧에서 CAUTION 이상이 되는지 통합 검증
+- [ ] 무정보 재료가 ⑧에서 CAUTION 이상이 되는지 통합 검증
 - [ ] F2 기준 scale 0.5 적정성 측정
 - [ ] 동일 입력 재현성 검증
 
@@ -731,4 +724,4 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 - **scale 방식**: α·β **동일 비율** 축소 (mean 보존, 분산 증가). α 단독 축소 금지
 - **`variant_suggested` scale**: 0.5. `db_registered` 변형은 1.0
 - **fallback 순서**: `store → cluster → global → uninformative`. 전역 prior는 최후의 수단
-- **anomaly 재료**: 확률 계산은 수행하되 `anomaly_locked`로 CAUTION 이상 강제
+- **사장님 답변**: 이상 답변 잠금 없이 그대로 확정값으로 쓴다 (10/27 회의). ⑤에 오지 않는다

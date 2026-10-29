@@ -2676,7 +2676,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 | `create_owner_verification_request` | `store_id`, `scan_session_id`, `item_id`, `card_id`, `menu_id`, 재료 카드는 `ingredient_id` / 플래그 카드는 `ambiguity_flag`·정렬한 `constraint_tags` |
 | `record_owner_answer` | `question_id` |
 | `update_source_reliability` | `source_type`, `trigger_evidence_ref` |
-| `save_web_search_cache` | `normalized_menu_name` |
+| `save_web_search_cache` | `normalized_menu_name`, 정렬한 새 출처 `source_url` 목록. 검색 순위가 없어져(10/27) 메뉴 이름만으로는 두 번째 저장부터 중복으로 버려진다 |
 | `save_menu_ingredient_cache` (④) | `store_id`, `menu_id`, `menu_revision` |
 
 command `payload`는 해당 입력 payload의 모든 필드를 보존하고 위 `provenance` 객체 하나를 추가한 형태다.

@@ -11,9 +11,6 @@ from dataclasses import dataclass
 from ai_supervisor.contracts.bayesian import BayesianIngredient
 from ai_supervisor.contracts.db_update import UpdateSourceReliabilityPayload
 
-ANOMALY_PROBABILITY = 0.9  # ⑦ §2-3: "absent" at ≥ 0.9 is an anomaly answer
-
-
 @dataclass(frozen=True)
 class SourceClaim:
     source_key: str  # corpus:{site} / curated / web_search, same keys as ⑤ weights
@@ -44,20 +41,17 @@ def reliability_updates(
     claims: list[SourceClaim],
     *,
     present: bool,
-    recipe_probability: float | None,
     store_id: int,
     menu_id: int,
     ingredient_id: int,
 ) -> list[UpdateSourceReliabilityPayload]:
     """One increment per source for this owner-confirmed ingredient.
 
-    Anomaly answers are not ground truth and update nothing. The trigger is the
-    store·menu·ingredient, so the same source is counted once for it (the backend
+    Every owner answer is ground truth (no anomaly lock, 10/27 meeting). The trigger is
+    the store·menu·ingredient, so the same source is counted once for it (the backend
     dedupes by the content key) even if the owner answers again later.
     """
 
-    if not present and recipe_probability is not None and recipe_probability >= ANOMALY_PROBABILITY:
-        return []
     trigger = f"owner_confirmation:{store_id}:{menu_id}:{ingredient_id}"
     seen: dict[str, SourceClaim] = {}
     for claim in claims:

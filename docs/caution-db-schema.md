@@ -209,13 +209,13 @@ erDiagram
 | `store_id`, `menu_id`, `ingredient_id` UK | |
 | `present` | 있음/없음. **행이 없으면 `unknown`** (status 3값) |
 | `source` | `owner_confirmed` |
-| `flagged_anomaly` | 통계적으로 이상한 답변 |
-| `override_eligible` | GENERATED, `NOT(flagged_anomaly AND NOT present)` |
+| ~~`flagged_anomaly`~~ 🔶 | **삭제 요청** (§6 26번). 이상 답변 잠금 폐기 (10/27 회의) |
+| ~~`override_eligible`~~ 🔶 | **삭제 요청** (§6 26번). 확정값은 항상 override에 쓴다 |
 | `confirmed_at` 🔶 | 가장 최근 사장님 답변을 확정값으로 반영한 시각. 감사·이력 표시용이며 유효기간 계산에는 사용하지 않는다 |
 
 - **확정 규칙**: 사장님 답변은 대상마다 한 번만 받고, `present` 또는 `absent` 답을 즉시 확정값으로 upsert한다. 같은 대상에 새 답변이 들어오면 가장 최근 답으로 확정값을 갱신하고 모든 답변 이력은 `owner_verification_requests`에 보존한다.
 - **유효기간 없음.** 한 번 확정된 답변은 기간 경과만으로 만료하거나 재질문하지 않는다. 새 사장님 답변으로 갱신되거나 관리자가 무효화하기 전까지 hard evidence로 사용한다.
-- **이상 답변**: "없음"인데 레시피상 확률이 0.9 이상이면 `flagged_anomaly`. 확률은 그 답이 달린 질문의 `owner_verification_requests.recipe_probability`를 쓴다. override를 거부하고 **CAUTION 이상을 유지**한다(`anomaly_locked`). 확률 계산은 하되 잠근다. "있음" 쪽 이상 답변은 이미 안전한 방향이라 대상이 아니다.
+- **이상 답변 잠금 없음** (10/27 회의, AGENTS.md). 레시피상 확률과 어긋나는 답도 그대로 확정값으로 쓴다. 사장님 답을 믿는 전제다.
 
 ### `owner_verification_requests`
 ⑧이 만든 사장님 질문과 답변. 질문은 두 종류다 (⓪ §4-6 `create_owner_verification_request`).
@@ -231,7 +231,6 @@ erDiagram
 | `ambiguity_flag` 🔶 신규 | 플래그 질문만. `menus.ambiguity_flags` 값 하나 |
 | `asked_tags` 🔶 신규 | 플래그 질문에서 물어본 `is_*` 태그 배열 (정렬해서 저장). 재료 질문은 NULL |
 | `card_id` 🔶 신규 | 화면 카드와 질문 행을 잇는 ID (`card:{item_id}:{대상}`, ⓪ §4-7). 같은 스캔 안에서 유일 |
-| `recipe_probability` 🔶 신규 | 질문을 만들 때의 ⑤ `posterior_mean` (0~1). 재료 질문만, 플래그 질문은 NULL. 답을 확정할 때 이상 답변 판정에 쓴다 (⑦ §2-3) |
 | `question_text` | 언어별 문구. 실제로는 **한국어(`ko`) + 사용자 언어** 두 개만 저장한다 (10/14 회의). 허용 언어 코드는 7개 (🔶 §6 7번) |
 | `status` | `pending` / `answered` / `expired`. 여기서 `expired`는 답하지 않은 질문 요청의 노출·처리 기한 종료이며, 이미 저장된 사장님 확정값의 만료를 뜻하지 않는다 |
 | `answer` | `present` / `absent` / `unknown` |
@@ -256,7 +255,6 @@ erDiagram
 | `created_at`, `updated_at` | |
 
 - UNIQUE `(store_id, menu_id, ambiguity_flag, asked_tags)`. 같은 플래그라도 다른 태그로 물은 답은 따로 저장한다 (③ §1-8).
-- **이상 답변 표시(`flagged_anomaly`) 없음.** 비교할 레시피 확률이 없다.
 - 확률 계산에 쓰지 않으므로 `ingredient_evidence_log`에 행을 남기지 않는다 (그 테이블은 `ingredient_id`가 필수이기도 하다). 이력은 `owner_verification_requests` answered 행으로 본다.
 
 ### `knowledge_review_items` (V9)
@@ -309,7 +307,6 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | `normalized_menu_name` UK | `normalize_food_name` 결과와 같아야 한다 |
 | `search_status` | `searched` / `unresolved` |
 | `payload` | 후보 URL별 추출 재료 (출처 배열). **검색할 때마다 새 출처를 뒤에 붙인다. 덮어쓰지 않는다** |
-| `next_rank` 🔶 신규 | 다음 검색 시작 순위 (1 이상). 예: 1번째 검색 뒤 11, 2번째 뒤 21. ⑥이 실제로 읽은 결과 수에 따라 달라질 수 있어 AI가 계산해 저장 명령에 넣는다 (⑥ §2-1·§2-4) |
 | `searched_at` | 마지막 검색 시각 |
 | `expires_at` 🔶 | **NULL 허용, 항상 NULL** (지금 ERD는 NOT NULL). ⑥은 캐시 유효기간 없이 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4, ⓪ §4-6) |
 
@@ -322,14 +319,14 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 |---|---|
 | `store_id`, `menu_id` PK | |
 | `menu_revision` | 계산할 때의 `menus.knowledge_revision`. **다르면 캐시 무효** |
-| `ingredients_snapshot` | 확인 재료를 빼기 전 **전체 확장 목록**. 전역 데이터만 담고, 가게 데이터인 `anomaly_locked`·확정값은 넣지 않는다 (③이 분모로 쓰기 때문) |
+| `ingredients_snapshot` | 확인 재료를 빼기 전 **전체 확장 목록**. 전역 데이터만 담고, 가게 데이터인 확정값은 넣지 않는다 (③이 분모로 쓰기 때문) |
 
 - **쓰기 예외**: ④가 `save_menu_ingredient_cache` 명령을 직접 만든다. 재계산할 수 있는 파생 데이터라 ⑦ 관리자 게이트를 거치지 않는다. AGENTS.md의 유일한 예외다.
 - **무효화** 🔶: 메뉴 하나의 지식이 바뀌면 그 메뉴의 `knowledge_revision` +1. 재료 단위 데이터(구성 간선·재료 태그·분류)가 바뀌면 **그 재료가 들어간 모든 메뉴**의 `knowledge_revision` +1을 요청함 (④ §8).
 
 ---
 
-## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20, 24는 2026-10-25, 25는 2026-10-26 추가)
+## 6. 백엔드 변경 요청 (2026-10-12, 11~19는 2026-10-13, 20·21은 2026-10-17, 22·23은 2026-10-20, 24는 2026-10-25, 25는 2026-10-26, 26은 2026-10-29 추가)
 
 🔴 **우선: 8·16~18·20번.** 사장님 답변을 한 번에 확정하고 무기한 사용하도록 기존 다차 질문·만료 계약을 제거해야 한다.
 
@@ -348,8 +345,8 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 11 | `owner_verification_requests` | `ingredient_id` NOT NULL | `ingredient_id` NULL 허용 + `ambiguity_flag`, `asked_tags`, `resolved_flag_confirmation_id` 추가 + CHECK(둘 중 하나) | 메뉴 애매함 플래그 질문을 저장하려면 재료 없는 질문 행이 필요 (§3) |
 | 12 | `owner_flag_confirmations` | 없음 | 테이블 생성 (§3) | 플래그 답을 저장할 곳이 없으면 같은 질문을 매번 다시 묻고, 확인된 플래그가 판정에 반영되지 않음 |
 | 13 | `web_search_cache.expires_at` | NOT NULL, TTL | NULL 허용 | ⑥이 캐시 유효기간을 두지 않기로 함 |
-| 14 | `web_search_cache` | `payload` 갱신 시 덮어씀, 순위 컬럼 없음 | `next_rank` INT 추가 + `payload`는 기존 배열에 이어 붙임 (§5) | ⑥이 검색마다 다음 순위 10개를 더해 30개까지 모은다. 덮어쓰면 이전 레시피가 사라짐 |
-| 15 | `owner_verification_requests` | 확률 컬럼 없음 | `recipe_probability` NUMERIC NULL 추가 (§3) | 사장님 답은 스캔 밖에서 들어와 그 순간 비교할 확률이 없다. 없으면 "돈가스에 돼지고기 없음" 같은 이상 답이 그대로 확정된다 (FN) |
+| 14 | `web_search_cache` | `payload` 갱신 시 덮어씀 | `payload`는 기존 배열에 이어 붙임 (§5). 검색 순위(`next_rank`) 칸은 **추가하지 않는다** (10/27 회의) | ⑥이 검색마다 새 레시피를 더해 30개까지 모은다. 덮어쓰면 이전 레시피가 사라짐 |
+| 15 | ~~`owner_verification_requests.recipe_probability`~~ | — | **요청 철회** (10/27 회의). 이상 답변 잠금 폐기로 질문 때 확률을 저장하지 않는다 | — |
 | 16 | `owner_verification_requests.resolved_confirmation_id` | 처리 중간에는 NULL 가능 | `present`/`absent` 답변 처리 트랜잭션에서 확정값 upsert 후 해당 ID를 필수 연결 (§3) | 한 번의 답변이 즉시 확정값이므로 질문 행과 실제 반영값을 추적할 수 있어야 한다 |
 | 17 | `owner_verification_requests` UNIQUE | `(scan_session_id, menu_id, ingredient_id)` | 재료/플래그 부분 UNIQUE 2개 + `(scan_session_id, card_id)` UNIQUE로 변경하되 `round`는 사용하지 않음 (§3) | 플래그 질문 중복과 같은 카드의 재시도 INSERT를 막는다 |
 | 18 | `ingredient_confirmations.confirmed_at` | 최신 답변 시각 | 최근 확정 반영 시각으로 유지하되 TTL·만료 판정에는 사용하지 않음 (§3) | 사장님 확정값은 기간 만료 없이 사용하고 시각은 감사용으로만 남긴다 |
@@ -360,6 +357,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 23 | `menu_analyses.owner_card` | 단수 카드 저장 구조 | `owner_cards` JSONB 배열로 변경하고 기본값을 `[]`로 두며, 각 카드의 `card_id`를 `owner_verification_requests.card_id`와 연결 | Supervisor는 한 메뉴에 재료·플래그별 여러 `owner_cards[]`를 반환하므로 단수 객체로는 손실 없이 저장할 수 없다 |
 | 24 | `menu_analyses.owner_answer_status` | 없음 | `VARCHAR` 또는 enum으로 `none | partial | complete` 저장 (§4) | 프론트가 `risk_level`, `evidence_basis`, `owner_cards`를 추측해 사장님 답변 여부를 표시하지 않게 한다 |
 | 25 | `ingredient_evidence_log` | `source_type`에 `owner_feedback` 허용, `owner_verification_request_id`와 `review_item_id` 배타적 아크 | `source_type`은 `ocr_variant_tag`만, `owner_verification_request_id` 컬럼·아크 CHECK 삭제 (§3) | 사장님 답변 이력은 질문 행에 이미 있어 δ=0 행은 중복이다. 재계산 쿼리에서 걸러 낼 필요도 없어진다 |
+| 26 | `ingredient_confirmations` | `flagged_anomaly`, `override_eligible`(GENERATED) 있음 | 두 칸 삭제 (§3) | 이상 답변 잠금 폐기 (10/27 회의). 모든 확정값을 그대로 override에 쓴다 |
 
 - `corpus`·배치 `source`에 `etc` 같은 기타 값은 넣지 않는다 (3·4번 값만).
 - 메뉴·재료 ID는 정수(BIGINT)를 유지한다.

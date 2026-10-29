@@ -110,7 +110,12 @@ def _web_cache(payload: SaveWebSearchCachePayload) -> tuple[dict, Provenance]:
         evidence_class="soft",
         evidence_refs=[source.evidence.evidence_id for source in payload.sources],
     )
-    content = {"normalized_menu_name": payload.normalized_menu_name, "next_rank": payload.next_rank}
+    # No search rank any more (10/27): the new source URLs tell one save from the next.
+    # A menu-name-only key would make the backend drop every later save as a repeat.
+    content = {
+        "normalized_menu_name": payload.normalized_menu_name,
+        "source_urls": sorted(source.source_url for source in payload.sources),
+    }
     return content, provenance
 
 
