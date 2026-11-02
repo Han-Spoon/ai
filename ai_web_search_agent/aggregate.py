@@ -8,6 +8,7 @@ LLM that rewrites them into friendlier sentences is added later (§2-6).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import urlparse
 
 from ai_supervisor.contracts.bayesian import BayesianIngredient
@@ -25,8 +26,23 @@ MIN_SOURCES = 10
 PRIORITY_DOMAINS = ("10000recipe.com", "wtable.co.kr", "semie.cooking")
 RARE_MAX_RECIPES = 2
 COMMON_MIN_INGREDIENTS = 3
+# "다른 음식 의심" (§5): this recipe lacks at least this share of the ingredients that
+# half or more of the other new recipes have (초기값, 2026-10-27 초안).
+OTHER_DISH_MISSING_SHARE = 0.8
 
 IngredientKey = tuple[str, int | str]
+
+
+SignalCode = Literal["other_dish_suspected", "title_mismatch", "unmapped_ingredient"]
+
+
+@dataclass(frozen=True)
+class RecipeSignal:
+    """One new recipe the operator should look at before it is registered (§5)."""
+
+    evidence_id: str
+    code: SignalCode
+    message: str
 
 
 @dataclass(frozen=True)
@@ -35,6 +51,8 @@ class AggregateOutcome:
     ingredients: list[BayesianIngredient]
     review_notes: list[ReviewNote]
     warnings: list[NodeWarning]
+    # Not in the ⓪ contract yet (⑥ §7): ``WebAggregateResponse`` has no per-recipe field.
+    recipe_signals: list[RecipeSignal]
 
 
 def _key(ingredient: IngredientRef) -> IngredientKey:
@@ -199,6 +217,50 @@ def review_notes(menu_name: str, new_sources: list[MappedSource]) -> list[Review
     return notes
 
 
+def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[RecipeSignal]:
+    """Per new recipe, the three signals that send it to the operator (§5, 2026-11-02).
+
+    A recipe with no signal counts as passed. Only this batch of new recipes is compared:
+    cached ones went through the same check when they were new.
+    """
+
+    recipes = [s for s in new_sources if is_valid_source(s)]
+    keys = {s.evidence_id: set(_unique_ingredients(s)) for s in recipes}
+    menu = _compact(menu_name)
+    signals: list[RecipeSignal] = []
+    for source in recipes:
+        others = [keys[o.evidence_id] for o in recipes if o is not source]
+        if others:
+            appearances: dict[IngredientKey, int] = {}
+            for other in others:
+                for key in other:
+                    appearances[key] = appearances.get(key, 0) + 1
+            common = {k for k, n in appearances.items() if n * 2 >= len(others)}
+            missing = common - keys[source.evidence_id]
+            if common and len(missing) >= OTHER_DISH_MISSING_SHARE * len(common):
+                signals.append(RecipeSignal(
+                    evidence_id=source.evidence_id,
+                    code="other_dish_suspected",
+                    message=f"다른 레시피에 자주 나오는 재료 {len(common)}개 중 {len(missing)}개가 없어요",
+                ))
+        if menu not in _compact(source.title):
+            signals.append(RecipeSignal(
+                evidence_id=source.evidence_id,
+                code="title_mismatch",
+                message=f"제목에 '{menu_name}'이(가) 없어요: {source.title}",
+            ))
+        unmapped = sorted(
+            {i.ingredient.canonical_name for i in source.ingredients if i.ingredient.ingredient_id is None}
+        )
+        if unmapped:
+            signals.append(RecipeSignal(
+                evidence_id=source.evidence_id,
+                code="unmapped_ingredient",
+                message="표준 재료로 맞추지 못한 재료가 있어요: " + ", ".join(unmapped),
+            ))
+    return signals
+
+
 def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
     """Core of ⑥ stage 2. Input warnings are kept by the caller; only new ones are returned."""
 
@@ -219,6 +281,7 @@ def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
         ingredients=ingredients,
         review_notes=review_notes(request.menu.normalized_menu_name, new_sources),
         warnings=warnings,
+        recipe_signals=recipe_signals(request.menu.normalized_menu_name, new_sources),
     )
 
 
