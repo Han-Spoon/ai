@@ -66,6 +66,39 @@ def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _stronger(a: DecisionRiskIngredient, b: DecisionRiskIngredient) -> bool:
+    """An owner "present" first, then a known probability over none, then the higher one."""
+
+    if (a.status == "present") != (b.status == "present"):
+        return a.status == "present"
+    if b.posterior_mean is None:
+        return a.posterior_mean is not None
+    return a.posterior_mean is not None and a.posterior_mean > b.posterior_mean
+
+
+def merge_same_ingredient(items: list[DecisionRiskIngredient]) -> list[DecisionRiskIngredient]:
+    """One entry per ingredient. ④ sends one row per tag bundle (#327), so 액젓 can come
+    as is_fish and again as is_fish + is_shellfish. The stronger row stays and the tags
+    and evidence of all rows are joined, so no matched tag is lost (§1-2)."""
+
+    merged: dict[tuple[str, int | str], DecisionRiskIngredient] = {}
+    for item in items:
+        key = _key(item.ingredient)
+        seen = merged.get(key)
+        if seen is None:
+            merged[key] = item
+            continue
+        base, other = (item, seen) if _stronger(item, seen) else (seen, item)
+        merged[key] = base.model_copy(
+            update={
+                "constraint_tags": _dedupe([*base.constraint_tags, *other.constraint_tags]),
+                "matched_tags": sorted({*base.matched_tags, *other.matched_tags}),
+                "evidence_refs": _dedupe([*base.evidence_refs, *other.evidence_refs]),
+            }
+        )
+    return list(merged.values())
+
+
 def is_hard_evidence(result: ConfirmedResult) -> bool:
     """Only eligible present/absent answers count; ``unknown`` never means "absent" (§1-1)."""
 
@@ -158,7 +191,7 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
         + [risk(p, "unknown") for p in probabilities]
         + [risk(v, "unknown") for v in variants]
     )
-    risk_ingredients = [r for r in candidates if r is not None]
+    risk_ingredients = merge_same_ingredient([r for r in candidates if r is not None])
 
     observed = [o for o in request.risk_tag_observations if o.tag in forbidden]
     flag_checks = [

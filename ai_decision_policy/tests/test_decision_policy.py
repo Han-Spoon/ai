@@ -524,3 +524,40 @@ def test_review_picks_highest_priority_reason() -> None:
 def test_review_not_needed_for_plain_estimate() -> None:
     outcome = decide(request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.6)]))
     assert review(outcome) == (False, None)
+
+
+# --- one entry per ingredient (④ #327) -------------------------------------------
+
+SEAFOOD_ALLERGY = profile(allergies=["is_fish", "is_shellfish"])
+
+
+def test_same_ingredient_from_two_tag_bundles_is_one_risk_ingredient() -> None:
+    # ④ keeps a row per tag bundle: 액젓 itself, and 액젓 inside 김치 with a path tag.
+    direct = probability(FISH_SAUCE, ["is_fish"], 0.7)
+    in_kimchi = probability(FISH_SAUCE, ["is_fish", "is_shellfish"], 0.3).model_copy(
+        update={"evidence_refs": ["recipe:109"]}
+    )
+    outcome = decide(request(SEAFOOD_ALLERGY, probability_results=[in_kimchi, direct]))
+
+    [item] = outcome.risk_ingredients
+    # The higher probability stays; no matched tag or evidence is lost.
+    assert item.posterior_mean == 0.7
+    assert item.matched_tags == ["is_fish", "is_shellfish"]
+    assert item.constraint_tags == ["is_fish", "is_shellfish"]
+    assert item.evidence_refs == ["recipe:110", "recipe:109"]
+    assert outcome.matched_tags == ["is_fish", "is_shellfish"]
+
+
+def test_a_known_probability_beats_a_variant_guess_for_the_same_ingredient() -> None:
+    variant = ProposedVariantIngredient(
+        ingredient=BEEF,
+        constraint_tags=["is_beef"],
+        role="identity",
+        source="variant_suggested",
+        evidence_refs=["variant:120"],
+    )
+    outcome = decide(request(VEGAN, probability_results=[probability(BEEF, ["is_beef"], 0.15)], variants=[variant]))
+
+    [item] = outcome.risk_ingredients
+    assert item.posterior_mean == 0.15
+    assert item.evidence_refs == ["recipe:120", "variant:120"]

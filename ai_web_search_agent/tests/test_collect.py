@@ -1,4 +1,4 @@
-"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~14, 17~22)."""
+"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~14, 17~22, 18-a, 18-b)."""
 
 import asyncio
 import time
@@ -452,6 +452,36 @@ def test_a_slow_page_keeps_search_text_and_the_others_are_used() -> None:
     names = [[i.canonical_name for i in s.ingredients] for s in response.sources]
     # The slow page has only its title ("김치찌개 황금레시피" gives 김치).
     assert names == [["김치"], ["김치", "돼지고기", "두부", "양파", "대파"]]
+
+
+def test_unavailable_cache_is_not_read_as_no_cache() -> None:
+    # The backend failed to load the cache: ⓪ sends no cached sources and a warning
+    # (⓪ item_graph web_collect_node). ⑥ searches anew from rank 1 and keeps the warning (§3-2).
+    req = WebCollectRequest.model_validate(
+        {
+            **request().model_dump(mode="json"),
+            "warnings": [
+                {
+                    "code": "knowledge_slice_unavailable",
+                    "node": "supervisor",
+                    "item_id": "scan-123:0",
+                    "message": "web_search_cache could not be loaded",
+                    "forces_caution": True,
+                }
+            ],
+        }
+    )
+    results = [result(i) for i in range(10)]
+    search = RecordingProvider(results)
+
+    response = run(WebCollectAgent(search, Reader()), req)
+
+    assert response.found is True
+    assert [s.source_url for s in response.sources] == [r.url for r in results]
+    assert search.calls[0][0] == 1
+    assert codes(response.warnings) == ["knowledge_slice_unavailable"]
+    assert response.warnings[0].forces_caution is True
+    assert response.errors == []
 
 
 def test_input_signals_are_kept() -> None:
