@@ -3,9 +3,10 @@
 No DB and no tags. Each new recipe comes back with the ingredient names as written;
 ④ maps them between stage 1 and stage 2.
 
-The priority sites are read first, keeping only their recipe URLs (``RECIPE_PATHS``);
-when they run out before ``max_sources``, the general web fills the rest (§2-3-1). Page
-bodies are read only for the results that are kept (``pages.py``).
+The priority sites are read first, keeping only their recipe URLs (``RECIPE_PATHS``).
+When they give fewer candidates than a round needs, the general web fills the rest in the
+same round, and priority recipes still come first (§2-3-1). Page bodies are read only for
+the results that are kept (``pages.py``).
 
 Every search starts from rank 1; results already in the cache are skipped by URL, so no
 search rank is stored or passed around (10/27 meeting, §2-4).
@@ -45,6 +46,9 @@ TOTAL_SECONDS = 7.0
 SEARCH_SECONDS = 3.0
 PAGE_SECONDS = 1.5
 LLM_SECONDS = 3.0
+# Median LLM call was 1.98 s (2026-10-29): with less time left the call nearly always
+# times out, and a timed-out call is still paid for (§6-3).
+LLM_MIN_SECONDS = 2.0
 LLM_BATCH_SIZE = 3
 READ_AHEAD = 2
 
@@ -145,14 +149,18 @@ class _Collection:
         A result the LLM could not read is kept unread (§3 2단계), but only to fill what
         read recipes leave short: with ``READ_AHEAD`` there are usually enough of them,
         and an unread result may be another dish (2026-10-28). The LLM failure is
-        reported only when an unread result is used.
+        reported only when unread results are half or more of what is kept.
         """
 
         read = [s for s in self.sources if s.source_url not in self.unread_urls]
         unread = [s for s in self.sources if s.source_url in self.unread_urls]
         kept = {id(s) for s in read[:max_sources] + unread[: max(0, max_sources - len(read))]}
         self.sources = [s for s in self.sources if id(s) in kept]
-        self.llm_failed = any(s.source_url in self.unread_urls for s in self.sources)
+        # Warn only when half or more of the kept recipes went unread (2026-11-02). A
+        # web-only menu is CAUTION anyway; the warning sends it to the high-risk review
+        # and into the reason sentence, which a stray unread recipe does not deserve.
+        used = sum(s.source_url in self.unread_urls for s in self.sources)
+        self.llm_failed = used > 0 and 2 * used >= len(self.sources)
 
 
 class WebCollectAgent:
@@ -168,6 +176,7 @@ class WebCollectAgent:
         search_seconds: float = SEARCH_SECONDS,
         page_seconds: float = PAGE_SECONDS,
         llm_seconds: float = LLM_SECONDS,
+        llm_min_seconds: float = LLM_MIN_SECONDS,
     ) -> None:
         self.provider = provider
         self.reader = reader
@@ -176,6 +185,7 @@ class WebCollectAgent:
         self.search_seconds = search_seconds
         self.page_seconds = page_seconds
         self.llm_seconds = llm_seconds
+        self.llm_min_seconds = llm_min_seconds
 
     async def run(self, request: WebCollectRequest) -> WebCollectResponse:
         collection = await self._collect(request)
@@ -251,10 +261,13 @@ class WebCollectAgent:
     async def _collect(self, request: WebCollectRequest) -> _Collection:
         """Read results from rank 1 until ``max_sources`` new ones are valid.
 
-        The priority sites come first, then the general web (§2-3-1). A result is valid
-        when it is kept as this menu's recipe and has at least one ingredient name (§2-3).
+        Each round asks the priority sites first. When they give fewer candidates than the
+        round needs, the general web fills the gap in the same round, so pages and the LLM
+        run once for both (2026-11-02): a second round rarely fits in time (§6-3). Once the
+        priority sites run out, the general web goes on alone. A result is valid when it
+        is kept as this menu's recipe and has at least one ingredient name (§2-3).
         Dropped results are replaced by the next ones. Cached URLs come back too and are
-        skipped, so each batch asks for that many more (§2-4).
+        skipped, so each search asks for that many more (§2-4).
         """
 
         loop = asyncio.get_running_loop()
@@ -265,61 +278,72 @@ class WebCollectAgent:
         seen = set(cached_urls)
         cached_left = len(cached_urls)
         collection = _Collection(sources=[])
+        rank = {PRIORITY_DOMAINS: 1, (): 1}
+        done = {PRIORITY_DOMAINS: False, (): False}
 
-        for sites in (PRIORITY_DOMAINS, ()):
-            rank = 1
-            while len(collection.sources) < request.max_sources:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    collection.timed_out = True
-                    break
-                # Read twice what is missing: one round (search, pages, LLM) takes about
-                # 4.5 seconds, so a second round to replace dropped results rarely fits.
-                wanted = READ_AHEAD * (request.max_sources - len(collection.sources)) + cached_left
-                try:
-                    batch = await asyncio.wait_for(
-                        asyncio.to_thread(self.provider.search, query, rank, wanted, sites),
-                        timeout=min(self.search_seconds, remaining),
-                    )
-                except asyncio.TimeoutError:
-                    collection.timed_out = True
-                    break
-                except SearchNotConfiguredError:
-                    collection.not_configured = True
-                    break
-                except Exception:
-                    collection.search_failed = True
-                    break
-                if not batch:
-                    break
-                rank += len(batch)
-                collection.read_count += len(batch)
+        async def search(sites: tuple[str, ...], need: int) -> list[SearchResult] | None:
+            """Up to ``need`` unseen candidates from ``sites``; ``None`` stops the search."""
 
-                cached_left = max(0, cached_left - sum(r.url in cached_urls for r in batch))
-                fresh = [
-                    r for r in batch
-                    if r.url not in seen and (not sites or is_priority_recipe_url(r.url))
-                ]
-                seen.update(r.url for r in batch)
-                fresh = await self._fetch_pages(fresh, deadline)
-                readings = await self._read(menu_name, fresh, deadline, collection)
-                for result, reading in zip(fresh, readings):
-                    if reading is not None and not reading.is_menu_recipe:
-                        continue
-                    text = result.text()
-                    names = merge_names(
-                        find_ingredient_names(text),
-                        reading.ingredients if reading is not None else [],
-                        text,
-                    )
-                    if names:
-                        collection.sources.append(to_web_source(result, names))
-                        if reading is None:
-                            collection.unread_urls.add(result.url)
-                if len(batch) < wanted:
+            nonlocal cached_left
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                collection.timed_out = True
+                return None
+            count = need + cached_left
+            try:
+                batch = await asyncio.wait_for(
+                    asyncio.to_thread(self.provider.search, query, rank[sites], count, sites),
+                    timeout=min(self.search_seconds, remaining),
+                )
+            except asyncio.TimeoutError:
+                collection.timed_out = True
+                return None
+            except SearchNotConfiguredError:
+                collection.not_configured = True
+                return None
+            except Exception:
+                collection.search_failed = True
+                return None
+            rank[sites] += len(batch)
+            done[sites] = len(batch) < count
+            collection.read_count += len(batch)
+            cached_left = max(0, cached_left - sum(r.url in cached_urls for r in batch))
+            fresh = [
+                r for r in batch
+                if r.url not in seen and (not sites or is_priority_recipe_url(r.url))
+            ]
+            seen.update(r.url for r in batch)
+            return fresh
+
+        while len(collection.sources) < request.max_sources and not all(done.values()):
+            # Read twice what is missing: one round (search, pages, LLM) takes about
+            # 4.5 seconds, so a second round to replace dropped results rarely fits.
+            wanted = READ_AHEAD * (request.max_sources - len(collection.sources))
+            fresh: list[SearchResult] = []
+            for sites in (PRIORITY_DOMAINS, ()):
+                if done[sites] or len(fresh) >= wanted:
+                    continue
+                found = await search(sites, wanted - len(fresh))
+                if found is None:
                     break
+                fresh += found
             if collection.timed_out or collection.search_failed or collection.not_configured:
                 break
+            fresh = await self._fetch_pages(fresh, deadline)
+            readings = await self._read(menu_name, fresh, deadline, collection)
+            for result, reading in zip(fresh, readings):
+                if reading is not None and not reading.is_menu_recipe:
+                    continue
+                text = result.text()
+                names = merge_names(
+                    find_ingredient_names(text),
+                    reading.ingredients if reading is not None else [],
+                    text,
+                )
+                if names:
+                    collection.sources.append(to_web_source(result, names))
+                    if reading is None:
+                        collection.unread_urls.add(result.url)
         collection.keep_read_first(request.max_sources)
         return collection
 
@@ -360,7 +384,7 @@ class WebCollectAgent:
         if not results:
             return []
         remaining = deadline - asyncio.get_running_loop().time()
-        if self.reader is None or remaining <= 0:
+        if self.reader is None or remaining <= 0 or remaining < self.llm_min_seconds:
             collection.llm_failed = True
             return [None] * len(results)
         timeout = min(self.llm_seconds, remaining)
