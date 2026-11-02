@@ -161,6 +161,7 @@ def test_reason_may_translate_a_name_given_only_in_korean() -> None:
         HALAL,
         probability_results=[probability(PORK, ["is_pork"], 0.62), probability(sauce, [], 0.5)],
         localized_names={PORK.ingredient_id: "pork"},
+        warnings=[warning("insufficient_sources")],
     )
     text = "Pork is a main ingredient here, and sand lance fish sauce is used for seasoning."
     told = ReasonOutput(name_translations=[{"korean": "까나리액젓", "translated": "sand lance fish sauce"}], reason=text)
@@ -199,8 +200,25 @@ def test_reason_check_drops_empty_or_long_text() -> None:
 # --- reason sentence on the decision node ---------------------------------------
 
 
+# 삼겹살 does not say "pork" by its name, so it is worth a reason (needs_reason).
+PORK_BELLY = IngredientRef(ingredient_id=105, canonical_name="삼겹살")
+
+
 def estimated_pork(locale="ko"):
-    return request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], locale=locale)
+    return request(HALAL, probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62)], locale=locale)
+
+
+def test_no_reason_when_the_name_already_says_why() -> None:
+    # "돼지고기 (약 62%)" for a halal user: a reason could only repeat the verdict.
+    llm = FakeLLM(ReasonOutput(reason="unused"))
+    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], locale="ko")
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
+    assert llm.calls == []
+    # The same menu with a known limit still gets one.
+    limited = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], locale="ko",
+                      warnings=[warning("insufficient_sources")])
+    llm = FakeLLM(ReasonOutput(reason="웹에서 찾은 레시피가 적어서 덜 확실해요."))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(limited)).message.reason is not None
 
 
 def test_decision_tool_adds_a_checked_reason_and_keeps_the_verdict() -> None:
@@ -389,3 +407,27 @@ def test_review_falls_back_on_llm_error() -> None:
     response = asyncio.run(HighRiskReviewAgent(FakeLLM(RuntimeError("down"))).run(req))
     assert response.owner_cards == req.decision.owner_cards
     assert response.missed_ingredients == []
+
+
+def test_more_known_limits_worth_a_reason() -> None:
+    # 2026-11-02: a name-based guess, an estimate with no recipe data, a storeless scan.
+    from ai_supervisor.contracts.decision import ProposedVariantIngredient
+
+    from ai_decision_policy.reason import needs_reason, reason_facts
+
+    variant = ProposedVariantIngredient(
+        ingredient=PORK, constraint_tags=["is_pork"], role="identity", source="variant_suggested", evidence_refs=["v:1"]
+    )
+    guessed = request(HALAL, variants=[variant], locale="ko")
+    unknown_prior = request(
+        HALAL,
+        probability_results=[probability(PORK, ["is_pork"], 0.3).model_copy(update={"prior_source": "uninformative"})],
+        locale="ko",
+    )
+    storeless = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], store_id=None, locale="ko")
+
+    assert reason_facts(guessed) == ["돼지고기 is guessed from the menu name, not from recipes."]
+    assert "no recipe data for 돼지고기" in reason_facts(unknown_prior)[0]
+    assert "No restaurant was chosen" in " ".join(reason_facts(storeless))
+    for req in (guessed, unknown_prior, storeless):
+        assert needs_reason(req, judge(req))

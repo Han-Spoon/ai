@@ -226,3 +226,39 @@ def test_run_returns_contract_response_and_keeps_input_warnings() -> None:
 def test_run_with_nothing_found() -> None:
     response = asyncio.run(WebAggregateAgent().run(request([source(0, "10000recipe", [])])))
     assert (response.found, response.ingredients, response.review_notes) == (False, [], [])
+
+
+# --- recipe signals for auto registration (§5, 2026-11-02) --------------------
+
+
+def signals(outcome) -> list[tuple[str, str]]:
+    return [(s.evidence_id.rsplit("/", 1)[-1], s.code) for s in outcome.recipe_signals]
+
+
+def test_clean_recipes_have_no_signal_and_pass() -> None:
+    assert aggregate_sources(request(ten_kimchi_stew_recipes())).recipe_signals == []
+
+
+def test_other_dish_is_suspected_when_it_lacks_what_the_others_share() -> None:
+    sources = ten_kimchi_stew_recipes()
+    sources[3] = source(3, "10000recipe", [BEEF])  # none of 김치·두부·양파
+    sources[4] = source(4, "10000recipe", [KIMCHI, BEEF])  # lacks 2 of 3: 67%, under 80%
+    outcome = aggregate_sources(request(sources))
+    assert signals(outcome) == [("3", "other_dish_suspected")]
+    assert "3개 중 3개" in outcome.recipe_signals[0].message
+
+
+def test_title_and_unmapped_signals_are_per_recipe() -> None:
+    sources = ten_kimchi_stew_recipes()
+    sources[1]["title"] = "엄마표 얼큰 찌개"
+    sources[2] = source(2, "10000recipe", [KIMCHI, TOFU, ONION, MALA_SAUCE])
+    outcome = aggregate_sources(request(sources))
+    assert signals(outcome) == [("1", "title_mismatch"), ("2", "unmapped_ingredient")]
+    assert "마라소스" in outcome.recipe_signals[1].message
+
+
+def test_signals_cover_new_recipes_only() -> None:
+    cached = [source(i, "10000recipe", [BEEF], origin="cache", title="김치찜") for i in range(10)]
+    new = [source(i, "wtable", [KIMCHI, TOFU, ONION]) for i in range(10, 20)]
+    # Cached recipes were checked when they were new, and they are not compared with.
+    assert aggregate_sources(request(cached + new)).recipe_signals == []

@@ -179,6 +179,34 @@ def test_a_failed_llm_call_leaves_only_its_own_results_unread() -> None:
     assert codes(response.warnings) == ["web_llm_extraction_failed"]
 
 
+class FailsOnCalls(Reader):
+    """Fake LLM whose calls with these numbers (0, 1, ...) fail."""
+
+    def __init__(self, failing: set[int]) -> None:
+        super().__init__()
+        self.failing = failing
+
+    async def read(self, menu_name, results):
+        call = len(self.sizes)
+        self.sizes.append(len(results))
+        if call in self.failing:
+            raise RuntimeError("llm down")
+        return [RecipeReading(is_menu_recipe=True, ingredients=[]) for _ in results]
+
+
+def test_warning_only_when_half_or_more_went_unread() -> None:
+    # Ten results read three at a time: calls 0..3. One failed call leaves 3 of 10
+    # unread, two leave 6 of 10 (2026-11-02: warn at half or more).
+    results = [result(i) for i in range(10)]
+
+    some = run(WebCollectAgent(provider(results), FailsOnCalls({1})), request())
+    most = run(WebCollectAgent(provider(results), FailsOnCalls({0, 1})), request())
+
+    assert len(some.sources) == len(most.sources) == 10
+    assert some.warnings == []
+    assert codes(most.warnings) == ["web_llm_extraction_failed"]
+
+
 def test_results_without_ingredients_are_not_valid_sources() -> None:
     results = [result(0, content="분위기 좋은 곳이에요", title="맛집 방문 후기"), result(1)]
 
@@ -218,7 +246,7 @@ def test_13_deadline_mid_search_adds_warning() -> None:
             return []
 
     agent = WebCollectAgent(
-        HalfThenSlow(), Reader(drop={"김치찜 레시피"}), total_seconds=0.2
+        HalfThenSlow(), Reader(drop={"김치찜 레시피"}), total_seconds=0.2, llm_min_seconds=0
     )
 
     response = run(agent, request())
@@ -252,7 +280,9 @@ def test_17_cache_reads_from_rank_one_and_skips_cached_urls() -> None:
     )
 
     assert [s.source_url for s in response.sources] == [r.url for r in results[10:20]]
-    assert search.calls == [(1, 30)]
+    # 20 results for the 30 asked: the priority sites ran out, so the blog is asked for
+    # the 10 candidates still short in the same round (2026-11-02).
+    assert search.calls == [(1, 30), (1, 10)]
 
 
 def test_cache_entries_off_the_ranking_still_fill_ten_new_sources() -> None:
@@ -404,12 +434,70 @@ def test_11_general_web_fills_what_the_priority_sites_lack() -> None:
     assert search.sites == [PRIORITY_DOMAINS, ()]
 
 
-def test_12_enough_priority_recipes_skip_the_general_web() -> None:
-    search = RecordingProvider([result(i) for i in range(10)])
+class SiteProvider(SearchProvider):
+    """Priority-site and blog results kept apart, so a test can tell who gave what."""
+
+    def __init__(self, priority: list[SearchResult], blog: list[SearchResult]) -> None:
+        self.results = {PRIORITY_DOMAINS: priority, (): blog}
+        self.calls: list[tuple[tuple[str, ...], int, int]] = []
+
+    def search(self, query, start, count, sites=()):
+        self.calls.append((tuple(sites), start, count))
+        return self.results[tuple(sites)][start - 1 : start - 1 + count]
+
+
+def blog_post(i: int) -> SearchResult:
+    return SearchResult(query=QUERY, title="김치찌개", url=f"https://blog.naver.com/a/{i}", content=RECIPE_TEXT)
+
+
+def test_12_enough_priority_recipes_keep_the_blog_out() -> None:
+    # 10 priority candidates for the 20 a round reads: the blog fills the round, but
+    # when all 10 priority recipes are valid, none of the blog posts is used.
+    search = SiteProvider([result(i) for i in range(10)], [blog_post(i) for i in range(10)])
+    reader = Reader()
+
+    response = run(WebCollectAgent(search, reader), request())
+
+    assert [s.source_url for s in response.sources] == [result(i).url for i in range(10)]
+    assert [c[0] for c in search.calls] == [PRIORITY_DOMAINS, ()]
+    assert sum(reader.sizes) == 20  # one round: pages and the LLM run once for both
+
+
+def test_12_full_priority_round_does_not_search_the_blog() -> None:
+    search = SiteProvider([result(i) for i in range(30)], [blog_post(i) for i in range(10)])
 
     run(WebCollectAgent(search, Reader()), request())
 
-    assert search.sites == [PRIORITY_DOMAINS]
+    assert [c[0] for c in search.calls] == [PRIORITY_DOMAINS]
+
+
+def test_blog_fills_a_round_short_of_priority_recipe_urls() -> None:
+    # A full priority page of 20 where only 6 are recipe URLs (a profile page, say): the
+    # blog adds the 14 missing candidates in the same round instead of a second round.
+    profiles = [
+        SearchResult(query=QUERY, title="프로필", url=f"https://www.10000recipe.com/profile/{i}", content=RECIPE_TEXT)
+        for i in range(14)
+    ]
+    search = SiteProvider([result(i) for i in range(6)] + profiles, [blog_post(i) for i in range(20)])
+    reader = Reader(drop={"김치찌개"})  # every blog post is another dish here
+
+    response = run(WebCollectAgent(search, reader), request())
+
+    assert [c[:2] for c in search.calls[:2]] == [(PRIORITY_DOMAINS, 1), ((), 1)]
+    assert search.calls[1][2] == 14
+    assert [s.source_url for s in response.sources[:6]] == [result(i).url for i in range(6)]
+
+
+def test_no_llm_call_when_too_little_time_is_left() -> None:
+    # A call with less than LLM_MIN_SECONDS left nearly always times out and is still
+    # paid for; the results are kept unread instead (§6-3).
+    reader = Reader()
+
+    response = run(WebCollectAgent(provider([result(0)]), reader, total_seconds=1.0), request())
+
+    assert reader.sizes == []
+    assert len(response.sources) == 1
+    assert codes(response.warnings) == ["web_llm_extraction_failed"]
 
 
 def test_page_bodies_are_read_for_kept_results_only() -> None:

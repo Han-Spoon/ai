@@ -293,6 +293,7 @@ WARNING_FACTS: dict[str, str] = {
     "unmapped_constraint_tags": "For some ingredients it is unclear which food restrictions they affect.",
     "constraint_tags_lookup_failed": "For some ingredients it is unclear which food restrictions they affect.",
     "max_depth_reached": "Ingredients inside sauces or bases could not be traced all the way.",
+    "store_context_missing": "No restaurant was chosen for this scan, so the owner's answers cannot be used.",
     "cycle_detected": "Ingredients inside sauces or bases could not be traced all the way.",
 }
 INFORMATION_FACTS: dict[str, str] = {
@@ -301,12 +302,35 @@ INFORMATION_FACTS: dict[str, str] = {
 }
 
 
+# An estimate with no recipe data at all behind it (⑤ prior fallback). ``global`` is
+# not one: it is this menu's own crawled recipes, where most estimates come from.
+THIN_PRIORS = {"uninformative"}
+
+
 def reason_facts(request: DecisionRequest) -> list[str]:
-    """Plain reasons the result is less certain: warnings and ``information_status``."""
+    """Plain reasons the result is less certain: warnings, ``information_status``, and
+    (2026-11-02) a restricted ingredient guessed from the menu name or estimated with no
+    recipe data at all."""
 
     facts = [WARNING_FACTS[w.code] for w in request.warnings if w.code in WARNING_FACTS]
     if request.information_status in INFORMATION_FACTS:
         facts.append(INFORMATION_FACTS[request.information_status])
+
+    forbidden = forbidden_tags(request.user_profile)
+    localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
+
+    def name(ref) -> str:
+        return localized.get(ref.ingredient_id, ref.canonical_name)
+
+    for variant in request.proposed_variant_ingredients:
+        if set(variant.constraint_tags) & forbidden:
+            facts.append(f"{name(variant.ingredient)} is guessed from the menu name, not from recipes.")
+    for result in request.probability_results:
+        if result.prior_source in THIN_PRIORS and set(result.constraint_tags) & forbidden:
+            facts.append(
+                f"There is no recipe data for {name(result.ingredient)} in this dish, so its "
+                f"chance is only a rough default."
+            )
     return list(dict.fromkeys(facts))
 
 
@@ -346,14 +370,29 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
     }
 
 
+def needs_explaining(item) -> bool:
+    """The name alone does not say why the ingredient hits the user: 액젓 for fish,
+    삼겹살 for pork. "돼지고기" for a pork restriction says it already."""
+
+    name = item.ingredient.canonical_name
+    for tag in item.matched_tags:
+        restriction = TAG_NAMES.get(tag, {}).get("ko")
+        if not restriction or restriction not in name:
+            return True
+    return False
+
+
 def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
-    """Explain when an ingredient drives the verdict or the result has known limits
-    (few web recipes, missing information). A menu with no information at all, or a
-    safe one, is already said by the verdict sentence."""
+    """Write a reason only when it says something the verdict sentence and notes do not
+    (2026-11-02): an ingredient whose name does not show the restriction it hits, or a
+    known limit (few web recipes, missing information). A menu with no information at
+    all, or a safe one, is already said by the verdict sentence."""
 
     if response.risk_level == "safe" or request.no_information:
         return False
-    return bool(response.risk_ingredients) or bool(reason_facts(request))
+    return bool(reason_facts(request)) or any(
+        needs_explaining(item) for item in response.risk_ingredients
+    )
 
 
 class ReasonWriter:
