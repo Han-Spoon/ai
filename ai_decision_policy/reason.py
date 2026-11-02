@@ -4,7 +4,8 @@ The LLM gets the verdict code already decided and only writes one or two sentenc
 the user's language. Before the sentence goes out, code checks it (#174):
 
 - every percentage must be one the verdict already shows (never 0% or 100%),
-- no ingredient name the request did not carry,
+- no ingredient name the request did not carry (a name the request carries only in
+  Korean may come back in the LLM's own translation, which it lists alongside, §4),
 - no "it's safe" claim on a danger or caution verdict,
 - no Hangul outside allowed names when the user's language is not Korean.
 
@@ -79,6 +80,8 @@ Write one or two short, friendly sentences in {language}, speaking to the touris
   "component" is a regular ingredient, "hidden" is inside a sauce or base.
   If role is null, do not say what part it plays.
 - Use only ingredients from the input, with the given names. Never add others.
+  A name given in Korean has no translation yet: translate it into {language}, and
+  list each such name with your translation in name_translations.
 - State only what the input says. Do not name other dishes, cooking methods, sauces,
   broths, or serving styles, and do not invent examples of how it is used.
 - If you give a percentage, copy one from the input exactly, with the % sign.
@@ -106,8 +109,23 @@ def instructions(template: str, locale: str) -> str:
     )
 
 
+class NameTranslation(BaseModel):
+    korean: str
+    translated: str
+
+
 class ReasonOutput(BaseModel):
+    # Before the reason, so the model settles each translation first.
+    name_translations: list[NameTranslation] = Field(default_factory=list)
     reason: str = Field(description="One or two sentences in the requested language")
+
+
+def translated_names(pairs: Iterable[NameTranslation], korean_names: Iterable[str]) -> set[str]:
+    """The LLM's translations of names the request gave only in Korean. Without them
+    "멸치액젓" written as "anchovy fish sauce" reads as 멸치, a name it did not carry."""
+
+    wanted = set(korean_names)
+    return {p.translated.strip() for p in pairs if p.korean.strip() in wanted and p.translated.strip()}
 
 
 def shown_percent(posterior_mean: float) -> int:
@@ -155,6 +173,25 @@ def restriction_names(tags: Iterable[str]) -> set[str]:
     for tag in tags:
         names |= set(TAG_NAMES.get(tag, {}).values())
     return names
+
+
+def localized_name(korean_name: str, locale: str) -> str:
+    """``korean_name`` in ``locale`` from the translation table, else Korean as is."""
+
+    if locale == "ko":
+        return korean_name
+    for row in _translation_rows():
+        if row["name_ko"] == korean_name and row.get(locale, "").strip():
+            return row[locale].strip()
+    return korean_name
+
+
+def untranslated(names: Iterable[str], locale: str) -> list[str]:
+    """Names still in Korean in a non-Korean answer: the ones the LLM translates."""
+
+    if locale == "ko":
+        return []
+    return list(dict.fromkeys(n for n in names if _HANGUL_RUN_RE.search(n)))
 
 
 def _mentions(text: str, name: str, locale: str) -> bool:
@@ -225,8 +262,8 @@ def check_reason(
     for name in known_names(locale) - allowed:
         if _mentions(lowered, name, locale):
             return None
-    # Outside Korean, Hangul may only appear inside allowed names (web ingredients
-    # without a translation stay Korean, §4); anything else means the wrong language.
+    # Outside Korean, Hangul may only appear inside allowed names (the LLM may leave an
+    # untranslated name in Korean); anything else means the wrong language.
     if locale != "ko" and _HANGUL_RUN_RE.search(lowered):
         return None
     return text
@@ -329,11 +366,12 @@ class ReasonWriter:
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
         if not needs_reason(request, response):
             return None
+        payload = reason_payload(request, response)
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
                     instructions(INSTRUCTIONS, request.locale),
-                    reason_payload(request, response),
+                    payload,
                     ReasonOutput,
                     MAX_OUTPUT_TOKENS,
                 ),
@@ -341,6 +379,10 @@ class ReasonWriter:
             )
         except Exception:
             return None
+        korean_only = untranslated(
+            [*(i["name"] for i in payload["risk_ingredients"]), *payload["other_ingredients_in_menu"]],
+            request.locale,
+        )
         return check_reason(
             output.reason,
             locale=request.locale,
@@ -351,7 +393,8 @@ class ReasonWriter:
                 if item.posterior_mean is not None
             ],
             allowed_names=request_names(request)
-            | restriction_names(forbidden_tags(request.user_profile)),
+            | restriction_names(forbidden_tags(request.user_profile))
+            | translated_names(output.name_translations, korean_only),
             menu_names=[request.menu.normalized_menu_name],
             verdict=response.message.verdict,
         )

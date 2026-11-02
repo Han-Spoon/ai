@@ -76,7 +76,7 @@ cards = build_owner_cards(request, outcome)
 | 메뉴 카드 | 정보 없는 메뉴(또는 재료 0개)에 한 장. 화면 표시용이라 저장하지 않음 | `no_information` |
 
 - 태그를 모르는 재료는 겹치는지 알 수 없어 카드를 만들지 않습니다
-- 사장님에게는 대상마다 한 번만 묻습니다 (10/26 회의). 이미 답한 재료는 이상 답변 표시가 있어도 다시 묻지 않고, 만료·2·3차 질문도 없습니다. ⓪ 계약 코드에 `round`가 남아 있어 항상 `round: 1`, `previous_question_id: null`을 보냅니다 (§9)
+- 사장님에게는 대상마다 한 번만 묻습니다 (10/26 회의). 이미 답한 재료는 이상 답변 표시가 있어도 다시 묻지 않고, 만료·2·3차 질문도 없어 카드에 차수 칸(`round`, `previous_question_id`)이 없습니다 (§9)
 - `card_id`는 `card:{item_id}:{대상}`으로, 같은 요청이면 항상 같은 값입니다
 - 순서: `ambiguous_menu` → `high_risk_review` → `insufficient_recipe_evidence` → `no_information` → `unconfirmed`. 같은 이유끼리는 확률이 높은 재료, 확률이 없으면 `ingredient_id` 순, 플래그는 이름 순
 - 문구: 한국어 `ko`와 사용자 언어(한국어 사용자면 `ko` 하나). LLM 없이 고정 템플릿으로 만듭니다. 재료 이름은 `localized_names`에서 가져오고, 없으면 한국어 이름을 씁니다. `ko` 외 6개 언어는 원어민 확인 전 초안입니다 (#135)
@@ -130,8 +130,8 @@ review = HighRiskReviewAgent.from_env()     # ⓪ high_risk_review 자리. 키�
 | 파일 | 하는 일 |
 |---|---|
 | `llm.py` | OpenAI 클라이언트 하나(Responses API + Pydantic 출력 형식). ②와 같은 방식. 환경 변수 `XAI_OPENAI_*` (`.env.example`) |
-| `reason.py` | 이유 문장. DANGER·CAUTION에서 위험 재료가 있거나 결과가 덜 확실한 이유(웹 레시피 부족, 정보 일부 실패 등 경고·`information_status`)가 있을 때 부름. 이유는 코드명이 아니라 쉬운 사실 문장(`known_limits`)으로 넘김. 자동 검수(#174): 판정 한 줄에 없는 퍼센트·0%·100%, 요청에 없는 재료 이름(번역 사전 324개 기준), CAUTION·DANGER에 "안전해요" 류, 사용자 언어가 아닌데 남은 한글이면 버림. 판정 한 줄을 그대로 베낀 부분은 잘라냄 |
-| `review.py` | 고위험 재검증. 사용자 금지 태그와 겹치는 표준 재료만 LLM에 보여 주고, 고른 재료마다 질문 카드(`high_risk_review`)를 더함. 이유 문장은 같은 검수를 거치고, 탈락하면 원래 문장을 둠. 실패하면 원래 카드·문장 그대로 |
+| `reason.py` | 이유 문장. DANGER·CAUTION에서 위험 재료가 있거나 결과가 덜 확실한 이유(웹 레시피 부족, 정보 일부 실패 등 경고·`information_status`)가 있을 때 부름. 이유는 코드명이 아니라 쉬운 사실 문장(`known_limits`)으로 넘김. 자동 검수(#174): 판정 한 줄에 없는 퍼센트·0%·100%, 요청에 없는 재료 이름(번역 사전 324개 기준), CAUTION·DANGER에 "안전해요" 류, 사용자 언어가 아닌데 남은 한글이면 버림. 번역 이름이 없는 재료는 LLM이 번역하고 `name_translations`로 알려 주며, 알려 준 번역은 새 재료로 보지 않음. 판정 한 줄을 그대로 베낀 부분은 잘라냄 |
+| `review.py` | 고위험 재검증. 사용자 금지 태그와 겹치는 표준 재료만 LLM에 보여 주고, LLM이 "드물게 들어감"(`few_recipes`)이라고 답한 재료는 버리고, 남은 재료마다 질문 카드(`high_risk_review`)를 더함. 이유 문장은 같은 검수를 거치고, 탈락하면 원래 문장을 둠. 실패하면 원래 카드·문장 그대로 |
 
 ## 아직 없는 것
 

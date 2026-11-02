@@ -1,4 +1,4 @@
-"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~14, 17, 18, 20, 22)."""
+"""⑥ stage 1 cases from docs/6-agent-websearch.md §4 (1, 2, 6~14, 17~22)."""
 
 import asyncio
 import time
@@ -276,6 +276,32 @@ def test_cached_url_is_not_counted_again() -> None:
     )
 
     assert [s.source_url for s in response.sources] == [results[1].url]
+
+
+def test_19_storeless_scan_reads_the_cache_and_returns_the_same() -> None:
+    # Storeless scans skip saving and review in ⓪, not here (§2-4 "가게 없는 스캔").
+    results = [result(i) for i in range(20)]
+    with_store = request(cached=results[:10])
+    storeless = with_store.model_copy(
+        update={"context": with_store.context.model_copy(update={"store_id": None})}
+    )
+
+    a = run(WebCollectAgent(provider(results), Reader()), with_store)
+    b = run(WebCollectAgent(provider(results), Reader()), storeless)
+
+    assert b.context.store_id is None
+    assert [s.source_url for s in b.sources] == [r.url for r in results[10:20]]
+    assert b.model_dump(exclude={"context"}) == a.model_dump(exclude={"context"})
+
+
+def test_21_recipe_without_the_menu_name_in_its_title_is_kept() -> None:
+    # The LLM keeps what it is unsure about (§3-0); the title rule flags it in stage 2.
+    results = [result(0, title="엄마표 얼큰 찌개"), result(1)]
+
+    response = run(WebCollectAgent(provider(results), Reader()), request())
+
+    assert [s.title for s in response.sources] == ["엄마표 얼큰 찌개", "김치찌개 황금레시피"]
+    assert response.warnings == []
 
 
 def test_18_search_failure_with_cache_is_not_an_error() -> None:

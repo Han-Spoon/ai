@@ -69,7 +69,6 @@ def confirmed(
         role=role,
         status=status,
         override_eligible=eligible,
-        expired=False,
         evidence_refs=[f"evidence-{ingredient.ingredient_id}"],
     )
 
@@ -109,7 +108,6 @@ def flag_answer(tags: list[str], status: str, *, eligible: bool = True) -> FlagC
             "observed_at": datetime(2026, 10, 8, tzinfo=timezone.utc),
         },
         override_eligible=eligible,
-        expired=False,
     )
 
 
@@ -131,7 +129,6 @@ def request(
     store_id: int | None = STORE_ID,
     localized_names: dict[int, str] | None = None,
     warnings: list[NodeWarning] | None = None,
-    states: list[dict] | None = None,
     locale: str = "en",
 ) -> DecisionRequest:
     warnings = list(warnings or [])
@@ -153,7 +150,6 @@ def request(
         risk_tag_observations=observations or [],
         menu_ambiguity_flags=flags or [],
         flag_confirmations=flag_answers or [],
-        owner_question_states=states or [],
         no_information=no_information,
         information_status=information_status,
         owner_interaction_allowed=store_id is not None,

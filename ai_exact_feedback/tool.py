@@ -11,11 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from ai_supervisor.contracts.common import (
-    Confirmation,
-    FlagConfirmation,
-    OwnerQuestionState,
-)
+from ai_supervisor.contracts.common import Confirmation, FlagConfirmation
 from ai_supervisor.contracts.exact import ExactFeedbackRequest, ExactFeedbackResponse
 from ai_supervisor.state import ItemTaskKnowledge
 from ai_supervisor.contracts.external import (
@@ -37,7 +33,6 @@ class ExactFeedbackOutcome:
     completeness: Completeness
     confirmations: list[Confirmation]
     flag_confirmations: list[FlagConfirmation]
-    owner_question_states: list[OwnerQuestionState]
 
 
 def require_store_id(store_id: int | None) -> int:
@@ -54,10 +49,9 @@ def resolve_override_eligibility(confirmation: Confirmation) -> bool:
 
 
 def refresh_confirmation(confirmation: Confirmation) -> Confirmation:
-    """Recompute ③-owned fields and ignore whatever the backend sent for them.
-    ``expired`` stays in the ⓪ contract code until it is removed there (§8)."""
+    """Recompute ③-owned fields and ignore whatever the backend sent for them."""
 
-    refreshed = confirmation.model_copy(update={"constraint_tags": [], "expired": False})
+    refreshed = confirmation.model_copy(update={"constraint_tags": []})
     return refreshed.model_copy(
         update={"override_eligible": resolve_override_eligibility(refreshed)}
     )
@@ -66,7 +60,7 @@ def refresh_confirmation(confirmation: Confirmation) -> Confirmation:
 def refresh_flag_confirmation(flag: FlagConfirmation) -> FlagConfirmation:
     """Flag answers have no anomaly check and no expiry, so they always override (§1-8)."""
 
-    return flag.model_copy(update={"expired": False, "override_eligible": True})
+    return flag.model_copy(update={"override_eligible": True})
 
 
 def _snapshot_ingredient_ids(cache: MenuIngredientCache) -> set[int] | None:
@@ -120,7 +114,7 @@ def evaluate_exact_feedback(
     require_store_id(store_id)
     exact = exact_feedback.exact
     if exact is None:
-        return ExactFeedbackOutcome("unknown", [], [], [])
+        return ExactFeedbackOutcome("unknown", [], [])
 
     confirmations = [refresh_confirmation(c) for c in exact.confirmations]
     flag_confirmations = [refresh_flag_confirmation(f) for f in exact.flag_confirmations]
@@ -128,7 +122,6 @@ def evaluate_exact_feedback(
         completeness=check_completeness(confirmations, cache),
         confirmations=confirmations,
         flag_confirmations=flag_confirmations,
-        owner_question_states=list(exact.owner_question_states),
     )
 
 
@@ -140,8 +133,8 @@ class ExactFeedbackTool:
     (⓪ §2-6). Reading any other item's or menu's data is a contract error, never a
     silent fallback.
 
-    ``clock`` is accepted because the Item Graph still passes it; ③ no longer reads
-    the time since owner answers do not expire (§1-7, §8).
+    ``clock`` is accepted because the Item Graph still passes it; ③ does not read the
+    time since owner answers do not expire (§1-7).
     """
 
     def __init__(
@@ -174,7 +167,6 @@ class ExactFeedbackTool:
             completeness=outcome.completeness,
             confirmations=outcome.confirmations,
             flag_confirmations=outcome.flag_confirmations,
-            owner_question_states=outcome.owner_question_states,
             warnings=list(request.warnings),
             errors=list(request.errors),
         )

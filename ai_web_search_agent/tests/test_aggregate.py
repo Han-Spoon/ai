@@ -1,4 +1,4 @@
-"""⑥ stage 2 cases from docs/6-agent-websearch.md §4 (3, 4, 5, 15, 17) and §2-6 rules."""
+"""⑥ stage 2 cases from docs/6-agent-websearch.md §4 (3, 4, 5, 15, 17, 21) and §2-6 rules."""
 
 import asyncio
 
@@ -153,6 +153,15 @@ def test_title_mismatch_flags_other_dish() -> None:
     outcome = aggregate_sources(request(sources))
     note = next(n for n in outcome.review_notes if n.rule_code == "title_mismatch")
     assert "김치찜 만들기" in note.message
+
+
+def test_21_title_without_menu_name_is_flagged_not_dropped() -> None:
+    sources = ten_kimchi_stew_recipes()
+    sources[0]["title"] = "엄마표 얼큰 찌개"
+    outcome = aggregate_sources(request(sources))
+    assert sum(o.n_total for o in outcome.ingredients[0].observations) == 10
+    note = next(n for n in outcome.review_notes if n.rule_code == "title_mismatch")
+    assert "엄마표 얼큰 찌개" in note.message
 
 
 def test_title_match_ignores_spacing() -> None:

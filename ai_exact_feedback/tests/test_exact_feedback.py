@@ -41,7 +41,6 @@ def confirmation(
     *,
     flagged_anomaly: bool = False,
     observed_at: datetime = RECENT,
-    sent_expired: bool = False,
     sent_override_eligible: bool = True,
 ) -> dict:
     return {
@@ -51,7 +50,6 @@ def confirmation(
         "evidence": evidence(observed_at, f"evidence-{ingredient_id}"),
         "flagged_anomaly": flagged_anomaly,
         "override_eligible": sent_override_eligible,
-        "expired": sent_expired,
     }
 
 
@@ -62,7 +60,6 @@ def flag_confirmation(observed_at: datetime = RECENT) -> dict:
         "status": "absent",
         "evidence": evidence(observed_at, "evidence-flag"),
         "override_eligible": True,
-        "expired": False,
     }
 
 
@@ -78,7 +75,6 @@ def exact_slice(
                 "menu_id": menu_id,
                 "confirmations": confirmations or [],
                 "flag_confirmations": flags or [],
-                "owner_question_states": [],
             },
         }
     )
@@ -248,14 +244,14 @@ def test_09_unreadable_snapshot_is_unknown() -> None:
 def test_10_year_old_confirmation_still_overrides() -> None:
     outcome = evaluate(exact_slice([confirmation(PORK, "absent", observed_at=YEAR_AGO)]))
     c = outcome.confirmations[0]
-    assert (c.expired, c.override_eligible, c.flagged_anomaly) == (False, True, False)
+    assert (c.override_eligible, c.flagged_anomaly) == (True, False)
+    assert "expired" not in c.model_dump()
 
 
-def test_10_backend_expiry_values_are_recomputed() -> None:
-    sent = confirmation(KIMCHI, sent_expired=True, sent_override_eligible=False)
+def test_10_backend_override_value_is_recomputed() -> None:
+    sent = confirmation(KIMCHI, sent_override_eligible=False)
     outcome = evaluate(exact_slice([sent]))
-    c = outcome.confirmations[0]
-    assert (c.expired, c.override_eligible) == (False, True)
+    assert outcome.confirmations[0].override_eligible is True
 
 
 def test_11_old_confirmation_does_not_block_complete() -> None:
@@ -295,5 +291,6 @@ def test_15_flag_answer_does_not_mix_with_confirmations() -> None:
 def test_16_old_flag_answer_still_overrides() -> None:
     outcome = evaluate(exact_slice(flags=[flag_confirmation(YEAR_AGO)]))
     flag = outcome.flag_confirmations[0]
-    assert (flag.expired, flag.override_eligible, flag.status) == (False, True, "absent")
+    assert (flag.override_eligible, flag.status) == (True, "absent")
+    assert "expired" not in flag.model_dump()
 

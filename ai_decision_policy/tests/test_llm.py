@@ -8,7 +8,7 @@ import pytest
 from ai_decision_policy import DecisionTool, HighRiskReviewAgent, ReasonWriter, XaiLLM, check_reason, judge
 from ai_decision_policy.reason import INSTRUCTIONS as REASON_INSTRUCTIONS
 from ai_decision_policy.reason import ReasonOutput, instructions
-from ai_decision_policy.review import ReviewOutput
+from ai_decision_policy.review import MissedIngredient, ReviewOutput
 from ai_decision_policy.tests.test_decision_policy import (
     warning,
     FISH_ALLERGY,
@@ -152,6 +152,31 @@ def test_reason_may_name_the_users_restriction() -> None:
         req = request(FISH_ALLERGY, probability_results=[probability(fish_sauce, ["is_fish"], 0.8, role="hidden")], locale=locale)
         llm = FakeLLM(ReasonOutput(reason=text))
         assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == text
+
+
+def test_reason_may_translate_a_name_given_only_in_korean() -> None:
+    # 까나리액젓 has no English name yet; the LLM translates it and says so (§4).
+    sauce = IngredientRef(ingredient_id=None, canonical_name="까나리액젓")
+    req = request(
+        HALAL,
+        probability_results=[probability(PORK, ["is_pork"], 0.62), probability(sauce, [], 0.5)],
+        localized_names={PORK.ingredient_id: "pork"},
+    )
+    text = "Pork is a main ingredient here, and sand lance fish sauce is used for seasoning."
+    told = ReasonOutput(name_translations=[{"korean": "까나리액젓", "translated": "sand lance fish sauce"}], reason=text)
+    llm = FakeLLM(told)
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == text
+    assert "translate it into English" in llm.calls[0]["instructions"]
+    # Without the translation listed, "fish sauce" reads as 피쉬소스, a name it did not carry.
+    silent = FakeLLM(ReasonOutput(reason=text))
+    assert asyncio.run(DecisionTool(ReasonWriter(silent)).run(req)).message.reason is None
+
+
+def test_a_translation_only_counts_for_a_name_given_in_korean() -> None:
+    # Pork already has an English name; "translating" it as shrimp adds shrimp.
+    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], localized_names={PORK.ingredient_id: "pork"})
+    told = ReasonOutput(name_translations=[{"korean": "돼지고기", "translated": "shrimp"}], reason="Pork or shrimp may be in this dish.")
+    assert asyncio.run(DecisionTool(ReasonWriter(FakeLLM(told))).run(req)).message.reason is None
 
 
 def test_reason_check_trims_a_doubled_korean_ending() -> None:
@@ -300,6 +325,10 @@ def review_request(*, user=SHRIMP_ALLERGY, reason="이 메뉴의 재료 정보�
     )
 
 
+def missed(i: int, how_common: str = "many_recipes") -> MissedIngredient:
+    return MissedIngredient(id=i, usual_use="새우젓으로 간을 함", how_common=how_common)
+
+
 def test_review_without_llm_changes_nothing() -> None:
     req = review_request()
     response = asyncio.run(HighRiskReviewAgent(None).run(req))
@@ -309,7 +338,10 @@ def test_review_without_llm_changes_nothing() -> None:
 
 
 def test_review_asks_about_missed_ingredients_that_hit_the_user() -> None:
-    llm = FakeLLM(ReviewOutput(missed_ingredient_ids=[130, 130, 999, 101], reason="김치찌개에는 새우젓 때문에 새우가 들어갈 수 있어요."))
+    llm = FakeLLM(ReviewOutput(
+        missed_ingredients=[missed(130), missed(130), missed(999), missed(101)],
+        reason="김치찌개에는 새우젓 때문에 새우가 들어갈 수 있어요.",
+    ))
     req = review_request()
     response = asyncio.run(HighRiskReviewAgent(llm).run(req))
 
@@ -326,8 +358,28 @@ def test_review_asks_about_missed_ingredients_that_hit_the_user() -> None:
     assert [c["id"] for c in llm.calls[0]["payload"]["ingredient_choices"]] == [130]
 
 
+def test_review_drops_rare_additions() -> None:
+    # Asked for ids alone, the LLM kept naming peanut for 김치찌개.
+    llm = FakeLLM(ReviewOutput(
+        missed_ingredients=[missed(150, "few_recipes"), missed(130, "most_recipes")],
+        reason="새우가 들어갈 수 있어요.",
+    ))
+    req = review_request(user=SHRIMP_ALLERGY.model_copy(update={"allergies": ["is_shrimp", "is_peanut"]}))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(req))
+    # Peanut can hit this user, so only how_common keeps it out.
+    assert [c["id"] for c in llm.calls[0]["payload"]["ingredient_choices"]] == [130, 150]
+    assert response.missed_ingredients == [SHRIMP]
+
+
+def test_review_gives_found_ingredients_in_the_users_language() -> None:
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="Tofu needs care here."))
+    asyncio.run(HighRiskReviewAgent(llm).run(review_request(locale="en")))
+    assert llm.calls[0]["payload"]["found_ingredients"][0]["localized_name"] == "tofu"
+    assert "translate it into English" in llm.calls[0]["instructions"]
+
+
 def test_review_keeps_the_old_reason_when_the_new_one_fails_the_check() -> None:
-    llm = FakeLLM(ReviewOutput(missed_ingredient_ids=[], reason="새우는 없어서 안전해요."))
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="새우는 없어서 안전해요."))
     response = asyncio.run(HighRiskReviewAgent(llm).run(review_request()))
     assert response.reason == "이 메뉴의 재료 정보가 부족해요."
 

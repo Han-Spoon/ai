@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ai_web_search_agent import OpenAIRecipeReader, StaticSearchProvider, WebCollectAgent
-from ai_web_search_agent.reader import _Reading, _Readings
+from ai_web_search_agent.reader import INSTRUCTIONS, _Reading, _Readings
 from ai_web_search_agent.tests.test_collect import QUERY, request, result
 
 REVIEW = "강남 김치찌개 맛집 후기. 국물이 진하고 친절해요."
@@ -38,6 +38,11 @@ def test_reader_returns_one_reading_per_result_in_order() -> None:
     sent = client.calls[0]
     assert sent["model"] == "gpt-5.4-mini"
     assert "김치찌개" in sent["input"][1]["content"]
+
+
+def test_21_prompt_keeps_unsure_results() -> None:
+    # Dropping a real recipe loses its ingredients (FN), so unsure means keep (§3-0).
+    assert "If unsure, true." in INSTRUCTIONS
 
 
 @pytest.mark.parametrize(
