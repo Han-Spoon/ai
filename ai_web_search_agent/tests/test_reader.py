@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ai_web_search_agent import OpenAIRecipeReader, StaticSearchProvider, WebCollectAgent
-from ai_web_search_agent.reader import INSTRUCTIONS, _Reading, _Readings
+from ai_web_search_agent.reader import INSTRUCTIONS, MAX_TEXT_CHARS, _Reading, _Readings, excerpt
 from ai_web_search_agent.tests.test_collect import QUERY, request, result
 
 REVIEW = "강남 김치찌개 맛집 후기. 국물이 진하고 친절해요."
@@ -91,3 +91,23 @@ def test_from_env(monkeypatch) -> None:
     reader = OpenAIRecipeReader.from_env_if_configured(client_factory=lambda **kw: seen.update(kw) or "c")
     assert (reader.client, reader.model) == ("c", "gpt-5.4-nano")
     assert seen == {"api_key": "test-key", "timeout": 3.0, "max_retries": 0}
+
+
+def test_excerpt_keeps_the_start_and_the_ingredient_list():
+    intro = "오늘은 비 오는 날이라 " * 40
+    text = intro + "재료: 묵은지 300g, 돼지고기 200g, 두부 반 모" + " 만드는 법 " * 200
+    cut = excerpt(text)
+    assert len(cut) <= MAX_TEXT_CHARS + 3
+    assert cut.startswith("오늘은")
+    assert "재료: 묵은지 300g, 돼지고기 200g" in cut
+    # Short texts and lists near the top go as they are, up to the limit.
+    assert excerpt("재료: 두부") == "재료: 두부"
+    assert excerpt("재료: " + "가" * 2000) == ("재료: " + "가" * 2000)[:MAX_TEXT_CHARS]
+
+
+def test_reader_sends_only_the_excerpt():
+    client = FakeClient(readings((0, True, [])))
+    long_text = "소개 " * 300 + "재료: 묵은지"
+    asyncio.run(OpenAIRecipeReader(client).read("김치찌개", [result(1, long_text)]))
+    sent = client.calls[0]["input"][1]["content"]
+    assert "재료: 묵은지" in sent and len(sent) < 1200

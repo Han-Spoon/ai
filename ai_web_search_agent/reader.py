@@ -20,7 +20,13 @@ from .collect import LLM_SECONDS, RecipeReading
 from .providers import SearchResult
 
 DEFAULT_WEB_SEARCH_OPENAI_MODEL = "gpt-5.4-mini"
-MAX_TEXT_CHARS = 2000
+# Text sent per result (2026-11-02: 2,000 → 800). Input was most of the cost, about
+# 18 credits a menu (§6-4). The dictionary still reads the whole text (``collect.py``),
+# so only names it does not know and that sit outside the excerpt are lost to the LLM.
+MAX_TEXT_CHARS = 800
+# Where a blog post's ingredient list usually starts.
+INGREDIENT_HEADING = "재료"
+LEAD_CHARS = 200
 MAX_OUTPUT_TOKENS = 2000
 
 INSTRUCTIONS = """You read Korean web search results for one restaurant menu.
@@ -33,6 +39,18 @@ For every result, by its index:
 - ingredients: ingredient names exactly as written in that result's text, in Korean.
   Do not translate, normalize, or add ingredients that are not written there.
 Return one entry for every index you were given."""
+
+
+def excerpt(text: str, limit: int = MAX_TEXT_CHARS) -> str:
+    """At most ``limit`` characters for the LLM: the start (what the post is about) and,
+    when the ingredient list starts later, the text from "재료" on."""
+
+    if len(text) <= limit:
+        return text
+    start = text.find(INGREDIENT_HEADING)
+    if start <= LEAD_CHARS:
+        return text[:limit]
+    return text[:LEAD_CHARS] + " … " + text[start : start + limit - LEAD_CHARS]
 
 
 class WebSearchOpenAIConfigError(ValueError):
@@ -82,7 +100,7 @@ class OpenAIRecipeReader:
         payload = {
             "menu": menu_name,
             "results": [
-                {"index": i, "title": r.title, "text": r.text()[:MAX_TEXT_CHARS]}
+                {"index": i, "title": r.title, "text": excerpt(r.text())}
                 for i, r in enumerate(results)
             ],
         }
