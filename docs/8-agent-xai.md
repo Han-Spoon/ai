@@ -133,7 +133,7 @@
 
 - `context`·`menu`는 입력 값을 그대로 반환한다.
 - `risk_level`·`evidence_basis`·`information_status`는 §2·§3 규칙으로 정한다. `information_status`가 `complete`가 아니면 `risk_level`은 `safe`가 될 수 없다. `evidence_basis`는 판정 근거 종류다: `confirmed`(사장님 확인값) / `estimated`(확률 추정) / `unknown`(근거 부족).
-- `risk_ingredients[]`: 금지 태그와 겹친 재료.
+- `risk_ingredients[]`: 금지 태그와 겹친 재료. **재료마다 하나만 넣는다** (2026-11-02). ④는 같은 재료라도 태그 묶음이 다르면 따로 보낸다 (④ #327: 액젓 자체 `is_fish`, 김치 속 액젓 `is_fish`+`is_shellfish`). ⑧은 이를 한 줄로 합친다. 사장님 "있음" 확인값 → 확률이 있는 줄 → 확률이 높은 줄 순서로 남길 줄을 고르고, 합친 줄의 `constraint_tags`·`matched_tags`·`evidence_refs`는 모든 줄을 합친다. 걸린 태그가 하나도 빠지지 않게 하기 위해서다 (판정 한 줄이 확률 높은 쪽을 쓰는 것과 같음, §4).
   - `constraint_tags`는 재료의 전체 제한 태그, `matched_tags`는 그중 이 사용자와 실제로 겹친 태그다.
   - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
   - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
