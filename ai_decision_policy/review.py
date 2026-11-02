@@ -5,7 +5,9 @@ The Supervisor picks at most three menus per scan and calls this after every ver
 in. The review never changes a verdict. It can only
 
 - name likely ingredients the menu list missed, chosen from the standard ingredient
-  list, and ask the owner about each one that hits the user's restrictions,
+  list, and ask the owner about each one that hits the user's restrictions. Only the
+  ones the LLM rates as in most or many recipes count: asked for an id alone, it
+  kept naming rare additions (peanut for 김치찌개),
 - rewrite the reason sentence, which code checks the same way as §4 (#174).
 
 Any LLM failure, timeout or bad output gives back the original cards and reason.
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,21 +28,37 @@ from ai_supervisor.contracts.external import OwnerCard
 from .llm import XaiLLM
 from .profile import forbidden_tags
 from .questions import ingredient_question
-from .reason import check_reason, instructions, restriction_names, with_translations
+from .reason import (
+    NameTranslation,
+    check_reason,
+    instructions,
+    localized_name,
+    restriction_names,
+    translated_names,
+    untranslated,
+    with_translations,
+)
 
 MAX_OUTPUT_TOKENS = 600
 _NUMBER_RE = re.compile(r"\d+")
 
 INSTRUCTIONS = """You double-check one Korean restaurant menu for a tourist with food restrictions.
 Code already decided the verdict; you must not change it.
-1. missed_ingredient_ids: ids from ingredient_choices that this dish very often
-   contains but found_ingredients does not list. Only common ones, never rare
-   additions. ingredient_choices lists only what could matter to this user, so
-   usually none of them belongs to this dish; an empty list is the normal answer.
+1. missed_ingredients: choices from ingredient_choices that this dish very often
+   contains but found_ingredients does not list. ingredient_choices lists only what
+   could matter to this user, so usually none of them belongs to this dish; an empty
+   list is the normal answer. For each one give
+   - id: its id in ingredient_choices,
+   - usual_use: in Korean, how ordinary recipes of this dish use it (e.g. "새우젓으로 간을 함"),
+   - how_common: "most_recipes" (over half), "many_recipes" (about a third or more),
+     or "few_recipes" (a rare addition or one variant). Be honest; few_recipes is
+     dropped, so never round it up.
 2. reason: one or two short, friendly sentences in {language}, speaking to the
    tourist, about why this dish needs care for them. A missed ingredient may only be
    described as a possibility. Use only ingredients from the input, with the given
-   names (localized_name for choices). Do not name other dishes, cooking methods,
+   names (localized_name for choices). A name given in Korean has no translation
+   yet: translate it into {language}, and list each such name with your translation
+   in name_translations. Do not name other dishes, cooking methods,
    sauces, or broths, and do not invent examples. Copy any percentage from verdict_sentence
    exactly, with the % sign; never write 0% or 100%. Never say or imply the dish is
    safe, and do not use the word "safe" (or its translation) at all.
@@ -49,8 +68,19 @@ Code already decided the verdict; you must not change it.
    verdict_sentence.{style}"""
 
 
+COMMON = {"most_recipes", "many_recipes"}
+
+
+class MissedIngredient(BaseModel):
+    id: int
+    # Asked before how_common so the model says what the ingredient does first.
+    usual_use: str
+    how_common: Literal["most_recipes", "many_recipes", "few_recipes"]
+
+
 class ReviewOutput(BaseModel):
-    missed_ingredient_ids: list[int] = Field(default_factory=list)
+    missed_ingredients: list[MissedIngredient] = Field(default_factory=list)
+    name_translations: list[NameTranslation] = Field(default_factory=list)
     reason: str
 
 
@@ -75,7 +105,11 @@ def _payload(request: HighRiskReviewRequest, choices: list, forbidden: frozenset
         "current_reason": request.decision.message.reason,
         "user_restrictions": sorted(forbidden),
         "found_ingredients": [
-            {"name": item.ingredient.canonical_name, "tags": item.constraint_tags}
+            {
+                "name": item.ingredient.canonical_name,
+                "localized_name": localized_name(item.ingredient.canonical_name, request.locale),
+                "tags": item.constraint_tags,
+            }
             for item in request.found_ingredients
         ],
         "ingredient_choices": [
@@ -137,9 +171,10 @@ class HighRiskReviewAgent:
         item_id = request.context.item_id
         by_id = {c.ingredient_id: c for c in choices}
         asked = {card.card_id for card in request.decision.owner_cards}
+        common = (m.id for m in output.missed_ingredients if m.how_common in COMMON)
         missed = [
             by_id[i]
-            for i in dict.fromkeys(output.missed_ingredient_ids)
+            for i in dict.fromkeys(common)
             if i in by_id and _card_id(item_id, i) not in asked
         ]
         new_cards = [
@@ -147,8 +182,6 @@ class HighRiskReviewAgent:
                 item_id=item_id,
                 card_id=_card_id(item_id, choice.ingredient_id),
                 menu_id=request.menu.menu_id,
-                round=1,
-                previous_question_id=None,
                 ingredient=IngredientRef(
                     ingredient_id=choice.ingredient_id, canonical_name=choice.canonical_name
                 ),
@@ -167,6 +200,14 @@ class HighRiskReviewAgent:
         names = with_translations(i.ingredient.canonical_name for i in request.found_ingredients)
         names |= with_translations(c.canonical_name for c in missed)
         names |= {c.localized_name for c in missed} | restriction_names(forbidden)
+        korean_only = untranslated(
+            [
+                *(localized_name(i.ingredient.canonical_name, request.locale) for i in request.found_ingredients),
+                *(c.localized_name for c in missed),
+            ],
+            request.locale,
+        )
+        names |= translated_names(output.name_translations, korean_only)
         shown = [int(n) for n in _NUMBER_RE.findall(message.verdict)]
         reason = check_reason(
             output.reason,
