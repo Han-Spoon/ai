@@ -2,6 +2,9 @@
 
     python -m evaluation.websearch                 # search, then score
     python -m evaluation.websearch --raw FILE      # score saved results again
+    python -m evaluation.websearch --limit 10 --price-in IN --price-out OUT
+                                                   # 10 menus, with the LLM cost
+                                                   # (IN/OUT: price per 1M tokens)
 
 The 77 menus there carry one standard recipe each (농림축산식품부, 한식진흥원), written
 by the team. Each menu goes through ⑥ stage 1 as if the DB did not know it, with the
@@ -31,6 +34,7 @@ from pathlib import Path
 
 from ai_ruleengine.constants import ALLERGY_TAGS, VARIANT_INGREDIENTS
 from ai_supervisor.contracts.web_search import WebCollectRequest
+from evaluation.cost import MeteredClient, UsageMeter, cost_lines
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD_PATH = ROOT / "ai_ruleengine" / "data" / "menus.csv"
@@ -236,7 +240,7 @@ async def collect_all(agent, names: list[str], concurrency: int = CONCURRENCY) -
     return {run.name: run for run in runs}
 
 
-def production_agent():
+def production_agent(meter: UsageMeter | None = None):
     from dotenv import load_dotenv
 
     from ai_web_search_agent.collect import WebCollectAgent
@@ -251,6 +255,8 @@ def production_agent():
     reader = OpenAIRecipeReader.from_env_if_configured()
     if reader is None:
         print("OPENAI_API_KEY가 없어 LLM 없이 재료 사전만으로 수집해요")
+    elif meter is not None:
+        reader.client = MeteredClient(reader.client, meter)
     return WebCollectAgent(provider, reader, pages=HttpPageFetcher())
 
 
@@ -276,7 +282,12 @@ def _share_label(min_share: float) -> str:
     return "레시피 1개 이상" if min_share == 0 else f"레시피 {int(min_share * 100)}% 이상"
 
 
-def render_report(gold: list[GoldMenu], runs: dict[str, MenuRun], scores: list[Score]) -> str:
+def render_report(
+    gold: list[GoldMenu],
+    runs: dict[str, MenuRun],
+    scores: list[Score],
+    cost: list[str] | None = None,
+) -> str:
     found = [menu for menu in gold if runs.get(menu.name) and runs[menu.name].sources]
     recipe_counts = [len(runs[menu.name].sources) for menu in found]
     gold_pairs = sum(len(menu.allergens) for menu in gold)
@@ -340,6 +351,8 @@ def render_report(gold: list[GoldMenu], runs: dict[str, MenuRun], scores: list[S
     if warning_counts:
         lines += ["", "## ⑥ 경고·오류", "", "| 코드 | 메뉴 수 |", "|---|---|"]
         lines += [f"| `{code}` | {n} |" for code, n in sorted(warning_counts.items())]
+    if cost:
+        lines += ["", "## LLM 비용 (레시피 판별)", "", *cost]
     return "\n".join(lines) + "\n"
 
 
@@ -350,20 +363,26 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", type=Path, default=OUT_DIR)
     parser.add_argument("--limit", type=int, help="앞에서부터 이만큼의 메뉴만")
     parser.add_argument("--concurrency", type=int, default=CONCURRENCY)
+    parser.add_argument("--price-in", type=float, help="입력 1M 토큰당 가격 (BAZE 대시보드 값)")
+    parser.add_argument("--price-out", type=float, help="출력 1M 토큰당 가격")
     args = parser.parse_args(argv)
 
     gold = load_gold(args.gold)[: args.limit]
+    cost = None
     if args.raw:
         runs = load_runs(args.raw)
     else:
-        runs = asyncio.run(collect_all(production_agent(), [m.name for m in gold], args.concurrency))
+        meter = UsageMeter()
+        runs = asyncio.run(collect_all(production_agent(meter), [m.name for m in gold], args.concurrency))
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         raw_path = args.out / f"raw_{stamp}.json"
         save_runs(runs, raw_path)
+        (args.out / f"usage_{stamp}.json").write_text(json.dumps(meter.as_dict()), encoding="utf-8")
         print(f"⑥ 결과 저장: {raw_path}")
+        cost = cost_lines(meter, len(gold), "메뉴", args.price_in, args.price_out)
 
     scores = [score(gold, runs, share) for share in MIN_SHARES]
-    report = render_report(gold, runs, scores)
+    report = render_report(gold, runs, scores, cost)
     args.out.mkdir(parents=True, exist_ok=True)
     report_path = args.out / "report.md"
     report_path.write_text(report, encoding="utf-8")
