@@ -43,7 +43,6 @@ def confirmation(ingredient_id: int, status: str = "present", observed_at: datet
         },
         "flagged_anomaly": False,
         "override_eligible": True,
-        "expired": False,
     }
 
 
@@ -87,7 +86,6 @@ def knowledge(
                 "menu_id": exact_menu_id,
                 "confirmations": confirmations,
                 "flag_confirmations": [],
-                "owner_question_states": [],
             },
         }
     )
@@ -152,13 +150,14 @@ def test_run_returns_contract_response() -> None:
 
 
 def test_run_accepts_the_item_graph_clock_but_never_expires() -> None:
-    # The Item Graph still passes a clock (§8); owner answers do not expire (§1-7).
+    # The Item Graph still passes a clock; owner answers do not expire (§1-7).
     tool = ExactFeedbackTool(
         knowledge([confirmation(PORK, observed_at=YEAR_AGO)], ontology=ontology_with_cache(PORK)),
         clock=lambda: NOW,
     )
     response = run(tool, request())
-    assert (response.confirmations[0].expired, response.confirmations[0].override_eligible) == (False, True)
+    assert response.confirmations[0].override_eligible is True
+    assert "owner_question_states" not in response.model_dump()
     assert response.completeness == "complete"
 
 

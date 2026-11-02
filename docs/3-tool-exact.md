@@ -124,7 +124,7 @@
 - ③은 만료를 계산하지 않는다. 오래된 확인값도 다른 확인값과 똑같이 §1-6 규칙으로 `override_eligible`을 정한다.
 - 이상 답변(`flagged_anomaly: true`)도 다시 묻지 않고, 다른 답과 똑같이 확정 정보로 쓴다 (§1-6, 10/27 회의).
 - 예전 규칙(확인 후 3개월이 지나면 `expired: true`로 override 거부, ⑧이 다시 묻는 카드 생성, 2026-10-06·10-10·10-22·10-23 결정)은 폐지했다.
-- ⓪ 문서에서는 `expired`가 빠졌지만 ⓪ 계약 코드(`ai_supervisor/contracts`)에는 아직 필수 필드로 남아 있어, ③ 코드는 그때까지 항상 `expired: false`를 보낸다 (§8).
+- `expired` 칸은 ⓪ 문서와 계약 코드에서 모두 빠졌다 (⓪ #151, 2026-10-27). 예전 백엔드가 보내면 ⓪ 계약이 받아서 버린다. ③은 보내지 않는다.
 
 ### 1-8. 메뉴 애매함 플래그 답 — `flag_confirmations` (결정, 2026-10-12)
 
@@ -140,7 +140,7 @@
 
 ### 1-9. 이전 질문의 진행 상태 — 삭제 (2026-10-26)
 
-사장님 답은 대상마다 한 번만 받아 바로 확정하므로 (⑦ §2-3, ⓪ #151) 2·3차 질문이 없고, "몇 차까지 물었는지"(`owner_question_states`)를 넘길 필요도 없다. ⓪ 문서 §4-2 응답에서도 빠졌다.
+사장님 답은 대상마다 한 번만 받아 바로 확정하므로 (⑦ §2-3, ⓪ #151) 2·3차 질문이 없고, "몇 차까지 물었는지"(`owner_question_states`)를 넘길 필요도 없다. ⓪ 문서 §4-2와 계약 코드에서도 빠졌다 (빈 목록이 오면 받아서 버림).
 
 - ⓪ 계약 코드(`ai_supervisor/contracts`)에는 아직 필수 필드로 남아 있어, ③ 코드는 그때까지 묶음 값을 바꾸지 않고 그대로 넘긴다 (§8).
 
@@ -308,13 +308,13 @@ return ExactFeedbackResponse(
 | 7 | 돈까스 `돼지고기: absent` + `flagged_anomaly: true` | `override_eligible: true` + 표시 유지 | 이상 답변이어도 override를 거부하지 않을 것 (§1-6, 10/27 회의) |
 | 8 | 전 재료 확인 + 이상 답변 1건 | `completeness: complete` | 이상 답변이 `complete`를 막지 않을 것 |
 | 9 | 캐시 존재 + 전 재료 확인 | `complete` | ④⑤ 스킵 경로 작동할 것 |
-| 10 | 1년 전 `돼지고기: absent` (anomaly 아님) | `override_eligible: true`, `expired: false` | 시간이 지났다는 이유로 override를 거부하지 않을 것 (§1-7) |
+| 10 | 1년 전 `돼지고기: absent` (anomaly 아님) | `override_eligible: true` | 시간이 지났다는 이유로 override를 거부하지 않을 것 (§1-7) |
 | 11 | 캐시 존재 + 전 재료 확인 + 그중 1건이 1년 전 확인값 | `completeness: complete` | 오래된 확인값이 `complete`를 막지 않을 것 (§1-7) |
 | 12 | 돼지고기 `status: present` 확인값 | `ingredient_id` 정확히 반환, `constraint_tags: []` | 태그를 ③이 붙이지 않을 것. Supervisor가 ④ 태그 조회 후 ⑧이 `is_pork`로 대조할 것 (⓪ 테스트 12) |
 | 13 | 김치찌개 `땅콩: present` + `flagged_anomaly: false` (레시피 확률 낮음) | `override_eligible: true` | "있음" 답변은 anomaly가 아니므로 override가 거부되지 않을 것 |
 | 14 | 일부만 확인된 메뉴(④⑤ 경로) + 돼지고기 `status: present` | ③은 `constraint_tags: []`로 반환, Supervisor가 ④ `lookup_tags`로 `is_pork`를 채운 뒤 ⑧에 전달 | ④⑤를 거치는 경로에서도 확인값 태그가 빠지지 않을 것 (§0) |
 | 15 | 김치찌개에 젓갈 플래그 답 1건(`is_fish`, `absent`) | `flag_confirmations`에 1건, `confirmations`·`completeness`는 그대로 | 플래그 답이 재료 확인값과 섞이지 않을 것 |
-| 16 | 1년 전 젓갈 플래그 답 | `override_eligible: true`, `expired: false` | 플래그 답에도 기간 만료가 없을 것 (§1-8) |
+| 16 | 1년 전 젓갈 플래그 답 | `override_eligible: true` | 플래그 답에도 기간 만료가 없을 것 (§1-8) |
 | 17 | (삭제, 2026-10-26) 2·3차 질문 진행 상태 | — | 질문을 한 번만 하므로 진행 상태를 넘기지 않는다 (§1-9) |
 
 ---
@@ -335,7 +335,7 @@ return ExactFeedbackResponse(
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리. ⑦·DB 스키마 문서에는 반영됨: 새 테이블 `owner_flag_confirmations` 제안, ⑦이 저장 (#259, ⑦ §2-4, `caution-db-schema.md` §6 11·12번). 남은 것: 백엔드가 테이블을 확정
 - [x] **가게 없는 스캔** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 결정 (#281, AGENTS.md 갱신): Prepare는 `store_id`를 받지 않고, Judge는 `store_id: null`을 가게 없는 스캔으로 받는다. 이때 Supervisor는 ③을 부르지 않고, 사장님 질문·저장 명령을 만들지 않으며, 모든 메뉴는 SAFE 금지다 (⓪ §1-3). ③의 규칙(§1-1 `store_id` 필수)은 그대로다 (§4-1 6번)
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6). 2026-10-27 회의로 이 표시는 override에 쓰지 않는다
-- [ ] **이상 표시 값·DB 칸을 남길지** (2026-10-28) — 잠금은 없앴다 (§1-6). `flagged_anomaly`, DB `ingredient_confirmations.flagged_anomaly`·`override_eligible`(GENERATED), 이상 판정에만 쓰는 `owner_verification_requests.recipe_probability`까지 지울지 #340에서 정한다. 지금 이 표시는 ⑦ 출처 신뢰도 계산(이상 답은 정답 비교에서 뺌)에 쓰인다
+- [ ] **이상 표시 값·DB 칸을 남길지** (2026-10-28) — 잠금은 없앴다 (§1-6). DB·⑦ 쪽은 정해졌다 (#354, 2026-11-02 확인): DB 스키마 문서가 `ingredient_confirmations.flagged_anomaly`·`override_eligible`(GENERATED) 삭제를 요청하고 `owner_verification_requests.recipe_probability` 요청을 철회했다. ⑦은 이상 표시를 저장하지 않고, 출처 신뢰도 계산에서도 모든 답을 정답으로 쓴다. 남은 것: ⓪ 계약 `Confirmation.flagged_anomaly`·`override_eligible` 칸. 그때까지 ③은 받은 `flagged_anomaly`를 그대로 넘기고 `override_eligible`은 항상 `true`로 보낸다
 
 ## 7. 확정된 결정 (변경 금지)
 
@@ -356,5 +356,5 @@ return ExactFeedbackResponse(
 
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
-- [ ] **⓪ 계약 코드의 `expired`·`owner_question_states`** (2026-10-27) — ⓪ 문서 §4-2에서는 빠졌지만 `ai_supervisor/contracts`(`Confirmation`, `FlagConfirmation`, `ExactFeedbackResponse`)에는 아직 필수다. 그때까지 ③ 코드는 `expired: false`를 보내고 진행 상태를 그대로 넘긴다. 구현 가이드 §3 "기존 다차 질문·3개월 만료 필드 제거" 항목. Item Graph(`ai_supervisor/item_graph.py`)가 ③에 넘기는 시계(`clock`)도 이제 쓰지 않으니 함께 빼면 된다
+- [x] **⓪ 계약 코드의 `expired`·`owner_question_states`** (2026-10-27) — ⓪에 반영됨 (2026-10-31 확인): 계약 코드에서 칸을 빼고, 예전 값이 오면 받아서 버린다 (⓪ #151, 구현 가이드 §3 체크됨). ③ 코드도 두 칸을 보내지 않게 고쳤다. Item Graph가 넘기는 시계(`clock`)는 아직 남아 있어 ③은 받기만 한다. 원래 기록: ⓪ 문서 §4-2에서는 빠졌지만 `ai_supervisor/contracts`(`Confirmation`, `FlagConfirmation`, `ExactFeedbackResponse`)에는 아직 필수다. 그때까지 ③ 코드는 `expired: false`를 보내고 진행 상태를 그대로 넘긴다. 구현 가이드 §3 "기존 다차 질문·3개월 만료 필드 제거" 항목. Item Graph(`ai_supervisor/item_graph.py`)가 ③에 넘기는 시계(`clock`)도 이제 쓰지 않으니 함께 빼면 된다
 - [x] **이상 답변 잠금 전달 빼기** (2026-10-28, 10/27 회의) — ③은 이상 답도 `override_eligible: true`로 보낸다 (§1-6). ⓪에 반영함 (2026-10-28): Item Graph가 ④ 요청 `anomaly_locked_ingredients`를 항상 `[]`로 보내고, ⓪ 문서(Judge 조립 흐름, ④ `OntologyRequest`·`OntologyResponse`·⑧ `DecisionRequest`·`DecisionResponse` 설명, 테스트 5·39)와 ⓪ 테스트 2개를 고쳤다. 칸 자체를 지울지는 §6

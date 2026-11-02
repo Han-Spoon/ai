@@ -65,7 +65,7 @@ def test_unconfirmed_overlap_gets_one_card_per_ingredient() -> None:
     assert [c.ingredient for c in result] == [BEEF, MILK]  # higher probability first
     card = result[0]
     assert card.card_id == "card:scan-123:0:ingredient-120"
-    assert (card.round, card.previous_question_id) == (1, None)
+    assert {"round", "previous_question_id"}.isdisjoint(card.model_dump())
     assert (card.ambiguity_flag, card.constraint_tags) == (None, [])
     assert card.menu_id == 1001
     assert card.evidence_refs == ["recipe:120"]
@@ -238,7 +238,7 @@ def test_27_no_information_gets_one_menu_card() -> None:
     assert (card.ingredient, card.ambiguity_flag) == (None, None)
     assert card.constraint_tags == ["is_alcohol", "is_pork"]
     assert card.reason_codes == ["no_information"]
-    assert (card.round, card.previous_question_id) == (1, None)
+    assert {"round", "previous_question_id"}.isdisjoint(card.model_dump())
 
 
 def test_no_ingredients_counts_as_no_information() -> None:
@@ -264,7 +264,7 @@ def test_33_34_storeless_scan_gets_no_card(no_information: bool) -> None:
 def test_29_card_is_asked_once_without_round() -> None:
     req = request(FISH_ALLERGY, probability_results=[probability(FISH_SAUCE, ["is_fish"], 0.7)])
     [card] = cards(req)
-    assert (card.round, card.previous_question_id) == (1, None)
+    assert {"round", "previous_question_id"}.isdisjoint(card.model_dump())
     assert card.card_id == "card:scan-123:0:ingredient-110"
 
 

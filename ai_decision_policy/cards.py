@@ -121,8 +121,7 @@ def build_owner_cards(request: DecisionRequest, outcome: DecisionOutcome) -> lis
     names = {n.ingredient_id: n.localized_name for n in request.localized_names}
 
     # A menu with no information has no ingredient list to ask about: one display-only
-    # card for the whole menu (§1-3). ``round`` stays 1 on every card until the ⓪
-    # contract code drops it (§9).
+    # card for the whole menu (§1-3). Each target is asked once, so cards carry no round.
     if request.no_information or has_no_ingredients(request):
         tags = sorted(forbidden)
         return [
@@ -130,8 +129,6 @@ def build_owner_cards(request: DecisionRequest, outcome: DecisionOutcome) -> lis
                 item_id=item_id,
                 card_id=_card_id(item_id, "menu"),
                 menu_id=menu_id,
-                round=1,
-                previous_question_id=None,
                 ingredient=None,
                 ambiguity_flag=None,
                 constraint_tags=tags,
@@ -153,8 +150,6 @@ def build_owner_cards(request: DecisionRequest, outcome: DecisionOutcome) -> lis
                 item_id=item_id,
                 card_id=card_id,
                 menu_id=menu_id,
-                round=1,
-                previous_question_id=None,
                 ingredient=t.ingredient,
                 ambiguity_flag=None,
                 constraint_tags=[],
@@ -175,8 +170,6 @@ def build_owner_cards(request: DecisionRequest, outcome: DecisionOutcome) -> lis
                 item_id=item_id,
                 card_id=_card_id(item_id, target),
                 menu_id=menu_id,
-                round=1,
-                previous_question_id=None,
                 ingredient=None,
                 ambiguity_flag=check.flag,
                 constraint_tags=tags,
