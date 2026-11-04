@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from uuid import UUID
 
 from ai_supervisor.adapters import LegacyOcrAdapter
@@ -58,7 +59,7 @@ class CautionDecision:
         )
 
 
-def test_supervisor_service_runs_prepare_with_compiled_dependencies() -> None:
+def test_supervisor_service_runs_prepare_with_compiled_dependencies(caplog) -> None:
     async def ocr_runner(image):
         return {
             "final": {
@@ -106,7 +107,8 @@ def test_supervisor_service_runs_prepare_with_compiled_dependencies() -> None:
         locale="ko",
     )
 
-    response = asyncio.run(service.prepare(request))
+    with caplog.at_level(logging.INFO, logger="ai_supervisor.service"):
+        response = asyncio.run(service.prepare(request))
 
     assert response.prepare_id == PREPARE_ID
     assert response.prepared_items[0].display_name == "김치 찌개"
@@ -118,9 +120,16 @@ def test_supervisor_service_runs_prepare_with_compiled_dependencies() -> None:
     assert {"select_candidates", "analyze_item", "finalize"} <= set(
         service.judge_graph.get_graph().nodes
     )
+    record = next(
+        record for record in caplog.records if record.message == "supervisor_prepare_complete"
+    )
+    assert record.trace_id == str(TRACE_ID)
+    assert record.prepared_item_count == 1
+    assert record.scan_quality_status == "usable"
+    assert record.latency_ms >= 0
 
 
-def test_supervisor_service_runs_storeless_judge_through_injected_adapters() -> None:
+def test_supervisor_service_runs_storeless_judge_through_injected_adapters(caplog) -> None:
     unused = UnusedAdapter()
     service = SupervisorService(
         SupervisorServiceDependencies(
@@ -133,9 +142,18 @@ def test_supervisor_service_runs_storeless_judge_through_injected_adapters() -> 
     )
     source = judge_request(count=1, store_id=None)
 
-    response = asyncio.run(service.judge(source))
+    with caplog.at_level(logging.INFO, logger="ai_supervisor.service"):
+        response = asyncio.run(service.judge(source))
 
     assert response.store_id is None
     assert response.items[0].risk_level == "caution"
     assert response.items[0].route == "no_information"
     assert response.persistence_commands == []
+    record = next(
+        record for record in caplog.records if record.message == "supervisor_judge_complete"
+    )
+    assert record.trace_id == str(source.trace_id)
+    assert record.item_count == 1
+    assert record.route_counts == {"no_information": 1}
+    assert record.risk_level_counts == {"caution": 1}
+    assert record.latency_ms >= 0

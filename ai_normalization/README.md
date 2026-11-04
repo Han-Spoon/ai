@@ -36,3 +36,29 @@ candidate_selection = CandidateSelectionAgent(resolver)
 ```bash
 pytest -q ai_normalization/tests
 ```
+
+## 비용 없는 오프라인 평가
+
+고정 검증셋 위치는 팀 합의 전이므로 저장소 경로를 강제하지 않는다. 리뷰가 끝난 JSONL 파일을 인자로 넘기면 이름 정확도, 후보 Recall@5, 자동 선택 precision/coverage, 오매칭률과 `normalized | ambiguous | unmatched | invalid` 혼동행렬을 계산한다. 이 명령은 OpenAI나 검색 API를 호출하지 않는다.
+
+```bash
+python -m ai_normalization.evaluation path/to/normalization-eval.jsonl
+```
+
+각 줄은 `case_id`, 기대/예측 정규화 이름, 기대/예측 상태, 기대/선택 메뉴 ID, 최대 5개 후보 ID, 선택 방법을 갖는다. `expected_menu_id: null`은 정답 DB 메뉴가 없는 사례다.
+
+```json
+{"case_id":"yongsan-001","expected_normalized_menu_name":"김치찌개","predicted_normalized_menu_name":"김치찌개","expected_normalization_status":"normalized","predicted_normalization_status":"normalized","expected_menu_id":101,"selected_menu_id":101,"candidate_menu_ids":[101,102],"selection_method":"deterministic"}
+```
+
+Supervisor의 사용자 수준 안전 지표는 별도 정답 JSONL에서 계산한다.
+
+```bash
+python -m ai_supervisor.evaluation path/to/supervisor-eval.jsonl
+```
+
+```json
+{"case_id":"yongsan-user-001","expected_risky":true,"predicted_risk_level":"caution"}
+```
+
+출력에는 위험 재현율, FN/FN rate, F2, SAFE 커버리지와 SAFE 신뢰도가 포함된다. 위험 양성은 `danger | caution`, 음성은 `safe`로 계산한다.

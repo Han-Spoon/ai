@@ -67,13 +67,22 @@ from ocr_client import (  # noqa: E402
     OCRServiceError,
     validate_clova_config,
 )
-from ai_supervisor.adapters import LegacyOcrAdapter  # noqa: E402
+from ai_supervisor.adapters import (  # noqa: E402
+    BackendOcrAdapter,
+    UnconfiguredBackendOcrAdapter,
+)
 from ai_supervisor.api import router as supervisor_router  # noqa: E402
 from ai_supervisor.service import (  # noqa: E402
     SupervisorService,
     SupervisorServiceDependencies,
 )
-from ai_web_search_agent import StaticSearchProvider, WebCollectAgent  # noqa: E402
+from ai_decision_policy import DecisionTool, HighRiskReviewAgent  # noqa: E402
+from ai_web_search_agent import (  # noqa: E402
+    HttpPageFetcher,
+    OpenAIRecipeReader,
+    WebCollectAgent,
+    search_provider_from_env,
+)
 
 
 @asynccontextmanager
@@ -84,6 +93,9 @@ async def _lifespan(application: FastAPI):
     try:
         yield
     finally:
+        close = getattr(application.state.supervisor_service, "aclose", None)
+        if callable(close):
+            await close()
         application.state.supervisor_service = None
 
 
@@ -209,35 +221,22 @@ def run_ocr(req: OcrRequest):
         _OCR_SEMAPHORE.release()
 
 
-class _UnavailableHighRiskReviewAdapter:
-    """Use Judge's documented conservative fallback until its provider exists."""
-
-    async def run(self, request):
-        raise TimeoutError("high-risk review provider is not configured")
-
-
-def _run_supervisor_ocr(image):
-    """Reuse the existing storage download and CLOVA OCR request path."""
-
-    return run_ocr(
-        OcrRequest(
-            source=image.source,
-            storage_key=image.storage_key,
-            image_url=image.image_url,
-            version_id=image.version_id,
-            expected_etag=image.expected_etag,
-        )
-    )
-
-
 def _build_supervisor_service() -> SupervisorService:
     """Assemble the lifespan-scoped Supervisor from current implementations."""
 
     return SupervisorService(
         SupervisorServiceDependencies(
-            ocr=LegacyOcrAdapter(_run_supervisor_ocr),
-            web_collect=WebCollectAgent(StaticSearchProvider()),
-            high_risk_review=_UnavailableHighRiskReviewAdapter(),
+            ocr=(
+                BackendOcrAdapter.from_env_if_configured()
+                or UnconfiguredBackendOcrAdapter()
+            ),
+            web_collect=WebCollectAgent(
+                search_provider_from_env(),
+                OpenAIRecipeReader.from_env_if_configured(),
+                pages=HttpPageFetcher(),
+            ),
+            decision=DecisionTool.from_env(),
+            high_risk_review=HighRiskReviewAgent.from_env(),
         )
     )
 

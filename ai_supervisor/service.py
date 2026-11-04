@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Callable
 from uuid import UUID, uuid4
 
@@ -51,7 +54,11 @@ from .contracts.web_search import (
 from .item_graph import ItemGraphAnalyzer, ItemGraphDependencies
 from .judge_graph import JudgeDependencies, build_judge_graph
 from .prepare_graph import PrepareDependencies, build_prepare_graph
+from .evaluation import summarize_judge_response
 from .state import RunContext
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -108,6 +115,7 @@ class SupervisorService:
     """Stateless Prepare/Judge entry point for a FastAPI lifespan container."""
 
     def __init__(self, dependencies: SupervisorServiceDependencies) -> None:
+        self._ocr = dependencies.ocr
         normalization_resolver = None
         if (
             dependencies.normalization is None
@@ -154,7 +162,13 @@ class SupervisorService:
             )
         )
 
+    async def aclose(self) -> None:
+        close = getattr(self._ocr, "aclose", None)
+        if callable(close):
+            await close()
+
     async def prepare(self, request: PrepareRequest) -> PrepareResponse:
+        started_at = perf_counter()
         context = RunContext(
             schema_version=request.schema_version,
             trace_id=request.trace_id,
@@ -165,9 +179,28 @@ class SupervisorService:
             {"image": request.image, "locale": request.locale},
             context=context,
         )
-        return PrepareResponse.model_validate(state["response"])
+        response = PrepareResponse.model_validate(state["response"])
+        warning_counts = dict(
+            sorted(Counter(warning.code for warning in response.warnings).items())
+        )
+        logger.info(
+            "supervisor_prepare_complete",
+            extra={
+                "supervisor_event": "prepare_complete",
+                "trace_id": str(response.trace_id),
+                "scan_session_id": response.scan_session_id,
+                "node": "supervisor_prepare",
+                "latency_ms": round((perf_counter() - started_at) * 1000, 3),
+                "scan_quality_status": response.scan_quality.status,
+                "prepared_item_count": len(response.prepared_items),
+                "warning_code_counts": warning_counts,
+                "error_count": len(response.errors),
+            },
+        )
+        return response
 
     async def judge(self, request: JudgeRequest) -> JudgeResponse:
+        started_at = perf_counter()
         context = RunContext(
             schema_version=request.schema_version,
             trace_id=request.trace_id,
@@ -178,4 +211,17 @@ class SupervisorService:
             {"request": request},
             context=context,
         )
-        return JudgeResponse.model_validate(state["response"])
+        response = JudgeResponse.model_validate(state["response"])
+        summary = summarize_judge_response(response)
+        logger.info(
+            "supervisor_judge_complete",
+            extra={
+                "supervisor_event": "judge_complete",
+                "trace_id": str(response.trace_id),
+                "scan_session_id": response.scan_session_id,
+                "node": "supervisor_judge",
+                "latency_ms": round((perf_counter() - started_at) * 1000, 3),
+                **summary.model_dump(),
+            },
+        )
+        return response

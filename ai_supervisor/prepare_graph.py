@@ -167,7 +167,7 @@ def _finalize_prepare(
     warnings = _dedupe_signals(list(state.get("warnings", [])))
     errors = list(state.get("errors", []))
     new_errors: list[NodeError] = []
-    if quality.status != "needs_retake" and not items:
+    if quality.status == "usable" and not items:
         no_items = NodeError(
             code="no_menu_items",
             node="supervisor",
@@ -209,7 +209,7 @@ def _scan_quality_warning() -> NodeWarning:
         code="scan_quality_low_confidence",
         node="ocr",
         item_id=None,
-        message="사진 품질이 낮아 이후 판정에서 SAFE를 제한해야 합니다.",
+        message="사진 품질이 낮아 정규화·판정을 진행하지 않습니다.",
         forces_caution=True,
     )
 
