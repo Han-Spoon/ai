@@ -494,41 +494,6 @@ def test_storeless_judge_passes_explicit_null_and_safety_warning() -> None:
     assert result["persistence_commands"] == []
 
 
-def test_judge_preserves_scan_level_prepare_warning_without_item_assignment() -> None:
-    source = request(count=1)
-    signals = PrepareSignals(
-        scan_quality_status="low_confidence",
-        warnings=[
-            NodeWarning(
-                code="scan_quality_low_confidence",
-                node="ocr",
-                item_id=None,
-                message="사진 품질이 낮습니다.",
-                forces_caution=True,
-            )
-        ],
-    )
-    source = source.model_copy(
-        update={
-            "prepare_signals": signals,
-            "prepared_items_hash": prepared_items_hash(
-                source.prepared_items, signals
-            ),
-        }
-    )
-
-    result = asyncio.run(
-        graph(DelayedItemAnalyzer()).ainvoke(
-            {"request": source}, context=context(source)
-        )
-    )
-
-    assert [warning.code for warning in result["warnings"]] == [
-        "scan_quality_low_confidence"
-    ]
-    assert result["ordered_items"][0].warnings == []
-
-
 def test_judge_rejects_safe_result_when_item_safety_warning_is_active() -> None:
     source = request(count=1)
     signals = PrepareSignals(

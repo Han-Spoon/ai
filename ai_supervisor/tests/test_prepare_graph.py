@@ -123,11 +123,11 @@ def test_prepare_graph_skips_normalization_for_needs_retake() -> None:
     validate_prepare_response_hash(response)
 
 
-def test_prepare_graph_preserves_low_quality_as_caution_signal() -> None:
+def test_prepare_graph_stops_before_normalization_for_low_quality() -> None:
     graph = build_prepare_graph(
         PrepareDependencies(
             ocr=FakeOcr("low_confidence", ["된장찌개"]),
-            normalization=NameCleaningAgent(),
+            normalization=FailingNormalization(),
             prepare_id_factory=lambda: PREPARE_ID,
         )
     )
@@ -135,11 +135,12 @@ def test_prepare_graph_preserves_low_quality_as_caution_signal() -> None:
     result = asyncio.run(graph.ainvoke(input_state(), context=context()))
     response = result["response"]
 
-    assert response.prepared_items[0].display_name == "된장찌개"
+    assert response.prepared_items == []
     assert [warning.code for warning in response.prepare_signals.warnings] == [
         "scan_quality_low_confidence"
     ]
     assert response.prepare_signals.warnings[0].forces_caution is True
+    assert response.errors == []
     validate_prepare_response_hash(response)
 
 

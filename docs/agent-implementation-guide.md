@@ -62,13 +62,13 @@
 - graph와 client는 FastAPI lifespan에서 한 번 만들고 요청마다 `ainvoke()`한다.
 - Scan Graph와 메뉴별 Item Graph를 나누고 `Send`와 reducer로 fan-out/collect한다.
 
-현재 [`../requirements.txt`](../requirements.txt)에는 `langgraph==1.2.16`이 있습니다. `langchain`, `langchain-core`, 모델 provider 패키지는 아직 없으며 ②·⑥·⑧의 모델·provider가 각 담당 이슈에서 확정되기 전까지 추가하지 않습니다. Supervisor graph 구현은 LangChain에 의존하지 않습니다.
+현재 [`../requirements.txt`](../requirements.txt)에는 `langgraph==1.2.16`과 `openai==3.8.0`이 고정되어 있습니다. ②·⑥·⑧은 각 소유 모듈에서 OpenAI Responses API adapter를 구현하고 `app.py` lifespan에서 연결합니다. 별도 `langchain` 패키지는 사용하지 않으며 Supervisor graph는 LangGraph에만 의존합니다.
 
 ### 여기에 적을 것
 
 - [x] Supervisor orchestration에 LangGraph `StateGraph` 사용
 - [x] LangGraph `1.2.16`, Python 3.11 기준 고정
-- [ ] ②·⑥·⑧의 LangChain / provider 버전과 `openai==3.8.0` 호환 확인
+- [x] ②·⑥·⑧ provider — `openai==3.8.0` Responses API adapter로 구현·통합 테스트 확인
 - [x] LLM / HTTP 클라이언트 생성 위치 — FastAPI lifespan에서 생성 후 adapter에 주입
 - [x] 동기/비동기 선택 — FastAPI에서 compiled graph의 `ainvoke()` 사용
 
@@ -305,7 +305,6 @@ CI(`.github/workflows/ci.yml`)가 이 두 가지를 실행하고, `AI CI` 워크
 
 ## 12. 미확정 항목 (팀 확인 대기)
 
-- [ ] ②·⑥·⑧의 LangChain / 모델 provider 버전과 공통 도입 방식
 - [ ] 재료 식별자 `IngredientRef` 계약을 기존 구현에 적용하는 전환 순서
 - [ ] 오류 `code` 체계와 전체 목록
 - [ ] 로그 마스킹 정책 구체화

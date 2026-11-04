@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 
 
 def route_after_quality(quality: ScanQuality) -> Literal["normalize", "finalize"]:
-    return "finalize" if quality.status == "needs_retake" else "normalize"
+    """Only OCR results explicitly marked usable may enter Normalization."""
+
+    return "normalize" if quality.status == "usable" else "finalize"
 
 
 def owner_interaction_allowed(store_id: int | None) -> bool:

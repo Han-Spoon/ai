@@ -1,7 +1,6 @@
 import importlib
 import io
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -34,33 +33,55 @@ def test_lifespan_builds_one_supervisor_service(monkeypatch):
     assert app_module.app.state.supervisor_service is None
 
 
-def test_supervisor_ocr_runner_reuses_existing_ocr_endpoint(monkeypatch):
+def test_supervisor_service_uses_runtime_agents(monkeypatch):
+    backend_ocr = object()
+    provider = object()
+    reader = object()
+    page_fetcher = object()
+    web_collect = object()
+    decision = object()
+    high_risk_review = object()
     captured = {}
 
-    def run_ocr(request):
-        captured.update(request.model_dump())
-        return {"scan_quality": {}, "menu_analyses": []}
+    monkeypatch.setattr(
+        app_module.BackendOcrAdapter,
+        "from_env_if_configured",
+        lambda: backend_ocr,
+    )
+    monkeypatch.setattr(app_module, "search_provider_from_env", lambda: provider)
+    monkeypatch.setattr(
+        app_module.OpenAIRecipeReader,
+        "from_env_if_configured",
+        lambda: reader,
+    )
+    monkeypatch.setattr(app_module, "HttpPageFetcher", lambda: page_fetcher)
 
-    monkeypatch.setattr(app_module, "run_ocr", run_ocr)
-    image = SimpleNamespace(
-        source="upload",
-        storage_key="scans/00000000-0000-0000-0000-000000000000/menu.jpg",
-        image_url=None,
-        version_id=None,
-        expected_etag='"etag"',
+    def build_web_collect(actual_provider, actual_reader, *, pages):
+        assert actual_provider is provider
+        assert actual_reader is reader
+        assert pages is page_fetcher
+        return web_collect
+
+    monkeypatch.setattr(app_module, "WebCollectAgent", build_web_collect)
+    monkeypatch.setattr(app_module.DecisionTool, "from_env", lambda: decision)
+    monkeypatch.setattr(
+        app_module.HighRiskReviewAgent,
+        "from_env",
+        lambda: high_risk_review,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "SupervisorService",
+        lambda dependencies: captured.setdefault("dependencies", dependencies),
     )
 
-    result = app_module._run_supervisor_ocr(image)
+    service = app_module._build_supervisor_service()
 
-    assert result == {"scan_quality": {}, "menu_analyses": []}
-    assert captured == {
-        "store_id": None,
-        "source": "upload",
-        "storage_key": image.storage_key,
-        "image_url": None,
-        "version_id": None,
-        "expected_etag": '"etag"',
-    }
+    assert service is captured["dependencies"]
+    assert service.ocr is backend_ocr
+    assert service.web_collect is web_collect
+    assert service.decision is decision
+    assert service.high_risk_review is high_risk_review
 
 
 def test_health_rejects_placeholder_clova_configuration(monkeypatch):

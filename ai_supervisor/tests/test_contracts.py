@@ -4,7 +4,13 @@ from typing import Optional
 import pytest
 from pydantic import ValidationError
 
-from ai_supervisor.contracts import JudgeRequest, JudgeResponse, PrepareRequest, UserProfile
+from ai_supervisor.contracts import (
+    JudgeRequest,
+    JudgeResponse,
+    PrepareRequest,
+    PrepareResponse,
+    UserProfile,
+)
 from ai_supervisor.contracts.common import Confirmation, NodeWarning
 from ai_supervisor.contracts.db_update import CreateOwnerVerificationRequestPayload
 from ai_supervisor.contracts.decision import ConfirmedResult, DecisionRequest
@@ -99,6 +105,22 @@ def base_judge_request() -> dict:
             [prepared_item()],
             None,
         ),
+        (
+            {
+                "scan_quality_status": "low_confidence",
+                "warnings": [
+                    {
+                        "code": "scan_quality_low_confidence",
+                        "node": "ocr",
+                        "item_id": None,
+                        "message": "사진 품질이 낮습니다.",
+                        "forces_caution": True,
+                    }
+                ],
+            },
+            [prepared_item()],
+            None,
+        ),
         ({"scan_quality_status": "usable", "warnings": []}, [], []),
     ],
 )
@@ -186,6 +208,49 @@ def test_prepare_request_is_closed_and_has_no_store_id() -> None:
 
     with pytest.raises(ValidationError):
         PrepareRequest.model_validate({**payload, "store_id": 1})
+
+
+def test_nonusable_prepare_response_never_exposes_prepared_items() -> None:
+    payload = {
+        "schema_version": "3.0",
+        "trace_id": TRACE_ID,
+        "prepare_id": PREPARE_ID,
+        "scan_session_id": "scan-123",
+        "prepared_items_hash": HASH,
+        "scan_quality": {
+            "status": "low_confidence",
+            "reasons": ["사진이 흐립니다."],
+            "retake_suggestions": ["정면에서 다시 촬영해주세요."],
+        },
+        "prepare_signals": {
+            "scan_quality_status": "low_confidence",
+            "warnings": [
+                {
+                    "code": "scan_quality_low_confidence",
+                    "node": "ocr",
+                    "item_id": None,
+                    "message": "사진 품질이 낮습니다.",
+                    "forces_caution": True,
+                }
+            ],
+        },
+        "prepared_items": [],
+        "warnings": [
+            {
+                "code": "scan_quality_low_confidence",
+                "node": "ocr",
+                "item_id": None,
+                "message": "사진 품질이 낮습니다.",
+                "forces_caution": True,
+            }
+        ],
+        "errors": [],
+    }
+
+    assert PrepareResponse.model_validate(payload).prepared_items == []
+    payload["prepared_items"] = [prepared_item()]
+    with pytest.raises(ValidationError, match="non-usable OCR"):
+        PrepareResponse.model_validate(payload)
 
 
 def test_user_profile_requires_consistent_vegetarian_type() -> None:

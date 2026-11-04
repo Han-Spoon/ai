@@ -115,8 +115,8 @@ class PrepareResponse(StrictModel):
         expected_signals = [warning for warning in self.warnings if warning.forces_caution]
         if self.prepare_signals.warnings != expected_signals:
             raise ValueError("prepare_signals must contain every caution warning once")
-        if self.scan_quality.status == "needs_retake" and self.prepared_items:
-            raise ValueError("needs_retake responses must not contain prepared_items")
+        if self.scan_quality.status != "usable" and self.prepared_items:
+            raise ValueError("non-usable OCR responses must not contain prepared_items")
         if self.scan_quality.status == "low_confidence" and not any(
             warning.code == "scan_quality_low_confidence"
             and warning.item_id is None
@@ -124,7 +124,7 @@ class PrepareResponse(StrictModel):
         ):
             raise ValueError("low-confidence scans require a scan-level caution warning")
         if (
-            self.scan_quality.status != "needs_retake"
+            self.scan_quality.status == "usable"
             and not self.prepared_items
             and not any(error.code == "no_menu_items" for error in self.errors)
         ):
@@ -443,8 +443,8 @@ class JudgeRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_bundle_scope(self) -> "JudgeRequest":
-        if self.prepare_signals.scan_quality_status == "needs_retake":
-            raise ValueError("needs_retake Prepare results cannot enter Judge")
+        if self.prepare_signals.scan_quality_status != "usable":
+            raise ValueError("only usable OCR results can enter Judge")
         if not self.prepared_items:
             raise ValueError("Judge requires at least one prepared item")
         prepared_ids = [item.item_id for item in self.prepared_items]

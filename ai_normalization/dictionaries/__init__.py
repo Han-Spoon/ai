@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 
-DICTIONARY_VERSION = "2026-10-v1"
+DICTIONARY_VERSION = "2026-11-v1"
 
 # Entries may correct spelling, but must not remove ingredient or variant meaning.
 NORMALIZATION_REPLACEMENTS = MappingProxyType(
@@ -17,8 +17,15 @@ MULTILINGUAL_ALIASES = MappingProxyType(
     {
         "bibimbap": "비빔밥",
         "bulgogi": "불고기",
+        "doenjangjjigae": "된장찌개",
+        "doenjangstew": "된장찌개",
+        "gimbap": "김밥",
+        "japchae": "잡채",
         "kimchijjigae": "김치찌개",
         "kimchistew": "김치찌개",
+        "kimbap": "김밥",
+        "samgyeopsal": "삼겹살",
+        "tteokbokki": "떡볶이",
     }
 )
 

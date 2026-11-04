@@ -83,7 +83,15 @@ def test_header_is_invalid_but_unknown_single_character_is_valid() -> None:
         ("Bibimbap", "비빔밥"),
         ("BULGOGI", "불고기"),
         ("Kimchi Jjigae", "김치찌개"),
+        ("Kimchi-Jjigae", "김치찌개"),
         ("Kimchi Stew", "김치찌개"),
+        ("Doenjang Jjigae", "된장찌개"),
+        ("Doenjang-Stew", "된장찌개"),
+        ("Gimbap", "김밥"),
+        ("Kimbap", "김밥"),
+        ("Japchae", "잡채"),
+        ("Samgyeopsal", "삼겹살"),
+        ("Tteokbokki", "떡볶이"),
     ],
 )
 def test_documented_dictionary_entries(raw: str, expected: str) -> None:

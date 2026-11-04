@@ -31,6 +31,7 @@ _HOURS_RE = re.compile(
     r"^(?:영업시간\s*)?(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:~|-|–)\s*(?:[01]?\d|2[0-3]):[0-5]\d$"
 )
 _HAS_LATIN_RE = re.compile(r"[A-Za-z]")
+_LATIN_ALIAS_SEPARATOR_RE = re.compile(r"[\s_-]+")
 LOW_OCR_CONFIDENCE_THRESHOLD = 0.65
 
 
@@ -81,7 +82,12 @@ def clean_menu_name(raw_menu_name: str) -> CleaningOutcome:
 
     search_name = _compact(display).casefold()
     dictionary_hit = False
-    multilingual = MULTILINGUAL_ALIASES.get(search_name)
+    alias_key = (
+        _LATIN_ALIAS_SEPARATOR_RE.sub("", search_name)
+        if _HAS_LATIN_RE.search(search_name)
+        else search_name
+    )
+    multilingual = MULTILINGUAL_ALIASES.get(alias_key)
     if multilingual is not None:
         search_name = multilingual
         dictionary_hit = True

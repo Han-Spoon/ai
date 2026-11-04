@@ -7,6 +7,7 @@ from typing import Protocol, cast
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from .adapters import BackendOcrConfigError, BackendOcrServiceError
 from .contracts.external import JudgeRequest, JudgeResponse, PrepareRequest, PrepareResponse
 from .hashing import ContractHashMismatch
 
@@ -58,7 +59,19 @@ router = APIRouter(prefix="/v1/analyze", tags=["supervisor"])
 )
 async def prepare(request: PrepareRequest, http_request: Request) -> PrepareResponse:
     service = get_supervisor_service(http_request)
-    return PrepareResponse.model_validate(await service.prepare(request))
+    try:
+        response = await service.prepare(request)
+    except BackendOcrConfigError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "ocr_backend_not_configured", "message": str(error)},
+        ) from error
+    except BackendOcrServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "ocr_backend_failed", "message": str(error)},
+        ) from error
+    return PrepareResponse.model_validate(response)
 
 
 @router.post(

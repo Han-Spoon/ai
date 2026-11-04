@@ -481,7 +481,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - `item_id`는 `{scan_session_id}:{source_index}` 형식으로 한 번만 만들고 Judge 최종 결과까지 유지한다.
 - Prepare에서는 DB 후보를 조회하거나 `menu_id`, `menu_category_id`를 확정하지 않으므로 두 필드를 응답에 넣지 않는다.
 - `needs_retake`이면 ②-A를 실행하지 않고 `prepared_items: []`로 반환한다. `reasons`와 `retake_suggestions`로 재촬영 이유를 전달하며 이 응답으로 Judge를 호출할 수 없다.
-- `low_confidence`이면 ②-A까지 실행하고 메뉴를 반환하되 스캔 단위 `scan_quality_low_confidence` warning(`item_id: null`, `forces_caution: true`)을 만들어 `prepare_signals`에 보존한다. Judge에서 이 메뉴판 전체 신호를 각 메뉴에 적용하는 방법은 §8 미확정 항목을 따른다.
+- OCR 성공 결과는 `usable`만 ②-A로 넘긴다. `low_confidence`는 스캔 단위 `scan_quality_low_confidence` warning(`item_id: null`, `forces_caution: true`)과 재촬영 안내를 보존하고 `prepared_items: []`로 종료한다. `needs_retake`도 같이 ②-A·Judge로 진입하지 않는다.
 - `description`, `price_text`는 인식하지 못하면 `null`, 목록형 필드는 값이 없으면 `[]`다.
 
 #### `/v1/analyze/judge` 요청 — `JudgeRequest`
@@ -690,7 +690,7 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 
 `prepared_items`와 `prepare_signals`에는 같은 `prepare_id`의 `PrepareResponse` 값을 수정 없이 다시 넣는다. `knowledge_bundle.items`와 `item_id`가 정확히 1:1로 대응해야 한다. Supervisor는 `{prepared_items, prepare_signals}`로 `prepared_items_hash`를 다시 계산해 Prepare의 안전 신호까지 함께 검증한다.
 
-`prepare_signals.scan_quality_status == "needs_retake"`인 Prepare 결과와 `prepared_items`가 빈 결과는 Judge에 넣지 않는다. 백엔드는 이 경우 Judge를 호출하지 않아야 하며, 호출되더라도 JudgeRequest 계약 검증에서 거부한다.
+`prepare_signals.scan_quality_status != "usable"`인 Prepare 결과와 `prepared_items`가 빈 결과는 Judge에 넣지 않는다. 백엔드는 이 경우 Judge를 호출하지 않아야 하며, 호출되더라도 JudgeRequest 계약 검증에서 거부한다.
 
 `candidate_lookup.candidates[]`는 score 내림차순·`menu_id` 오름차순으로 정렬하고 초기 최대 개수는 5개로 고정한다. 백엔드는 후보마다 같은 `menu_id`의 `candidate_knowledge[]`를 정확히 하나 제공한다. ②-B가 후보를 고른 뒤 Supervisor는 그 `menu_id`의 지식만 Item Graph에 전달한다. 후보가 없거나 ②-B가 선택하지 못하면 `fallback_ontology`로 longest-match·unknown 경로를 실행하며, 다른 후보의 지식을 대신 사용하지 않는다.
 
@@ -961,7 +961,7 @@ flowchart TD
 2. 이미지 참조와 실행 문맥을 state에 보존하고 ①을 호출한다.
 3. ① 결과에 안정적인 `item_id = {scan_session_id}:{source_index}`를 한 번만 부여한다.
 4. `scan_quality.status: needs_retake`면 ②~⑧을 호출하지 않고 재촬영 결과로 종료한다.
-5. `low_confidence`면 원문과 경고를 보존하고 진행하되 이후 SAFE 제한 신호가 사라지지 않게 한다.
+5. `low_confidence`면 경고·재촬영 안내를 보존하고 `prepared_items: []`로 종료한다. ②-A와 Judge는 `usable` OCR 결과에서만 실행한다.
 6. ②-A는 OCR 노이즈, 띄어쓰기, 인원·크기 옵션, 다국어 표기를 정리한다. `display_name`에는 가게의 메뉴명 표기를 보존하되 인분·크기 옵션을 제거하고, `normalized_menu_name`은 DB 후보 검색용 표기로 만든다. 이 단계에서는 DB 후보가 없으므로 `menu_id`를 확정하지 않는다.
 7. §1-3의 `PrepareResponse`로 `scan_quality`와 `prepared_items`를 OCR 순서대로 반환한다. 백엔드는 `prepare_id`와 함께 저장하고 메뉴 후보·KnowledgeBundle을 조회한다.
 
@@ -1097,14 +1097,13 @@ ai_supervisor/
 ├── contracts/          # §1·§4 Pydantic closed schema
 ├── hashing.py         # RFC 8785 JCS 기반 Prepare/Bundle hash
 ├── validation.py      # Judge 요청·응답 교차 invariant 검증
-└── chains/             # ②·⑥·⑧의 제한적 LangChain
+├── evaluation.py      # recall/F2/FN 평가와 비식별 실행 통계
+└── chains/             # 향후 LangChain 추상화 자리(현재는 비어 있음)
 ```
 
-현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`, `api.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. FastAPI router는 `app.state.supervisor_service`의 같은 서비스 인스턴스를 사용해 `POST /v1/analyze/prepare`, `POST /v1/analyze/judge`만 노출한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → db_update → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 Item Graph가 수집한 operation까지 합쳐 ⑦을 한 번 호출한다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `LegacyOcrAdapter`는 lifespan에서 주입받은 OCR runner의 기존 dict 출력을 canonical `OcrResponse`로 변환하며, ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 결정론적 구현은 서비스 기본 의존성으로 연결된다. `app.py` lifespan은 기존 S3/CLOVA OCR runner, 현재 ⑥ 수집 구현, 고위험 재검증의 보수적 fallback을 주입해 서비스를 한 번 생성하고 `api.router`를 등록한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
+현재 저장소에는 `contracts/`의 §1·§4 closed schema, `hashing.py`, `validation.py`, `state.py`, 공통 `NodeAdapter` Protocol, router, `prepare_graph.py`, `judge_graph.py`, `item_graph.py`, `service.py`, `api.py`와 단위 테스트가 있다. `SupervisorService`는 lifespan에서 받은 adapter를 사용해 Prepare/Judge/Item Graph를 한 번 compile하고 요청마다 `RunContext`를 새로 만들어 `ainvoke()`한다. FastAPI router는 `app.state.supervisor_service`의 같은 서비스 인스턴스를 사용해 `POST /v1/analyze/prepare`, `POST /v1/analyze/judge`만 노출한다. Prepare Graph는 run-scoped `RunContext`를 변경 불가 context로 받고 `ocr → quality branch → clean_names → finalize`를 checkpointer 없이 compile한다. Judge Graph는 `validate_knowledge → select_candidates → analyze_item fan-out → collect_items → high_risk_review → db_update → finalize`까지 구현되어 있다. 고위험 재검증은 우선순위에 따라 최대 3개 메뉴만 실행하고, 질문 카드를 확정한 뒤 Item Graph가 수집한 operation까지 합쳐 ⑦을 한 번 호출한다. Item Graph는 선택된 DB 메뉴의 exact/ontology/Bayesian 경로, 런타임 변형의 `variant_review → bayesian` 경로, 미등록 메뉴의 `web_search → ingredient_mapping → web_aggregate → web_review → bayesian` 경로를 구현하고, `ItemGraphAnalyzer`가 Judge의 메뉴 분석 경계에 주입된다. 웹 검색 동시 실행은 최대 5개로 제한한다. 세 Graph 모두 checkpointer 없이 compile한다. ① `BackendOcrAdapter`는 `SUPERVISOR_OCR_BACKEND_URL`의 백엔드 OCR Tool에 canonical `OcrRequest`를 보내고 `OcrResponse`를 검증한다. 이미지 조회와 CLOVA 호출은 백엔드가 소유하며 Supervisor는 OCR 응답을 받은 뒤 ②-A로 이동한다. ②·④·⑤·⑥ 집계·⑦·⑧ 기본 판정의 결정론적 구현은 서비스 기본 의존성으로 연결된다. `app.py` lifespan은 백엔드 OCR adapter, 환경 변수로 선택한 ⑥ Naver 검색 provider·OpenAI reader·HTTP page fetcher, ⑧ 판정·고위험 재검증 구현을 주입해 서비스를 한 번 생성하고 `api.router`를 등록한다. OCR 백엔드 URL이 없거나 호출에 실패하면 로컬 CLOVA로 우회하지 않고 Prepare를 각각 503 또는 502로 종료한다. OpenAI 키가 없으면 ②·⑥·⑧의 LLM은 각각 문서에 정한 결정론적 fallback을 사용하고, Naver 검색 키가 없으면 `web_search_not_configured`를 반환한다. ②-A·②-B canonical 계약은 소유 모듈인 `ai_normalization/contracts.py`에 있고 Supervisor 공통 context를 import한다. `evaluation.py`는 사용자 수준 위험 정답에서 recall·FN·F2·SAFE 커버리지/신뢰도를 계산하고, `SupervisorService`는 원문 메뉴·사용자 프로필 없이 latency와 라우팅·상태·경고 개수만 구조화 로그로 남긴다. 둘 다 추가 provider 호출을 만들지 않는다. 다음 항목은 아직 구현되지 않았으며 존재한다고 가정하지 않는다.
 
 - ① OCR runner의 운영 storage/CLOVA secret 주입과 배포 환경 검증
-- ⑥ 수집의 실제 검색 provider·reader와 ⑧의 고위험 재검증 provider. 현재는 빈 검색 결과·재검증 timeout으로 처리해 기존 CAUTION 이상 판정을 유지한다.
-- `chains/`의 실제 LangChain/provider 연결
 
 Normalization의 ②-A는 Prepare Graph에, ②-B는 Judge Graph의 fan-out 직전에 각각 `NodeAdapter` 계약으로 연결됐다. 구현 상태와 후속 범위는 ② 문서 §5-2를 따른다.
 
@@ -1393,7 +1392,7 @@ SDK·adapter·graph 세 계층이 동시에 재시도하지 않는다. 실제 �
 }
 ```
 
-Supervisor의 OCR adapter가 기존 OCR 출력의 `menu_name_ko`, `description_ko`, `price_text`, `price_options`, `display_order`, `scan_quality`, `is_spicy`를 위 형식으로 변환한다. 기존 품질 점수와 메뉴별 신뢰도가 0~100이면 0~1로 나눠 변환한다. 메뉴별 신뢰도가 없으면 `ocr_confidence: 0.0`과 `ocr_confidence_missing` caution warning을 만들어 SAFE를 막고, 범위 밖 값은 계약 오류로 거부한다. `display_order`로 정렬한 뒤 0부터 연속된 `source_index`를 부여하고 `item_id`는 `scan_session_id:source_index`로 한 번만 발급한다. OCR runner는 이미지 storage 접근과 CLOVA client 호출을 소유하며 FastAPI lifespan에서 `LegacyOcrAdapter`에 주입한다. OCR은 메뉴명을 의미적으로 정규화하지 않는다.
+백엔드 OCR Tool이 이미지 storage 접근과 CLOVA 호출을 소유하고 위 canonical `OcrResponse`를 반환한다. 백엔드는 0부터 연속된 `source_index`와 `item_id = {scan_session_id}:{source_index}`를 부여하고, 품질 점수와 메뉴별 신뢰도를 0~1 범위로 보낸다. `BackendOcrAdapter`는 응답 전체를 closed schema로 다시 검증하며 context·식별자·정렬·범위가 틀리면 Normalization으로 넘기지 않는다. OCR은 메뉴명을 의미적으로 정규화하지 않으며, Supervisor는 검증을 통과한 `items[]`만 ②-A에 전달한다.
 
 `price_options` 원소는 `{ "label": string, "price_text": string, "inferred": boolean }`이다. 설명이나 가격을 읽지 못하면 각각 `description: null`, `price_text: null`로 반환한다. `risk_tag_observations`에는 **긍정적으로 감지한 태그만** 넣으며 감지하지 못한 것을 `absent` 근거로 만들지 않는다. 현재 허용 태그는 `is_spicy`이고, 이 값은 soft evidence이므로 단독으로 DANGER 확정에 사용하지 않는다.
 
@@ -3060,7 +3059,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 
 - 읽기 전용이고 멱등인 호출만 제한적으로 재시도한다.
 - 입력 검증 실패와 ⑦ 저장 명령은 Supervisor가 자동 재시도하지 않는다.
-- `trace_id`, `item_id`, node, route, latency를 구조화 로그로 남긴다.
+- `trace_id`, node, route별 개수, latency를 구조화 로그로 남긴다. 메뉴판 단위 완료 로그에는 `item_id` 대신 항목 수를 기록한다.
 - 사용자 프로필과 원문 메뉴는 로그에 그대로 남기지 않고 마스킹·요약 정책을 적용한다.
 
 | 상황 | 처리 |
@@ -3134,13 +3133,11 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 
 설계와 JSON 계약의 확정 내용은 각 본문에만 기록한다. 아래에는 구현 전에 실제 담당자와 값을 맞춰야 하는 항목만 남긴다.
 
-- ②·⑥·⑧에서 사용할 LangChain·모델 provider 패키지의 정확한 버전과 `openai==3.8.0` 호환성. LangGraph 자체는 `1.2.16`으로 확정됐다.
 - Prepare/Judge timeout, Prepare 결과 저장 위치·보존 기간, Judge API 재시도·멱등성
 - `persistence_commands` 적용 시점과 저장 실패 명령의 보관·재처리 방식
 - 메뉴판 단위 ③④⑤⑧ batch 최적화 여부와 동시성 상한
 - 메뉴별 부분 실패를 사용자 화면에 표시할 문구
 - 메뉴 애매함 플래그 사장님 답(`flag_confirmations`)의 저장 테이블 (백엔드·DB 스키마)
-- 사진 품질이 `low_confidence`일 때 처리 — 메뉴 전체 경고(`prepare_signals.warnings`의 `item_id: null`)를 모든 메뉴의 SAFE 금지로 쓸지, 재촬영을 권하고 사용자가 원할 때만 진행할지 (§1-3, §2-1 Judge 3단계)
 - 언어 설정을 바꾼 뒤 스캔 기록을 열 때 그 기록만 새 언어로 번역하는 경로 — 번역 주체(AI가 저장된 판정 값으로 문장 재생성 / 백엔드 번역 API), Prepare/Judge 밖 별도 진입점 여부 (2026-10-14 회의, ⑧ §4)
 
 ---

@@ -338,15 +338,15 @@ v1 옵션 사전은 다음으로 고정한다.
 - 매장별 별칭과 DB 메뉴 ID는 ②-A가 조회하지 않는다.
 - DB 기반 별칭은 Prepare 이후 백엔드의 `menu_aliases` 후보 조회에서 처리한다.
 
-현재 저장소 사전은 `ai_normalization/dictionaries/__init__.py`에 두고 애플리케이션 import 시 한 번 immutable 객체로 만든다. 버전은 `2026-10-v1`이다. 사전 내용이 바뀌면 버전도 함께 바꾸고 §7 회귀 테스트를 통과해야 한다.
+현재 저장소 사전은 `ai_normalization/dictionaries/__init__.py`에 두고 애플리케이션 import 시 한 번 immutable 객체로 만든다. 버전은 `2026-11-v1`이다. 사전 내용이 바뀌면 버전도 함께 바꾸고 §7 회귀 테스트를 통과해야 한다.
 
 | 사전 | 현재 v1 항목 |
 |---|---|
 | 안전한 표기·OCR 교정 | `돈까스 → 돈가스`, `찌게 → 찌개`, `가재미탕 → 가자미탕` |
-| 검증된 영문 별칭 | `bibimbap → 비빔밥`, `bulgogi → 불고기`, `kimchi jjigae → 김치찌개`, `kimchi stew → 김치찌개` |
+| 검증된 영문 별칭 | `bibimbap → 비빔밥`, `bulgogi → 불고기`, `kimchi jjigae → 김치찌개`, `kimchi stew → 김치찌개`, `doenjang jjigae → 된장찌개`, `gimbap/kimbap → 김밥`, `japchae → 잡채`, `samgyeopsal → 삼겹살`, `tteokbokki → 떡볶이` |
 | 섹션 헤더 | `메뉴`, `메뉴판`, `식사류`, `안주류`, `주류`, `음료`, `음료류`, `추천 메뉴`, `대표 메뉴` |
 
-사전 비교 키는 NFKC 적용 후 공백을 제거하고 Latin 문자를 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi stew`, `kimchistew`는 같은 키로 비교한다. `display_name`은 사전으로 바꾸지 않는다.
+사전 비교 키는 NFKC 적용 후 Latin 별칭에 한해 공백·하이픈·밑줄을 제거하고 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi-stew`, `kimchi_stew`, `kimchistew`는 같은 키로 비교한다. 별칭 전체가 사전에 정확히 있을 때만 치환하며 `display_name`은 바꾸지 않는다.
 
 다국어 처리는 다음 순서다.
 
@@ -563,7 +563,8 @@ ai_normalization/
 ├── option_rules.py    # 크기/인분/조리/재료 옵션 분류
 ├── candidate_policy.py# §4의 순수 판정 함수
 ├── openai_resolver.py # Responses API 구조화 LLM adapter
-├── dictionaries/      # `2026-10-v1` 표기·헤더·다국어 사전
+├── evaluation.py      # API 호출 없는 고정 검증셋 지표·JSONL CLI
+├── dictionaries/      # `2026-11-v1` 표기·헤더·다국어 사전
 └── tests/
 ```
 
@@ -579,6 +580,7 @@ ai_normalization/
 | ②-B 후보 검증·상태 판정 | 구현 | `ai_normalization` |
 | 후보 exact·alias·fuzzy 조회와 score 생성 | AI에서 구현하지 않음 | 백엔드가 §3 계약으로 제공 |
 | OpenAI provider·모델·timeout | 구현 | `OpenAINormalizationResolver`, 기본 `gpt-5.4-mini`·5초·재시도 1회 |
+| 이름 정확도·후보 Recall@5·자동 선택 정확도/커버리지·오매칭률·상태 혼동행렬 | 구현 | `python -m ai_normalization.evaluation <검증셋.jsonl>`, provider 호출 없음 |
 | Supervisor Prepare Graph의 ②-A 연결 | 구현 | `ai_supervisor/prepare_graph.py` |
 | Supervisor Judge Graph의 ②-B 연결 | 구현 | `ai_supervisor/judge_graph.py` |
 | 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
@@ -660,7 +662,7 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 - 후보 조회 실패와 모호성은 SAFE 금지 신호로 보존한다.
 - schema 3.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
 - Python 패키지 경로는 `ai_normalization/`이다.
-- 사전 경로와 버전은 `ai_normalization/dictionaries/__init__.py`, `2026-10-v1`이다.
+- 사전 경로와 버전은 `ai_normalization/dictionaries/__init__.py`, `2026-11-v1`이다.
 - item 단위 저신뢰 기준은 `ocr_confidence < 0.65`이며 유효 메뉴에만 `low_ocr_confidence`를 만든다.
 - LLM 내부 reason code는 §4-3의 세 값이다.
 - warning은 `(code, node, item_id)`로 중복 제거한다.
