@@ -140,9 +140,23 @@ def test_21_flag_answer_danger_names_the_tag() -> None:
     assert message(req).verdict == "생선이 들어 있어요."
 
 
-def test_missing_translation_keeps_korean_name() -> None:
+def test_missing_localized_name_falls_back_to_the_team_tables() -> None:
+    # No localized_names from the backend: the standard table still names 돼지고기 (names.py).
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.3)], locale="ja")
-    assert message(req).verdict == "この料理には돼지고기（約30%）が入っている可能性があります。"
+    assert message(req).verdict == "この料理には豚肉（約30%）が入っている可能性があります。"
+
+
+def test_unmapped_web_ingredient_is_named_from_the_extra_table() -> None:
+    # ④ could not map 삼치 (ingredient_id null); the extra table has it (2026-11-02).
+    mackerel = IngredientRef(ingredient_id=None, canonical_name="삼치")
+    req = request(SEAFOOD_ALLERGY, probability_results=[probability(mackerel, ["is_fish"], 0.4)], locale="en")
+    assert message(req).verdict == "This dish may contain Spanish mackerel (about 40%)."
+
+
+def test_name_in_no_table_keeps_korean() -> None:
+    sauce = IngredientRef(ingredient_id=None, canonical_name="까나리액젓")
+    req = request(SEAFOOD_ALLERGY, probability_results=[probability(sauce, ["is_fish"], 0.3)], locale="ja")
+    assert message(req).verdict == "この料理には까나리액젓（約30%）が入っている可能性があります。"
 
 
 def test_same_ingredient_twice_is_named_once_with_higher_probability() -> None:

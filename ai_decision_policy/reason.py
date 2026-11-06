@@ -18,12 +18,10 @@ notes are templates and go out unchanged.
 from __future__ import annotations
 
 import asyncio
-import csv
 import math
 import re
 from collections.abc import Iterable
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -31,12 +29,10 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
+from .names import all_rows, dictionary_name, display_name, standard_rows
 from .profile import forbidden_tags
 from .questions import TAG_NAMES
 
-TRANSLATIONS_PATH = (
-    Path(__file__).resolve().parent.parent / "crawling" / "ingredient_translations.csv"
-)
 MAX_REASON_CHARS = 300
 MAX_OUTPUT_TOKENS = 400
 LANGUAGE_NAMES: dict[str, str] = {
@@ -138,10 +134,8 @@ def shown_percent(posterior_mean: float) -> int:
     return math.floor(posterior_mean * 100 + 0.5)
 
 
-@lru_cache(maxsize=1)
 def _translation_rows() -> list[dict[str, str]]:
-    with TRANSLATIONS_PATH.open(encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
+    return standard_rows()
 
 
 @lru_cache(maxsize=8)
@@ -155,11 +149,11 @@ def known_names(locale: str) -> frozenset[str]:
 
 
 def with_translations(korean_names: Iterable[str]) -> set[str]:
-    """The names plus their translations in every language, from the same table."""
+    """The names plus their translations in every language, from both tables (names.py)."""
 
     wanted = set(korean_names)
     names = set(wanted)
-    for row in _translation_rows():
+    for row in all_rows():
         if row["name_ko"] in wanted:
             names |= {value for value in row.values() if value}
     return names
@@ -176,14 +170,9 @@ def restriction_names(tags: Iterable[str]) -> set[str]:
 
 
 def localized_name(korean_name: str, locale: str) -> str:
-    """``korean_name`` in ``locale`` from the translation table, else Korean as is."""
+    """``korean_name`` in ``locale`` from the translation tables, else Korean as is."""
 
-    if locale == "ko":
-        return korean_name
-    for row in _translation_rows():
-        if row["name_ko"] == korean_name and row.get(locale, "").strip():
-            return row[locale].strip()
-    return korean_name
+    return dictionary_name(korean_name, locale) or korean_name
 
 
 def untranslated(names: Iterable[str], locale: str) -> list[str]:
@@ -320,7 +309,7 @@ def reason_facts(request: DecisionRequest) -> list[str]:
     localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
 
     def name(ref) -> str:
-        return localized.get(ref.ingredient_id, ref.canonical_name)
+        return display_name(ref, localized, request.locale)
 
     for variant in request.proposed_variant_ingredients:
         if set(variant.constraint_tags) & forbidden:
@@ -338,7 +327,7 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
     localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
 
     def name(ref) -> str:
-        return localized.get(ref.ingredient_id, ref.canonical_name)
+        return display_name(ref, localized, request.locale)
 
     return {
         "menu": request.menu.normalized_menu_name,

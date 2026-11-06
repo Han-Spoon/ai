@@ -61,7 +61,7 @@ python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-p
 | DB 테이블 | 원천 |
 |---|---|
 | `menu_categories`, `menus`, `recipe_ingredients` | `ai_ruleengine/data/menus.csv` (큐레이션 레시피) |
-| `ingredients` | 사이트별 prior의 표준 재료 + 큐레이션 레시피 재료 + 숨은 재료 구조의 재료. `taxonomy_category`는 `ingredient_taxonomy.csv` (없으면 `unknown`, ④ §4). `name_i18n`은 `ingredient_translations.csv` (`ko` 외 6개 언어, 표준 재료 324개. 없는 재료는 `ko`만 넣어 한국어 이름이 그대로 나감, ⑧ §1-2) |
+| `ingredients` | 사이트별 prior의 표준 재료 + 큐레이션 레시피 재료 + 숨은 재료 구조의 재료. `taxonomy_category`는 `ingredient_taxonomy.csv` (없으면 `unknown`, ④ §4). `name_i18n`은 `ingredient_translations.csv` (`ko` 외 6개 언어, 표준 재료 324개. 없는 재료는 `ko`만 넣어 한국어 이름이 그대로 나감, ⑧ §1-2) `ingredient_translations_extra.csv`(표준 밖 이름 607개 번역, 2026-11-02)는 DB에 넣지 않는다. ④가 표준 재료로 못 맞춘 웹 재료의 이름을 ⑧이 직접 찾는 데 쓴다 |
 | `ingredient_tags` | `ai_ruleengine/constants.py`의 `VARIANT_INGREDIENTS` (22종 `is_*`) |
 | `ingredient_compositions`, `ingredient_composition_tags` | `ai_result/rules/hidden_rules_data.py` (구성 관계 `part_of`만) |
 | `menu_recipe_corpora`, `menu_ingredient_priors` | `<사이트>_prior.csv` (사이트별 `n_total`, `k_count`) |

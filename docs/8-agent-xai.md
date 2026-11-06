@@ -108,7 +108,7 @@
 
 | 플래그 | 뜻 | 걸릴 수 있는 태그 |
 |---|---|---|
-| `has_unclear_broth` | 육수에 레시피 밖 재료(고기·해산물)가 들어갈 수 있음 (육수 재료 불명) | `is_pork`·`is_beef`·`is_chicken`·`is_shrimp`·`is_crab`·`is_shellfish` |
+| `has_unclear_broth` | 육수에 레시피 밖 재료(고기·해산물)가 들어갈 수 있음 (육수 재료 불명) | `is_pork`·`is_beef`·`is_chicken`·`is_duck`·`is_fish`·`is_shrimp`·`is_crab`·`is_shellfish` (`is_duck`·`is_fish`는 2026-11-02 추가: 한식 육수는 멸치·황태 육수가 가장 흔한데 빠져 있어, 생선 알레르기 사용자에게 SAFE가 나올 수 있었다) |
 | `has_unclear_seasoning` | 양념에 레시피 밖 재료(술 등)가 들어갈 수 있음 | `is_alcohol` |
 | `has_unclear_jeotgal` | 젓갈이 들어갈 수 있음 (젓갈 종류 불명) | `is_fish`·`is_shrimp`·`is_crab`·`is_squid`·`is_shellfish`·`is_mackerel` |
 | `has_hidden_animal` | 동물성 재료가 숨어 있을 수 있음 | `is_pork`·`is_beef`·`is_chicken`·`is_duck`·`is_fish`·`is_shrimp`·`is_crab`·`is_squid`·`is_shellfish`·`is_mackerel` |
@@ -138,7 +138,7 @@
   - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
   - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
   - `role`은 입력 값을 그대로 옮긴다 (아래).
-  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없는 재료(번역 이름이 없거나 `ingredient_id: null`인 웹 재료)는 한국어 `canonical_name`을 그대로 쓴다. 틀린 번역보다 원문이 안전하다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274)
+  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없으면 팀 번역 사전(`crawling/ingredient_translations.csv` 표준 재료 324개, `crawling/ingredient_translations_extra.csv` 표준 밖 재료 565개)에서 한국어 이름으로 찾고, 거기에도 없으면 한국어 `canonical_name`을 그대로 쓴다 (2026-11-02, `ai_decision_policy/names.py`). `ingredient_id: null`인 웹 재료도 이렇게 찾는다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274)
 - 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
 - `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
 - `message`는 `{verdict, reason, notes[]}` object이고, 세 칸 모두 요청 `locale` 하나로 쓴다 (§0-2, §4 "`message` 칸", ⓪ §4-7).
@@ -379,7 +379,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 결과 설명(`message`) | 세 칸(`verdict`·`reason`·`notes[].text`) 모두 사용자 언어로만 쓴다. 재료 이름도 사용자 언어로 쓴다 (예: "pork") |
 | 사장님 질문 카드(`owner_cards[].question`) | **한국어와 사용자 언어를 함께** 보여준다. 손님이 화면을 사장님께 보여주고 소통하는 카드라 한국어가 있어야 바로 통한다. `question`에는 `ko`와 사용자 언어 두 문구만 넣는다. 사용자 언어가 `ko`면 하나다 (⓪ §4-7) |
 | 판정 한 줄 템플릿 | 사람이 7개 언어로 미리 써 두고 한 번 검수한다. 판정마다 사용자 언어 것 하나를 쓴다 |
-| 재료 이름 번역 | 번역 사전(DB `ingredients.name_i18n` → 입력 `localized_names`)에서 가져온다. 없으면 판정 한 줄·안내·재료 목록(`risk_ingredients[].ingredient.localized_name`, §1-2)에는 한국어 이름 그대로 쓴다. **이유 문장(`reason`)에서는 번역 이름이 없는 재료를 LLM이 사용자 언어로 번역한다** (2026-10-31). LLM은 번역한 이름을 `name_translations`(한국어 → 번역)로 함께 알려 주고, 검수(아래 "LLM 이유 설명 자동 검수")는 이 번역만 새 재료 이름으로 보지 않는다. 번역 이름이 이미 있는 재료는 그 이름을 그대로 쓴다. 처음(2026-10-12)에는 "LLM이 번역하지 않는다"로 적었으나, 회의 결정이 아니었고 한국어 이름만으로는 사용자가 알아볼 수 없어 바꿨다 |
+| 재료 이름 번역 | 번역 사전(DB `ingredients.name_i18n` → 입력 `localized_names`)에서 가져온다. 없으면 팀 번역 사전 두 파일에서 한국어 이름으로 찾고, 거기에도 없으면 판정 한 줄·안내·재료 목록(`risk_ingredients[].ingredient.localized_name`, §1-2)에 한국어 이름 그대로 쓴다 (2026-11-02). **이유 문장(`reason`)에서는 번역 이름이 없는 재료를 LLM이 사용자 언어로 번역한다** (2026-10-31). LLM은 번역한 이름을 `name_translations`(한국어 → 번역)로 함께 알려 주고, 검수(아래 "LLM 이유 설명 자동 검수")는 이 번역만 새 재료 이름으로 보지 않는다. 번역 이름이 이미 있는 재료는 그 이름을 그대로 쓴다. 처음(2026-10-12)에는 "LLM이 번역하지 않는다"로 적었으나, 회의 결정이 아니었고 한국어 이름만으로는 사용자가 알아볼 수 없어 바꿨다 |
 | 이유 설명 | LLM이 사용자 언어로 쓴다 |
 | 언어 선택 | `locale`은 7개 중 하나만 들어온다. 앱이 이 7개 중에서만 고르게 하므로 다른 언어를 요청하는 경로는 없다 |
 | LLM 실패 | `reason: null`. 판정 한 줄(`verdict`)과 안내(`notes`)는 템플릿이라 그대로 보여준다 |
@@ -544,8 +544,8 @@ python -m evaluation.xai_cost --price-in 입력가격 --price-out 출력가격
 - [x] **언어 코드·범위 나머지 문서 반영 (외부 의존)** — ✅ 모두 반영됨 (2026-10-25 확인). ⓪(#274)과 ⑧: 7개 코드, 결과 문장은 사용자 언어만, 질문 카드는 `ko` + 사용자 언어
   - ⑦: §1-1 질문 문구, §8 "사장님 질문 저장 언어"를 `ko` + 사용자 언어로 고침 (#309)
   - DB 스키마: §6 요청 7·19번 언어 코드 7개 (#277), `question_text` 설명을 "`ko` + 사용자 언어 두 개만 저장"으로 고침 (#309)
-- [ ] **재료 번역 사전 데이터 (외부 의존)** — 사전은 만들었다 (2026-10-27, #335): `crawling/ingredient_translations.csv`, 표준 재료 324개 × 6개 언어. `localized_name`은 DB `ingredients.name_i18n` 값을 쓰므로(⓪ §1-3·§4-7) 남은 것은 ① 백엔드가 이 파일을 `name_i18n`에 적재, ② 원어민 검수(재료명 오역은 알레르기 정보 손실), ③ 324개 밖 재료(사이트 prior 약 760개)의 번역. ③은 **LLM으로 한 번에 번역해 사전에 더한다** (2026-11-02 결정, 아직 하지 않음: BAZE 크레딧 사용). 스캔마다 번역할 필요가 없고, 판정 한 줄·재료 목록도 사용자 언어로 나간다
-- [x] **재료 목록·판정 한 줄의 번역** (2026-11-02) — 번역 사전으로만 한다. 사전에 있는 재료는 사용자 언어로, 사전 밖 재료(`ingredient_id: null`인 웹 재료 포함)는 한국어 그대로 나간다. LLM 번역은 이유 문장에서만 쓴다 (§4, 2026-10-31). 사전 밖 재료를 줄이는 일은 위 "재료 번역 사전 데이터" ③
+- [ ] **재료 번역 사전 데이터 (외부 의존)** — 사전은 만들었다 (2026-10-27, #335): `crawling/ingredient_translations.csv`, 표준 재료 324개 × 6개 언어. `localized_name`은 DB `ingredients.name_i18n` 값을 쓰므로(⓪ §1-3·§4-7) 남은 것은 ① 백엔드가 이 파일을 `name_i18n`에 적재, ② 원어민 검수(재료명 오역은 알레르기 정보 손실), ③ 324개 밖 재료의 번역 — 했다 (2026-11-02). 실제로 세어 보니 DB에 들어가는 재료는 표준 324개뿐이고 모두 번역돼 있었다. 사이트 prior의 표준 밖 이름 607개는 DB에 들어가지 않는다. 이 607개를 Claude로 번역해 `crawling/ingredient_translations_extra.csv`에 두었다(재료 565개, 음식이 아닌 이름 22개, 알 수 없는 이름 20개, 알레르기 예상 태그 `likely_tags` 포함). ⑧은 ④가 표준 재료로 못 맞춘 웹 재료의 이름을 여기서 찾는다. 원어민 검수 전 초안이다
+- [x] **재료 목록·판정 한 줄의 번역** (2026-11-02) — 번역 사전으로만 한다. `localized_names` → 팀 번역 사전(표준 324개 + 표준 밖 565개) → 한국어 순서다 (§1-2). LLM 번역은 이유 문장에서만 쓴다 (§4, 2026-10-31).
 - [x] **기록 실시간 번역 경로** — 언어 설정을 바꾼 뒤 스캔 기록을 열 때 번역한다 (2026-10-14 회의). **번역은 백엔드가 한다** (2026-10-17 회의). AI는 다시 부르지 않는다 (§4). ⓪ 정리는 §9
 - [x] **결과 문장 `message` 나누기** — 프론트 요청(2026-10-14)으로 판정 한 줄·이유 설명·안내를 `message: {verdict, reason, notes[]}`로 나눴다 (§4 "`message` 칸"). ⓪ §1-3·§2-10·§2-13·§4-7·§6·테스트 20, ⑧ §0-2·§1-2·§2·§4에 반영 (2026-10-17). 고위험 재검증은 `reason`만 보강한다. 남은 것: 프론트가 이 모양으로 화면을 그릴 수 있는지 확인, DB 스키마 `menu_analyses.message` 저장 형식 (지금은 언어별 다국어 JSONB, §6 7번) 반영과 백엔드 확정
 - [x] **질문 카드와 질문 행 연결** — 백엔드 지적: 사장님 답을 어느 질문 행에 기록할지 정할 번호가 없었다. ⓪에 `owner_cards[]`·질문 저장 명령의 `item_id`·`card_id`(#274), 질문 차수 `round`·`previous_question_id`(#269)가 생겨 해결됨 (§1-3). 차수는 2026-10-26 회의로 없어짐(질문은 한 번만)

@@ -303,9 +303,12 @@ def test_other_language_gets_korean_and_that_language() -> None:
     }
 
 
-def test_missing_translation_keeps_korean_ingredient_name() -> None:
+def test_card_names_fall_back_to_the_team_tables() -> None:
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.7)], locale="zh-CN")
-    assert cards(req)[0].question["zh-CN"] == "这道菜里有돼지고기吗？"
+    assert cards(req)[0].question["zh-CN"] == "这道菜里有猪肉吗？"
+    unknown = IngredientRef(ingredient_id=None, canonical_name="돼지비계")
+    req = request(HALAL, probability_results=[probability(unknown, ["is_pork"], 0.7)], locale="zh-CN")
+    assert cards(req)[0].question["zh-CN"] == "这道菜里有돼지비계吗？"
 
 
 @pytest.mark.parametrize("locale", get_args(Locale))

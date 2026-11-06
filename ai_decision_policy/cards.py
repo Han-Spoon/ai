@@ -16,6 +16,7 @@ from ai_supervisor.contracts.common import IngredientRef
 from ai_supervisor.contracts.decision import DecisionRequest
 from ai_supervisor.contracts.external import OwnerCard
 
+from .names import display_name
 from .policy import DecisionOutcome, has_no_ingredients
 from .questions import flag_question, ingredient_question, menu_question
 
@@ -142,8 +143,7 @@ def build_owner_cards(request: DecisionRequest, outcome: DecisionOutcome) -> lis
     posterior: dict[str, float | None] = {}
     for t in _collect_ingredients(request, forbidden):
         card_id = _card_id(item_id, _ingredient_target(t.ingredient))
-        ingredient_id = t.ingredient.ingredient_id
-        localized = names.get(ingredient_id, t.ingredient.canonical_name)
+        localized = display_name(t.ingredient, names, locale)
         posterior[card_id] = t.posterior_mean
         cards.append(
             OwnerCard(

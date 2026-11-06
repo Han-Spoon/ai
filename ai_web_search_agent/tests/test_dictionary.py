@@ -44,3 +44,9 @@ def test_one_letter_name_needs_a_whole_word() -> None:
 
 def test_names_are_not_repeated() -> None:
     assert find_ingredient_names("양파 1개를 썰고 남은 양파는 볶는다") == ["양파"]
+
+
+def test_one_letter_name_with_a_particle_is_found() -> None:
+    # Garnishes are often written in a sentence: "잣을 올린다" (2026-11-02).
+    assert find_ingredient_names("잣을 올려 마무리하고 굴과 무를 넣는다") == ["잣", "굴", "무"]
+    assert find_ingredient_names("무엇을 넣을까") == []

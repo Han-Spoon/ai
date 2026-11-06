@@ -27,6 +27,7 @@ from ai_supervisor.contracts.decision import (
 )
 
 from .flags import FlagCheck, check_flag
+from .names import display_name
 from .profile import forbidden_tags
 
 # High-risk review signals (§2-3). Order is the priority when several apply.
@@ -169,11 +170,11 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
         probability = item if isinstance(item, DecisionProbabilityResult) else None
         ingredient_id = item.ingredient.ingredient_id
         return DecisionRiskIngredient(
-            # A missing translation keeps the Korean name; a wrong one is worse (§1-2).
+            # localized_names first, then the team's tables, else Korean (§1-2, names.py).
             ingredient=LocalizedIngredientRef(
                 ingredient_id=ingredient_id,
                 canonical_name=item.ingredient.canonical_name,
-                localized_name=names.get(ingredient_id, item.ingredient.canonical_name),
+                localized_name=display_name(item.ingredient, names, request.locale),
             ),
             constraint_tags=list(item.constraint_tags),
             matched_tags=matched,

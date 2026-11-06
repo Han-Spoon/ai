@@ -345,6 +345,18 @@ def test_18_related_unanswered_flag_blocks_safe() -> None:
     ]
 
 
+def test_unclear_broth_asks_about_fish() -> None:
+    # Anchovy or dried pollack stock is the usual Korean broth (2026-11-02). Before,
+    # a fish-allergic user got SAFE here because the flag did not ask about fish.
+    outcome = decide(request(FISH_ALLERGY, confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_broth"]))
+    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "unknown")
+    assert [(f.flag, f.ask_tags, f.state) for f in outcome.flag_checks] == [
+        ("has_unclear_broth", ["is_fish"], "unresolved")
+    ]
+    duck = decide(request(profile(allergies=["is_duck"]), confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_broth"]))
+    assert duck.risk_level == "caution"
+
+
 def test_19_unrelated_flag_does_not_block_safe() -> None:
     outcome = decide(request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_jeotgal"]))
     assert outcome.risk_level == "safe"

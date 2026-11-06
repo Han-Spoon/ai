@@ -1,0 +1,608 @@
+name_ko,kind,likely_tags,en,ar,zh-CN,zh-TW,ja,es
+토란대,ingredient,,taro stems,سيقان القلقاس,芋头茎,芋頭莖,ずいき（里芋の茎）,tallos de taro
+파인애플,ingredient,,pineapple,أناناس,菠萝,鳳梨,パイナップル,piña
+슈가파우더,ingredient,,powdered sugar,سكر بودرة,糖粉,糖粉,粉砂糖,azúcar glas
+당귀,ingredient,,angelica root (dang-gui),جذر الأنجليكا,当归,當歸,当帰,raíz de angélica
+셀러리,ingredient,,celery,كرفس,芹菜,芹菜,セロリ,apio
+고기,ingredient,is_beef;is_pork,meat,لحم,肉,肉,肉,carne
+누룽지,ingredient,,scorched rice (nurungji),أرز محمص (نورونغجي),锅巴,鍋巴,おこげ,arroz tostado (nurungji)
+돌나물,ingredient,,stringy stonecrop (dolnamul),نبات دولنامول,垂盆草,垂盆草,ツルマンネングサ,dolnamul (hierba de piedra)
+루꼴라,ingredient,,arugula,جرجير,芝麻菜,芝麻菜,ルッコラ,rúcula
+아스파라거스,ingredient,,asparagus,هليون,芦笋,蘆筍,アスパラガス,espárragos
+약과,ingredient,is_wheat,yakgwa (Korean honey cookie),ياكغوا (بسكويت العسل الكوري),药果（韩式蜜饼）,藥果（韓式蜜餅）,ヤックァ（韓国の蜜菓子）,yakgwa (galleta coreana de miel)
+참나물,ingredient,,Korean wild parsley (chamnamul),بقدونس كوري بري,大叶芹,大葉芹,チャムナムル（山菜）,perejil silvestre coreano
+총장즙,unclear,,,,,,,
+핫소스,ingredient,,hot sauce,صلصة حارة,辣椒酱,辣椒醬,ホットソース,salsa picante
+미더덕,ingredient,,warty sea squirt (mideodeok),بخاخ البحر (ميديوديوك),海鞘,海鞘,エボヤ,ascidia (mideodeok)
+미향,ingredient,is_alcohol,mirin-style cooking wine,خمر طبخ (ميرين),味醂料酒,味醂料酒,みりん風調味料,vino de cocina tipo mirin
+발사믹,ingredient,is_sulfite,balsamic vinegar,خل بلسمي,意大利香醋,義大利黑醋,バルサミコ酢,vinagre balsámico
+베이킹소다,ingredient,,baking soda,بيكربونات الصوديوم,小苏打,小蘇打,重曹,bicarbonato de sodio
+쌍화탕,ingredient,,ssanghwa herbal tonic,مشروب سانغهوا العشبي,双和汤（草药饮）,雙和湯（草藥飲）,双和湯（漢方ドリンク）,tónico herbal ssanghwa
+오렌지,ingredient,,orange,برتقال,橙子,柳橙,オレンジ,naranja
+잡채,ingredient,is_soybean;is_beef,japchae (stir-fried glass noodles),جابتشي (نودلز زجاجية مقلية),杂菜（炒粉丝）,雜菜（炒冬粉）,チャプチェ,japchae (fideos de batata salteados)
+청포묵,ingredient,,mung bean jelly,هلام فاصوليا المونج,绿豆凉粉,綠豆涼粉,緑豆ムク,gelatina de judía mungo
+콜라,ingredient,,cola,كولا,可乐,可樂,コーラ,refresco de cola
+피클,ingredient,,pickles,مخلل,腌黄瓜,醃黃瓜,ピクルス,encurtidos
+깍두기,ingredient,is_shrimp;is_fish,kkakdugi (radish kimchi),كاكدوغي (كيمتشي الفجل),萝卜块泡菜,蘿蔔塊泡菜,カクテキ,kkakdugi (kimchi de rábano)
+녹두,ingredient,,mung beans,فاصوليا المونج,绿豆,綠豆,緑豆,judía mungo
+더덕,ingredient,,deodeok root,جذر ديوديوك,羊乳（沙参）,羊乳（沙參）,ツルニンジン,raíz de deodeok
+동그랑땡,ingredient,is_pork;is_egg;is_soybean;is_wheat,Korean meat patties (donggeurangttaeng),فطائر لحم كورية,韩式肉饼,韓式肉餅,トングランテン（韓国風肉団子焼き）,tortitas coreanas de carne
+딜,ingredient,,dill,شبت,莳萝,蒔蘿,ディル,eneldo
+딸기,ingredient,,strawberry,فراولة,草莓,草莓,いちご,fresa
+로메인,ingredient,,romaine lettuce,خس روماني,罗马生菜,蘿蔓生菜,ロメインレタス,lechuga romana
+마,ingredient,,Chinese yam,يام صيني,山药,山藥,長芋,ñame chino
+백년초가루,ingredient,,prickly pear powder,مسحوق التين الشوكي,仙人掌果粉,仙人掌果粉,ウチワサボテンの実の粉,polvo de higo chumbo
+삼계탕재료,ingredient,,samgyetang herb mix,خلطة أعشاب سامغيتانغ,参鸡汤药材包,蔘雞湯藥材包,参鶏湯用漢方セット,mezcla de hierbas para samgyetang
+새싹,ingredient,,sprouts,براعم,芽苗菜,芽菜,スプラウト,brotes
+원당,ingredient,,raw cane sugar,سكر قصب خام,原蔗糖,原蔗糖,粗糖,azúcar de caña sin refinar
+장아찌원액,ingredient,is_soybean,pickling sauce base (jangajji),قاعدة صلصة التخليل,酱菜腌汁,醬菜醃汁,醤油漬けのたれ,base de salsa para encurtir
+조미료,ingredient,,seasoning,توابل,调味料,調味料,調味料,condimento
+콜라비,ingredient,,kohlrabi,كرنب أبو ركبة,苤蓝,大頭菜,コールラビ,colinabo
+톳,ingredient,,hijiki seaweed,طحلب الهيجيكي,羊栖菜,羊栖菜,ひじき,alga hijiki
+감미료,ingredient,,sweetener,مُحلٍّ,甜味剂,甜味劑,甘味料,edulcorante
+대창,ingredient,is_beef,beef large intestine (daechang),أمعاء البقر الغليظة,牛大肠,牛大腸,牛の大腸（テッチャン）,intestino grueso de res
+도토리가루,ingredient,,acorn flour,دقيق البلوط,橡子粉,橡實粉,どんぐり粉,harina de bellota
+삼치,ingredient,is_fish,Spanish mackerel,سمك الماكريل الإسباني,鲅鱼,土魠魚,サワラ,caballa española
+식용꽃,ingredient,,edible flowers,زهور صالحة للأكل,食用花,食用花,エディブルフラワー,flores comestibles
+엑스트라버진,ingredient,,extra virgin olive oil,زيت زيتون بكر ممتاز,特级初榨橄榄油,特級初榨橄欖油,エクストラバージンオリーブオイル,aceite de oliva virgen extra
+정향,ingredient,,cloves,قرنفل,丁香,丁香,クローブ,clavo de olor
+조리유,ingredient,,cooking oil,زيت طبخ,食用油,食用油,調理油,aceite de cocina
+집청,ingredient,,honey syrup glaze,شراب عسل للتلميع,蜜糖浆,蜜糖漿,蜜シロップ,almíbar de miel
+참마,ingredient,,mountain yam,يام جبلي,山药,山藥,山芋,ñame de montaña
+케일,ingredient,,kale,كرنب أجعد (كيل),羽衣甘蓝,羽衣甘藍,ケール,col rizada
+큐민가루,ingredient,,ground cumin,كمون مطحون,孜然粉,孜然粉,クミンパウダー,comino molido
+크랜베리,ingredient,,cranberries,توت بري,蔓越莓,蔓越莓,クランベリー,arándanos rojos
+할라피뇨,ingredient,,jalapeño,هالابينو,墨西哥辣椒,墨西哥辣椒,ハラペーニョ,jalapeño
+후리가케,ingredient,is_fish,furikake (rice seasoning),فوريكاكي (توابل الأرز),拌饭料,拌飯香鬆,ふりかけ,furikake (condimento para arroz)
+갈릭칠리페이스트,ingredient,,garlic chili paste,معجون الثوم والفلفل الحار,蒜蓉辣酱,蒜蓉辣醬,ガーリックチリペースト,pasta de ajo y chile
+감태,ingredient,,gamtae seaweed,طحلب غامتاي,甘苔,甘苔,カムテ（海藻）,alga gamtae
+깍두기국물,ingredient,is_shrimp;is_fish,kkakdugi brine,سائل كيمتشي الفجل,萝卜块泡菜汁,蘿蔔塊泡菜汁,カクテキの汁,zumo de kkakdugi
+낫또,ingredient,is_soybean,natto (fermented soybeans),ناتو (فول صويا مخمر),纳豆,納豆,納豆,natto (soja fermentada)
+도토리묵,ingredient,,acorn jelly,هلام البلوط,橡子凉粉,橡實涼粉,どんぐりムク,gelatina de bellota
+딸기가루,ingredient,,strawberry powder,مسحوق الفراولة,草莓粉,草莓粉,いちごパウダー,polvo de fresa
+매생이,ingredient,,maesaengi seaweed,طحلب مايسينغي,海青菜,海青菜,メセンイ（海藻）,alga maesaengi
+미삼,ingredient,,fine ginseng roots,جذور جينسنغ رفيعة,参须,參鬚,人参のひげ根,raicillas de ginseng
+바나나,ingredient,,banana,موز,香蕉,香蕉,バナナ,plátano
+백앙금,ingredient,,white bean paste,معجون الفاصوليا البيضاء,白豆沙,白豆沙,白あん,pasta de judía blanco
+부채살,ingredient,is_beef,beef top blade (flat iron),لحم بقر من الكتف,牛肩胛肉,牛板腱,牛ミスジ,paleta de res
+부침유,ingredient,,frying oil,زيت قلي,煎炸油,煎炸油,焼き油,aceite para freír
+블루베리,ingredient,,blueberries,توت أزرق,蓝莓,藍莓,ブルーベリー,arándanos azules
+비타민,ingredient,,tatsoi (vitamin greens),تاتسوي,塌棵菜,塌棵菜,ターサイ,tatsoi
+새송이,ingredient,,king oyster mushroom,فطر المحار الملكي,杏鲍菇,杏鮑菇,エリンギ,seta de cardo
+생곤드레,ingredient,,fresh gondre (Korean thistle greens),خضار غوندري طازجة,新鲜高丽蓟,新鮮高麗薊,生のコンドゥレ（山菜）,cardo coreano fresco
+솔잎,ingredient,,pine needles,إبر الصنوبر,松针,松針,松葉,agujas de pino
+수박,ingredient,,watermelon,بطيخ,西瓜,西瓜,すいか,sandía
+스위트콘,ingredient,,sweet corn,ذرة حلوة,甜玉米,甜玉米,スイートコーン,maíz dulce
+야채,ingredient,,vegetables,خضروات,蔬菜,蔬菜,野菜,verduras
+어린잎,ingredient,,baby leaves,أوراق صغيرة,嫩叶菜,嫩葉菜,ベビーリーフ,hojas tiernas
+오가피,ingredient,,acanthopanax (ogapi),أكانثوباناكس,五加皮,五加皮,ウコギ,acantopánax
+오미자청,ingredient,,omija (magnolia berry) syrup,شراب أوميجا,五味子糖浆,五味子糖漿,五味子シロップ,jarabe de omija
+조갯살,ingredient,is_shellfish,clam meat,لحم المحار,蛤蜊肉,蛤蜊肉,貝のむき身,carne de almeja
+참외,ingredient,,Korean melon,شمام كوري,香瓜,香瓜,マクワウリ,melón coreano
+허브,ingredient,,herbs,أعشاب,香草,香草,ハーブ,hierbas
+MSG,ingredient,,MSG (monosodium glutamate),غلوتامات أحادية الصوديوم,味精,味精,うま味調味料（MSG）,glutamato monosódico
+고춧잎,ingredient,,chili pepper leaves,أوراق الفلفل الحار,辣椒叶,辣椒葉,唐辛子の葉,hojas de chile
+깻순,ingredient,,perilla shoots,براعم البريلا,紫苏嫩芽,紫蘇嫩芽,エゴマの新芽,brotes de perilla
+뉴슈거,ingredient,,saccharin sweetener,مُحلٍّ السكرين,糖精甜味剂,糖精甜味劑,サッカリン甘味料,edulcorante de sacarina
+느타리,ingredient,,oyster mushroom,فطر المحار,平菇,秀珍菇,ヒラタケ,seta de ostra
+다시물,ingredient,is_fish,dashi stock (anchovy and kelp),مرق داشي (أنشوفة وعشب البحر),高汤（鳀鱼海带）,高湯（鯷魚海帶）,だし汁（煮干し・昆布）,caldo dashi (anchoa y alga)
+라디치오,ingredient,,radicchio,راديكيو,红菊苣,紅菊苣,トレビス,radicchio
+레디쉬,ingredient,,radish,فجل أحمر,樱桃萝卜,櫻桃蘿蔔,ラディッシュ,rábano
+로즈메리,ingredient,,rosemary,إكليل الجبل,迷迭香,迷迭香,ローズマリー,romero
+마라소스,ingredient,is_soybean;is_beef,mala sauce,صلصة مالا,麻辣酱,麻辣醬,麻辣ソース,salsa mala
+모둠건해초,ingredient,,mixed dried seaweed,أعشاب بحرية مجففة مشكلة,什锦干海藻,什錦乾海藻,乾燥海藻ミックス,mezcla de algas secas
+바비큐소스,ingredient,is_tomato,barbecue sauce,صلصة الشواء,烧烤酱,烤肉醬,バーベキューソース,salsa barbacoa
+비엔나,ingredient,is_pork,Vienna sausage,نقانق فيينا,维也纳香肠,維也納香腸,ウインナー,salchicha de Viena
+삼계탕약재,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕용약재,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕용한약재,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+설렁탕,ingredient,is_beef,ox bone soup (seolleongtang),حساء عظام البقر (سولونغتانغ),雪浓汤（牛骨汤）,雪濃湯（牛骨湯）,ソルロンタン（牛骨スープ）,sopa de hueso de res (seolleongtang)
+세이지,ingredient,,sage,مريمية,鼠尾草,鼠尾草,セージ,salvia
+시판낫또,ingredient,is_soybean,store-bought natto,ناتو جاهز,市售纳豆,市售納豆,市販の納豆,natto comprado
+신화당,ingredient,,saccharin sweetener,مُحلٍّ السكرين,糖精,糖精,サッカリン甘味料,edulcorante de sacarina
+양념소스,ingredient,is_soybean,seasoning sauce,صلصة تتبيل,调味酱,調味醬,合わせ調味料,salsa para sazonar
+양장피,ingredient,,yangjangpi (starch sheets),رقائق النشا (يانغجانغبي),两张皮（粉皮）,兩張皮（粉皮）,ヤンジャンピ（でんぷんの皮）,láminas de almidón (yangjangpi)
+어린잎새싹,ingredient,,baby leaf sprouts,براعم الأوراق الصغيرة,嫩叶芽苗,嫩葉芽苗,ベビーリーフとスプラウト,brotes y hojas tiernas
+오레가노,ingredient,,oregano,أوريغانو,牛至,奧勒岡,オレガノ,orégano
+울금가루,ingredient,,turmeric powder,مسحوق الكركم,姜黄粉,薑黃粉,ウコンパウダー,cúrcuma en polvo
+월개수잎,ingredient,,bay leaves,ورق الغار,月桂叶,月桂葉,ローリエ,hojas de laurel
+제피잎,ingredient,,Korean pepper leaves (jepi),أوراق فلفل جيبي,花椒叶,花椒葉,山椒の葉,hojas de pimienta coreana (jepi)
+죽염,ingredient,,bamboo salt,ملح الخيزران,竹盐,竹鹽,竹塩,sal de bambú
+중하,ingredient,is_shrimp,medium shrimp,جمبري متوسط,中虾,中蝦,中エビ,camarón mediano
+진미채,ingredient,is_squid,seasoned dried squid strips,شرائح الحبار المجفف المتبلة,鱿鱼丝,魷魚絲,さきイカ,tiras de calamar seco
+차이브,ingredient,,chives,ثوم معمر,细香葱,細香蔥,チャイブ,cebollino
+천연색소,ingredient,,natural food coloring,ملون غذائي طبيعي,天然色素,天然色素,天然着色料,colorante natural
+치자,ingredient,,gardenia fruit,ثمرة الغاردينيا,栀子,梔子,クチナシの実,fruto de gardenia
+치자가루,ingredient,,gardenia powder,مسحوق الغاردينيا,栀子粉,梔子粉,クチナシパウダー,polvo de gardenia
+템페,ingredient,is_soybean,tempeh,تمبيه,天贝,天貝,テンペ,tempeh
+통조림국물,ingredient,,canned liquid,سائل المعلبات,罐头汤汁,罐頭湯汁,缶詰の汁,líquido de la lata
+홍초,ingredient,,red vinegar drink (hongcho),خل أحمر للشرب,红醋饮料,紅醋飲料,飲む酢（ホンチョ）,vinagre rojo para beber
+​물,ingredient,,water,ماء,水,水,水,agua
+가자미,ingredient,is_fish,flounder,سمك موسى,鲽鱼,鰈魚,カレイ,platija
+각종야채,ingredient,,assorted vegetables,خضروات متنوعة,各种蔬菜,各種蔬菜,いろいろな野菜,verduras variadas
+갈치,ingredient,is_fish,hairtail (cutlassfish),سمك السيف,带鱼,白帶魚,タチウオ,pez sable
+건블루베리,ingredient,is_sulfite,dried blueberries,توت أزرق مجفف,蓝莓干,藍莓乾,ドライブルーベリー,arándanos secos
+건세모가사리,ingredient,,dried funori seaweed,طحلب فونوري مجفف,干海萝,乾海蘿,乾燥フノリ,alga funori seca
+건크랜베리,ingredient,is_sulfite,dried cranberries,توت بري مجفف,蔓越莓干,蔓越莓乾,ドライクランベリー,arándanos rojos secos
+고노와다,ingredient,,salted sea cucumber entrails (konowata),أحشاء خيار البحر المملحة,海参肠,海參腸,このわた,vísceras saladas de pepino de mar
+곤드레나물,ingredient,,gondre greens (Korean thistle),خضار غوندري,高丽蓟菜,高麗薊菜,コンドゥレナムル,verduras de cardo coreano
+곰국,ingredient,is_beef,beef bone soup,حساء عظام البقر,牛骨汤,牛骨湯,コムグク（牛骨スープ）,caldo de hueso de res
+곰취,ingredient,,gomchwi leaves,أوراق غومتشوي,橐吾叶,橐吾葉,オタカラコウの葉,hojas de gomchwi
+곰취잎,ingredient,,gomchwi leaves,أوراق غومتشوي,橐吾叶,橐吾葉,オタカラコウの葉,hojas de gomchwi
+과일즙,ingredient,,fruit juice,عصير فواكه,果汁,果汁,果汁,zumo de fruta
+관자,ingredient,is_shellfish,scallop,محار الاسكالوب,扇贝柱,干貝,貝柱,vieira
+관자살,ingredient,is_shellfish,scallop meat,لحم محار الاسكالوب,扇贝肉,干貝肉,貝柱の身,carne de vieira
+구연산,ingredient,,citric acid,حمض الستريك,柠檬酸,檸檬酸,クエン酸,ácido cítrico
+꾸리살,ingredient,is_beef,beef chuck tender (kkurisal),لحم بقر من الكتف (كوريسال),牛肩胛嫩肉,牛肩胛嫩肉,牛肩肉（クリサル）,lomo de paleta de res
+네잎클로버,ingredient,,four-leaf clover,برسيم رباعي الأوراق,四叶草,四葉草,四つ葉のクローバー,trébol de cuatro hojas
+누텔라,ingredient,is_milk,Nutella (hazelnut spread),نوتيلا (كريمة البندق),能多益榛子酱,能多益榛果醬,ヌテラ（ヘーゼルナッツスプレッド）,Nutella (crema de avellanas)
+다시팩,ingredient,is_fish,"dashi pack (anchovy, kelp)",كيس مرق داشي,高汤包,高湯包,だしパック,bolsita de dashi
+다크커버춰초콜릿,ingredient,is_milk,dark couverture chocolate,شوكولاتة داكنة للتغطية,黑巧克力（调温用）,黑巧克力（調溫用）,ダーククーベルチュールチョコレート,chocolate de cobertura negro
+대합,ingredient,is_shellfish,hard clam,محار كبير,文蛤,文蛤,ハマグリ,almeja grande
+덕자,ingredient,is_fish,pomfret (deokja),سمك البومفريت,鲳鱼,鯧魚,マナガツオ,palometa
+등뼈,ingredient,is_pork,pork backbone,عظام ظهر الخنزير,猪脊骨,豬脊骨,豚の背骨,espinazo de cerdo
+래디쉬,ingredient,,radish,فجل أحمر,樱桃萝卜,櫻桃蘿蔔,ラディッシュ,rábano
+래디시,ingredient,,radish,فجل أحمر,樱桃萝卜,櫻桃蘿蔔,ラディッシュ,rábano
+래몬즙,ingredient,,lemon juice,عصير ليمون,柠檬汁,檸檬汁,レモン汁,zumo de limón
+명이나물,ingredient,,wild garlic leaves (myeongi),أوراق الثوم البري,茖葱,茖蔥,行者ニンニク,hojas de ajo silvestre
+모짜렐라,ingredient,is_milk,mozzarella,موزاريلا,马苏里拉奶酪,莫札瑞拉起司,モッツァレラ,mozzarella
+모짜렐라볼,ingredient,is_milk,mozzarella balls,كرات الموزاريلا,马苏里拉奶酪球,莫札瑞拉起司球,モッツァレラボール,bolitas de mozzarella
+미숫가루,ingredient,is_wheat;is_soybean,roasted multigrain powder (misutgaru),مسحوق الحبوب المحمصة,炒五谷粉,炒五穀粉,ミスカル（煎り穀物粉）,polvo de cereales tostados
+믹스샐러드,ingredient,,mixed salad greens,خضار سلطة مشكلة,混合沙拉菜,綜合沙拉菜,ミックスサラダ,mezcla de ensalada
+백련초가루,ingredient,,prickly pear powder,مسحوق التين الشوكي,仙人掌果粉,仙人掌果粉,ウチワサボテンの実の粉,polvo de higo chumbo
+백색앙금,ingredient,,white bean paste,معجون الفاصوليا البيضاء,白豆沙,白豆沙,白あん,pasta de judía blanco
+백설요리유,ingredient,,cooking oil,زيت طبخ,食用油,食用油,調理油,aceite de cocina
+밴댕이,ingredient,is_fish,big-eyed herring (baendaengi),سمك الرنجة الصغير,青鳞鱼,青鱗魚,サッパ,arenque pequeño
+베주머니,not_food,,,,,,,
+볼락,ingredient,is_fish,rockfish,سمك الصخر,许氏平鲉,黑鮶,メバル,pez roca
+부지깽이,ingredient,,bujigaengi greens (Ulleung aster),خضار بوجيغينغي,山白菊,山白菊,プジッケンイ（山菜）,verduras bujigaengi
+브로컬리,ingredient,,broccoli,بروكلي,西兰花,青花菜,ブロッコリー,brócoli
+블루베리발효액,ingredient,,fermented blueberry syrup,شراب التوت الأزرق المخمر,蓝莓发酵液,藍莓發酵液,ブルーベリー発酵シロップ,jarabe fermentado de arándanos
+비정제당,ingredient,,unrefined sugar,سكر غير مكرر,未精制糖,未精製糖,未精製糖,azúcar sin refinar
+산마,ingredient,,wild yam,يام بري,野山药,野山藥,自然薯,ñame silvestre
+산야초효소,ingredient,,wild herb extract syrup,شراب مستخلص الأعشاب البرية,山野草酵素,山野草酵素,山野草エキス,jarabe de hierbas silvestres
+삼계탕용,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕재료팩,ingredient,,samgyetang herb pack,كيس أعشاب سامغيتانغ,参鸡汤药材包,蔘雞湯藥材包,参鶏湯用漢方パック,paquete de hierbas para samgyetang
+색깔야채,ingredient,,colorful vegetables,خضروات ملونة,彩色蔬菜,彩色蔬菜,彩り野菜,verduras de colores
+샐러드믹스,ingredient,,salad mix,خليط سلطة,沙拉菜,沙拉菜,サラダミックス,mezcla de ensalada
+샐러드소스,ingredient,is_egg,salad dressing,صلصة السلطة,沙拉酱,沙拉醬,サラダドレッシング,aderezo para ensalada
+샐러드야채,ingredient,,salad vegetables,خضار السلطة,沙拉蔬菜,沙拉蔬菜,サラダ野菜,verduras para ensalada
+생율,ingredient,,fresh chestnuts,كستناء طازجة,生栗子,生栗子,生栗,castañas frescas
+생톳,ingredient,,fresh hijiki seaweed,طحلب هيجيكي طازج,鲜羊栖菜,鮮羊栖菜,生ひじき,hijiki fresco
+석류,ingredient,,pomegranate,رمان,石榴,石榴,ザクロ,granada
+석화,ingredient,is_shellfish,oysters,محار (أويستر),生蚝,生蠔,牡蠣,ostras
+손질가자미,ingredient,is_fish,cleaned flounder,سمك موسى منظف,处理好的鲽鱼,處理好的鰈魚,下処理したカレイ,platija limpia
+손질갈치,ingredient,is_fish,cleaned hairtail,سمك السيف منظف,处理好的带鱼,處理好的白帶魚,下処理したタチウオ,pez sable limpio
+송화단,ingredient,is_egg,century egg,بيض القرن,皮蛋,皮蛋,ピータン,huevo centenario
+수수가루,ingredient,,sorghum flour,دقيق الذرة الرفيعة,高粱粉,高粱粉,きび粉,harina de sorgo
+순살아귀,ingredient,is_fish,boneless monkfish,سمك الراهب بدون عظم,去骨鮟鱇鱼,去骨鮟鱇魚,骨なしアンコウ,rape sin espinas
+스테비아,ingredient,,stevia,ستيفيا,甜菊糖,甜菊糖,ステビア,estevia
+시판바비큐소스,ingredient,is_tomato,store-bought barbecue sauce,صلصة شواء جاهزة,市售烧烤酱,市售烤肉醬,市販のバーベキューソース,salsa barbacoa comprada
+실한천,ingredient,,agar strands,خيوط الأجار,琼脂丝,洋菜絲,糸寒天,hebras de agar
+쓰리라차소스,ingredient,,sriracha sauce,صلصة سريراتشا,是拉差辣酱,是拉差辣醬,シラチャーソース,salsa sriracha
+아귀,ingredient,is_fish,monkfish,سمك الراهب,鮟鱇鱼,鮟鱇魚,アンコウ,rape
+아로니아가루,ingredient,,aronia powder,مسحوق الأرونيا,野樱莓粉,野櫻莓粉,アロニアパウダー,polvo de aronia
+앙금,ingredient,,sweet bean paste,معجون الفاصوليا الحلو,豆沙,豆沙,あん,pasta dulce de judía
+애플비니거,ingredient,,apple cider vinegar,خل التفاح,苹果醋,蘋果醋,りんご酢,vinagre de manzana
+양패,unclear,,,,,,,
+연잎,ingredient,,lotus leaf,ورقة اللوتس,荷叶,荷葉,蓮の葉,hoja de loto
+오렌지과육,ingredient,,orange flesh,لب البرتقال,橙子果肉,柳橙果肉,オレンジの果肉,pulpa de naranja
+오렌지껍질,ingredient,,orange peel,قشر البرتقال,橙子皮,柳橙皮,オレンジの皮,cáscara de naranja
+오렌지주스,ingredient,,orange juice,عصير برتقال,橙汁,柳橙汁,オレンジジュース,zumo de naranja
+완자,ingredient,is_pork;is_egg,meatballs (wanja),كرات اللحم (وانجا),丸子,丸子,ワンジャ（肉団子）,albóndigas (wanja)
+요리에센스,ingredient,is_soybean,cooking essence (soy-based),خلاصة طبخ (أساسها الصويا),料理精华（大豆）,料理精華（大豆）,料理用エッセンス（大豆）,esencia de cocina (a base de soja)
+우스타소스,ingredient,is_fish;is_soybean,Worcestershire sauce,صلصة ورشستر,伍斯特酱,伍斯特醬,ウスターソース,salsa Worcestershire
+유채,ingredient,,rapeseed greens,خضار اللفت,油菜,油菜,菜の花,hojas de colza
+이찌방다시,ingredient,is_fish,ichiban dashi (bonito stock),مرق إيتشيبان داشي,一番高汤（鲣鱼）,一番高湯（鰹魚）,一番だし,dashi ichiban (caldo de bonito)
+인절미,ingredient,is_soybean,injeolmi (rice cake with soybean powder),إنجولمي (كعكة أرز بمسحوق الصويا),豆面糕,豆麵糕,インジョルミ（きな粉餅）,injeolmi (pastel de arroz con soja)
+잉글리시머핀,ingredient,is_wheat;is_milk,English muffin,مافن إنجليزي,英式松饼,英式馬芬,イングリッシュマフィン,muffin inglés
+자일로스,ingredient,,xylose sugar,سكر الزيلوز,木糖,木糖,キシロース,azúcar de xilosa
+장조림국물,ingredient,is_beef;is_soybean,soy-braised beef broth,مرق لحم البقر المطهو بالصويا,酱牛肉汤汁,醬牛肉湯汁,牛肉の醤油煮の煮汁,caldo de res guisada en soja
+적근대,ingredient,,red chard,سلق أحمر,红甜菜叶,紅莙薘菜,赤フダンソウ,acelga roja
+정제수,ingredient,,purified water,ماء منقى,纯净水,純淨水,精製水,agua purificada
+주키니,ingredient,,zucchini,كوسة,西葫芦,櫛瓜,ズッキーニ,calabacín
+참소스,ingredient,is_soybean,chamsauce (soy dipping sauce),صلصة تشام (صويا),蘸酱（酱油）,沾醬（醬油）,チャムソース（醤油だれ）,salsa cham (soja)
+초리조,ingredient,is_pork,chorizo,شوريزو,西班牙辣香肠,西班牙辣香腸,チョリソー,chorizo
+초콜릿블록,ingredient,is_milk,chocolate block,قالب شوكولاتة,巧克力块,巧克力塊,ブロックチョコレート,bloque de chocolate
+춘권피,ingredient,is_wheat,spring roll wrappers,رقائق لفائف الربيع,春卷皮,春捲皮,春巻きの皮,láminas para rollitos
+치아바타,ingredient,is_wheat,ciabatta,تشاباتا,恰巴塔面包,巧巴達麵包,チャバタ,chapata
+칠리파우더,ingredient,,chili powder,مسحوق الفلفل الحار,辣椒粉,辣椒粉,チリパウダー,chile en polvo
+캡사이신소스,ingredient,,capsaicin hot sauce,صلصة الكابسيسين,辣椒素辣酱,辣椒素辣醬,カプサイシンソース,salsa de capsaicina
+케이퍼,ingredient,,capers,كبر,刺山柑,酸豆,ケッパー,alcaparras
+케쳡,ingredient,is_tomato,ketchup,كاتشب,番茄酱,番茄醬,ケチャップ,kétchup
+코다리,ingredient,is_fish,half-dried pollack (kodari),سمك البولوك نصف المجفف,半干明太鱼,半乾明太魚,半干しスケトウダラ,abadejo semiseco
+코셔솔트,ingredient,,kosher salt,ملح كوشير,犹太盐,猶太鹽,コーシャーソルト,sal kosher
+코코넛롱,ingredient,,long coconut flakes,رقائق جوز الهند,椰丝,椰絲,ロングココナッツ,coco rallado largo
+퀴노아,ingredient,,quinoa,كينوا,藜麦,藜麥,キヌア,quinoa
+크러쉬드레드페퍼,ingredient,,crushed red pepper,فلفل أحمر مجروش,碎红辣椒,碎紅辣椒,クラッシュドレッドペッパー,chile rojo triturado
+크로아상생지,ingredient,is_wheat;is_milk;is_egg,croissant dough,عجينة الكرواسون,可颂面团,可頌麵團,クロワッサン生地,masa de cruasán
+타르타르소스,ingredient,is_egg,tartar sauce,صلصة التارتار,塔塔酱,塔塔醬,タルタルソース,salsa tártara
+토란,ingredient,,taro,قلقاس,芋头,芋頭,里芋,taro
+톳장아찌,ingredient,is_soybean,pickled hijiki,هيجيكي مخلل,酱腌羊栖菜,醬醃羊栖菜,ひじきの醤油漬け,hijiki encurtido
+파인애플통조림,ingredient,,canned pineapple,أناناس معلب,菠萝罐头,鳳梨罐頭,パイナップル缶,piña en lata
+판젤라틴,ingredient,is_pork;is_beef,gelatin sheets,أوراق الجيلاتين,吉利丁片,吉利丁片,板ゼラチン,láminas de gelatina
+페퍼홀,ingredient,,whole peppercorns,حبوب الفلفل الكاملة,整粒胡椒,整粒胡椒,ホールペッパー,pimienta en grano
+포도,ingredient,,grapes,عنب,葡萄,葡萄,ぶどう,uvas
+포도당,ingredient,,glucose,جلوكوز,葡萄糖,葡萄糖,ブドウ糖,glucosa
+폰즈소스,ingredient,is_soybean;is_fish,ponzu sauce,صلصة بونزو,柚子醋酱,柚子醋醬,ポン酢,salsa ponzu
+폰타나데미글라스커틀렛소스,ingredient,is_wheat;is_beef,demi-glace cutlet sauce,صلصة ديمي غلاس للكستليتة,多蜜酱（炸猪排酱）,多蜜醬（炸豬排醬）,デミグラスカツソース,salsa demi-glace para chuleta
+풀,ingredient,,rice flour paste,معجون دقيق الأرز,米糊,米糊,米粉ののり,engrudo de harina de arroz
+풀국,ingredient,,rice flour paste,معجون دقيق الأرز,米糊,米糊,米粉ののり,engrudo de harina de arroz
+풀죽,ingredient,,rice flour porridge paste,عصيدة دقيق الأرز,米粥糊,米粥糊,米粉ののり,engrudo de harina de arroz
+피자소스,ingredient,is_tomato,pizza sauce,صلصة البيتزا,披萨酱,披薩醬,ピザソース,salsa para pizza
+피클링스파이스,ingredient,,pickling spice,توابل التخليل,腌渍香料,醃漬香料,ピクリングスパイス,especias para encurtir
+한방팩,ingredient,,herbal medicine pack,كيس أعشاب طبية,中药包,中藥包,漢方パック,paquete de hierbas medicinales
+햇반,ingredient,,cooked rice (instant),أرز مطبوخ جاهز,即食米饭,即食米飯,パックご飯,arroz cocido instantáneo
+홍시,ingredient,,ripe soft persimmon,كاكي ناضج طري,红柿,紅柿,熟柿,caqui maduro
+흙당,ingredient,,dark brown sugar,سكر بني داكن,黑糖,黑糖,黒糖,azúcar morena oscura
+XO소스,ingredient,is_shrimp;is_shellfish;is_fish,XO sauce (dried seafood),صلصة XO (مأكولات بحرية مجففة),XO酱,XO醬,XO醤,salsa XO (mariscos secos)
+가스오부시국물,ingredient,is_fish,bonito broth,مرق البونيتو,鲣鱼高汤,鰹魚高湯,かつおだし,caldo de bonito
+가시오가피,ingredient,,eleuthero (Siberian ginseng),الجينسنغ السيبيري,刺五加,刺五加,エゾウコギ,eleuterococo
+각종한약재한팩,ingredient,,pack of herbal medicines,كيس أعشاب طبية,一包中药材,一包中藥材,漢方薬材1パック,paquete de hierbas medicinales
+간간한염지물,ingredient,,lightly salted brine,ماء مملح خفيف,淡盐水,淡鹽水,薄い塩水,salmuera ligera
+간오렌지,ingredient,,grated orange,برتقال مبشور,橙子泥,柳橙泥,すりおろしオレンジ,naranja rallada
+갈빗살,ingredient,is_beef,beef rib meat,لحم ضلوع البقر,牛肋条,牛肋條,牛カルビ肉,carne de costilla de res
+감시럽,ingredient,,persimmon syrup,شراب الكاكي,柿子糖浆,柿子糖漿,柿シロップ,jarabe de caqui
+감장,unclear,,,,,,,
+감태가루,ingredient,,gamtae seaweed powder,مسحوق طحلب غامتاي,甘苔粉,甘苔粉,カムテ（海藻）パウダー,polvo de alga gamtae
+강판,not_food,,,,,,,
+건곤드레,ingredient,,dried gondre greens,خضار غوندري مجففة,干高丽蓟,乾高麗薊,乾燥コンドゥレ,cardo coreano seco
+건과일,ingredient,is_sulfite,dried fruit,فواكه مجففة,干果,乾果,ドライフルーツ,fruta seca
+건더기스프,ingredient,,dried soup flakes,رقائق الحساء المجففة,脱水蔬菜包,脫水蔬菜包,かやく（乾燥具材）,copos de sopa deshidratada
+건자두,ingredient,is_sulfite,prunes,برقوق مجفف,西梅干,黑棗乾,プルーン,ciruelas pasas
+건청각,ingredient,,dried sea staghorn,طحلب قرن الأيل البحري المجفف,干刺松藻,乾刺松藻,乾燥ミル（海藻）,alga cuerno de ciervo seca
+계향,unclear,,,,,,,
+고기밑간용,not_food,,,,,,,
+고기삶는티백,ingredient,,spice tea bag for boiling meat,كيس توابل لسلق اللحم,煮肉香料包,煮肉香料包,肉を茹でるための香辛料パック,bolsita de especias para hervir carne
+고비나물,ingredient,,royal fern greens (gobi),خضار السرخس الملكي,紫萁菜,紫萁菜,ゼンマイのナムル,helecho real salteado
+고춧가추,ingredient,,Korean chili powder,مسحوق الفلفل الحار الكوري,韩式辣椒粉,韓式辣椒粉,韓国唐辛子粉,chile coreano en polvo
+곰솥은,not_food,,,,,,,
+구기자,ingredient,,goji berries,توت الغوجي,枸杞,枸杞,クコの実,bayas de goji
+국간강,ingredient,is_soybean,soup soy sauce,صلصة الصويا للحساء,汤用酱油,湯用醬油,スープ用醤油,salsa de soja para sopa
+국거리,ingredient,is_beef,beef for soup,لحم بقر للحساء,煮汤用牛肉,煮湯用牛肉,スープ用牛肉,carne de res para sopa
+궁중한차,ingredient,,royal herbal tea,شاي أعشاب ملكي,宫廷药茶,宮廷藥茶,宮中漢方茶,té de hierbas real
+궁채,ingredient,,celtuce stems (gungchae),سيقان الخس الصيني,莴笋干,萵筍乾,山くらげ（茎レタス）,tallos de lechuga china
+궁채잎,ingredient,,celtuce leaves,أوراق الخس الصيني,莴笋叶,萵筍葉,茎レタスの葉,hojas de lechuga china
+귤,ingredient,,tangerine,يوسفي,橘子,橘子,みかん,mandarina
+귤청,ingredient,,tangerine syrup,شراب اليوسفي,橘子糖浆,橘子糖漿,みかんシロップ,jarabe de mandarina
+그라비올라잎,ingredient,,soursop (graviola) leaves,أوراق القشطة الشائكة,刺果番荔枝叶,刺果番荔枝葉,グラビオラの葉,hojas de guanábana
+금귤즙,ingredient,,kumquat juice,عصير الكمكوات,金橘汁,金桔汁,金柑果汁,zumo de kumquat
+금태,ingredient,is_fish,blackthroat seaperch (nodoguro),سمك نودوغورو,赤鯥,赤鯥,ノドグロ,pez nodoguro
+기본염지물,ingredient,,basic brine,ماء مملح أساسي,基础腌制盐水,基礎醃製鹽水,基本の塩水,salmuera básica
+기장,ingredient,,millet,دخن,小米,小米,きび,mijo
+깍두기다진것,ingredient,is_shrimp;is_fish,chopped kkakdugi,كاكدوغي مفروم,切碎的萝卜块泡菜,切碎的蘿蔔塊泡菜,刻んだカクテキ,kkakdugi picado
+깍두기잘게썬,ingredient,is_shrimp;is_fish,finely chopped kkakdugi,كاكدوغي مفروم ناعم,切碎的萝卜块泡菜,切碎的蘿蔔塊泡菜,細かく刻んだカクテキ,kkakdugi finamente picado
+깐더덕,ingredient,,peeled deodeok root,جذر ديوديوك مقشر,去皮羊乳,去皮羊乳,皮をむいたツルニンジン,raíz de deodeok pelada
+깐토란,ingredient,,peeled taro,قلقاس مقشر,去皮芋头,去皮芋頭,皮をむいた里芋,taro pelado
+깻닢,ingredient,,perilla leaves,أوراق البريلا,紫苏叶,紫蘇葉,エゴマの葉,hojas de perilla
+꼬지용나무꼬지,not_food,,,,,,,
+꼬챙이,not_food,,,,,,,
+꽃모양틀,not_food,,,,,,,
+꽃잎,ingredient,,flower petals,بتلات الزهور,花瓣,花瓣,花びら,pétalos de flores
+꾸릿살,ingredient,is_beef,beef chuck tender (kkurisal),لحم بقر من الكتف (كوريسال),牛肩胛嫩肉,牛肩胛嫩肉,牛肩肉（クリサル）,lomo de paleta de res
+끓은물,ingredient,,boiling water,ماء مغلي,开水,開水,熱湯,agua hirviendo
+나무꼬지,not_food,,,,,,,
+남는반찬들,ingredient,,leftover side dishes,أطباق جانبية متبقية,剩余小菜,剩餘小菜,残ったおかず,guarniciones sobrantes
+냉수,ingredient,,cold water,ماء بارد,冷水,冷水,冷水,agua fría
+냉장고속야채,ingredient,,vegetables from the fridge,خضروات من الثلاجة,冰箱里的蔬菜,冰箱裡的蔬菜,冷蔵庫の野菜,verduras del refrigerador
+너겟,ingredient,is_chicken;is_wheat,nuggets,ناجتس,鸡块,雞塊,ナゲット,nuggets
+넛맥가루,ingredient,,ground nutmeg,جوزة الطيب المطحونة,肉豆蔻粉,肉豆蔻粉,ナツメグパウダー,nuez moscada molida
+노추,ingredient,is_soybean;is_wheat,dark soy sauce (laochou),صلصة الصويا الداكنة,老抽,老抽,老抽（中国たまり醤油）,salsa de soja oscura
+녹차반죽,ingredient,is_wheat,green tea dough,عجينة الشاي الأخضر,绿茶面团,綠茶麵團,抹茶生地,masa de té verde
+누룩,ingredient,is_wheat,nuruk (fermentation starter),نوروك (خميرة التخمير),酒曲,酒麴,ヌルク（麹）,nuruk (iniciador de fermentación)
+누르개,not_food,,,,,,,
+누름돌,not_food,,,,,,,
+뉴수가,ingredient,,saccharin sweetener,مُحلٍّ السكرين,糖精甜味剂,糖精甜味劑,サッカリン甘味料,edulcorante de sacarina
+느타리한줌,ingredient,,a handful of oyster mushrooms,حفنة من فطر المحار,一把平菇,一把秀珍菇,ヒラタケひとつかみ,un puñado de setas de ostra
+다물,unclear,,,,,,,
+다시백,ingredient,is_fish,"dashi bag (anchovy, kelp)",كيس مرق داشي,高汤袋,高湯袋,だしバッグ,bolsita de dashi
+다시백중,ingredient,is_fish,"dashi bag (anchovy, kelp)",كيس مرق داشي,高汤袋,高湯袋,だしバッグ,bolsita de dashi
+다오네장아찌원액,ingredient,is_soybean,pickling sauce base,قاعدة صلصة التخليل,酱菜腌汁,醬菜醃汁,醤油漬けのたれ,base de salsa para encurtir
+단감,ingredient,,sweet persimmon,كاكي حلو,甜柿,甜柿,甘柿,caqui dulce
+달임장물,ingredient,is_soybean,simmered soy brine,محلول الصويا المطهو,熬煮酱汁,熬煮醬汁,煮詰めた醤油だれ,salmuera de soja hervida
+대봉시,ingredient,,daebong persimmon,كاكي دايبونغ,大峰柿,大峰柿,テボン柿（渋柿）,caqui daebong
+대피,unclear,,,,,,,
+데리야키,ingredient,is_soybean;is_wheat,teriyaki sauce,صلصة تيرياكي,照烧酱,照燒醬,照り焼きソース,salsa teriyaki
+도미,ingredient,is_fish,sea bream,سمك الدنيس,鲷鱼,鯛魚,タイ,besugo
+동그랑땡반죽,ingredient,is_pork;is_egg;is_soybean,meat patty mixture,خليط فطائر اللحم,肉饼馅,肉餅餡,トングランテンのたね,mezcla para tortitas de carne
+동치미,ingredient,,dongchimi (radish water kimchi),دونغتشيمي (كيمتشي الفجل المائي),萝卜水泡菜,蘿蔔水泡菜,トンチミ（大根の水キムチ）,dongchimi (kimchi de rábano en agua)
+동치미국물,ingredient,,dongchimi broth,مرق دونغتشيمي,萝卜水泡菜汤,蘿蔔水泡菜湯,トンチミの汁,caldo de dongchimi
+드라이오레가노,ingredient,,dried oregano,أوريغانو مجفف,干牛至,乾奧勒岡,ドライオレガノ,orégano seco
+등뼈삶은물,ingredient,is_pork,pork bone broth,مرق عظام الخنزير,猪骨汤,豬骨湯,豚骨のゆで汁,caldo de hueso de cerdo
+디크초콜릿칩,ingredient,is_milk,dark chocolate chips,رقائق الشوكولاتة الداكنة,黑巧克力豆,黑巧克力豆,ダークチョコチップ,chispas de chocolate negro
+딸기가루동결건조분말,ingredient,,freeze-dried strawberry powder,مسحوق الفراولة المجففة بالتجميد,冻干草莓粉,凍乾草莓粉,フリーズドライいちごパウダー,polvo de fresa liofilizada
+딸기반죽,ingredient,is_wheat,strawberry dough,عجينة الفراولة,草莓面团,草莓麵團,いちご生地,masa de fresa
+뚝딱맛내기장,ingredient,is_soybean,all-purpose seasoning sauce,صلصة تتبيل متعددة الاستعمالات,万能调味酱,萬能調味醬,万能調味だれ,salsa de condimento multiuso
+라자냐,ingredient,is_wheat;is_egg,lasagna sheets,رقائق اللازانيا,千层面,千層麵,ラザニア,láminas de lasaña
+랩,not_food,,,,,,,
+레시틴,ingredient,is_soybean,lecithin,ليسيثين,卵磷脂,卵磷脂,レシチン,lecitina
+로즈메리가루,ingredient,,ground rosemary,إكليل الجبل المطحون,迷迭香粉,迷迭香粉,ローズマリーパウダー,romero molido
+리퀴드스모크플레이버,ingredient,,liquid smoke,نكهة الدخان السائل,液体烟熏香料,液體煙燻香料,リキッドスモーク,humo líquido
+마가린,ingredient,is_milk;is_soybean,margarine,سمن نباتي,人造黄油,人造奶油,マーガリン,margarina
+마라상궈소스,ingredient,is_soybean;is_beef,mala xiangguo sauce,صلصة مالا شيانغوو,麻辣香锅酱,麻辣香鍋醬,麻辣香鍋ソース,salsa mala xiangguo
+마스코바도,ingredient,,muscovado sugar,سكر موسكوفادو,黑砂糖,黑砂糖,マスコバド糖,azúcar mascabado
+마카분말,ingredient,,maca powder,مسحوق الماكا,玛卡粉,瑪卡粉,マカパウダー,polvo de maca
+매운소스,ingredient,,spicy sauce,صلصة حارة,辣酱,辣醬,辛いソース,salsa picante
+매운양념,ingredient,,spicy seasoning,تتبيلة حارة,辣味调料,辣味調料,辛い合わせ調味料,aderezo picante
+명엽채,ingredient,is_fish,seasoned dried pollack strips,شرائح البولوك المجفف المتبلة,明太鱼丝,明太魚絲,干しダラの裂き身,tiras de abadejo seco sazonadas
+명이나물장아찌,ingredient,is_soybean,pickled wild garlic leaves,أوراق الثوم البري المخللة,酱腌茖葱,醬醃茖蔥,行者ニンニクの醤油漬け,hojas de ajo silvestre encurtidas
+명절나물,ingredient,,holiday namul (assorted greens),خضار مشكلة للأعياد,节日拌菜,節日拌菜,名節ナムル（盛り合わせ）,verduras festivas (namul)
+모둠해산물,ingredient,is_shrimp;is_squid;is_shellfish,assorted seafood,مأكولات بحرية مشكلة,什锦海鲜,綜合海鮮,シーフードミックス,mariscos variados
+모듬새싹,ingredient,,assorted sprouts,براعم مشكلة,什锦芽苗,綜合芽菜,スプラウトミックス,brotes variados
+모듬쌈,ingredient,,assorted leafy wraps,أوراق لف مشكلة,什锦包饭菜,綜合包飯菜,包み野菜の盛り合わせ,hojas variadas para envolver
+모싯잎가루,ingredient,,ramie leaf powder,مسحوق أوراق الرامي,苎麻叶粉,苧麻葉粉,カラムシの葉の粉,polvo de hoja de ramio
+몽글몽귤,unclear,,,,,,,
+무말랭이무침,ingredient,,seasoned dried radish,فجل مجفف متبل,凉拌萝卜干,涼拌蘿蔔乾,切り干し大根の和え物,rábano seco sazonado
+무생채무침,ingredient,,seasoned radish salad,سلطة فجل متبلة,凉拌萝卜丝,涼拌蘿蔔絲,大根の和え物（ムセンチェ）,ensalada de rábano sazonada
+묵,ingredient,,jelly (muk),هلام (موك),凉粉,涼粉,ムク（ゼリー状の食品）,gelatina (muk)
+묵은발효종,ingredient,is_wheat,old sourdough starter,خميرة العجين القديمة,老面种,老麵種,古い発酵種,masa madre vieja
+미국야생블루베리,ingredient,,wild blueberries,توت أزرق بري,野生蓝莓,野生藍莓,ワイルドブルーベリー,arándanos silvestres
+미늘,ingredient,,garlic,ثوم,大蒜,大蒜,にんにく,ajo
+민트잎,ingredient,,mint leaves,أوراق النعناع,薄荷叶,薄荷葉,ミントの葉,hojas de menta
+밀싹,ingredient,is_wheat,wheatgrass,عشب القمح,小麦草,小麥草,小麦若葉,hierba de trigo
+밑국물,ingredient,is_fish,base broth (anchovy),مرق أساسي (أنشوفة),底汤（鳀鱼）,底湯（鯷魚）,ベースのだし（煮干し）,caldo base (anchoa)
+바나나중간크기,ingredient,,medium banana,موزة متوسطة,中等大小香蕉,中等大小香蕉,中くらいのバナナ,plátano mediano
+바사,ingredient,is_fish,basa fish,سمك الباسا,巴沙鱼,巴沙魚,バサ（ナマズ）,pescado basa
+박고지,ingredient,,dried gourd strips,شرائح القرع المجفف,葫芦干,葫蘆乾,かんぴょう,tiras de calabaza seca
+박나물,ingredient,,seasoned gourd,قرع متبل,拌葫芦,拌葫蘆,ユウガオのナムル,calabaza sazonada
+반건시,ingredient,,half-dried persimmon,كاكي نصف مجفف,半干柿,半乾柿,半干し柿,caqui semiseco
+반건조감말랭이,ingredient,,half-dried persimmon slices,شرائح كاكي نصف مجففة,半干柿子片,半乾柿子片,半干し柿のスライス,rodajas de caqui semiseco
+반건조서대,ingredient,is_fish,half-dried sole,سمك موسى نصف مجفف,半干舌鳎,半乾舌鰨,半干しシタビラメ,lenguado semiseco
+반숙후라이,ingredient,is_egg,over-easy fried egg,بيضة مقلية نصف مطهوة,溏心煎蛋,半熟荷包蛋,半熟目玉焼き,huevo frito poco hecho
+반쎄오가루,ingredient,,bánh xèo flour (rice flour),دقيق بان شيو (دقيق الأرز),越南煎饼粉,越南煎餅粉,バインセオ粉（米粉）,harina para bánh xèo
+반죽용물,ingredient,,water for dough,ماء للعجين,和面用水,和麵用水,生地用の水,agua para la masa
+발사믹글레이즈,ingredient,is_sulfite,balsamic glaze,صلصة البلسميك المركزة,香醋浓缩汁,義大利黑醋濃縮醬,バルサミコグレーズ,glaseado balsámico
+발효명이나물,ingredient,,fermented wild garlic leaves,أوراق الثوم البري المخمرة,发酵茖葱,發酵茖蔥,発酵行者ニンニク,hojas de ajo silvestre fermentadas
+백년초,ingredient,,prickly pear,تين شوكي,仙人掌果,仙人掌果,ウチワサボテンの実,higo chumbo
+백년초가루또는천년초가루,ingredient,,prickly pear powder,مسحوق التين الشوكي,仙人掌果粉,仙人掌果粉,ウチワサボテンの実の粉,polvo de higo chumbo
+백년초가루색이나올,ingredient,,prickly pear powder (for color),مسحوق التين الشوكي (للتلوين),仙人掌果粉（调色）,仙人掌果粉（調色）,ウチワサボテンの実の粉（色付け）,polvo de higo chumbo (para color)
+백숙용티백,ingredient,,herb tea bag for baeksuk,كيس أعشاب لدجاج بايكسوك,白煮鸡药材包,白煮雞藥材包,ペクスク用ティーバッグ,bolsita de hierbas para baeksuk
+백태,ingredient,is_soybean,white soybeans,فول الصويا الأبيض,白大豆,白大豆,白大豆,soja blanca
+밴딩이,ingredient,is_fish,big-eyed herring (baendaengi),سمك الرنجة الصغير,青鳞鱼,青鱗魚,サッパ,arenque pequeño
+베이비케일,ingredient,,baby kale,كيل صغير,嫩羽衣甘蓝,嫩羽衣甘藍,ベビーケール,col rizada baby
+베이크빈,ingredient,is_tomato,baked beans,فاصوليا مطبوخة,焗豆,焗豆,ベイクドビーンズ,judías horneados
+베이킹식소다,ingredient,,baking soda,بيكربونات الصوديوم,小苏打,小蘇打,重曹,bicarbonato de sodio
+복분자즙,ingredient,,Korean black raspberry juice,عصير التوت الأسود الكوري,覆盆子汁,覆盆子汁,ポップンジャ（黒いちご）ジュース,zumo de frambuesa negra coreana
+볶은아마씨가루,ingredient,,roasted flaxseed powder,مسحوق بذور الكتان المحمصة,炒亚麻籽粉,炒亞麻籽粉,焙煎亜麻仁パウダー,linaza tostada molida
+본설렁탕,ingredient,is_beef,ox bone soup (seolleongtang),حساء عظام البقر (سولونغتانغ),雪浓汤（牛骨汤）,雪濃湯（牛骨湯）,ソルロンタン（牛骨スープ）,sopa de hueso de res (seolleongtang)
+볼락살,ingredient,is_fish,rockfish fillet,شرائح سمك الصخر,许氏平鲉肉,黑鮶魚肉,メバルの身,filete de pez roca
+볼로네제소스,ingredient,is_tomato;is_beef,Bolognese sauce,صلصة البولونيز,肉酱,肉醬,ボロネーゼソース,salsa boloñesa
+부품,not_food,,,,,,,
+북흑조,unclear,,,,,,,
+분당,ingredient,,powdered sugar,سكر بودرة,糖粉,糖粉,粉砂糖,azúcar glas
+분말스프,ingredient,,soup powder,مسحوق الحساء,汤粉,湯粉,粉末スープ,sopa en polvo
+브라질너트,ingredient,,Brazil nuts,جوز البرازيل,巴西坚果,巴西堅果,ブラジルナッツ,nueces de Brasil
+블루베리파우더,ingredient,,blueberry powder,مسحوق التوت الأزرق,蓝莓粉,藍莓粉,ブルーベリーパウダー,polvo de arándanos
+비닐팩,not_food,,,,,,,
+비비고설렁탕,ingredient,is_beef,ox bone soup (seolleongtang),حساء عظام البقر (سولونغتانغ),雪浓汤（牛骨汤）,雪濃湯（牛骨湯）,ソルロンタン（牛骨スープ）,sopa de hueso de res (seolleongtang)
+비타민열매가루,ingredient,,sea buckthorn powder,مسحوق النبق البحري,沙棘粉,沙棘粉,サジーパウダー,polvo de espino amarillo
+빈스,ingredient,,beans,فاصوليا,豆子,豆子,豆,judías
+빠다코코넛,ingredient,is_wheat;is_milk,butter coconut crackers,بسكويت جوز الهند بالزبدة,黄油椰子饼干,奶油椰子餅乾,バターココナッツクラッカー,galletas de coco y mantequilla
+빨대,not_food,,,,,,,
+뼈,ingredient,is_beef;is_pork,bones (for broth),عظام (للمرق),骨头（熬汤用）,骨頭（熬湯用）,骨（だし用）,huesos (para caldo)
+뽕나무,ingredient,,mulberry branches,أغصان التوت,桑枝,桑枝,桑の枝,ramas de morera
+산마간것,ingredient,,grated wild yam,يام بري مبشور,山药泥,山藥泥,すりおろした自然薯,ñame silvestre rallado
+산사열매,ingredient,,hawthorn berries,ثمار الزعرور,山楂,山楂,サンザシの実,bayas de espino
+산양삼,ingredient,,wild-cultivated ginseng,جينسنغ بري مزروع,山养参,山養參,山養参（野生栽培の高麗人参）,ginseng silvestre cultivado
+살치살,ingredient,is_beef,beef chuck flap (salchisal),لحم بقر من الكتف (سالتشيسال),牛肩胛眼肉,牛肩胛眼肉,牛ザブトン,tapa de paleta de res
+삼,ingredient,,ginseng,جينسنغ,人参,人參,高麗人参,ginseng
+삼각살,ingredient,is_beef,beef tri-tip,لحم بقر تراي تيب,牛三角肉,牛三角肉,牛トモサンカク,punta de solomillo de res
+삼계탕용재료,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕용팩,ingredient,,samgyetang herb pack,كيس أعشاب سامغيتانغ,参鸡汤药材包,蔘雞湯藥材包,参鶏湯用漢方パック,paquete de hierbas para samgyetang
+삼계탕재료셋트,ingredient,,samgyetang herb set,مجموعة أعشاب سامغيتانغ,参鸡汤药材套装,蔘雞湯藥材組,参鶏湯用漢方セット,juego de hierbas para samgyetang
+삼계탕재료용한방약재,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕티백세트,ingredient,,samgyetang herb tea bag set,أكياس أعشاب سامغيتانغ,参鸡汤药材茶包,蔘雞湯藥材茶包,参鶏湯用ティーバッグセット,bolsitas de hierbas para samgyetang
+삼계탕한방재료,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕한약재,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계탕한약재료,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼계한방재료,ingredient,,samgyetang herbs,أعشاب سامغيتانغ,参鸡汤药材,蔘雞湯藥材,参鶏湯用漢方,hierbas para samgyetang
+삼온당,ingredient,,brown sugar,سكر بني,红糖,紅糖,三温糖,azúcar morena
+새미네부엌겉절이양념,ingredient,is_fish;is_soybean,geotjeori kimchi seasoning,تتبيلة كيمتشي غوتجولي,鲜拌泡菜调料,鮮拌泡菜調料,コッチョリ（浅漬けキムチ）の素,condimento para kimchi geotjeori
+새미네부엌깍두기양념,ingredient,is_fish;is_shrimp,kkakdugi seasoning,تتبيلة كاكدوغي,萝卜块泡菜调料,蘿蔔塊泡菜調料,カクテキの素,condimento para kkakdugi
+새싹야채,ingredient,,sprouts,براعم,芽苗菜,芽菜,スプラウト,brotes
+새알심,ingredient,,glutinous rice balls,كرات أرز دبق,糯米丸子,糯米丸子,白玉団子,bolitas de arroz glutinoso
+샐러드,ingredient,,salad,سلطة,沙拉,沙拉,サラダ,ensalada
+생상,ingredient,,ginger,زنجبيل,生姜,生薑,しょうが,jengibre
+생오레가노,ingredient,,fresh oregano,أوريغانو طازج,新鲜牛至,新鮮奧勒岡,生のオレガノ,orégano fresco
+생추왕,unclear,,,,,,,
+샤브샤브,ingredient,is_beef,shabu-shabu beef,لحم بقر للشابو شابو,涮锅牛肉,涮涮鍋牛肉,しゃぶしゃぶ用牛肉,carne de res para shabu-shabu
+샬룻,ingredient,,shallots,كراث أندلسي,红葱头,紅蔥頭,エシャロット,chalotas
+석류착즙,ingredient,,pomegranate juice,عصير الرمان,石榴汁,石榴汁,ザクロ果汁,zumo de granada
+선택사항,not_food,,,,,,,
+설도,ingredient,is_beef,beef round (seoldo),لحم الفخذ البقري,牛臀肉,牛臀肉,牛そともも,redondo de res
+섬초,ingredient,,Korean spinach (seomcho),سبانخ كوري,岛菠菜,島菠菜,ソムチョ（ほうれん草）,espinaca coreana
+성탕,unclear,,,,,,,
+세모가시리,ingredient,,funori seaweed,طحلب فونوري,海萝,海蘿,フノリ,alga funori
+셀렉스썬화이버,ingredient,is_milk,fiber supplement (milk protein),مكمل ألياف (بروتين الحليب),膳食纤维补充剂（含乳蛋白）,膳食纖維補充劑（含乳蛋白）,食物繊維サプリ（乳たんぱく）,suplemento de fibra (proteína láctea)
+소렐,ingredient,,sorrel,حميض,酸模,酸模,ソレル,acedera
+소송채,ingredient,,komatsuna,كوماتسونا,小松菜,小松菜,小松菜,komatsuna
+소스,ingredient,,sauce,صلصة,酱汁,醬汁,ソース,salsa
+손질삼치,ingredient,is_fish,cleaned Spanish mackerel,سمك الماكريل الإسباني منظف,处理好的鲅鱼,處理好的土魠魚,下処理したサワラ,caballa española limpia
+손질아귀,ingredient,is_fish,cleaned monkfish,سمك الراهب منظف,处理好的鮟鱇鱼,處理好的鮟鱇魚,下処理したアンコウ,rape limpio
+솔트,ingredient,,salt,ملح,盐,鹽,塩,sal
+수박즙,ingredient,,watermelon juice,عصير البطيخ,西瓜汁,西瓜汁,すいかジュース,zumo de sandía
+수수,ingredient,,sorghum,ذرة رفيعة,高粱,高粱,きび,sorgo
+순살갈치,ingredient,is_fish,boneless hairtail,سمك السيف بدون عظم,去骨带鱼,去骨白帶魚,骨なしタチウオ,pez sable sin espinas
+순살참조기,ingredient,is_fish,boneless yellow croaker,سمك الكروكر الأصفر بدون عظم,去骨小黄鱼,去骨小黃魚,骨なしキグチ,corvina amarilla sin espinas
+슈거파우더,ingredient,,powdered sugar,سكر بودرة,糖粉,糖粉,粉砂糖,azúcar glas
+슈물,unclear,,,,,,,
+스위트,unclear,,,,,,,
+스프,ingredient,,soup base,قاعدة الحساء,汤底,湯底,スープの素,base de sopa
+시리얼,ingredient,is_wheat,cereal,حبوب الإفطار,麦片,麥片,シリアル,cereal
+시사모,ingredient,is_fish,shishamo (smelt),سمك شيشامو,多春鱼,柳葉魚,ししゃも,capelán (shishamo)
+시소,ingredient,,shiso,شيسو,紫苏,紫蘇,シソ,shiso
+시소잎,ingredient,,shiso leaves,أوراق الشيسو,紫苏叶,紫蘇葉,シソの葉,hojas de shiso
+시중삼계탕재료,ingredient,,store-bought samgyetang herbs,أعشاب سامغيتانغ جاهزة,市售参鸡汤药材,市售蔘雞湯藥材,市販の参鶏湯用漢方,hierbas compradas para samgyetang
+시중에판매하는삼계탕용티백,ingredient,,store-bought samgyetang tea bags,أكياس أعشاب سامغيتانغ جاهزة,市售参鸡汤药材茶包,市售蔘雞湯藥材茶包,市販の参鶏湯用ティーバッグ,bolsitas compradas para samgyetang
+시판미숫가루,ingredient,is_wheat;is_soybean,store-bought roasted multigrain powder,مسحوق الحبوب المحمصة الجاهز,市售炒五谷粉,市售炒五穀粉,市販のミスカル,polvo de cereales tostados comprado
+시판부대찌개양념,ingredient,is_soybean,store-bought budae-jjigae seasoning,تتبيلة بوداي جيغاي جاهزة,市售部队锅调料,市售部隊鍋調料,市販のプデチゲの素,condimento comprado para budae-jjigae
+시판설렁탕,ingredient,is_beef,store-bought ox bone soup,حساء عظام البقر الجاهز,市售雪浓汤,市售雪濃湯,市販のソルロンタン,sopa de hueso de res comprada
+시판용믹스,unclear,,,,,,,
+식소다,ingredient,,baking soda,بيكربونات الصوديوم,小苏打,小蘇打,重曹,bicarbonato de sodio
+실온물,ingredient,,room-temperature water,ماء بدرجة حرارة الغرفة,常温水,常溫水,常温の水,agua a temperatura ambiente
+쌈야채,ingredient,,leafy wrap vegetables,خضار لف ورقية,包饭蔬菜,包飯蔬菜,包み野菜,verduras para envolver
+쌍화차,ingredient,,ssanghwa herbal tea,شاي سانغهوا العشبي,双和茶,雙和茶,双和茶,té de hierbas ssanghwa
+아까오로시,ingredient,,akaoroshi (grated radish with chili),فجل مبشور بالفلفل الحار,红萝卜泥（辣味）,紅蘿蔔泥（辣味）,もみじおろし,rábano rallado con chile
+아라비아따,ingredient,is_tomato,arrabbiata sauce,صلصة أرابياتا,香辣番茄酱,香辣番茄醬,アラビアータソース,salsa arrabbiata
+아마씨가루,ingredient,,flaxseed powder,مسحوق بذور الكتان,亚麻籽粉,亞麻籽粉,亜麻仁パウダー,linaza molida
+안데스마카분말,ingredient,,Andean maca powder,مسحوق الماكا الأنديزي,安第斯玛卡粉,安地斯瑪卡粉,アンデス産マカパウダー,polvo de maca andina
+알거피,unclear,,,,,,,
+알롤로스,ingredient,,allulose,ألولوز,阿洛酮糖,阿洛酮糖,アルロース,alulosa
+알파파,ingredient,,alfalfa sprouts,براعم البرسيم,苜蓿芽,苜蓿芽,アルファルファ,brotes de alfalfa
+암케,ingredient,is_crab,female crab,أنثى السلطعون,母蟹,母蟹,メスのカニ,cangrejo hembra
+애기새송이,ingredient,,baby king oyster mushrooms,فطر المحار الملكي الصغير,小杏鲍菇,小杏鮑菇,ミニエリンギ,setas de cardo pequeñas
+애로루트가루,ingredient,,arrowroot powder,مسحوق الأروروت,葛粉,葛粉,アロールートパウダー,arrurruz en polvo
+애플민트,ingredient,,apple mint,نعناع التفاح,苹果薄荷,蘋果薄荷,アップルミント,menta manzana
+야생블루베리,ingredient,,wild blueberries,توت أزرق بري,野生蓝莓,野生藍莓,ワイルドブルーベリー,arándanos silvestres
+야채자유롭게,ingredient,,any vegetables you like,أي خضروات تفضلها,随意蔬菜,隨意蔬菜,お好みの野菜,verduras al gusto
+약제57g티백,ingredient,,herbal tea bag,كيس أعشاب,药材茶包,藥材茶包,漢方ティーバッグ,bolsita de hierbas medicinales
+양갱,ingredient,,yanggaeng (sweet bean jelly),يانغغينغ (هلام الفاصوليا الحلو),羊羹,羊羹,羊羹,yokan (gelatina dulce de judía)
+양념,ingredient,,seasoning,تتبيلة,调料,調料,合わせ調味料,aderezo
+엄나무/뽕나무,ingredient,,kalopanax and mulberry branches,أغصان الكالوباناكس والتوت,刺楸和桑枝,刺楸和桑枝,ハリギリと桑の枝,ramas de kalopanax y morera
+엄나무순,ingredient,,kalopanax shoots,براعم الكالوباناكس,刺楸嫩芽,刺楸嫩芽,ハリギリの新芽,brotes de kalopanax
+엄나무진액,ingredient,,kalopanax extract,مستخلص الكالوباناكس,刺楸浓缩液,刺楸濃縮液,ハリギリのエキス,extracto de kalopanax
+엄나무티백,ingredient,,kalopanax tea bag,كيس شاي الكالوباناكس,刺楸茶包,刺楸茶包,ハリギリのティーバッグ,bolsita de kalopanax
+에리스리톨,ingredient,,erythritol,إريثريتول,赤藓糖醇,赤藻糖醇,エリスリトール,eritritol
+에어프라이기,not_food,,,,,,,
+엔초비,ingredient,is_fish,anchovies,أنشوفة,凤尾鱼,鯷魚,アンチョビ,anchoas
+연잎효소,ingredient,,lotus leaf extract syrup,شراب مستخلص ورق اللوتس,荷叶酵素,荷葉酵素,蓮の葉エキス,jarabe de hoja de loto
+염통,ingredient,is_chicken;is_beef;is_pork,heart (organ meat),قلب (أحشاء),心脏（内脏）,心臟（內臟）,ハツ（心臓）,corazón (víscera)
+엿물,ingredient,,rice syrup,شراب الأرز,米糖浆,米糖漿,水あめ,jarabe de arroz
+엿질금,ingredient,,malted barley,شعير مملت,麦芽,麥芽,麦芽,cebada malteada
+옛날잡채,ingredient,is_soybean,old-style japchae,جابتشي تقليدي,传统杂菜,傳統雜菜,昔ながらのチャプチェ,japchae tradicional
+오레가노가루,ingredient,,ground oregano,أوريغانو مطحون,牛至粉,奧勒岡粉,オレガノパウダー,orégano molido
+오렌지즙,ingredient,,orange juice,عصير برتقال,橙汁,柳橙汁,オレンジ果汁,zumo de naranja
+오색미,ingredient,,five-color rice,أرز خماسي الألوان,五色米,五色米,五色米,arroz de cinco colores
+오향,ingredient,,five-spice powder,مسحوق التوابل الخمس,五香粉,五香粉,五香粉,cinco especias chinas
+완성된잡채,ingredient,is_soybean,prepared japchae,جابتشي جاهز,做好的杂菜,做好的雜菜,出来上がったチャプチェ,japchae preparado
+왕교자,ingredient,is_wheat;is_pork,large dumplings,زلابية كبيرة,大饺子,大餃子,大きな餃子,empanadillas grandes
+요리유,ingredient,,cooking oil,زيت طبخ,食用油,食用油,調理油,aceite de cocina
+우메보시,ingredient,,umeboshi (pickled plum),أوميبوشي (برقوق مخلل),日式梅干,日式梅乾,梅干し,umeboshi (ciruela encurtida)
+원당듬뿍맛을보고싱거우면조금씩더추가하기,ingredient,,raw cane sugar (to taste),سكر قصب خام (حسب الذوق),原蔗糖（适量）,原蔗糖（適量）,粗糖（味を見て調整）,azúcar de caña (al gusto)
+원탕,unclear,,,,,,,
+월게수잎,ingredient,,bay leaves,ورق الغار,月桂叶,月桂葉,ローリエ,hojas de laurel
+위생백,not_food,,,,,,,
+위생봉지,not_food,,,,,,,
+유자,ingredient,,yuzu,يوزو,柚子,柚子,ゆず,yuzu
+유자껍질,ingredient,,yuzu peel,قشر اليوزو,柚子皮,柚子皮,ゆずの皮,cáscara de yuzu
+유자폰즈소스,ingredient,is_soybean;is_fish,yuzu ponzu sauce,صلصة بونزو اليوزو,柚子醋酱,柚子醋醬,ゆずポン酢,salsa ponzu de yuzu
+유채꽃나물,ingredient,,rapeseed flower greens,خضار زهرة اللفت,油菜花菜,油菜花菜,菜の花のナムル,verduras de flor de colza
+자두,ingredient,,plum,برقوق,李子,李子,すもも,ciruela
+자리돔,ingredient,is_fish,damselfish (jari-dom),سمك الدامسل,雀鲷,雀鯛,スズメダイ,pez damisela
+자투리야채들,ingredient,,leftover vegetable scraps,بقايا خضروات,剩余蔬菜边角,剩餘蔬菜邊角,余り野菜,restos de verduras
+장군차,ingredient,,janggun tea,شاي جانغغون,将军茶,將軍茶,将軍茶,té janggun
+장아찌,ingredient,is_soybean,pickled vegetables (jangajji),خضروات مخللة (جانغاجي),酱菜,醬菜,チャンアチ（醤油漬け）,verduras encurtidas (jangajji)
+장조림,ingredient,is_beef;is_soybean,soy-braised beef (jangjorim),لحم بقر مطهو بالصويا,酱牛肉,醬牛肉,牛肉の醤油煮,res guisada en soja
+적두,ingredient,,red beans (adzuki),فاصوليا حمراء (أدزوكي),红豆,紅豆,小豆,judías rojos (azuki)
+적앙금,ingredient,,red bean paste,معجون الفاصوليا الحمراء,红豆沙,紅豆沙,あんこ,pasta de judía rojo
+적포도,ingredient,,red grapes,عنب أحمر,红葡萄,紅葡萄,赤ぶどう,uvas rojas
+전골양념,ingredient,is_soybean,hot pot seasoning,تتبيلة القدر الساخن,火锅调料,火鍋調料,鍋の合わせ調味料,condimento para olla caliente
+절임물,ingredient,,pickling brine,محلول التخليل,腌渍盐水,醃漬鹽水,漬け汁,salmuera para encurtir
+절임용물,ingredient,,water for pickling,ماء للتخليل,腌渍用水,醃漬用水,漬け込み用の水,agua para encurtir
+절편,ingredient,,jeolpyeon (rice cake),جولبيون (كعكة الأرز),切糕,切糕,チョルピョン（餅）,jeolpyeon (pastel de arroz)
+제로콜라,ingredient,,zero-sugar cola,كولا بدون سكر,零度可乐,零卡可樂,ゼロコーラ,cola sin azúcar
+제티바나나가루,ingredient,is_milk,banana milk powder,مسحوق حليب الموز,香蕉奶粉,香蕉奶粉,バナナミルクパウダー,polvo de leche de plátano
+조림장용,not_food,,,,,,,
+좋아하는야채,ingredient,,vegetables of your choice,خضروات من اختيارك,喜欢的蔬菜,喜歡的蔬菜,お好みの野菜,verduras al gusto
+줄기명이,ingredient,,wild garlic stems,سيقان الثوم البري,茖葱茎,茖蔥莖,行者ニンニクの茎,tallos de ajo silvestre
+지단,ingredient,is_egg,egg garnish (jidan),شرائط البيض للتزيين,蛋皮丝,蛋皮絲,錦糸卵,tiras de tortilla de huevo
+지퍼팩,not_food,,,,,,,
+진미채볶음,ingredient,is_squid,stir-fried dried squid strips,شرائح الحبار المجفف المقلية,炒鱿鱼丝,炒魷魚絲,さきイカ炒め,tiras de calamar seco salteadas
+질경이,ingredient,,plantain leaves,أوراق لسان الحمل,车前草,車前草,オオバコ,llantén
+집청시럽,ingredient,,honey glaze syrup,شراب عسل للتلميع,蜜糖浆,蜜糖漿,蜜シロップ,almíbar de miel
+짜사이,ingredient,,zha cai (pickled mustard stem),زا تساي (ساق الخردل المخلل),榨菜,榨菜,ザーサイ,zha cai (tallo de mostaza encurtido)
+찌개용손질야채,ingredient,,prepped vegetables for stew,خضروات مجهزة للحساء,炖汤用蔬菜,燉湯用蔬菜,チゲ用カット野菜,verduras preparadas para guiso
+찜소스,ingredient,is_soybean,braising sauce,صلصة الطهي البطيء,炖菜酱,燉菜醬,蒸し煮用ソース,salsa para estofado
+찜용물,ingredient,,water for steaming,ماء للطهي بالبخار,蒸煮用水,蒸煮用水,蒸し用の水,agua para cocer al vapor
+차슈,ingredient,is_pork;is_soybean,chashu (braised pork),تشاشو (لحم خنزير مطهو),叉烧,叉燒,チャーシュー,chashu (cerdo estofado)
+차오차이,unclear,,,,,,,
+차조기잎,ingredient,,perilla (shiso) leaves,أوراق البريلا (شيسو),紫苏叶,紫蘇葉,シソの葉,hojas de perilla (shiso)
+참가자미,ingredient,is_fish,marbled flounder,سمك موسى المرقط,星鲽,星鰈,マコガレイ,platija jaspeada
+참옥돔,ingredient,is_fish,red tilefish,سمك البلاط الأحمر,方头鱼,馬頭魚,アカアマダイ,blanquillo rojo
+참지,unclear,,,,,,,
+천연조미가루,ingredient,is_fish;is_shrimp,"natural seasoning powder (anchovy, shrimp)",مسحوق تتبيل طبيعي (أنشوفة وجمبري),天然调味粉（鳀鱼虾）,天然調味粉（鯷魚蝦）,天然だし粉（煮干し・エビ）,"condimento natural en polvo (anchoa, camarón)"
+천연파우더,unclear,,,,,,,
+천일념,ingredient,,sea salt,ملح البحر,日晒盐,日曬鹽,天日塩,sal marina
+청양,ingredient,,Cheongyang chili,فلفل تشونغيانغ الحار,青阳辣椒,青陽辣椒,チョンヤン唐辛子,chile cheongyang
+청정원고기삶는티백,ingredient,,spice tea bag for boiling meat,كيس توابل لسلق اللحم,煮肉香料包,煮肉香料包,肉を茹でるための香辛料パック,bolsita de especias para hervir carne
+청콜라비말랭이,ingredient,,dried green kohlrabi,كرنب أبو ركبة أخضر مجفف,青苤蓝干,青大頭菜乾,乾燥コールラビ,colinabo verde seco
+청포도,ingredient,,green grapes,عنب أخضر,青葡萄,青葡萄,緑ぶどう,uvas verdes
+체리,ingredient,,cherries,كرز,樱桃,櫻桃,さくらんぼ,cerezas
+초코소스,ingredient,is_milk,chocolate sauce,صلصة الشوكولاتة,巧克力酱,巧克力醬,チョコレートソース,salsa de chocolate
+초코제누와즈,ingredient,is_wheat;is_egg;is_milk,chocolate genoise,كيك جينواز بالشوكولاتة,巧克力海绵蛋糕,巧克力海綿蛋糕,チョコジェノワーズ,bizcocho genovés de chocolate
+초코칩,ingredient,is_milk,chocolate chips,رقائق الشوكولاتة,巧克力豆,巧克力豆,チョコチップ,chispas de chocolate
+초콜릿,ingredient,is_milk,chocolate,شوكولاتة,巧克力,巧克力,チョコレート,chocolate
+치마살,ingredient,is_beef,beef flank (chimasal),لحم الخاصرة البقري,牛腹肉,牛腹肉,牛カイノミ,falda de res
+치자물,ingredient,,gardenia-infused water,ماء منقوع بالغاردينيا,栀子水,梔子水,クチナシの色水,agua de gardenia
+치자우린물,ingredient,,gardenia-infused water,ماء منقوع بالغاردينيا,栀子水,梔子水,クチナシの色水,agua de gardenia
+카나리액,ingredient,is_fish,sand lance fish sauce,صلصة سمك الرمل,玉筋鱼鱼露,玉筋魚魚露,イカナゴの魚醤,salsa de pescado de lanzón
+카라멜소스,ingredient,is_milk,caramel sauce,صلصة الكراميل,焦糖酱,焦糖醬,キャラメルソース,salsa de caramelo
+카이옌페퍼파우더,ingredient,,cayenne pepper powder,مسحوق فلفل الكايين,卡宴辣椒粉,卡宴辣椒粉,カイエンペッパー,pimienta de cayena en polvo
+칼라만시액,ingredient,,calamansi juice,عصير الكالامانسي,青柠汁（卡拉曼西）,四季桔汁,カラマンシー果汁,zumo de calamansí
+캐롭파우더,ingredient,,carob powder,مسحوق الخروب,角豆粉,角豆粉,キャロブパウダー,polvo de algarroba
+캐찹,ingredient,is_tomato,ketchup,كاتشب,番茄酱,番茄醬,ケチャップ,kétchup
+커리파우더,ingredient,,curry powder,مسحوق الكاري,咖喱粉,咖哩粉,カレー粉,curry en polvo
+커민가루,ingredient,,ground cumin,كمون مطحون,孜然粉,孜然粉,クミンパウダー,comino molido
+컬러밀,ingredient,is_wheat,colored wheat,قمح ملون,彩色小麦,彩色小麥,カラー小麦,trigo de colores
+컬리케일,ingredient,,curly kale,كيل مجعد,卷叶羽衣甘蓝,捲葉羽衣甘藍,カーリーケール,col rizada
+케이엔가루,ingredient,,cayenne powder,مسحوق الكايين,卡宴辣椒粉,卡宴辣椒粉,カイエンペッパー,cayena en polvo
+케챂,ingredient,is_tomato,ketchup,كاتشب,番茄酱,番茄醬,ケチャップ,kétchup
+코코넛,ingredient,,coconut,جوز الهند,椰子,椰子,ココナッツ,coco
+코코넛가루,ingredient,,coconut flour,دقيق جوز الهند,椰子粉,椰子粉,ココナッツパウダー,harina de coco
+코코넛슬라이스,ingredient,,coconut slices,شرائح جوز الهند,椰子片,椰子片,ココナッツスライス,láminas de coco
+쿠스쿠스,ingredient,is_wheat,couscous,كسكس,古斯米,庫斯庫斯,クスクス,cuscús
+큐민파우더,ingredient,,cumin powder,مسحوق الكمون,孜然粉,孜然粉,クミンパウダー,comino en polvo
+크루아상,ingredient,is_wheat;is_milk;is_egg,croissant,كرواسون,可颂,可頌,クロワッサン,cruasán
+크린백,not_food,,,,,,,
+타가토스,ingredient,,tagatose,تاجاتوز,塔格糖,塔格糖,タガトース,tagatosa
+타바스코소스,ingredient,,Tabasco sauce,صلصة تاباسكو,塔巴斯科辣酱,塔巴斯科辣醬,タバスコ,salsa Tabasco
+타코시즈닝,ingredient,,taco seasoning,توابل التاكو,塔可调料,塔可調料,タコスシーズニング,condimento para tacos
+탄산주스,ingredient,,carbonated juice,عصير غازي,碳酸果汁,碳酸果汁,炭酸ジュース,refresco de fruta
+탄탄면소스,ingredient,is_wheat;is_soybean;is_peanut,dandan noodle sauce,صلصة نودلز دان دان,担担面酱,擔擔麵醬,担々麺のたれ,salsa para fideos dan dan
+토란나물,ingredient,,seasoned taro,قلقاس متبل,拌芋头,拌芋頭,里芋のナムル,taro sazonado
+토란대나물,ingredient,,seasoned taro stems,سيقان القلقاس المتبلة,拌芋头茎,拌芋頭莖,ずいきのナムル,tallos de taro sazonados
+티백,ingredient,,tea bag,كيس شاي,茶包,茶包,ティーバッグ,bolsita de té
+파르미지아노레지아노,ingredient,is_milk,Parmigiano Reggiano,جبن بارميجانو ريجيانو,帕尔玛干酪,帕瑪森起司,パルミジャーノ・レッジャーノ,parmigiano reggiano
+파인애플슬라이스조각과국물,ingredient,,pineapple slices with juice,شرائح أناناس مع العصير,菠萝片和汁,鳳梨片和汁,パイナップルスライスと汁,rodajas de piña con su zumo
+파인애플주스,ingredient,,pineapple juice,عصير أناناس,菠萝汁,鳳梨汁,パイナップルジュース,zumo de piña
+파인애플즙,ingredient,,pineapple juice,عصير أناناس,菠萝汁,鳳梨汁,パイナップル果汁,zumo de piña
+파인애플통조림물,ingredient,,canned pineapple juice,عصير الأناناس المعلب,菠萝罐头汁,鳳梨罐頭汁,パイナップル缶のシロップ,almíbar de piña en lata
+파파야,ingredient,,papaya,بابايا,木瓜,木瓜,パパイヤ,papaya
+팔갹,ingredient,,star anise,يانسون نجمي,八角,八角,八角,anís estrellado
+팜슈가,ingredient,,palm sugar,سكر النخيل,椰糖,椰糖,パームシュガー,azúcar de palma
+페이퍼,not_food,,,,,,,
+페퍼,ingredient,,pepper,فلفل,胡椒,胡椒,コショウ,pimienta
+페페론치니,ingredient,,peperoncino (dried chili),فلفل بيبيرونتشينو,意大利干辣椒,義大利乾辣椒,ペペロンチーノ（唐辛子）,peperoncino
+포도주,ingredient,is_alcohol;is_sulfite,wine,نبيذ,葡萄酒,葡萄酒,ワイン,vino
+포도청,ingredient,,grape syrup,شراب العنب,葡萄糖浆,葡萄糖漿,ぶどうシロップ,jarabe de uva
+포크빈스,ingredient,is_pork;is_tomato,pork and beans,فاصوليا بلحم الخنزير,猪肉焗豆,豬肉焗豆,ポークビーンズ,judías con cerdo
+포항초,ingredient,,Pohang spinach,سبانخ بوهانغ,浦项菠菜,浦項菠菜,浦項ほうれん草,espinaca de Pohang
+폰타나데미글라스커틀렛소스¾병,ingredient,is_wheat;is_beef,demi-glace cutlet sauce,صلصة ديمي غلاس للكستليتة,多蜜酱（炸猪排酱）,多蜜醬（炸豬排醬）,デミグラスカツソース,salsa demi-glace para chuleta
+풀물,ingredient,,starch water,ماء النشا,淀粉水,澱粉水,でんぷん水,agua de almidón
+피자핫소스,ingredient,,pizza hot sauce,صلصة حارة للبيتزا,披萨辣酱,披薩辣醬,ピザ用ホットソース,salsa picante para pizza
+하모니,unclear,,,,,,,
+한방재료백숙삶을때,ingredient,,herbal ingredients for baeksuk,أعشاب لدجاج بايكسوك,白煮鸡药材,白煮雞藥材,ペクスク用漢方,hierbas para baeksuk
+한약재,ingredient,,herbal medicines,أعشاب طبية,中药材,中藥材,漢方薬材,hierbas medicinales
+한약재료,ingredient,,herbal medicines,أعشاب طبية,中药材,中藥材,漢方薬材,hierbas medicinales
+한약재우린물,ingredient,,herbal infusion,منقوع الأعشاب الطبية,中药材汤,中藥材湯,漢方薬材の煎じ汁,infusión de hierbas medicinales
+한약티백,ingredient,,herbal tea bag,كيس أعشاب طبية,中药茶包,中藥茶包,漢方ティーバッグ,bolsita de hierbas medicinales
+해산물,ingredient,is_shrimp;is_squid;is_shellfish;is_fish,seafood,مأكولات بحرية,海鲜,海鮮,海鮮,mariscos
+해삼,ingredient,,sea cucumber,خيار البحر,海参,海參,ナマコ,pepino de mar
+햇판,ingredient,,cooked rice (instant),أرز مطبوخ جاهز,即食米饭,即食米飯,パックご飯,arroz cocido instantáneo
+향,unclear,,,,,,,
+향신료,ingredient,,spices,توابل,香料,香料,スパイス,especias
+향신야채,ingredient,,aromatic vegetables,خضروات عطرية,香味蔬菜,香味蔬菜,香味野菜,verduras aromáticas
+허브맛솔트,ingredient,,herb salt,ملح بالأعشاب,香草盐,香草鹽,ハーブソルト,sal de hierbas
+허브쏠트,ingredient,,herb salt,ملح بالأعشاب,香草盐,香草鹽,ハーブソルト,sal de hierbas
+허브줄기,ingredient,,herb stems,سيقان الأعشاب,香草茎,香草莖,ハーブの茎,tallos de hierbas
+헛개,ingredient,,oriental raisin tree (hutgae),شجرة الزبيب الشرقية,枳椇,枳椇,ケンポナシ,árbol de pasas japonés
+헴프씨드,ingredient,,hemp seeds,بذور القنب,大麻籽,大麻籽,ヘンプシード,semillas de cáñamo
+호렴,ingredient,,coarse sea salt,ملح بحري خشن,粗盐,粗鹽,粗塩,sal marina gruesa
+홍삼액기스,ingredient,,red ginseng extract,مستخلص الجينسنغ الأحمر,红参浓缩液,紅蔘濃縮液,紅参エキス,extracto de ginseng rojo
+홍시즙,ingredient,,ripe persimmon juice,عصير الكاكي الناضج,红柿汁,紅柿汁,熟柿ジュース,zumo de caqui maduro
+후르츠,ingredient,is_sulfite,fruit cocktail,كوكتيل فواكه,什锦水果,什錦水果,フルーツミックス,cóctel de frutas
+훠궈백탕소스,ingredient,is_chicken;is_pork,hot pot white broth sauce,صلصة مرق القدر الساخن الأبيض,火锅白汤底料,火鍋白湯底料,火鍋の白湯スープの素,caldo blanco para olla caliente
+흑미,ingredient,,black rice,أرز أسود,黑米,黑米,黒米,arroz negro
+흑미가루,ingredient,,black rice flour,دقيق الأرز الأسود,黑米粉,黑米粉,黒米粉,harina de arroz negro
+흑초원액,ingredient,,black vinegar concentrate,مركز الخل الأسود,黑醋原液,黑醋原液,黒酢原液,concentrado de vinagre negro
+히말라야솔트,ingredient,,Himalayan salt,ملح الهيمالايا,喜马拉雅盐,喜馬拉雅鹽,ヒマラヤ岩塩,sal del Himalaya
