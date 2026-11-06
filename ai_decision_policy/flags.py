@@ -7,8 +7,10 @@ from typing import Literal
 
 from ai_supervisor.contracts.common import AmbiguityFlag, FlagConfirmation
 
+# Anchovy and dried pollack stock is the most common Korean broth, so fish is asked too
+# (2026-11-02): without it a fish-allergic user saw no question and could get SAFE.
 _MEAT_BROTH = frozenset(
-    {"is_pork", "is_beef", "is_chicken", "is_shrimp", "is_crab", "is_shellfish"}
+    {"is_pork", "is_beef", "is_chicken", "is_duck", "is_fish", "is_shrimp", "is_crab", "is_shellfish"}
 )
 _JEOTGAL = frozenset(
     {"is_fish", "is_shrimp", "is_crab", "is_squid", "is_shellfish", "is_mackerel"}
