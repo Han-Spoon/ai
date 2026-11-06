@@ -115,7 +115,7 @@ def has_no_ingredients(request: DecisionRequest) -> bool:
 
 
 def high_risk_review(request: DecisionRequest, forbidden: frozenset[str]) -> HighRiskReview:
-    """Mark whether this menu should get the expensive review (§2-3).
+    """Mark whether this menu should get the high-risk review (§2-3).
 
     Only signals already in the request are used, and only when they matter to this
     user: menu-level gaps need some forbidden tag, an anomaly needs an overlapping tag.

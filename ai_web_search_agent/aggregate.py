@@ -1,8 +1,8 @@
 """⑥ stage 2: count mapped web recipes per standard ingredient and site (docs/6-agent-websearch.md §2-2, §2-6).
 
 No search, no LLM, no DB. ④ has already mapped every recipe's ingredients, so names
-like 간장/진간장 are counted once. ``review_notes`` reasons come from fixed rules; the
-LLM that rewrites them into friendlier sentences is added later (§2-6).
+like 간장/진간장 are counted once. ``review_notes`` and the per-recipe signals for
+auto registration come from fixed rules, words included; no LLM rewrites them (§2-6, §5).
 """
 
 from __future__ import annotations
