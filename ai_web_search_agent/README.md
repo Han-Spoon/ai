@@ -20,7 +20,7 @@ DB에 없는 메뉴의 재료를 웹 레시피에서 모읍니다. 기준은 [`d
 ## 아직 없는 것
 
 - **⓪ 조립**: `app.py` `_build_supervisor_service()`의 `web_collect=WebCollectAgent(StaticSearchProvider())`를 `WebCollectAgent(search_provider_from_env(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꾸는 일 (⑥ §7). 키가 없으면 `web_search_not_configured`로 알려요. 이게 없으면 검색 결과가 없어 LLM도 쓰이지 않습니다. 배포 환경에 네이버 키도 넣어야 합니다
-- **LLM 검토 문구**: 검토 문구 다듬기, 검토 규칙 5(LLM만 찾은 재료)
+- **레시피별 이상 신호 내보내기**: `recipe_signals()`는 계산만 하고 ⓪ 계약에 칸이 없어 응답에 싣지 않아요(⑥ §7). 검토 문구를 LLM으로 다듬는 일은 하지 않기로 했어요(11/02)
 
 옛 코드(룰엔진 결과에 웹 태그를 덧붙이고 SQLite에 저장하던 구조, Tavily 검색, CLI)는 새 설계와 맞지 않아 지웠습니다.
 
