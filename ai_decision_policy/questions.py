@@ -86,11 +86,11 @@ TAG_NAMES: dict[str, dict[str, str]] = {
         "zh-CN": "核桃", "zh-TW": "核桃", "ja": "くるみ", "es": "nuez",
     },
     "is_pinenut": {
-        "ko": "잣", "en": "pine nut", "ar": "الصنوبر",
+        "ko": "잣", "en": "pine nut", "ar": "حب الصنوبر",
         "zh-CN": "松子", "zh-TW": "松子", "ja": "松の実", "es": "piñones",
     },
     "is_peach": {
-        "ko": "복숭아", "en": "peach", "ar": "الخوخ",
+        "ko": "복숭아", "en": "peach", "ar": "الخوخ (الدراق)",
         "zh-CN": "桃子", "zh-TW": "桃子", "ja": "もも", "es": "melocotón",
     },
     "is_tomato": {
@@ -178,7 +178,8 @@ LISTS: dict[str, Callable[[list[str]], str]] = {
     "ar": _joined(" أو ", " أو "),
     "zh-CN": _joined("、", "或"),
     "zh-TW": _joined("、", "或"),
-    "ja": _joined("・", "・"),
+    # "・" reads as "and"; a yes/no question about any of them needs "or" (2026-11-02).
+    "ja": _joined("、", "または"),
     "es": _joined(", ", " o "),
 }
 
