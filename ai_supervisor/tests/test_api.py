@@ -7,7 +7,6 @@ import httpx
 from fastapi import FastAPI
 
 from ai_supervisor.api import router
-from ai_supervisor.adapters import BackendOcrConfigError, BackendOcrServiceError
 from ai_supervisor.contracts.external import PrepareRequest, PrepareResponse
 from ai_supervisor.hashing import ContractHashMismatch, prepared_items_hash
 from ai_supervisor.tests.test_judge_graph import request as judge_request
@@ -86,15 +85,6 @@ class FakeService:
         )
 
 
-class FailingPrepareService(FakeService):
-    def __init__(self, error: Exception) -> None:
-        super().__init__()
-        self.error = error
-
-    async def prepare(self, request):
-        raise self.error
-
-
 def app(service=None) -> FastAPI:
     application = FastAPI()
     application.include_router(router)
@@ -128,32 +118,6 @@ def test_prepare_endpoint_validates_and_returns_canonical_response() -> None:
     assert response.json()["prepare_id"] == str(PREPARE_ID)
     assert response.json()["prepared_items"][0]["item_id"] == "scan-123:0"
     assert service.prepare_requests == [source]
-
-
-def test_prepare_endpoint_returns_503_when_backend_ocr_is_not_configured() -> None:
-    response = asyncio.run(
-        post(
-            app(FailingPrepareService(BackendOcrConfigError("missing URL"))),
-            "/v1/analyze/prepare",
-            prepare_request().model_dump(mode="json"),
-        )
-    )
-
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "ocr_backend_not_configured"
-
-
-def test_prepare_endpoint_returns_502_when_backend_ocr_fails() -> None:
-    response = asyncio.run(
-        post(
-            app(FailingPrepareService(BackendOcrServiceError("upstream failed"))),
-            "/v1/analyze/prepare",
-            prepare_request().model_dump(mode="json"),
-        )
-    )
-
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "ocr_backend_failed"
 
 
 def test_judge_endpoint_returns_409_for_contract_hash_mismatch() -> None:

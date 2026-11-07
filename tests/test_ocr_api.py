@@ -1,6 +1,7 @@
 import importlib
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -34,7 +35,7 @@ def test_lifespan_builds_one_supervisor_service(monkeypatch):
 
 
 def test_supervisor_service_uses_runtime_agents(monkeypatch):
-    backend_ocr = object()
+    ocr_adapter = object()
     provider = object()
     reader = object()
     page_fetcher = object()
@@ -43,11 +44,11 @@ def test_supervisor_service_uses_runtime_agents(monkeypatch):
     high_risk_review = object()
     captured = {}
 
-    monkeypatch.setattr(
-        app_module.BackendOcrAdapter,
-        "from_env_if_configured",
-        lambda: backend_ocr,
-    )
+    def build_ocr_adapter(runner):
+        assert runner is app_module._run_supervisor_ocr
+        return ocr_adapter
+
+    monkeypatch.setattr(app_module, "LegacyOcrAdapter", build_ocr_adapter)
     monkeypatch.setattr(app_module, "search_provider_from_env", lambda: provider)
     monkeypatch.setattr(
         app_module.OpenAIRecipeReader,
@@ -78,10 +79,38 @@ def test_supervisor_service_uses_runtime_agents(monkeypatch):
     service = app_module._build_supervisor_service()
 
     assert service is captured["dependencies"]
-    assert service.ocr is backend_ocr
+    assert service.ocr is ocr_adapter
     assert service.web_collect is web_collect
     assert service.decision is decision
     assert service.high_risk_review is high_risk_review
+
+
+def test_supervisor_ocr_reuses_ai_owned_pipeline(monkeypatch):
+    captured = {}
+    expected = {"scan_quality": {"status": "usable"}, "menu_analyses": []}
+
+    def fake_run_ocr(request):
+        captured["request"] = request
+        return expected
+
+    monkeypatch.setattr(app_module, "run_ocr", fake_run_ocr)
+    image = SimpleNamespace(
+        source="upload",
+        storage_key="scans/menu.jpg",
+        image_url=None,
+        version_id="version-1",
+        expected_etag='"etag"',
+    )
+
+    result = app_module._run_supervisor_ocr(image)
+
+    assert result is expected
+    request = captured["request"]
+    assert request.store_id is None
+    assert request.source == "upload"
+    assert request.storage_key == "scans/menu.jpg"
+    assert request.version_id == "version-1"
+    assert request.expected_etag == '"etag"'
 
 
 def test_health_rejects_placeholder_clova_configuration(monkeypatch):

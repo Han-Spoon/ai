@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import os
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any, Protocol, TypeVar, Union
-
-import httpx
 
 from .contracts.common import EvidenceRef, NodeWarning
 from .contracts.external import PriceOption, RiskTagObservation
@@ -25,78 +22,6 @@ class NodeAdapter(Protocol[RequestT, ResponseT]):
         ...
 
 
-class BackendOcrConfigError(RuntimeError):
-    """The Supervisor-to-backend OCR boundary is not configured."""
-
-
-class BackendOcrServiceError(RuntimeError):
-    """The backend OCR boundary failed or returned a non-canonical response."""
-
-
-class UnconfiguredBackendOcrAdapter:
-    """Fail closed when the backend OCR endpoint was not injected."""
-
-    async def run(self, request: OcrRequest) -> OcrResponse:
-        raise BackendOcrConfigError(
-            "SUPERVISOR_OCR_BACKEND_URL is required for Prepare OCR"
-        )
-
-
-class BackendOcrAdapter:
-    """Call the backend-owned ① OCR Tool over its canonical HTTP boundary.
-
-    The backend owns image retrieval and CLOVA. The Supervisor only sends the
-    documented ``OcrRequest``, validates ``OcrResponse``, and then continues to
-    Normalization.
-    """
-
-    def __init__(
-        self,
-        endpoint: str,
-        *,
-        client: httpx.AsyncClient | None = None,
-    ) -> None:
-        url = httpx.URL(endpoint)
-        if url.scheme not in {"http", "https"} or not url.host:
-            raise BackendOcrConfigError(
-                "SUPERVISOR_OCR_BACKEND_URL must be an absolute HTTP(S) URL"
-            )
-        self.endpoint = url
-        self.client = client or httpx.AsyncClient()
-        self._owns_client = client is None
-
-    @classmethod
-    def from_env_if_configured(
-        cls, *, client: httpx.AsyncClient | None = None
-    ) -> "BackendOcrAdapter | None":
-        endpoint = os.getenv("SUPERVISOR_OCR_BACKEND_URL", "").strip()
-        return cls(endpoint, client=client) if endpoint else None
-
-    async def run(self, request: OcrRequest) -> OcrResponse:
-        try:
-            response = await self.client.post(
-                self.endpoint,
-                json=request.model_dump(mode="json", exclude_unset=True),
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.HTTPError as error:
-            raise BackendOcrServiceError("backend OCR request failed") from error
-        except ValueError as error:
-            raise BackendOcrServiceError("backend OCR returned invalid JSON") from error
-
-        try:
-            return OcrResponse.model_validate(payload)
-        except ValueError as error:
-            raise BackendOcrServiceError(
-                "backend OCR response violates the canonical contract"
-            ) from error
-
-    async def aclose(self) -> None:
-        if self._owns_client:
-            await self.client.aclose()
-
-
 LegacyOcrResult = Mapping[str, Any]
 LegacyOcrRunner = Callable[
     [Any], Union[LegacyOcrResult, Awaitable[LegacyOcrResult]]
@@ -104,10 +29,10 @@ LegacyOcrRunner = Callable[
 
 
 class LegacyOcrAdapter:
-    """Convert the existing OCR result dictionary into the canonical ① contract.
+    """Run AI-owned OCR and convert its result into the canonical ① contract.
 
-    Image retrieval and the actual CLOVA call stay in the injected runner so this
-    adapter neither reads storage nor creates external clients per request.
+    Image retrieval and the CLOVA call stay in the injected AI OCR runner. This
+    adapter only preserves the Supervisor boundary and converts the legacy result.
     """
 
     def __init__(
