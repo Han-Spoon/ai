@@ -67,10 +67,7 @@ from ocr_client import (  # noqa: E402
     OCRServiceError,
     validate_clova_config,
 )
-from ai_supervisor.adapters import (  # noqa: E402
-    BackendOcrAdapter,
-    UnconfiguredBackendOcrAdapter,
-)
+from ai_supervisor.adapters import LegacyOcrAdapter  # noqa: E402
 from ai_supervisor.api import router as supervisor_router  # noqa: E402
 from ai_supervisor.service import (  # noqa: E402
     SupervisorService,
@@ -226,10 +223,7 @@ def _build_supervisor_service() -> SupervisorService:
 
     return SupervisorService(
         SupervisorServiceDependencies(
-            ocr=(
-                BackendOcrAdapter.from_env_if_configured()
-                or UnconfiguredBackendOcrAdapter()
-            ),
+            ocr=LegacyOcrAdapter(_run_supervisor_ocr),
             web_collect=WebCollectAgent(
                 search_provider_from_env(),
                 OpenAIRecipeReader.from_env_if_configured(),
@@ -237,6 +231,20 @@ def _build_supervisor_service() -> SupervisorService:
             ),
             decision=DecisionTool.from_env(),
             high_risk_review=HighRiskReviewAgent.from_env(),
+        )
+    )
+
+
+def _run_supervisor_ocr(image):
+    """Reuse the AI-owned storage download and CLOVA OCR execution path."""
+
+    return run_ocr(
+        OcrRequest(
+            source=image.source,
+            storage_key=image.storage_key,
+            image_url=image.image_url,
+            version_id=image.version_id,
+            expected_etag=image.expected_etag,
         )
     )
 

@@ -1,19 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime, timezone
 from uuid import UUID
 
-import httpx
 import pytest
 
-from ai_supervisor.adapters import (
-    BackendOcrAdapter,
-    BackendOcrConfigError,
-    BackendOcrServiceError,
-    LegacyOcrAdapter,
-)
+from ai_supervisor.adapters import LegacyOcrAdapter
 from ai_supervisor.contracts.ocr import OcrRequest
 from ai_supervisor.state import RunContext
 
@@ -40,92 +33,6 @@ def request() -> OcrRequest:
         warnings=[],
         errors=[],
     )
-
-
-def backend_response() -> dict:
-    return {
-        "context": request().context.model_dump(mode="json", exclude_unset=True),
-        "scan_quality": {
-            "status": "usable",
-            "score": 0.94,
-            "reasons": [],
-            "retake_suggestions": [],
-        },
-        "items": [
-            {
-                "item_id": "scan-123:0",
-                "source_index": 0,
-                "raw_menu_name": "김치찌개",
-                "description": None,
-                "price_text": "8,000원",
-                "price_options": [],
-                "ocr_confidence": 0.93,
-                "locale_hint": "ko",
-                "risk_tag_observations": [],
-            }
-        ],
-        "warnings": [],
-        "errors": [],
-    }
-
-
-def test_backend_ocr_adapter_posts_canonical_request_and_validates_response() -> None:
-    source = request()
-
-    def handler(http_request: httpx.Request) -> httpx.Response:
-        assert str(http_request.url) == "https://backend.test/internal/ocr"
-        payload = json.loads(http_request.content)
-        assert payload == source.model_dump(mode="json", exclude_unset=True)
-        assert "store_id" not in payload["context"]
-        return httpx.Response(200, json=backend_response())
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await BackendOcrAdapter(
-                "https://backend.test/internal/ocr", client=client
-            ).run(source)
-
-    response = asyncio.run(run())
-
-    assert response.context == source.context
-    assert response.items[0].raw_menu_name == "김치찌개"
-
-
-def test_backend_ocr_adapter_rejects_upstream_failure() -> None:
-    def handler(http_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={"detail": "unavailable"})
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            await BackendOcrAdapter(
-                "https://backend.test/internal/ocr", client=client
-            ).run(request())
-
-    with pytest.raises(BackendOcrServiceError, match="request failed"):
-        asyncio.run(run())
-
-
-def test_backend_ocr_adapter_rejects_noncanonical_response() -> None:
-    def handler(http_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"items": []})
-
-    async def run():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            await BackendOcrAdapter(
-                "https://backend.test/internal/ocr", client=client
-            ).run(request())
-
-    with pytest.raises(BackendOcrServiceError, match="canonical contract"):
-        asyncio.run(run())
-
-
-def test_backend_ocr_adapter_reads_only_configured_absolute_url(monkeypatch) -> None:
-    monkeypatch.delenv("SUPERVISOR_OCR_BACKEND_URL", raising=False)
-    assert BackendOcrAdapter.from_env_if_configured() is None
-
-    monkeypatch.setenv("SUPERVISOR_OCR_BACKEND_URL", "/internal/ocr")
-    with pytest.raises(BackendOcrConfigError, match="absolute HTTP"):
-        BackendOcrAdapter.from_env_if_configured()
 
 
 def test_legacy_ocr_adapter_converts_and_orders_canonical_items() -> None:
