@@ -16,7 +16,6 @@ Any LLM failure, timeout or bad output gives back the original cards and reason.
 from __future__ import annotations
 
 import asyncio
-import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -40,7 +39,6 @@ from .reason import (
 )
 
 MAX_OUTPUT_TOKENS = 600
-_NUMBER_RE = re.compile(r"\d+")
 
 INSTRUCTIONS = """You double-check one Korean restaurant menu for a tourist with food restrictions.
 Code already decided the verdict; you must not change it.
@@ -59,8 +57,8 @@ Code already decided the verdict; you must not change it.
    names (localized_name for choices). A name given in Korean has no translation
    yet: translate it into {language}, and list each such name with your translation
    in name_translations. Do not name other dishes, cooking methods,
-   sauces, or broths, and do not invent examples. Copy any percentage from verdict_sentence
-   exactly, with the % sign; never write 0% or 100%. Never say or imply the dish is
+   sauces, or broths, and do not invent examples. Do not write any percentage:
+   the verdict line no longer shows one. Never say or imply the dish is
    safe, and do not use the word "safe" (or its translation) at all.
    Write every word in {language}. Call the dish "this dish" in {language}, not by
    its Korean name.
@@ -208,12 +206,12 @@ class HighRiskReviewAgent:
             request.locale,
         )
         names |= translated_names(output.name_translations, korean_only)
-        shown = [int(n) for n in _NUMBER_RE.findall(message.verdict)]
         reason = check_reason(
             output.reason,
             locale=request.locale,
             risk_level=request.decision.risk_level,
-            percents=shown,
+            # The verdict line shows no percentage (2026-11-06), so the review may not either.
+            percents=[],
             allowed_names=names,
             menu_names=[request.menu.normalized_menu_name, request.menu.raw_menu_name],
             verdict=message.verdict,

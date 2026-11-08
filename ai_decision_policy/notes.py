@@ -29,25 +29,17 @@ class NoteChoice:
 def select_notes(outcome: DecisionOutcome) -> list[NoteChoice]:
     """``ambiguous_menu`` for each related flag the owner has not settled, then
     ``hard_to_remove`` for each risk ingredient whose role is identity or hidden,
-    in ``risk_ingredients`` order. A missing role gets no note: we do not guess."""
+    in ``risk_ingredients`` order (already one per ingredient, see ``merge_same_ingredient``).
+    A missing role gets no note: we do not guess."""
 
     notes = [
         NoteChoice("ambiguous_menu", check.flag, None, None)
         for check in outcome.flag_checks
         if check.state == "unresolved"
     ]
-    seen: set[tuple[str, int | str]] = set()
-    for item in outcome.risk_ingredients:
-        if item.role not in HARD_TO_REMOVE_ROLES:
-            continue
-        ingredient = item.ingredient
-        key = (
-            ("id", ingredient.ingredient_id)
-            if ingredient.ingredient_id is not None
-            else ("name", ingredient.canonical_name)
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        notes.append(NoteChoice("hard_to_remove", None, ingredient, item.role))
+    notes += [
+        NoteChoice("hard_to_remove", None, item.ingredient, item.role)
+        for item in outcome.risk_ingredients
+        if item.role in HARD_TO_REMOVE_ROLES
+    ]
     return notes

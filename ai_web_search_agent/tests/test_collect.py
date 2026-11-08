@@ -170,7 +170,7 @@ def test_a_failed_llm_call_leaves_only_its_own_results_unread() -> None:
                 raise RuntimeError("llm down")
             return await super().read(menu_name, results)
 
-    results = [result(i, title="김치찜 레시피") for i in range(6)]
+    results = [result(i, title="김치찜 레시피") for i in range(3)] + [result(i) for i in range(3, 6)]
 
     response = run(WebCollectAgent(provider(results), SecondCallFails(drop={"김치찜 레시피"})), request())
 
@@ -207,6 +207,50 @@ def test_warning_only_when_half_or_more_went_unread() -> None:
     assert codes(most.warnings) == ["web_llm_extraction_failed"]
 
 
+def test_unread_results_fill_only_when_the_title_names_the_menu() -> None:
+    # 2026-11-08: unread results came from the second round with no LLM time left, and
+    # 5 of 6 were another dish (양념족발 for 설렁탕). Spaces do not matter.
+    results = [result(i) for i in range(3)] + [
+        result(3, title="양념족발 만들기"),
+        result(4, title="김치 찌개 끓이는 법"),
+        result(5),
+    ]
+
+    response = run(WebCollectAgent(provider(results), FailsOnCalls({1})), request())
+
+    assert [s.source_url for s in response.sources] == [r.url for r in results if r.title != "양념족발 만들기"]
+    assert response.warnings == []
+
+
+def test_dish_name_in_the_title_is_not_an_ingredient() -> None:
+    # 파김치 is a kind of 김치: the title alone must not add 김치 (→ 배추김치 after ④).
+    req = request().model_copy(update={"menu": request().menu.model_copy(update={"normalized_menu_name": "파김치"})})
+    search = StaticSearchProvider({"파김치 레시피": [result(0, content="재료: 쪽파, 멸치액젓, 고춧가루", title="파김치 담그기")]})
+    names = [i.canonical_name for i in run(WebCollectAgent(search, Reader()), req).sources[0].ingredients]
+    assert "김치" not in names and "멸치액젓" in names
+
+
+def test_dish_name_counts_when_the_recipe_lists_it_apart() -> None:
+    req = request().model_copy(update={"menu": request().menu.model_copy(update={"normalized_menu_name": "파김치"})})
+    search = StaticSearchProvider({"파김치 레시피": [result(0, content="재료: 김치 양념, 쪽파", title="파김치")]})
+    names = [i.canonical_name for i in run(WebCollectAgent(search, Reader()), req).sources[0].ingredients]
+    assert "김치" in names
+
+
+def test_menu_that_is_the_name_itself_keeps_it() -> None:
+    # 순대 carries pork; a 순대 menu must not lose it.
+    req = request().model_copy(update={"menu": request().menu.model_copy(update={"normalized_menu_name": "순대"})})
+    search = StaticSearchProvider({"순대 레시피": [result(0, content="재료: 당면, 대파", title="순대 만들기")]})
+    names = [i.canonical_name for i in run(WebCollectAgent(search, Reader()), req).sources[0].ingredients]
+    assert "순대" in names
+
+
+def test_ingredient_at_the_front_of_the_menu_name_stays() -> None:
+    # 김치찌개 is made with 김치: the title still gives it (test 01 relies on this too).
+    response = run(WebCollectAgent(provider([result(0)]), Reader()), request())
+    assert response.sources[0].ingredients[0].canonical_name == "김치"
+
+
 def test_results_without_ingredients_are_not_valid_sources() -> None:
     results = [result(0, content="분위기 좋은 곳이에요", title="맛집 방문 후기"), result(1)]
 
@@ -225,14 +269,15 @@ def test_08_09_llm_names_are_kept_only_when_in_the_text() -> None:
     assert names == ["김치", "돼지고기", "두부", "양파", "대파", "마라소스"]
 
 
-def test_10_22_llm_failure_keeps_every_result_with_dictionary_names() -> None:
+def test_10_22_llm_failure_keeps_results_naming_the_menu_with_dictionary_names() -> None:
+    # Unread results fill only when the title names the menu (2026-11-08): 김치찜 goes.
     results = [result(0, title="김치찜 레시피"), result(1)]
     for reader in (FailingReader(), SlowReader(), None):
         agent = WebCollectAgent(provider(results), reader, llm_seconds=0.05)
 
         response = run(agent, request())
 
-        assert len(response.sources) == 2
+        assert [s.source_url for s in response.sources] == [results[1].url]
         assert codes(response.warnings) == ["web_llm_extraction_failed"]
         assert response.warnings[0].forces_caution is True
 
@@ -419,6 +464,31 @@ def test_priority_sites_keep_recipe_urls_only() -> None:
     assert [s.source_url for s in response.sources] == kept
 
 
+def test_wtable_and_semie_results_count_only_when_the_title_names_the_menu() -> None:
+    # 2026-11-08: their site: search mostly returns other dishes (김치찜 for 갓김치), and
+    # their titles are the dish name. 만개의레시피 titles are free text: the LLM judges them.
+    def at(url: str, title: str) -> SearchResult:
+        return SearchResult(query=QUERY, title=title, url=url, content=RECIPE_TEXT)
+
+    results = [
+        at("https://wtable.co.kr/recipes/a", "돼지고기 김치찜 - 우리의식탁"),
+        at("https://wtable.co.kr/recipes/b", "[강레오] 김치 찌개"),
+        at("https://semie.cooking/cooking/id/1", "김치쌀국수 - semie cooking"),
+        at("https://www.10000recipe.com/recipe/1", "백종원 7분 찌개"),
+    ]
+
+    class Priority(SearchProvider):
+        def search(self, query, start, count, sites=()):
+            return results[start - 1 : start - 1 + count] if sites else []
+
+    response = run(WebCollectAgent(Priority(), Reader()), request())
+
+    assert [s.source_url for s in response.sources] == [
+        "https://wtable.co.kr/recipes/b",
+        "https://www.10000recipe.com/recipe/1",
+    ]
+
+
 def test_11_general_web_fills_what_the_priority_sites_lack() -> None:
     blog = [
         SearchResult(query=QUERY, title="김치찌개", url=f"https://blog.naver.com/a/{i}", content=RECIPE_TEXT)
@@ -505,7 +575,7 @@ def test_page_bodies_are_read_for_kept_results_only() -> None:
         def __init__(self) -> None:
             self.urls: list[str] = []
 
-        def fetch(self, result):
+        async def fetch(self, result):
             self.urls.append(result.url)
             return replace(result, content=RECIPE_TEXT)
 
@@ -525,9 +595,9 @@ def test_page_bodies_are_read_for_kept_results_only() -> None:
 
 def test_a_slow_page_keeps_search_text_and_the_others_are_used() -> None:
     class OneSlowPage:
-        def fetch(self, result):
+        async def fetch(self, result):
             if result.url.endswith("/0"):
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
             return replace(result, content=RECIPE_TEXT)
 
     bare = [result(i, content="") for i in range(2)]
