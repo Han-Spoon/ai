@@ -86,7 +86,7 @@ erDiagram
 | `needs_review` | 웹서치·변형으로 생긴 메뉴는 `true` |
 | `knowledge_revision` | 기본 1. 메뉴의 지식이 바뀌면 +1. ④ 캐시 무효화 기준 (§5) |
 
-- **웹서치 메뉴**: 관리자가 승인한 웹 레시피가 같은 메뉴로 **30개 이상** 모이면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`(`evidence_type: web_search`)를 채운다 (⑦ §2-1, 2026-10-20). 웹 레시피는 가게와 무관하므로 `ingredient_evidence_log`(가게 증거)에는 넣지 않는다.
+- **웹서치 메뉴**: 웹 레시피는 자동 등록이 기본이다 (10/26 회의). **통과 레시피**(이상 신호가 없거나, 신호가 잡혔지만 운영자가 "예"를 누른 레시피)가 같은 메뉴로 **30개 이상** 모이면 백엔드가 `menus`(`source: web_search_generated`)를 먼저 만들고, 그 `menu_id`로 `recipe_ingredients`(`evidence_type: web_search`)를 넣는다. 가게 prior에는 넣지 않는다 (⑦ §2-1, ⑥ §2-4).
 - **변형 메뉴**: 원본 메뉴 행을 다시 쓰지 않고 `base_menu_id`로 원본을 가리키는 새 행(`source: variant_generated`)을 만든다. 변형 메뉴의 증거가 원본 메뉴 확률과 섞이지 않게 하기 위해서다. 원본 메뉴의 확정값을 변형 메뉴가 물려받아 쓰는 방식은 보류다 (③ §6).
 
 ### `menu_aliases`, `ingredient_aliases`
@@ -258,7 +258,9 @@ erDiagram
 - 확률 계산에 쓰지 않으므로 `ingredient_evidence_log`에 행을 남기지 않는다 (그 테이블은 `ingredient_id`가 필수이기도 하다). 이력은 `owner_verification_requests` answered 행으로 본다.
 
 ### `knowledge_review_items` (V9)
-웹서치 결과·변형 제안을 관리자가 검토하는 항목. ⑦의 `create_review_item`이 만든다. `status`는 `pending` / `approved` / `rejected`. 승인되면 `resolved_menu_id`가 채워진다.
+운영자가 예/아니오를 정하는 검토 항목. ⑦의 `create_review_item`이 만든다. `status`는 `pending` / `approved` / `rejected`. 승인되면 `resolved_menu_id`가 채워진다.
+- **웹 레시피는 이상 신호가 잡힌 레시피만** 들어온다 (10/26 회의, 신호 3개는 ⑥ §5). 신호가 없는 레시피는 검토 항목 없이 캐시에만 쌓이고 바로 통과로 센다. 레시피별 신호를 담는 ⓪ 계약은 아직 정하는 중이다 (⑦ §2-1).
+- **런타임 변형 제안은 전부** 들어온다 (가게 prior에 반영되는 근거라 운영자 승인이 필요하다).
 
 ---
 
@@ -310,7 +312,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | `searched_at` | 마지막 검색 시각 |
 | `expires_at` 🔶 | **NULL 허용, 항상 NULL** (지금 ERD는 NOT NULL). ⑥은 캐시 유효기간 없이 DB에 등록되기 전까지 레시피를 계속 쌓는다 (⑥ §2-4, ⓪ §4-6) |
 
-⑥이 검색할 때마다 `save_web_search_cache` 명령으로 원본을 남긴다(관리자 게이트 없음). **실제 식당 레시피로 보지 않고, 판정을 낮추는 데 쓰지 않는다.** DB 반영은 관리자 승인을 거친 `knowledge_review_items`로만 한다.
+⑥이 검색할 때마다 `save_web_search_cache` 명령으로 원본을 남긴다(운영자 게이트 없음). **실제 식당 레시피로 보지 않고, 판정을 낮추는 데 쓰지 않는다.** 캐시의 레시피 중 운영자가 "아니오"를 누른 것(`knowledge_review_items.status = rejected`)을 뺀 나머지가 통과 레시피다. 통과 레시피가 30개가 되면 공용 메뉴로 등록한다.
 
 ### `menu_ingredient_cache`
 ④의 재귀 확장 결과를 저장한 **파생 캐시**.
@@ -321,7 +323,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | `menu_revision` | 계산할 때의 `menus.knowledge_revision`. **다르면 캐시 무효** |
 | `ingredients_snapshot` | 확인 재료를 빼기 전 **전체 확장 목록**. 전역 데이터만 담고, 가게 데이터인 확정값은 넣지 않는다 (③이 분모로 쓰기 때문) |
 
-- **쓰기 예외**: ④가 `save_menu_ingredient_cache` 명령을 직접 만든다. 재계산할 수 있는 파생 데이터라 ⑦ 관리자 게이트를 거치지 않는다. AGENTS.md의 유일한 예외다.
+- **쓰기 예외**: ④가 `save_menu_ingredient_cache` 명령을 직접 만든다. 재계산할 수 있는 파생 데이터라 ⑦ 운영자 게이트를 거치지 않는다. AGENTS.md의 유일한 예외다.
 - **무효화** 🔶: 메뉴 하나의 지식이 바뀌면 그 메뉴의 `knowledge_revision` +1. 재료 단위 데이터(구성 간선·재료 태그·분류)가 바뀌면 **그 재료가 들어간 모든 메뉴**의 `knowledge_revision` +1을 요청함 (④ §8).
 
 ---
@@ -353,7 +355,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 | 19 | `users.language_code` | VARCHAR(2), `ko` / `en` / `ar` | VARCHAR(5), 7번의 7개 값 | `zh-CN`·`zh-TW`가 5자라 지금 길이에 안 들어간다 |
 | 20 | `owner_verification_requests` | 질문 차수·사슬 컬럼 도입안 | `card_id`만 추가하고 `round`, `previous_question_id`, `confirmation_state`는 추가하지 않거나 제거 (§3) | 질문은 대상별 한 번만 받고 즉시 확정하므로 차수·사슬·합의 상태가 필요 없다 |
 | 21 | `ingredient_tags.tag_code`, `ingredient_composition_tags.tag_code`, `user_allergies.allergy_code` | 알레르기 19종 + fish/duck/alcohol (이름 형식 미정), `allergy_code`는 "19종" | `is_*` 형식 22종으로 통일: 식약처 알레르기 19종 + `is_fish` / `is_duck` / `is_alcohol` (원천 `ai_ruleengine/constants.py`) | 재료 태그와 사용자 알레르기 코드의 이름이 다르면 매칭이 안 돼 알레르겐을 놓친다 |
-| 22 | 승인된 웹 레시피 등록 | 승인마다 `menus` 등록 + 가게 증거 반영 | 같은 메뉴의 승인 레시피가 **30개 이상**일 때만 공용 `menus`·`recipe_ingredients` 등록. `ingredient_evidence_log`에는 넣지 않음. (제안, 확인 필요) 30개의 "n개 중 k개" 통계를 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 함께 넣기 (3번 `corpus` 값에 `web_search` 추가) | 웹 레시피는 가게 레시피가 아님. 승인마다 등록하면 30개 기준이 무의미해짐 (⑦ §2-1, ⑥ §2-4) |
+| 22 | 웹 레시피 등록 | 승인마다 `menus` 등록 + 가게 증거 반영 | **자동 등록**: 같은 메뉴의 **통과 레시피**(신호 없음 또는 운영자 "예")가 **30개 이상**일 때만 공용 `menus`·`recipe_ingredients` 등록. `ingredient_evidence_log`·`ingredient_risk_scores`에는 넣지 않음. 운영자 "아니오" 레시피는 세지 않음 (10/26 회의, ⑥ §2-4·§5) | 웹 레시피는 그 가게 레시피가 아니다. 레시피 몇 개로 메뉴가 생기면 웹서치가 멈춰 30개 기준이 무의미해진다 |
 | 23 | `menu_analyses.owner_card` | 단수 카드 저장 구조 | `owner_cards` JSONB 배열로 변경하고 기본값을 `[]`로 두며, 각 카드의 `card_id`를 `owner_verification_requests.card_id`와 연결 | Supervisor는 한 메뉴에 재료·플래그별 여러 `owner_cards[]`를 반환하므로 단수 객체로는 손실 없이 저장할 수 없다 |
 | 24 | `menu_analyses.owner_answer_status` | 없음 | `VARCHAR` 또는 enum으로 `none | partial | complete` 저장 (§4) | 프론트가 `risk_level`, `evidence_basis`, `owner_cards`를 추측해 사장님 답변 여부를 표시하지 않게 한다 |
 | 25 | `ingredient_evidence_log` | `source_type`에 `owner_feedback` 허용, `owner_verification_request_id`와 `review_item_id` 배타적 아크 | `source_type`은 `ocr_variant_tag`만, `owner_verification_request_id` 컬럼·아크 CHECK 삭제 (§3) | 사장님 답변 이력은 질문 행에 이미 있어 δ=0 행은 중복이다. 재계산 쿼리에서 걸러 낼 필요도 없어진다 |
@@ -374,7 +376,7 @@ AI 저장 명령의 멱등 영수증. 백엔드는 `(action, idempotency_key)`�
 2. **`ingredient_risk_scores` 직접 UPDATE 금지** — 항상 `ingredient_evidence_log` INSERT → 재계산
 3. 웹서치 새 메뉴는 `menus` INSERT(`source: web_search_generated`)가 먼저
 4. 변형 메뉴는 원본 행을 다시 쓰지 않고 `base_menu_id`로 연결된 새 `menus` 행(`source: variant_generated`)을 먼저 만든다
-5. 3·4번은 AI가 실시간으로 실행하지 않는다. 관리자가 승인한 시점에만 실행한다. 사장님 답변 이력은 예외로 즉시 기록한다
+5. 3·4번은 AI가 실시간으로 실행하지 않는다. 3번은 같은 메뉴의 통과 레시피가 30개가 됐을 때, 4번은 운영자가 "예"를 누른 시점에 백엔드가 실행한다. 사장님 답변은 예외로 즉시 확정값에 반영한다
 6. `owner_verification_requests.resolved_confirmation_id`는 답변이 실제로 확정값에 반영된 시점에 채운다
 7. 물리 DB 쓰기는 백엔드만. AI 명령은 `ai_command_receipts`로 한 번만 반영한다
 8. 메뉴·재료 이름 비교는 DB 함수 `normalize_food_name()` 하나로 한다 (`name_normalized`, `alias_normalized`, `web_search_cache.normalized_menu_name`)
