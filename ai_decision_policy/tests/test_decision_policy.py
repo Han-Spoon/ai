@@ -425,13 +425,13 @@ def test_ineligible_flag_answer_does_not_resolve() -> None:
     assert outcome.risk_level == "caution"
 
 
-def test_24_anomaly_locked_stays_caution_and_needs_review() -> None:
+def test_24_legacy_anomaly_does_not_request_review() -> None:
     outcome = decide(
         request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.95, anomaly_locked=True)])
     )
     assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
     assert outcome.risk_ingredients[0].anomaly_locked is True
-    assert (outcome.high_risk_review.required, outcome.high_risk_review.reason_code) == (True, "anomaly")
+    assert (outcome.high_risk_review.required, outcome.high_risk_review.reason_code) == (False, None)
 
 
 def test_25_unrelated_anomaly_blocks_safe_without_review() -> None:
@@ -530,7 +530,7 @@ def test_review_picks_highest_priority_reason() -> None:
             warnings=[warning("unmapped_constraint_tags"), warning("insufficient_sources")],
         )
     )
-    assert review(outcome) == (True, "anomaly")
+    assert review(outcome) == (True, "unknown_tag")
 
 
 def test_review_not_needed_for_plain_estimate() -> None:

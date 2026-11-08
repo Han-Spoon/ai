@@ -32,7 +32,6 @@ from .profile import forbidden_tags
 
 # High-risk review signals (§2-3). Order is the priority when several apply.
 REVIEW_PRIORITY: tuple[ReviewReason, ...] = (
-    "anomaly",
     "unknown_tag",
     "no_information",
     "partial_information",
@@ -118,8 +117,7 @@ def high_risk_review(request: DecisionRequest, forbidden: frozenset[str]) -> Hig
     """Mark whether this menu should get the high-risk review (§2-3).
 
     Only signals already in the request are used, and only when they matter to this
-    user: menu-level gaps need some forbidden tag, an anomaly needs an overlapping tag.
-    Unknown tags always count because we cannot tell whether they overlap.
+    user. Unknown tags always count because we cannot tell whether they overlap.
     """
 
     if not request.owner_interaction_allowed:
@@ -127,11 +125,6 @@ def high_risk_review(request: DecisionRequest, forbidden: frozenset[str]) -> Hig
 
     codes = {w.code for w in request.warnings}
     signals: set[ReviewReason] = set()
-    if any(
-        p.anomaly_locked and set(p.constraint_tags) & forbidden
-        for p in request.probability_results
-    ):
-        signals.add("anomaly")
     if codes & UNKNOWN_TAG_WARNINGS:
         signals.add("unknown_tag")
     if forbidden:
