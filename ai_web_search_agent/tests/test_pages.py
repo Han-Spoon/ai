@@ -1,5 +1,6 @@
 """Page bodies for kept search results (docs/6-agent-websearch.md §2-3-1)."""
 
+import asyncio
 import json
 
 import httpx
@@ -57,12 +58,27 @@ def test_fetcher_fills_content_and_keeps_unreadable_pages() -> None:
             return httpx.Response(200, text="<p>재료: 김치, 두부</p>")
         return httpx.Response(404)
 
-    fetcher = HttpPageFetcher(httpx.Client(transport=httpx.MockTransport(handler)))
+    fetcher = HttpPageFetcher(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     blog = SearchResult(query="q", title="김치찌개", url="https://blog.naver.com/a/1", snippet="s")
     gone = SearchResult(query="q", title="김치찌개", url="https://www.10000recipe.com/recipe/1")
 
-    filled, kept = fetcher.fetch(blog), fetcher.fetch(gone)
+    async def both():
+        return await asyncio.gather(fetcher.fetch(blog), fetcher.fetch(gone))
+
+    filled, kept = asyncio.run(both())
 
     assert filled.content == "재료: 김치, 두부"
     assert filled.url == blog.url
     assert kept == gone
+
+
+def test_own_client_is_made_per_event_loop() -> None:
+    # Evaluation scripts call asyncio.run more than once with one fetcher; a client from a
+    # closed loop must not be reused.
+    fetcher = HttpPageFetcher()
+
+    async def client():
+        return fetcher._client_now()
+
+    first, other = asyncio.run(client()), asyncio.run(client())
+    assert first is not other

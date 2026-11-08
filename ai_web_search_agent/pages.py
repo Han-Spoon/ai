@@ -7,10 +7,16 @@ also pick up food names from site menus. Other pages fall back to their visible 
 Naver blog posts sit in an iframe, so the mobile page is read instead.
 
 A page that cannot be read keeps its title and description only.
+
+Pages are read with an async client, not one thread each (2026-11-08): with five menus
+at once, 100 pages queued for the default thread pool and 29~42% missed the 1.5 s page
+limit (만개의레시피 then lost its ingredient list); read asynchronously, 0~1% did. A page
+past the limit is also really cancelled, not left running in a thread.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import replace
@@ -116,14 +122,34 @@ def page_content(page: str) -> str:
 class HttpPageFetcher:
     """Fills ``SearchResult.content`` from the page. ``collect.py`` reads pages at once."""
 
-    def __init__(self, client: httpx.Client | None = None, *, timeout: float = PAGE_SECONDS):
-        self.client = client or httpx.Client(
-            timeout=timeout, follow_redirects=True, headers=HEADERS
-        )
+    def __init__(
+        self, client: httpx.AsyncClient | None = None, *, timeout: float = PAGE_SECONDS
+    ) -> None:
+        self.timeout = timeout
+        self._given = client
+        self._client: httpx.AsyncClient | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
-    def fetch(self, result: SearchResult) -> SearchResult:
+    def _client_now(self) -> httpx.AsyncClient:
+        """The given client, or one of our own for the running event loop.
+
+        An async client belongs to the loop it first ran on. The app has one loop; a new
+        loop (each ``asyncio.run`` in evaluation scripts) gets a new client.
+        """
+
+        if self._given is not None:
+            return self._given
+        loop = asyncio.get_running_loop()
+        if self._client is None or self._loop is not loop:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout, follow_redirects=True, headers=HEADERS
+            )
+            self._loop = loop
+        return self._client
+
+    async def fetch(self, result: SearchResult) -> SearchResult:
         try:
-            response = self.client.get(readable_url(result.url))
+            response = await self._client_now().get(readable_url(result.url))
             response.raise_for_status()
         except httpx.HTTPError:
             return result

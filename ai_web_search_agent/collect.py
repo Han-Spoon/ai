@@ -66,8 +66,24 @@ def is_priority_recipe_url(url: str) -> bool:
     return bool(pattern and pattern.fullmatch(urlparse(url).path))
 
 
+# Priority sites whose recipe titles are the dish name itself ("갓김치 - 우리의식탁"). Their
+# ``site:`` search returns other dishes for most menus, since they have few recipes (8%
+# and 15% matched, 2026-11-08) and took a third of the candidates, so blogs went unread.
+# Their results count only when the title names the menu. 만개의레시피 titles are free
+# text, so the LLM still judges them.
+TITLE_CHECKED_SITES = frozenset({"wtable.co.kr", "semie.cooking"})
+
+
+def is_priority_candidate(result: SearchResult, menu_name: str) -> bool:
+    if not is_priority_recipe_url(result.url):
+        return False
+    if domain_of(result.url) in TITLE_CHECKED_SITES:
+        return has_menu_name(result.title, menu_name)
+    return True
+
+
 class PageFetcher(Protocol):
-    def fetch(self, result: SearchResult) -> SearchResult:
+    async def fetch(self, result: SearchResult) -> SearchResult:
         """The same result with ``content`` read from its page, or as it is."""
         ...
 
@@ -98,6 +114,12 @@ def _compact(text: str) -> str:
     return "".join(text.split())
 
 
+def has_menu_name(title: str, menu_name: str) -> bool:
+    """The title names the menu, ignoring spaces (떡 만두국 = 떡만두국)."""
+
+    return _compact(menu_name) in _compact(title)
+
+
 def merge_names(rule_names: list[str], llm_names: list[str], text: str) -> list[str]:
     """Union of dictionary and LLM names (§3-0).
 
@@ -112,6 +134,31 @@ def merge_names(rule_names: list[str], llm_names: list[str], text: str) -> list[
         if name and _compact(name) in body:
             merged.setdefault(name)
     return list(merged)
+
+
+def drop_dish_name(names: list[str], text: str, menu_name: str) -> list[str]:
+    """Drop a name that is only the dish itself (2026-11-07).
+
+    The text includes the title, so 백김치 gave 김치; ④ then mapped it to 배추김치 and every
+    white-kimchi recipe "contained" napa-cabbage kimchi. A name the menu name ends with,
+    after something in front (백김치 → 김치, 후라이드치킨 → 치킨), is the kind of dish, so
+    it counts only when it also shows up outside the menu name, e.g. a "김치 1/4포기"
+    line. A menu that is the name itself (곰탕, 순대) keeps it: 순대 carries pork. A name
+    at the front (김치찌개 → 김치) is an ingredient and stays.
+    """
+
+    menu = _compact(menu_name)
+    heads = {
+        name for name in names
+        if menu.endswith(_compact(name)) and len(menu) > len(_compact(name))
+    }
+    if not heads:
+        return names
+    rest = text
+    for spelling in {menu_name, menu}:
+        rest = rest.replace(spelling, " ")
+    still_there = heads & set(find_ingredient_names(rest))
+    return [name for name in names if name not in heads or name in still_there]
 
 
 def to_web_source(result: SearchResult, names: list[str]) -> WebSource:
@@ -143,17 +190,23 @@ class _Collection:
     not_configured: bool = False
     llm_failed: bool = False
 
-    def keep_read_first(self, max_sources: int) -> None:
+    def keep_read_first(self, max_sources: int, menu_name: str) -> None:
         """Keep ``max_sources`` sources, the LLM-read ones first, in rank order.
 
         A result the LLM could not read is kept unread (§3 2단계), but only to fill what
-        read recipes leave short: with ``READ_AHEAD`` there are usually enough of them,
-        and an unread result may be another dish (2026-10-28). The LLM failure is
-        reported only when unread results are half or more of what is kept.
+        read recipes leave short, and only when its title has the menu name. Unread
+        results mostly come from the second round, which has no time left for the LLM,
+        and from deeper ranks: 5 of 6 were another dish (2026-11-08, 파김치 for 배추김치,
+        양념족발 for 설렁탕). Fewer recipes only add ``insufficient_sources``; another
+        dish thins out the real allergens. The LLM failure is reported only when unread
+        results are half or more of what is kept.
         """
 
         read = [s for s in self.sources if s.source_url not in self.unread_urls]
-        unread = [s for s in self.sources if s.source_url in self.unread_urls]
+        unread = [
+            s for s in self.sources
+            if s.source_url in self.unread_urls and has_menu_name(s.title, menu_name)
+        ]
         kept = {id(s) for s in read[:max_sources] + unread[: max(0, max_sources - len(read))]}
         self.sources = [s for s in self.sources if id(s) in kept]
         # Warn only when half or more of the kept recipes went unread (2026-11-02). A
@@ -310,7 +363,7 @@ class WebCollectAgent:
             cached_left = max(0, cached_left - sum(r.url in cached_urls for r in batch))
             fresh = [
                 r for r in batch
-                if r.url not in seen and (not sites or is_priority_recipe_url(r.url))
+                if r.url not in seen and (not sites or is_priority_candidate(r, menu_name))
             ]
             seen.update(r.url for r in batch)
             return fresh
@@ -335,28 +388,33 @@ class WebCollectAgent:
                 if reading is not None and not reading.is_menu_recipe:
                     continue
                 text = result.text()
-                names = merge_names(
-                    find_ingredient_names(text),
-                    reading.ingredients if reading is not None else [],
+                names = drop_dish_name(
+                    merge_names(
+                        find_ingredient_names(text),
+                        reading.ingredients if reading is not None else [],
+                        text,
+                    ),
                     text,
+                    menu_name,
                 )
                 if names:
                     collection.sources.append(to_web_source(result, names))
                     if reading is None:
                         collection.unread_urls.add(result.url)
-        collection.keep_read_first(request.max_sources)
+        collection.keep_read_first(request.max_sources, menu_name)
         return collection
 
     async def _fetch_pages(
         self, results: list[SearchResult], deadline: float
     ) -> list[SearchResult]:
         """Results with their page bodies, all at once. A page that is not read in time or
-        fails keeps its search title and description; the others are still used."""
+        fails keeps its search title and description, and its request is cancelled; the
+        others are still used."""
 
         remaining = deadline - asyncio.get_running_loop().time()
         if self.pages is None or not results or remaining <= 0:
             return results
-        tasks = [asyncio.ensure_future(asyncio.to_thread(self.pages.fetch, r)) for r in results]
+        tasks = [asyncio.ensure_future(self.pages.fetch(r)) for r in results]
         await asyncio.wait(tasks, timeout=min(self.page_seconds, remaining))
         fetched = []
         for result, task in zip(results, tasks):
