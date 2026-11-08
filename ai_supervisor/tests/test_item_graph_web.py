@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import replace
 from hashlib import sha256
 
+import pytest
+
 from ai_normalization.contracts import CandidateSelectionResult
 from ai_supervisor.contracts.bayesian import BayesianResponse, ProbabilityResult
 from ai_supervisor.contracts.db_update import DbUpdateResponse
@@ -17,7 +19,11 @@ from ai_supervisor.contracts.ontology import (
     OntologyResultMenu,
 )
 from ai_supervisor.contracts.web_search import WebAggregateResponse, WebCollectResponse
-from ai_supervisor.item_graph import ItemGraphAnalyzer, ItemGraphDependencies
+from ai_supervisor.item_graph import (
+    ItemGraphAnalyzer,
+    ItemGraphDependencies,
+    ItemGraphInvariantError,
+)
 from ai_supervisor.tests.test_item_graph import (
     NOW,
     RecordingTagLookup,
@@ -219,11 +225,30 @@ class WebBayesian:
 
 
 class RecordingAggregate:
-    def __init__(self) -> None:
+    def __init__(self, recipe_signals: list[dict] | None = None) -> None:
         self.requests = []
+        self.recipe_signals = recipe_signals
 
     async def run(self, request):
         self.requests.append(request)
+        recipe_signals = self.recipe_signals
+        if recipe_signals is None:
+            new_sources = [
+                source
+                for source in request.mapped_sources
+                if source.source_origin == "new"
+            ]
+            recipe_signals = (
+                [
+                    {
+                        "evidence_id": new_sources[0].evidence_id,
+                        "code": "title_mismatch",
+                        "message": "검토가 필요한 테스트 레시피예요.",
+                    }
+                ]
+                if new_sources
+                else []
+            )
         mapped = [
             item
             for source in request.mapped_sources
@@ -262,10 +287,19 @@ class RecordingAggregate:
                     else []
                 ),
                 "review_notes": [],
+                "recipe_signals": recipe_signals,
                 "warnings": [item.model_dump(mode="json") for item in request.warnings],
                 "errors": [item.model_dump(mode="json") for item in request.errors],
             }
         )
+
+
+class LegacyAggregate(RecordingAggregate):
+    async def run(self, request):
+        response = await super().run(request)
+        payload = response.model_dump(mode="json")
+        payload.pop("recipe_signals")
+        return WebAggregateResponse.model_validate(payload)
 
 
 class RecordingDbUpdate:
@@ -315,6 +349,7 @@ def analyzer(
     sources: list[dict],
     *,
     collect_adapter=None,
+    aggregate_adapter=None,
     max_concurrent_web_searches: int = 5,
 ):
     ontology = UnknownOntology()
@@ -332,7 +367,7 @@ def analyzer(
             decision=decision,
             web_collect=collect,
             ingredient_mapping=mapper,
-            web_aggregate=RecordingAggregate(),
+            web_aggregate=aggregate_adapter or RecordingAggregate(),
             db_update=db_update,
             max_concurrent_web_searches=max_concurrent_web_searches,
             now_factory=lambda: NOW,
@@ -381,6 +416,83 @@ def test_web_path_maps_aggregates_reviews_and_calculates() -> None:
     assert [item.evidence_id for item in output.evidence] == [
         "web:https://www.10000recipe.com/recipe/1"
     ]
+
+
+def test_sources_without_recipe_signals_are_cached_without_review() -> None:
+    item_analyzer, *_ = analyzer(
+        [web_source()], aggregate_adapter=RecordingAggregate([])
+    )
+
+    output = asyncio.run(item_analyzer.run(unknown_task(), context()))
+
+    assert [item.operation.operation_type for item in output.operations] == [
+        "save_web_search_cache"
+    ]
+    assert len(output.operations[0].operation.payload.sources) == 1
+
+
+def test_legacy_aggregate_without_recipe_signals_keeps_review_all_fallback() -> None:
+    item_analyzer, *_ = analyzer(
+        [web_source()], aggregate_adapter=LegacyAggregate([])
+    )
+
+    output = asyncio.run(item_analyzer.run(unknown_task(), context()))
+
+    assert [item.operation.operation_type for item in output.operations] == [
+        "create_review_item",
+        "save_web_search_cache",
+    ]
+
+
+def test_only_signaled_recipes_are_reviewed_and_all_sources_are_cached() -> None:
+    sources = [web_source(1), web_source(2)]
+    signaled_id = sources[1]["evidence"]["evidence_id"]
+    aggregate = RecordingAggregate(
+        [
+            {
+                "evidence_id": signaled_id,
+                "code": "title_mismatch",
+                "message": "제목에 메뉴명이 없어요.",
+            }
+        ]
+    )
+    item_analyzer, *_ = analyzer(sources, aggregate_adapter=aggregate)
+
+    output = asyncio.run(item_analyzer.run(unknown_task(), context()))
+
+    assert [item.operation.operation_type for item in output.operations] == [
+        "create_review_item",
+        "save_web_search_cache",
+    ]
+    review_payload = output.operations[0].operation.payload
+    cache_payload = output.operations[1].operation.payload
+    assert [
+        source.evidence.evidence_id for source in review_payload.web_sources
+    ] == [signaled_id]
+    assert [
+        source.evidence.evidence_id for source in cache_payload.sources
+    ] == [source["evidence"]["evidence_id"] for source in sources]
+
+
+def test_recipe_signal_must_reference_a_new_web_source() -> None:
+    aggregate = RecordingAggregate(
+        [
+            {
+                "evidence_id": "web:https://invalid.test/recipe/1",
+                "code": "unmapped_ingredient",
+                "message": "표준 재료로 맞추지 못했어요.",
+            }
+        ]
+    )
+    item_analyzer, *_ = analyzer(
+        [web_source()], aggregate_adapter=aggregate
+    )
+
+    with pytest.raises(
+        ItemGraphInvariantError,
+        match="recipe signals must resolve to new web sources",
+    ):
+        asyncio.run(item_analyzer.run(unknown_task(), context()))
 
 
 def test_cached_sources_continue_without_new_storage_commands() -> None:
@@ -437,11 +549,42 @@ def test_web_collection_concurrency_is_capped_at_five() -> None:
     item_analyzer, *_ = analyzer([], collect_adapter=collect)
 
     async def run_all():
+        request_analyzer = item_analyzer.for_request()
+        run_context = context()
         return await asyncio.gather(
-            *(item_analyzer.run(task_at_index(index), context()) for index in range(7))
+            *(
+                request_analyzer.run(task_at_index(index), run_context)
+                for index in range(7)
+            )
         )
 
     outputs = asyncio.run(run_all())
 
     assert len(outputs) == 7
     assert collect.max_active == 5
+
+
+def test_each_judge_request_has_its_own_five_web_search_slots() -> None:
+    collect = ConcurrencyCollect([web_source()])
+    item_analyzer, *_ = analyzer([], collect_adapter=collect)
+
+    async def run_two_requests():
+        first = item_analyzer.for_request()
+        second = item_analyzer.for_request()
+        first_context = context()
+        second_context = context()
+        return await asyncio.gather(
+            *(
+                first.run(task_at_index(index), first_context)
+                for index in range(7)
+            ),
+            *(
+                second.run(task_at_index(index), second_context)
+                for index in range(7)
+            ),
+        )
+
+    outputs = asyncio.run(run_two_requests())
+
+    assert len(outputs) == 14
+    assert collect.max_active == 10

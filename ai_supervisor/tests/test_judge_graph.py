@@ -213,7 +213,12 @@ class SharedEvidenceAnalyzer(DelayedItemAnalyzer):
             source_ref="recipe:shared",
             verification_status="approved",
             reliability_weight=1.0,
-            observed_at=datetime(2026, 10, 23, tzinfo=timezone.utc),
+            observed_at=datetime(
+                2026,
+                10,
+                23 + task.prepared_item.source_index,
+                tzinfo=timezone.utc,
+            ),
         )
         command = PersistenceCommand(
             command_id="shared-command",
@@ -235,6 +240,19 @@ class SharedEvidenceAnalyzer(DelayedItemAnalyzer):
             evidence=(evidence,),
             commands=(command,),
         )
+
+
+class RequestScopedAnalyzer:
+    def __init__(self) -> None:
+        self.sessions: list[DelayedItemAnalyzer] = []
+
+    def for_request(self):
+        session = DelayedItemAnalyzer()
+        self.sessions.append(session)
+        return session
+
+    async def run(self, task, run_context):
+        raise AssertionError("Judge must use a request-scoped analyzer")
 
 
 class PendingOperationAnalyzer(DelayedItemAnalyzer):
@@ -537,9 +555,25 @@ def test_collect_deduplicates_shared_evidence_and_commands() -> None:
     assert [item.evidence_id for item in result["evidence"]] == [
         "shared-evidence"
     ]
+    assert result["evidence"][0].observed_at == datetime(
+        2026, 10, 23, tzinfo=timezone.utc
+    )
     assert [command.command_id for command in result["persistence_commands"]] == [
         "shared-command"
     ]
+
+
+def test_judge_creates_one_item_analyzer_scope_for_all_items() -> None:
+    source = request(count=3)
+    analyzer = RequestScopedAnalyzer()
+
+    result = asyncio.run(
+        graph(analyzer).ainvoke({"request": source}, context=context(source))
+    )
+
+    assert len(analyzer.sessions) == 1
+    assert len(analyzer.sessions[0].tasks) == 3
+    assert len(result["ordered_items"]) == 3
 
 
 def test_judge_calls_db_update_once_for_all_item_operations() -> None:
@@ -647,12 +681,11 @@ def test_high_risk_review_adds_card_then_db_update_builds_command() -> None:
 
 
 def test_high_risk_review_selects_at_most_three_by_reason_priority() -> None:
-    source = request(count=5)
+    source = request(count=4)
     reviewer = RecordingHighRiskReview()
     reasons = [
         "insufficient_web_sources",
         "partial_information",
-        "anomaly",
         "no_information",
         "unknown_tag",
     ]
@@ -666,9 +699,9 @@ def test_high_risk_review_selects_at_most_three_by_reason_priority() -> None:
     )
 
     assert [request.reason_code for request in reviewer.requests] == [
-        "anomaly",
         "unknown_tag",
         "no_information",
+        "partial_information",
     ]
 
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
+import ai_supervisor.item_graph as item_graph_module
+from ai_supervisor.contracts.exact import ExactFeedbackResponse
 from ai_supervisor.contracts.external import ExactFeedbackSlice
-from ai_supervisor.routers import route_item_start
+from ai_supervisor.routers import route_after_exact, route_item_start
 from ai_supervisor.tests.test_item_graph import (
     analyzer,
     context,
@@ -66,6 +68,80 @@ def test_exact_runs_only_with_store_and_selected_menu() -> None:
     assert route_item_start(task, 123) == "exact"
     assert route_item_start(task, None) == "ontology"
     assert route_item_start(no_menu, 123) == "ontology"
+
+
+def test_complete_exact_route_ignores_legacy_override_flag() -> None:
+    legacy_confirmation = {
+        **confirmation(101),
+        "override_eligible": False,
+    }
+    run_context = context()
+    response = ExactFeedbackResponse.model_validate(
+        {
+            "context": run_context.node_context(
+                "item", "scan-123:0", include_store=True
+            ),
+            "menu_id": 1001,
+            "confirmation_scope": "exact",
+            "completeness": "complete",
+            "confirmations": [legacy_confirmation],
+            "flag_confirmations": [],
+            "warnings": [],
+            "errors": [],
+        }
+    )
+
+    assert route_after_exact(response) == "tag_lookup"
+
+
+def test_supervisor_normalizes_known_legacy_answers_as_confirmed(
+    monkeypatch,
+) -> None:
+    class LegacyExactFeedbackTool:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def run(self, request):
+            ingredient = {
+                **confirmation(101),
+                "override_eligible": False,
+            }
+            flag_evidence = evidence("owner:flag", "owner_feedback")
+            return ExactFeedbackResponse.model_validate(
+                {
+                    "context": request.context.model_dump(mode="json"),
+                    "menu_id": request.menu.menu_id,
+                    "confirmation_scope": "exact",
+                    "completeness": "complete",
+                    "confirmations": [ingredient],
+                    "flag_confirmations": [
+                        {
+                            "ambiguity_flag": "has_unclear_jeotgal",
+                            "constraint_tags": ["is_fish"],
+                            "status": "absent",
+                            "evidence": flag_evidence,
+                            "override_eligible": False,
+                        }
+                    ],
+                    "warnings": [],
+                    "errors": [],
+                }
+            )
+
+    monkeypatch.setattr(
+        item_graph_module,
+        "ExactFeedbackTool",
+        LegacyExactFeedbackTool,
+    )
+    item_analyzer, ontology, bayesian, _, decision = analyzer()
+
+    asyncio.run(item_analyzer.run(item_task(exact_complete=True), context()))
+
+    assert ontology.requests == []
+    assert bayesian.requests == []
+    decision_request = decision.requests[0]
+    assert decision_request.confirmed_results[0].override_eligible is True
+    assert decision_request.flag_confirmations[0].override_eligible is True
 
 
 def test_unavailable_exact_slice_reads_as_empty_and_blocks_safe() -> None:

@@ -28,6 +28,7 @@ from .ontology import (
     TagLookupResponse,
 )
 from .web_search import (
+    RecipeSignal,
     WebAggregateRequest,
     WebAggregateResponse,
     WebCollectRequest,
@@ -62,6 +63,7 @@ __all__ = [
     "TagLookupResponse",
     "PrepareRequest",
     "PrepareResponse",
+    "RecipeSignal",
     "UserProfile",
     "WebAggregateRequest",
     "WebAggregateResponse",

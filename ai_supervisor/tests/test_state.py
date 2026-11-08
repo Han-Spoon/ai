@@ -48,3 +48,24 @@ def test_signal_reducer_deduplicates_by_contract_key() -> None:
 def test_evidence_reducer_rejects_conflicting_duplicate_id() -> None:
     with pytest.raises(ValueError, match="conflicting evidence_id"):
         merge_evidence([evidence()], [evidence("recipe:2")])
+
+
+def test_evidence_reducer_keeps_first_observation_for_the_same_source() -> None:
+    first = evidence("https://recipes.test/shared")
+    observed_later = first.model_copy(
+        update={
+            "verification_status": "pending_review",
+            "reliability_weight": 0.4,
+            "observed_at": datetime(2026, 10, 9, tzinfo=timezone.utc),
+        }
+    )
+
+    assert merge_evidence([first], [observed_later]) == [first]
+
+
+def test_evidence_reducer_rejects_same_id_for_a_different_source_type() -> None:
+    first = evidence("https://recipes.test/shared")
+    conflicting = first.model_copy(update={"source_type": "web_search"})
+
+    with pytest.raises(ValueError, match="conflicting evidence_id"):
+        merge_evidence([first], [conflicting])

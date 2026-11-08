@@ -172,8 +172,8 @@ class Confirmation(StrictModel):
     constraint_tags: list[ConstraintTag]
     status: IngredientStatus
     evidence: EvidenceRef
-    flagged_anomaly: StrictBool
-    override_eligible: StrictBool
+    flagged_anomaly: StrictBool | None = None
+    override_eligible: StrictBool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -198,7 +198,7 @@ class FlagConfirmation(StrictModel):
     constraint_tags: list[ConstraintTag]
     status: IngredientStatus
     evidence: EvidenceRef
-    override_eligible: StrictBool
+    override_eligible: StrictBool | None = None
 
     @model_validator(mode="before")
     @classmethod

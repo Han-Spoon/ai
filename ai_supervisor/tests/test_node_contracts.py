@@ -18,6 +18,7 @@ from ai_supervisor.contracts import (
     WebCollectRequest,
     WebCollectResponse,
 )
+from ai_supervisor.contracts.db_update import SaveWebSearchCachePayload
 from ai_supervisor.contracts.external import WebSearchCache
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
@@ -261,6 +262,20 @@ def test_judge_web_cache_drops_a_legacy_next_rank() -> None:
         WebSearchCache.model_validate(
             {"status": "not_found", "cached_sources": [], "next_rank": 0}
         )
+
+
+def test_web_cache_save_payload_rejects_next_rank() -> None:
+    payload = {
+        "normalized_menu_name": "마라탕",
+        "original_menu_name": "마라탕",
+        "search_status": "searched",
+        "sources": [],
+        "searched_at": "2026-10-26T01:00:00Z",
+        "next_rank": 11,
+    }
+
+    with pytest.raises(ValidationError, match="next_rank"):
+        SaveWebSearchCachePayload.model_validate(payload)
 
 
 def test_web_aggregate_sources_carry_title() -> None:

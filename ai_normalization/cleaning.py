@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unicodedata
 from dataclasses import dataclass
 
 from ai_supervisor.contracts.common import NodeWarning
 
+from ._concurrency import (
+    DEFAULT_MAX_CONCURRENT_LLM_CALLS,
+    validate_max_concurrent_llm_calls,
+)
 from .contracts import (
     CleanedMenuItem,
     NameCleaningRequest,
@@ -125,60 +130,31 @@ class NameCleaningAgent:
         self,
         resolver: NameResolver | None = None,
         low_ocr_confidence_threshold: float = LOW_OCR_CONFIDENCE_THRESHOLD,
+        max_concurrent_llm_calls: int = DEFAULT_MAX_CONCURRENT_LLM_CALLS,
     ) -> None:
         if not 0.0 <= low_ocr_confidence_threshold <= 1.0:
             raise ValueError("low OCR confidence threshold must be between 0 and 1")
         self._resolver = resolver
         self._low_ocr_confidence_threshold = low_ocr_confidence_threshold
+        self._max_concurrent_llm_calls = validate_max_concurrent_llm_calls(
+            max_concurrent_llm_calls
+        )
 
     async def run(self, request: NameCleaningRequest) -> NameCleaningResponse:
-        items: list[CleanedMenuItem] = []
         warnings = list(request.warnings)
-
-        for source in sorted(request.items, key=lambda item: item.source_index):
-            outcome = clean_menu_name(source.raw_menu_name)
-            item = _to_cleaned_item(source, outcome)
-            if outcome.warning_code is not None:
-                warnings.append(
-                    _warning(outcome.warning_code, source.item_id, forces_caution=False)
+        llm_slots = asyncio.Semaphore(self._max_concurrent_llm_calls)
+        outcomes = await asyncio.gather(
+            *(
+                self._clean_item(source, llm_slots)
+                for source in sorted(
+                    request.items, key=lambda item: item.source_index
                 )
-            if (
-                item.cleaning_status != "invalid"
-                and source.ocr_confidence < self._low_ocr_confidence_threshold
-            ):
-                warnings.append(
-                    _warning("low_ocr_confidence", source.item_id, forces_caution=True)
-                )
-
-            if self._resolver is not None and _needs_multilingual_resolution(item, outcome):
-                try:
-                    resolver_input = NameResolutionInput(
-                        display_name=item.display_name,
-                        normalized_menu_name=item.normalized_menu_name,
-                        locale_hint=item.locale_hint,
-                        residual_tokens=item.residual_tokens,
-                    )
-                    resolved = await self._resolver.resolve_name(resolver_input)
-                    if _valid_name_resolution(
-                        item, resolved.normalized_menu_name, resolved.confidence
-                    ):
-                        item = item.model_copy(
-                            update={
-                                "normalized_menu_name": _compact(
-                                    resolved.normalized_menu_name
-                                ).casefold(),
-                                "cleaning_status": "cleaned",
-                            }
-                        )
-                    else:
-                        warnings.append(
-                            _warning("name_llm_failed", source.item_id, forces_caution=False)
-                        )
-                except Exception:
-                    warnings.append(
-                        _warning("name_llm_failed", source.item_id, forces_caution=False)
-                    )
+            )
+        )
+        items: list[CleanedMenuItem] = []
+        for item, item_warnings in outcomes:
             items.append(item)
+            warnings.extend(item_warnings)
 
         return NameCleaningResponse(
             context=request.context,
@@ -186,6 +162,57 @@ class NameCleaningAgent:
             warnings=_dedupe_warnings(warnings),
             errors=list(request.errors),
         )
+
+    async def _clean_item(
+        self,
+        source: OcrMenuItem,
+        llm_slots: asyncio.Semaphore,
+    ) -> tuple[CleanedMenuItem, list[NodeWarning]]:
+        warnings: list[NodeWarning] = []
+        outcome = clean_menu_name(source.raw_menu_name)
+        item = _to_cleaned_item(source, outcome)
+        if outcome.warning_code is not None:
+            warnings.append(
+                _warning(outcome.warning_code, source.item_id, forces_caution=False)
+            )
+        if (
+            item.cleaning_status != "invalid"
+            and source.ocr_confidence < self._low_ocr_confidence_threshold
+        ):
+            warnings.append(
+                _warning("low_ocr_confidence", source.item_id, forces_caution=True)
+            )
+
+        if self._resolver is not None and _needs_multilingual_resolution(item, outcome):
+            try:
+                async with llm_slots:
+                    resolver_input = NameResolutionInput(
+                        display_name=item.display_name,
+                        normalized_menu_name=item.normalized_menu_name,
+                        locale_hint=item.locale_hint,
+                        residual_tokens=item.residual_tokens,
+                    )
+                    resolved = await self._resolver.resolve_name(resolver_input)
+                if _valid_name_resolution(
+                    item, resolved.normalized_menu_name, resolved.confidence
+                ):
+                    item = item.model_copy(
+                        update={
+                            "normalized_menu_name": _compact(
+                                resolved.normalized_menu_name
+                            ).casefold(),
+                            "cleaning_status": "cleaned",
+                        }
+                    )
+                else:
+                    warnings.append(
+                        _warning("name_llm_failed", source.item_id, forces_caution=False)
+                    )
+            except Exception:
+                warnings.append(
+                    _warning("name_llm_failed", source.item_id, forces_caution=False)
+                )
+        return item, warnings
 
 
 def _canonicalize_text(text: str) -> str:

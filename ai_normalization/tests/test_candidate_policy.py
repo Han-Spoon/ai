@@ -22,12 +22,17 @@ def candidate(menu_id: int, score: float, match_type: str = "fuzzy") -> dict:
 
 
 def selection_item(
-    candidates: list[dict], *, status: str = "ok", normalized_name: str | None = "김치찌개"
+    candidates: list[dict],
+    *,
+    status: str = "ok",
+    normalized_name: str | None = "김치찌개",
+    index: int = 0,
+    raw_name: str = "김치 찌개",
 ) -> dict:
     return {
-        "item_id": "scan-123:0",
-        "source_index": 0,
-        "raw_menu_name": "김치 찌개",
+        "item_id": f"scan-123:{index}",
+        "source_index": index,
+        "raw_menu_name": raw_name,
         "normalized_menu_name": normalized_name,
         "display_name": "김치 찌개",
         "description": "돼지고기가 들어간 찌개",
@@ -44,6 +49,10 @@ def selection_item(
 
 
 def request(item: dict, *, store_id=None) -> CandidateSelectionRequest:
+    return request_many([item], store_id=store_id)
+
+
+def request_many(items: list[dict], *, store_id=None) -> CandidateSelectionRequest:
     context = {
         "schema_version": "3.0",
         "trace_id": TRACE_ID,
@@ -53,7 +62,7 @@ def request(item: dict, *, store_id=None) -> CandidateSelectionRequest:
         "item_id": None,
     }
     return CandidateSelectionRequest.model_validate(
-        {"context": context, "items": [item], "warnings": [], "errors": []}
+        {"context": context, "items": items, "warnings": [], "errors": []}
     )
 
 
@@ -126,6 +135,27 @@ class OutsideResolver:
         )
 
 
+class ConcurrentCandidateResolver:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def resolve_candidate(self, item):
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0)
+            if item.raw_menu_name == "Fail":
+                raise RuntimeError("resolver failure")
+            return CandidateResolution(
+                selected_menu_id=2,
+                confidence=0.93,
+                reason_code="description_supports_candidate",
+            )
+        finally:
+            self.active -= 1
+
+
 def test_llm_may_select_only_an_existing_candidate() -> None:
     source = selection_item([candidate(1, 0.91), candidate(2, 0.87)])
     resolver = ValidResolver()
@@ -152,6 +182,37 @@ def test_llm_may_select_only_an_existing_candidate() -> None:
     assert rejected.items[0].normalization_status == "ambiguous"
     assert rejected.items[0].selected_candidate is None
     assert any(warning.code == "invalid_llm_candidate" for warning in rejected.warnings)
+
+
+def test_candidate_llm_calls_are_bounded_ordered_and_failure_isolated() -> None:
+    candidates = [candidate(1, 0.91), candidate(2, 0.87)]
+    resolver = ConcurrentCandidateResolver()
+    source = [
+        selection_item(candidates, index=2, raw_name="Burger"),
+        selection_item(candidates, index=0, raw_name="Chicken"),
+        selection_item(candidates, index=1, raw_name="Fail"),
+    ]
+
+    response = asyncio.run(
+        CandidateSelectionAgent(resolver, max_concurrent_llm_calls=2).run(
+            request_many(source)
+        )
+    )
+
+    assert resolver.max_active == 2
+    assert [value.source_index for value in response.items] == [0, 1, 2]
+    assert response.items[0].normalization_status == "normalized"
+    assert response.items[1].normalization_status == "ambiguous"
+    assert response.items[1].selection_reason_codes == [
+        "multiple_close_candidates",
+        "llm_failed",
+    ]
+    assert response.items[2].normalization_status == "normalized"
+    assert any(
+        warning.code == "candidate_llm_failed"
+        and warning.item_id == "scan-123:1"
+        for warning in response.warnings
+    )
 
 
 def test_contract_rejects_more_than_five_or_unsorted_candidates() -> None:

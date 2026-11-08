@@ -547,6 +547,7 @@ def select_candidate(item):
 - 사전은 요청마다 파일을 읽지 않고 애플리케이션 시작 시 immutable 구조로 로드한다.
 - exact·alias DB 인덱스를 먼저 사용하고 fuzzy는 필요한 이름에만 수행한다.
 - LLM은 정확 후보·후보 없음·문맥 없음에는 호출하지 않는다.
+- ②-A·②-B의 필요한 LLM 호출은 요청 안에서 병렬 실행하되 동시에 최대 10개까지만 실행한다. 한 메뉴의 timeout·실패는 그 메뉴의 규칙 결과로만 되돌리고 다른 메뉴 호출을 취소하지 않는다.
 - ②-A LLM 캐시는 `cleaned_name + locale_hint + dictionary_version + model_version`, ②-B 캐시는 `item context hash + ordered candidate IDs/scores + policy_version + model_version`을 키로 삼을 수 있다.
 - 캐시는 결과 재사용 최적화일 뿐 계약의 정본이 아니다. 실패하면 동일 규칙으로 재계산한다.
 - 모든 응답은 `source_index`로 정렬하고 병렬 완료 순서를 출력 순서로 쓰지 않는다.
@@ -562,6 +563,7 @@ ai_normalization/
 ├── cleaning.py        # NFKC·장식·가격·옵션·표기 사전
 ├── option_rules.py    # 크기/인분/조리/재료 옵션 분류
 ├── candidate_policy.py# §4의 순수 판정 함수
+├── _concurrency.py    # 요청 단위 LLM 동시 실행 상한
 ├── openai_resolver.py # Responses API 구조화 LLM adapter
 ├── evaluation.py      # API 호출 없는 고정 검증셋 지표·JSONL CLI
 ├── dictionaries/      # `2026-11-v1` 표기·헤더·다국어 사전
@@ -640,6 +642,7 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 17 | 다국어 별칭 사전 적중 | LLM 없이 한국어 검색명 생성 |
 | 18 | 메뉴 20개 중 정확 후보 18개 | LLM은 나머지 문맥 있는 모호 항목에만 호출 |
 | 19 | 입력 순서와 비동기 완료 순서가 다름 | 출력은 `source_index` 순서 |
+| 19-a | LLM 대상 메뉴가 10개를 넘음 | 요청 안에서 동시에 최대 10개 실행, 한 메뉴 실패는 다른 메뉴에 영향 없음 |
 | 20 | ②-B 선택 후보 | `selected_candidate`가 입력 후보와 값까지 동일 |
 | 21 | 유효 메뉴의 OCR confidence 0.64 | `low_ocr_confidence`, `forces_caution: true` |
 | 22 | `02-123-4567`, `영업시간 09:00~21:00` | `invalid_menu_text`, `invalid` |
