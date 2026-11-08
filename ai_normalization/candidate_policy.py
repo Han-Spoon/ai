@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from ai_supervisor.contracts.common import NodeWarning
 
+from ._concurrency import (
+    DEFAULT_MAX_CONCURRENT_LLM_CALLS,
+    validate_max_concurrent_llm_calls,
+)
 from .contracts import (
     CandidateResolver,
     CandidateResolutionCandidate,
@@ -42,16 +47,27 @@ class CandidateSelectionAgent:
         self,
         resolver: CandidateResolver | None = None,
         policy: CandidatePolicy | None = None,
+        max_concurrent_llm_calls: int = DEFAULT_MAX_CONCURRENT_LLM_CALLS,
     ) -> None:
         self._resolver = resolver
         self._policy = policy or CandidatePolicy()
+        self._max_concurrent_llm_calls = validate_max_concurrent_llm_calls(
+            max_concurrent_llm_calls
+        )
 
     async def run(self, request: CandidateSelectionRequest) -> CandidateSelectionResponse:
-        results: list[CandidateSelectionResult] = []
+        llm_slots = asyncio.Semaphore(self._max_concurrent_llm_calls)
+        outcomes = await asyncio.gather(
+            *(
+                self._select(item, llm_slots)
+                for item in sorted(
+                    request.items, key=lambda value: value.source_index
+                )
+            )
+        )
+        results = [result for result, _ in outcomes]
         warnings = list(request.warnings)
-        for item in sorted(request.items, key=lambda value: value.source_index):
-            result, item_warnings = await self._select(item)
-            results.append(result)
+        for _, item_warnings in outcomes:
             warnings.extend(item_warnings)
         return CandidateSelectionResponse(
             context=request.context,
@@ -61,7 +77,9 @@ class CandidateSelectionAgent:
         )
 
     async def _select(
-        self, item: CandidateSelectionItem
+        self,
+        item: CandidateSelectionItem,
+        llm_slots: asyncio.Semaphore,
     ) -> tuple[CandidateSelectionResult, list[NodeWarning]]:
         if not item.normalized_menu_name:
             return _result(item, "invalid", "none", ["invalid_input"]), []
@@ -128,7 +146,8 @@ class CandidateSelectionAgent:
                     for candidate in item.match_candidates
                 ],
             )
-            resolution = await self._resolver.resolve_candidate(resolver_input)
+            async with llm_slots:
+                resolution = await self._resolver.resolve_candidate(resolver_input)
         except Exception:
             warnings.extend(_ambiguity_warnings(item, base_reason))
             warnings.append(

@@ -64,7 +64,6 @@ class CreateOwnerVerificationRequestPayload(StrictModel):
     reason_codes: list[
         Literal[
             "insufficient_recipe_evidence",
-            "anomaly",
             "no_information",
             "high_risk_review",
             "ambiguous_menu",
@@ -159,9 +158,6 @@ class SaveWebSearchCachePayload(StrictModel):
     original_menu_name: NonEmptyString
     search_status: Literal["searched", "unresolved"]
     sources: list[WebSource]
-    # No longer filled: ⑥ stores no search rank (10/27 meeting, #340). Optional only
-    # until ⑦ stops reading it; then remove.
-    next_rank: PositiveInt | None = None
     searched_at: datetime
 
     @field_validator("searched_at")

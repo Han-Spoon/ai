@@ -146,6 +146,9 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
         _validate_candidate_response(request, response)
         return {
             "candidate_selection_response": response,
+            "item_analyzer": _item_analyzer_for_request(
+                dependencies.item_analyzer
+            ),
             "warnings": list(response.warnings),
             "errors": list(response.errors),
         }
@@ -154,7 +157,13 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
         state: JudgeState, runtime: Runtime[RunContext]
     ) -> list[Send]:
         return [
-            Send("analyze_item", {"item_task": task})
+            Send(
+                "analyze_item",
+                {
+                    "item_task": task,
+                    "item_analyzer": state["item_analyzer"],
+                },
+            )
             for task in _build_item_tasks(state, runtime.context)
         ]
 
@@ -163,7 +172,7 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
     ) -> dict[str, Any]:
         task = state["item_task"]
         try:
-            output = await dependencies.item_analyzer.run(task, runtime.context)
+            output = await state["item_analyzer"].run(task, runtime.context)
         except ItemAnalysisError as error:
             output = _fallback_item_output(task, error)
         _validate_item_output(task, output, runtime.context)
@@ -352,12 +361,18 @@ def build_judge_graph(dependencies: JudgeDependencies) -> Any:
     return graph.compile(checkpointer=False, name="judge_graph")
 
 
+def _item_analyzer_for_request(item_analyzer: ItemAnalyzer) -> ItemAnalyzer:
+    factory = getattr(item_analyzer, "for_request", None)
+    if callable(factory):
+        return factory()
+    return item_analyzer
+
+
 _REVIEW_PRIORITY = {
-    "anomaly": 0,
-    "unknown_tag": 1,
-    "no_information": 2,
-    "partial_information": 3,
-    "insufficient_web_sources": 4,
+    "unknown_tag": 0,
+    "no_information": 1,
+    "partial_information": 2,
+    "insufficient_web_sources": 3,
 }
 
 

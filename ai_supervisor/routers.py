@@ -34,12 +34,9 @@ def route_item_start(
 def route_after_exact(
     response: ExactFeedbackResponse,
 ) -> Literal["tag_lookup", "ontology"]:
-    """Skip the heavy path only when every confirmation is eligible and complete."""
+    """Skip the heavy path when every owner target has a known answer."""
 
-    complete = response.completeness == "complete" and all(
-        confirmation.override_eligible for confirmation in response.confirmations
-    )
-    return "tag_lookup" if complete else "ontology"
+    return "tag_lookup" if response.completeness == "complete" else "ontology"
 
 
 def route_after_ontology(

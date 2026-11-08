@@ -33,7 +33,6 @@ RiskLevel = Literal["danger", "caution", "safe"]
 EvidenceBasis = Literal["confirmed", "estimated", "unknown"]
 InformationStatus = Literal["complete", "partial", "none"]
 ReviewReason = Literal[
-    "anomaly",
     "unknown_tag",
     "no_information",
     "partial_information",
@@ -52,7 +51,7 @@ class ConfirmedResult(StrictModel):
     constraint_tags: list[ConstraintTag]
     role: IngredientRole | None
     status: IngredientStatus
-    override_eligible: StrictBool
+    override_eligible: StrictBool | None = None
     evidence_refs: list[NonEmptyString]
 
     @model_validator(mode="before")

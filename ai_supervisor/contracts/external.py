@@ -504,7 +504,6 @@ class OwnerCard(StrictModel):
     reason_codes: list[
         Literal[
             "insufficient_recipe_evidence",
-            "anomaly",
             "no_information",
             "high_risk_review",
             "ambiguous_menu",
@@ -561,7 +560,6 @@ class ResultOwnerCard(StrictModel):
     reason_codes: list[
         Literal[
             "insufficient_recipe_evidence",
-            "anomaly",
             "no_information",
             "high_risk_review",
             "ambiguous_menu",

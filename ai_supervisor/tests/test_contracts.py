@@ -13,7 +13,11 @@ from ai_supervisor.contracts import (
 )
 from ai_supervisor.contracts.common import Confirmation, NodeWarning
 from ai_supervisor.contracts.db_update import CreateOwnerVerificationRequestPayload
-from ai_supervisor.contracts.decision import ConfirmedResult, DecisionRequest
+from ai_supervisor.contracts.decision import (
+    ConfirmedResult,
+    DecisionRequest,
+    HighRiskReview,
+)
 from ai_supervisor.contracts.external import ExactFeedbackData, OwnerCard, ResultOwnerCard
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
@@ -382,6 +386,68 @@ def test_removed_owner_fields_are_not_in_canonical_schemas() -> None:
         "round"
         not in CreateOwnerVerificationRequestPayload.model_json_schema()["properties"]
     )
+
+
+def test_legacy_anomaly_and_override_fields_are_optional() -> None:
+    owner_evidence = {
+        "evidence_id": "owner:101",
+        "evidence_class": "hard",
+        "source_type": "owner_feedback",
+        "source_ref": "owner:101",
+        "verification_status": "approved",
+        "reliability_weight": 1.0,
+        "observed_at": "2026-10-26T01:00:00Z",
+    }
+    confirmation = Confirmation.model_validate(
+        {
+            "ingredient": {
+                "ingredient_id": 101,
+                "canonical_name": "돼지고기",
+            },
+            "constraint_tags": [],
+            "status": "present",
+            "evidence": owner_evidence,
+        }
+    )
+    confirmed = ConfirmedResult.model_validate(
+        {
+            "ingredient": confirmation.ingredient,
+            "constraint_tags": [],
+            "role": None,
+            "status": "present",
+            "evidence_refs": ["owner:101"],
+        }
+    )
+
+    assert confirmation.flagged_anomaly is None
+    assert confirmation.override_eligible is None
+    assert confirmed.override_eligible is None
+
+
+def test_anomaly_is_not_an_owner_card_or_review_reason() -> None:
+    card = {
+        "item_id": "scan-123:0",
+        "card_id": "card:scan-123:0:ingredient-101",
+        "menu_id": 1001,
+        "ingredient": {"ingredient_id": 101, "canonical_name": "돼지고기"},
+        "ambiguity_flag": None,
+        "constraint_tags": [],
+        "question": {"ko": "이 메뉴에 돼지고기가 들어가나요?"},
+        "reason_codes": ["anomaly"],
+        "evidence_refs": [],
+    }
+    with pytest.raises(ValidationError, match="reason_codes"):
+        OwnerCard.model_validate(card)
+    with pytest.raises(ValidationError, match="reason_codes"):
+        ResultOwnerCard.model_validate(card)
+    with pytest.raises(ValidationError, match="reason_codes"):
+        CreateOwnerVerificationRequestPayload.model_validate(
+            {**card, "recipe_probability": None}
+        )
+    with pytest.raises(ValidationError, match="reason_code"):
+        HighRiskReview.model_validate(
+            {"required": True, "reason_code": "anomaly"}
+        )
 
 
 def test_old_single_round_defaults_are_input_only() -> None:

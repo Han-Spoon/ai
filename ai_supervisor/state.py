@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypedDict
 from uuid import UUID
@@ -46,18 +47,35 @@ def merge_signals(
 
 
 def merge_evidence(current: list[EvidenceRef], update: list[EvidenceRef]) -> list[EvidenceRef]:
-    """Merge evidence by ID and reject contradictory duplicate definitions."""
+    """Merge evidence by stable source identity.
+
+    The same web recipe may be collected for more than one menu at slightly
+    different times.  Those observations intentionally share an evidence ID;
+    keep the first canonical value when the ID and source boundary agree.  An
+    ID reused for a different source is still an invariant violation.
+    """
 
     merged = list(current)
     by_id = {evidence.evidence_id: evidence for evidence in current}
     for evidence in update:
         previous = by_id.get(evidence.evidence_id)
-        if previous is not None and previous != evidence:
+        if previous is not None and _evidence_identity(previous) != _evidence_identity(
+            evidence
+        ):
             raise ValueError(f"conflicting evidence_id: {evidence.evidence_id}")
         if previous is None:
             merged.append(evidence)
             by_id[evidence.evidence_id] = evidence
     return merged
+
+
+def _evidence_identity(evidence: EvidenceRef) -> tuple[str, str, str, str]:
+    return (
+        evidence.evidence_id,
+        evidence.source_ref,
+        evidence.evidence_class,
+        evidence.source_type,
+    )
 
 
 def merge_commands(
@@ -221,6 +239,7 @@ def merge_item_updates(
 
 class ItemState(TypedDict, total=False):
     task: ItemTask
+    web_search_slots: asyncio.Semaphore
     route: Literal["exact_only", "db_bayes", "db_variant_bayes", "web_bayes", "no_information"]
     candidate_response: Any
     exact_response: Any
@@ -251,6 +270,7 @@ class JudgeState(TypedDict, total=False):
     locale: Locale
     bundle_hash: str
     candidate_selection_response: Any
+    item_analyzer: Any
     item_task: ItemTask
     item_updates: Annotated[list[ItemAnalysisOutput], merge_item_updates]
     ordered_items: list[ItemResult]

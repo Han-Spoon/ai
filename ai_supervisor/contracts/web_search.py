@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import StrictBool, model_validator
+from pydantic import Field, StrictBool, model_validator
 
-from ._validation import require_item_context
+from ._validation import ensure_unique, require_item_context
 from .bayesian import BayesianIngredient
 from .common import (
     ConstraintTag,
@@ -105,12 +105,23 @@ class ReviewNote(StrictModel):
     message: NonEmptyString
 
 
+class RecipeSignal(StrictModel):
+    evidence_id: NonEmptyString
+    code: Literal[
+        "other_dish_suspected",
+        "title_mismatch",
+        "unmapped_ingredient",
+    ]
+    message: NonEmptyString
+
+
 class WebAggregateResponse(StrictModel):
     context: NodeContext
     menu: WebMenu
     found: StrictBool
     ingredients: list[BayesianIngredient]
     review_notes: list[ReviewNote]
+    recipe_signals: list[RecipeSignal] = Field(default_factory=list)
     warnings: list[NodeWarning]
     errors: list[NodeError]
 
@@ -125,4 +136,8 @@ class WebAggregateResponse(StrictModel):
             raise ValueError("WebAggregate ingredients must not be curated")
         if any(item.observation_basis != "direct" for item in self.ingredients):
             raise ValueError("WebAggregate ingredients must use direct observations")
+        ensure_unique(
+            [(signal.evidence_id, signal.code) for signal in self.recipe_signals],
+            "web recipe signal evidence/code pairs",
+        )
         return self

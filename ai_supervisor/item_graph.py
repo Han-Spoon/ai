@@ -113,26 +113,48 @@ class ItemGraphAnalyzer:
 
     def __init__(self, dependencies: ItemGraphDependencies) -> None:
         self.graph = build_item_graph(dependencies)
+        self._max_concurrent_web_searches = (
+            dependencies.max_concurrent_web_searches
+        )
+
+    def for_request(self) -> "ItemGraphRun":
+        """Create one lightweight run scope shared only by one Judge request."""
+
+        return ItemGraphRun(
+            graph=self.graph,
+            web_search_slots=asyncio.Semaphore(
+                self._max_concurrent_web_searches
+            ),
+        )
 
     async def run(
         self, task: ItemTask, context: RunContext
     ) -> ItemAnalysisOutput:
-        result = await self.graph.ainvoke({"task": task}, context=context)
+        return await self.for_request().run(task, context)
+
+
+@dataclass(frozen=True)
+class ItemGraphRun:
+    """Request-scoped Item Graph resources shared by one Judge fan-out."""
+
+    graph: Any
+    web_search_slots: asyncio.Semaphore
+
+    async def run(
+        self, task: ItemTask, context: RunContext
+    ) -> ItemAnalysisOutput:
+        result = await self.graph.ainvoke(
+            {
+                "task": task,
+                "web_search_slots": self.web_search_slots,
+            },
+            context=context,
+        )
         return result["analysis_output"]
 
 
 def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
     """Compile the documented DB, runtime-variant, and web paths."""
-
-    web_search_slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
-
-    def current_web_search_slots() -> asyncio.Semaphore:
-        loop = asyncio.get_running_loop()
-        if loop not in web_search_slots:
-            web_search_slots[loop] = asyncio.Semaphore(
-                dependencies.max_concurrent_web_searches
-            )
-        return web_search_slots[loop]
 
     def prepare_item_node(
         state: ItemState, runtime: Runtime[RunContext]
@@ -237,8 +259,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         eligible = [
             confirmation
             for confirmation in (exact.confirmations if exact else [])
-            if confirmation.override_eligible
-            and confirmation.status in {"present", "absent"}
+            if confirmation.status in {"present", "absent"}
         ]
         request = OntologyRequest(
             context=context,
@@ -383,7 +404,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             warnings=_dedupe_signals(warnings),
             errors=list(state.get("errors", [])),
         )
-        async with current_web_search_slots():
+        async with state["web_search_slots"]:
             response = await dependencies.web_collect.run(request)
         _validate_web_collect_response(request, response)
         combined_sources = [*request.cached_sources, *response.sources]
@@ -519,18 +540,38 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             menu_id=None,
             normalized_menu_name=task.prepared_item.normalized_menu_name,
         )
-        operations = [
-            DbOperation(
-                operation_id=f"operation:{task.prepared_item.item_id}:web-review",
-                operation_type="create_review_item",
-                payload=CreateReviewItemPayload(
-                    review_origin="web_search",
-                    menu=menu,
-                    web_sources=list(collect.sources),
-                    review_notes=list(aggregate.review_notes),
-                    variant_suggestion=None,
-                ),
-            ),
+        signaled_evidence_ids = {
+            signal.evidence_id for signal in aggregate.recipe_signals
+        }
+        if "recipe_signals" not in aggregate.model_fields_set:
+            # Transition fallback: the current ⑥ implementation still omits the
+            # new field. Keep the previous review-all behavior until it starts
+            # explicitly returning either signals or an empty list.
+            review_sources = list(collect.sources)
+        else:
+            review_sources = [
+                source
+                for source in collect.sources
+                if source.evidence.evidence_id in signaled_evidence_ids
+        ]
+        operations: list[DbOperation] = []
+        if review_sources:
+            operations.append(
+                DbOperation(
+                    operation_id=(
+                        f"operation:{task.prepared_item.item_id}:web-review"
+                    ),
+                    operation_type="create_review_item",
+                    payload=CreateReviewItemPayload(
+                        review_origin="web_search",
+                        menu=menu,
+                        web_sources=review_sources,
+                        review_notes=list(aggregate.review_notes),
+                        variant_suggestion=None,
+                    ),
+                )
+            )
+        operations.append(
             DbOperation(
                 operation_id=f"operation:{task.prepared_item.item_id}:web-cache",
                 operation_type="save_web_search_cache",
@@ -541,8 +582,8 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     sources=list(collect.sources),
                     searched_at=dependencies.now_factory(),
                 ),
-            ),
-        ]
+            )
+        )
         return {
             "operations": [
                 PendingDbOperation(
@@ -711,7 +752,13 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     constraint_tags=tagged.constraint_tags,
                     role=tagged.role,
                     status=confirmation.status,
-                    override_eligible=confirmation.override_eligible,
+                    # Compatibility field for ⑧ during the contract transition.
+                    # Known owner answers always override, regardless of legacy flags.
+                    override_eligible=(
+                        True
+                        if confirmation.status in {"present", "absent"}
+                        else confirmation.override_eligible
+                    ),
                     evidence_refs=[confirmation.evidence.evidence_id],
                 )
             )
@@ -771,7 +818,20 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             ],
             menu_ambiguity_flags=_menu_ambiguity_flags(task, ontology),
             flag_confirmations=(
-                list(exact.flag_confirmations) if exact else []
+                [
+                    confirmation.model_copy(
+                        update={
+                            "override_eligible": (
+                                True
+                                if confirmation.status in {"present", "absent"}
+                                else confirmation.override_eligible
+                            )
+                        }
+                    )
+                    for confirmation in exact.flag_confirmations
+                ]
+                if exact
+                else []
             ),
             no_information=state.get("route") == "no_information",
             information_status=_information_status(
@@ -1121,6 +1181,18 @@ def _validate_web_aggregate_response(
     _validate_response_signals(request, response, "Web aggregate")
     if response.menu != request.menu:
         raise ItemGraphInvariantError("Web aggregate changed menu identity")
+    new_evidence_ids = {
+        source.evidence_id
+        for source in request.mapped_sources
+        if source.source_origin == "new"
+    }
+    if any(
+        signal.evidence_id not in new_evidence_ids
+        for signal in response.recipe_signals
+    ):
+        raise ItemGraphInvariantError(
+            "Web aggregate recipe signals must resolve to new web sources"
+        )
 
 
 def _unique_ingredient_names(sources: list[WebSource]) -> list[str]:

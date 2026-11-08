@@ -168,6 +168,23 @@ class EnglishNameResolver:
         return NameResolution(normalized_menu_name="치킨", confidence=0.99)
 
 
+class ConcurrentNameResolver:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def resolve_name(self, item):
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0)
+            if item.display_name == "Fail":
+                raise RuntimeError("resolver failure")
+            return NameResolution(normalized_menu_name="번역메뉴", confidence=0.99)
+        finally:
+            self.active -= 1
+
+
 def test_llm_cannot_delete_korean_ingredient_tokens() -> None:
     payload = {
         "context": context(),
@@ -200,6 +217,40 @@ def test_unknown_latin_name_uses_minimal_resolver_input() -> None:
         "locale_hint",
         "residual_tokens",
     }
+
+
+def test_name_llm_calls_are_bounded_ordered_and_failure_isolated() -> None:
+    resolver = ConcurrentNameResolver()
+    payload = {
+        "context": context(),
+        "items": [
+            item(2, "Burger", locale="en"),
+            item(0, "Chicken", locale="en"),
+            item(1, "Fail", locale="en"),
+        ],
+        "warnings": [],
+        "errors": [],
+    }
+
+    response = asyncio.run(
+        NameCleaningAgent(resolver, max_concurrent_llm_calls=2).run(
+            NameCleaningRequest.model_validate(payload)
+        )
+    )
+
+    assert resolver.max_active == 2
+    assert [value.source_index for value in response.items] == [0, 1, 2]
+    assert response.items[0].normalized_menu_name == "번역메뉴"
+    assert response.items[1].normalized_menu_name == "fail"
+    assert response.items[2].normalized_menu_name == "번역메뉴"
+    assert [warning.item_id for warning in response.warnings] == ["scan-123:1"]
+    assert response.warnings[0].code == "name_llm_failed"
+
+
+@pytest.mark.parametrize("value", [0, 11, True, 1.5])
+def test_name_llm_concurrency_must_be_between_one_and_ten(value) -> None:
+    with pytest.raises(ValueError, match="between 1 and 10"):
+        NameCleaningAgent(max_concurrent_llm_calls=value)
 
 
 def test_configured_low_ocr_confidence_is_a_safety_warning() -> None:
