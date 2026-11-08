@@ -87,7 +87,23 @@ def tags(response):
 
 def test_seed_matches_db_export():
     g = seed().graph
-    assert (len(g.ingredients), len(g.compositions)) == (324, 101)
+    # 324 ingredients as loaded; 101 edges minus 9 from dish-parent rules (김밥→밥 etc.)
+    assert (len(g.ingredients), len(g.compositions)) == (324, 92)
+
+
+def test_no_composition_hangs_under_a_dish_turned_raw_ingredient():
+    # 김밥→밥, 열무김치→열무, 김칫잎→김 made "fish cake in rice" before the fix
+    s = seed()
+    for parent, child in [("밥", "맛살"), ("밥", "햄"), ("열무", "새우젓"), ("김", "멸치액젓"), ("조개", "생선")]:
+        assert (parent, child) not in s.edges
+
+
+def test_rice_and_seaweed_carry_no_seafood_tags():
+    s = seed()
+    from ai_ontology import lookup_tags
+    out = lookup_tags([s.id["밥"], s.id["김"], s.id["열무"]], s.graph, "x")
+    for name in ("밥", "김", "열무"):
+        assert not {"is_fish", "is_shellfish"} & set(out.tags[s.id[name]]), name
 
 
 # ── 메뉴별 시나리오 ──────────────────────────────────────────────
