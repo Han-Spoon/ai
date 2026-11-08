@@ -58,6 +58,14 @@ python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-p
 
 정규화 규칙(`normalize_ingredients.py`)이나 태그 사전(`ai_ruleengine/constants.py`)을 바꾸면 DB 시드도 다시 만들어 백엔드에 적재해야 합니다. 그대로 두면 룰엔진과 DB의 태그·재료 이름이 달라집니다 (④ §2-6).
 
+```bash
+python crawling/db_seed.py --out <폴더>   # 테이블마다 CSV 하나
+```
+
+- 재료 번호는 이름 가나다순이라, 원천이 같으면 이전 적재와 같은 번호가 나온다.
+- **음식이 부모인 숨은 재료 규칙은 구성 관계로 넣지 않는다** (2026-11). 부모 이름을 표준 재료명으로 맞추면 음식이 원재료로 바뀌어(김밥 → 밥, 열무김치 → 열무, 김칫잎 → 김) "밥 안에 맛살" 같은 구성이 생긴다. 부모 이름이 바뀌고 바뀐 이름의 분류가 `base`·`garnish`이면 그 규칙을 뺀다. 재료 마스터에는 그대로 남아 번호가 바뀌지 않는다.
+- `ingredients.name_i18n`(번역)은 이 스크립트가 만들지 않는다. 아래 표의 번역 CSV로 따로 채운다.
+
 | DB 테이블 | 원천 |
 |---|---|
 | `menu_categories`, `menus`, `recipe_ingredients` | `ai_ruleengine/data/menus.csv` (큐레이션 레시피) |
