@@ -8,7 +8,6 @@ auto registration come from fixed rules, words included; no LLM rewrites them (�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 from urllib.parse import urlparse
 
 from ai_supervisor.contracts.bayesian import BayesianIngredient
@@ -17,6 +16,7 @@ from ai_supervisor.contracts.ontology import IngredientObservation
 from ai_supervisor.contracts.web_search import (
     MappedIngredient,
     MappedSource,
+    RecipeSignal,
     ReviewNote,
     WebAggregateRequest,
     WebAggregateResponse,
@@ -33,25 +33,13 @@ OTHER_DISH_MISSING_SHARE = 0.8
 IngredientKey = tuple[str, int | str]
 
 
-SignalCode = Literal["other_dish_suspected", "title_mismatch", "unmapped_ingredient"]
-
-
-@dataclass(frozen=True)
-class RecipeSignal:
-    """One new recipe the operator should look at before it is registered (§5)."""
-
-    evidence_id: str
-    code: SignalCode
-    message: str
-
-
 @dataclass(frozen=True)
 class AggregateOutcome:
     found: bool
     ingredients: list[BayesianIngredient]
     review_notes: list[ReviewNote]
     warnings: list[NodeWarning]
-    # Not in the ⓪ contract yet (⑥ §7): ``WebAggregateResponse`` has no per-recipe field.
+    # One entry per new recipe and signal; only these recipes go to the operator (§5).
     recipe_signals: list[RecipeSignal]
 
 
@@ -301,6 +289,9 @@ class WebAggregateAgent:
             found=outcome.found,
             ingredients=outcome.ingredients,
             review_notes=outcome.review_notes,
+            # Always sent, even empty: an empty list tells ⓪ no recipe needs the
+            # operator, while an omitted field makes ⓪ send every new recipe (⓪ §4-6).
+            recipe_signals=outcome.recipe_signals,
             warnings=[*request.warnings, *outcome.warnings],
             errors=list(request.errors),
         )

@@ -60,7 +60,7 @@ def confirmed(
     tags: list[str],
     status: str = "present",
     *,
-    eligible: bool = True,
+    eligible: bool | None = True,
     role: str | None = None,
 ) -> ConfirmedResult:
     return ConfirmedResult(
@@ -93,7 +93,7 @@ def probability(
     )
 
 
-def flag_answer(tags: list[str], status: str, *, eligible: bool = True) -> FlagConfirmation:
+def flag_answer(tags: list[str], status: str, *, eligible: bool | None = True) -> FlagConfirmation:
     return FlagConfirmation(
         ambiguity_flag="has_unclear_jeotgal",
         constraint_tags=tags,
@@ -268,16 +268,18 @@ def test_07_unknown_status_is_not_absent() -> None:
     assert outcome.risk_level == "caution"
 
 
-def test_08_ineligible_answer_does_not_cover_probability() -> None:
+@pytest.mark.parametrize("legacy", [False, None])
+def test_08_owner_answer_covers_probability_whatever_the_legacy_flag(legacy) -> None:
+    # ⓪ #368: override_eligible is optional and no longer decides hard evidence.
     outcome = decide(
         request(
             HALAL,
-            confirmed_results=[confirmed(PORK, ["is_pork"], "absent", eligible=False)],
+            confirmed_results=[confirmed(PORK, ["is_pork"], "absent", eligible=legacy)],
             probability_results=[probability(PORK, ["is_pork"], 0.8)],
         )
     )
-    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
-    assert outcome.risk_ingredients[0].posterior_mean == 0.8
+    assert (outcome.risk_level, outcome.evidence_basis) == ("safe", "confirmed")
+    assert outcome.risk_ingredients == []
 
 
 def test_09_partial_information_is_never_safe() -> None:
@@ -413,16 +415,29 @@ def test_23_present_answer_with_unknown_tag_mix_is_not_danger() -> None:
     assert outcome.risk_level == "caution"
 
 
-def test_ineligible_flag_answer_does_not_resolve() -> None:
+@pytest.mark.parametrize("legacy", [False, None])
+def test_flag_answer_resolves_whatever_the_legacy_flag(legacy) -> None:
     outcome = decide(
         request(
             FISH_ALLERGY,
             confirmed_results=KIMCHI_STEW_CONFIRMED,
             flags=["has_unclear_jeotgal"],
-            flag_answers=[flag_answer(["is_fish"], "absent", eligible=False)],
+            flag_answers=[flag_answer(["is_fish"], "absent", eligible=legacy)],
         )
     )
-    assert outcome.risk_level == "caution"
+    assert outcome.risk_level == "safe"
+
+
+def test_flag_answer_present_is_danger_without_legacy_flag() -> None:
+    outcome = decide(
+        request(
+            FISH_ALLERGY,
+            confirmed_results=KIMCHI_STEW_CONFIRMED,
+            flags=["has_unclear_jeotgal"],
+            flag_answers=[flag_answer(["is_fish"], "present", eligible=None)],
+        )
+    )
+    assert (outcome.risk_level, outcome.evidence_basis) == ("danger", "confirmed")
 
 
 def test_24_legacy_anomaly_does_not_request_review() -> None:

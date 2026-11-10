@@ -262,3 +262,17 @@ def test_signals_cover_new_recipes_only() -> None:
     new = [source(i, "wtable", [KIMCHI, TOFU, ONION]) for i in range(10, 20)]
     # Cached recipes were checked when they were new, and they are not compared with.
     assert aggregate_sources(request(cached + new)).recipe_signals == []
+
+
+def test_run_sends_signals_to_supervisor() -> None:
+    sources = ten_kimchi_stew_recipes()
+    sources[1]["title"] = "엄마표 얼큰 찌개"
+    response = asyncio.run(WebAggregateAgent().run(request(sources)))
+    assert signals(response) == [("1", "title_mismatch")]
+
+
+def test_run_sends_empty_signals_explicitly() -> None:
+    # ⓪ reads an omitted field as "review every new recipe"; an empty list means none.
+    response = asyncio.run(WebAggregateAgent().run(request(ten_kimchi_stew_recipes())))
+    assert response.recipe_signals == []
+    assert "recipe_signals" in response.model_fields_set

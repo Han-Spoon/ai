@@ -259,7 +259,7 @@ return ExactFeedbackResponse(
 | 반환 | Supervisor 동작 |
 |---|---|
 | `completeness: complete` | ④⑤ 스킵 → ⑧ 직행 |
-| `confirmations` 일부 존재 | ④ 호출 시 `confirmed_ingredients`에 **`status != unknown` AND `override_eligible: true`** 인 재료만 전달 |
+| `confirmations` 일부 존재 | ④ 호출 시 `confirmed_ingredients`에 **`status`가 `present`·`absent`** 인 재료를 전달. `override_eligible` 값은 보지 않는다 (⓪ #368) |
 | `confirmations` 빈 배열 | ④ 호출 (`confirmed_ingredients=[]`) |
 
 **③이 직접 호출하지 않는 것**: 어떤 Agent·Tool도 호출하지 않는다. 조회 후 반환하고 종료.
@@ -335,7 +335,7 @@ return ExactFeedbackResponse(
 - [ ] **플래그 답 저장 위치 (외부 의존)** — `flag_confirmations`(§1-8)를 읽을 DB 자리. ⑦·DB 스키마 문서에는 반영됨: 새 테이블 `owner_flag_confirmations` 제안, ⑦이 저장 (#259, ⑦ §2-4, `caution-db-schema.md` §6 11·12번). 남은 것: 백엔드가 테이블을 확정
 - [x] **가게 없는 스캔** — 백엔드 지적(2026-10-13): 앱에 가게를 고르지 않고 스캔하는 기능이 있다. 결정 (#281, AGENTS.md 갱신): Prepare는 `store_id`를 받지 않고, Judge는 `store_id: null`을 가게 없는 스캔으로 받는다. 이때 Supervisor는 ③을 부르지 않고, 사장님 질문·저장 명령을 만들지 않으며, 모든 메뉴는 SAFE 금지다 (⓪ §1-3). ③의 규칙(§1-1 `store_id` 필수)은 그대로다 (§4-1 6번)
 - [x] **anomaly 판정 기준** — 레시피 확률(⑤ `posterior_mean`) 0.9 이상 + "없음" 답변이면 anomaly. "있음"은 대상 아님 (2026-10-06, #193, ⑦ §2-3, §1-6). 2026-10-27 회의로 이 표시는 override에 쓰지 않는다
-- [ ] **이상 표시 값·DB 칸을 남길지** (2026-10-28) — 잠금은 없앴다 (§1-6). DB·⑦ 쪽은 정해졌다 (#354, 2026-11-02 확인): DB 스키마 문서가 `ingredient_confirmations.flagged_anomaly`·`override_eligible`(GENERATED) 삭제를 요청하고 `owner_verification_requests.recipe_probability` 요청을 철회했다. ⑦은 이상 표시를 저장하지 않고, 출처 신뢰도 계산에서도 모든 답을 정답으로 쓴다. 남은 것: ⓪ 계약 `Confirmation.flagged_anomaly`·`override_eligible` 칸. 그때까지 ③은 받은 `flagged_anomaly`를 그대로 넘기고 `override_eligible`은 항상 `true`로 보낸다
+- [ ] **이상 표시 값·DB 칸을 남길지** (2026-10-28) — 잠금은 없앴다 (§1-6). DB·⑦ 쪽은 정해졌다 (#354, 2026-11-02 확인): DB 스키마 문서가 `ingredient_confirmations.flagged_anomaly`·`override_eligible`(GENERATED) 삭제를 요청하고 `owner_verification_requests.recipe_probability` 요청을 철회했다. ⑦은 이상 표시를 저장하지 않고, 출처 신뢰도 계산에서도 모든 답을 정답으로 쓴다. ⓪ 계약에서는 두 칸이 필수에서 선택 칸이 됐다 (⓪ #368, 2026-11-10 확인). ⓪은 `present`/`absent`를 이 값과 관계없이 확정값으로 쓰고, ⑧도 `override_eligible`을 보지 않는다 (2026-11-10). 지금 ③은 받은 `flagged_anomaly`를 그대로 넘기고 `override_eligible`은 항상 `true`로 보낸다. 남은 것: ③이 두 칸을 채우지 않게 하기 — ⓪ 테스트 `test_only_eligible_known_confirmations_skip_bayesian`이 `unknown` 답에도 ③의 `true`가 ⑧까지 오는 것을 확인하고 있어 함께 고쳐야 한다. ⓪ 계약에서 칸을 지울지는 #340
 
 ## 7. 확정된 결정 (변경 금지)
 

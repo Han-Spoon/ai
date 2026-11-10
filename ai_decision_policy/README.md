@@ -44,7 +44,7 @@ ItemGraphDependencies(..., decision=DecisionTool(), ...)
 | 5 | 재료는 모두 사장님 확인값인데 매운맛 등 메뉴 속성이 겹침 | `caution` / `estimated` |
 | 6 | 그 밖 | `safe` / `confirmed` |
 
-같은 재료에 쓸 수 있는 사장님 확인값(`override_eligible: true`)이 있으면 확률보다 확인값을 씁니다 (§6).
+같은 재료에 사장님 확인값(`present`/`absent`)이 있으면 확률보다 확인값을 씁니다 (§6). 예전 칸 `override_eligible`은 보지 않습니다. ⓪ 계약에서 선택 칸이 되어(#368) 빠지거나 `false`로 와도 같습니다 (§1-1).
 
 입력은 ⓪ §4-7 `DecisionRequest`(`ai_supervisor/contracts/decision.py`)이고, 위험 재료와 재검증 표시는 같은 파일의 `DecisionRiskIngredient`·`HighRiskReview`로 냅니다.
 
@@ -54,7 +54,6 @@ ItemGraphDependencies(..., decision=DecisionTool(), ...)
 
 | `reason_code` | 신호 | 이 사용자와 관련 있을 때만 |
 |---|---|---|
-| `anomaly` | `anomaly_locked` 재료 (10/27 회의로 잠금이 없어져 지금은 오지 않음) | 그 재료 태그가 금지 태그와 겹칠 때 |
 | `unknown_tag` | ④ 경고 `unmapped_constraint_tags`, `constraint_tags_lookup_failed` | 항상 (겹치는지 알 수 없음) |
 | `no_information` | `no_information`, 또는 재료 0개 | 금지 태그가 하나라도 있을 때 |
 | `partial_information` | `information_status`가 `complete`가 아님 | 금지 태그가 하나라도 있을 때 |
