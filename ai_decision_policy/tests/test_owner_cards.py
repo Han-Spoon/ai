@@ -41,7 +41,7 @@ def cards(req):
 
 
 def anomaly_locked(ingredient: IngredientRef, tags: list[str]) -> ConfirmedResult:
-    """An "absent" answer that ③ refused to use because it contradicts the recipe."""
+    """An "absent" answer with the legacy ``override_eligible: false`` (no longer sent, ⓪ #368)."""
 
     return confirmed(ingredient, tags, "absent").model_copy(update={"override_eligible": False})
 

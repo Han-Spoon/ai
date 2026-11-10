@@ -81,7 +81,7 @@ PPT 7쪽은 ⑥을 "내부 근거가 부족하거나 DB 미등록 메뉴일 때 
 - `menu.menu_id`는 DB에 없는 메뉴라 항상 `null`이다. 검색어는 `menu.normalized_menu_name`(②가 정규화한 이름)으로 만들고 `menu.locale_hint`(메뉴판 언어)를 참고한다.
 - `max_sources`는 한 번 검색할 때 **새로** 모을 최대 출처 수 `10`이다 (§2-3). 캐시 레시피(`cached_sources`)는 이 수와 별개로 함께 쓴다 (§2-4).
 - 검색은 **매번 1위부터** 한다. 캐시에 이미 있는 URL은 건너뛰고 그만큼 더 읽는다 (§2-4, 2026-10-27 회의). 요청·응답에 검색 순위(`next_rank`)를 담지 않는다.
-- 예전 `next_rank`(다음에 읽을 순위)는 ⓪ 계약에서 지웠다 (2026-10-28). ⑦ 코드도 더 쓰지 않는다 (#354, 웹 캐시 저장의 중복 방지 키는 메뉴 이름 + 새 출처 주소 목록). ⓪ 계약의 ⑦ 저장 명령에 선택 칸으로만 남아 있다 (§7).
+- 예전 `next_rank`(다음에 읽을 순위)는 ⓪ 계약에서 지웠다 (2026-10-28). ⑦ 코드도 더 쓰지 않는다 (#354, 웹 캐시 저장의 중복 방지 키는 메뉴 이름 + 새 출처 주소 목록). ⓪ 계약의 ⑦ 저장 명령에서도 지웠다 (⓪ #368).
 - 응답 `sources[]`에는 **이번에 새로 검색한 출처만** 넣는다. 출처마다 원문 재료명을 그대로 뽑고, 이름을 합치거나 개수를 세지 않는다.
 - `sources[].evidence`는 항상 `evidence_class: soft`, `source_type: web_search`, `verification_status: pending_review`(사람이 아직 확인하지 않음)다. 출처 신뢰도 `reliability_weight`는 계산하지 않고 `null`로 보낸다 (#194).
 - 입력 `warnings`·`errors`는 보존하고 ⑥의 신호를 덧붙인다 (§3-2).
@@ -268,7 +268,7 @@ DB에 없는 메뉴는 **없음 → 웹 캐시 → DB** 세 단계를 거친다.
 
 ### 2-6. 검토 자료
 
-> **2026-10-26 회의로 전제가 바뀌었다.** 아래 규칙 7개와 화면은 "새 웹 레시피를 모두 관리자가 본다"는 전제(2026-10-12 결정)로 만들었고, 지금 코드(`ai_web_search_agent/aggregate.py`)도 이대로다. 회의 결정은 **자동 등록이 기본이고, 이상 신호가 잡힌 레시피만 운영자가 예(DB에 넣기)/아니오(빼기)로 정한다**이다. 백엔드는 레시피 승인 API 하나만 둔다. **신호는 3개로 정했다** (2026-11-02, §5 "웹 레시피 자동 등록"): 다른 음식 의심, 제목에 메뉴명 없음(아래 규칙 2를 레시피 단위로), 매핑 안 된 재료 포함(규칙 6을 레시피 단위로). 규칙 1·3·4·5·7은 운영자 페이지에 올리지 않는다. 신호를 누가 계산할지와 레시피별로 담을 ⓪ 계약 칸이 정해지기 전까지, 지금 코드의 규칙 7개 계산은 그대로 둔다.
+> **2026-10-26 회의로 전제가 바뀌었다.** 아래 규칙 7개와 화면은 "새 웹 레시피를 모두 관리자가 본다"는 전제(2026-10-12 결정)로 만들었고, 지금 코드(`ai_web_search_agent/aggregate.py`)도 이대로다. 회의 결정은 **자동 등록이 기본이고, 이상 신호가 잡힌 레시피만 운영자가 예(DB에 넣기)/아니오(빼기)로 정한다**이다. 백엔드는 레시피 승인 API 하나만 둔다. **신호는 3개로 정했다** (2026-11-02, §5 "웹 레시피 자동 등록"): 다른 음식 의심, 제목에 메뉴명 없음(아래 규칙 2를 레시피 단위로), 매핑 안 된 재료 포함(규칙 6을 레시피 단위로). 규칙 1·3·4·5·7은 운영자 페이지에 올리지 않는다. 신호는 ⑥이 계산해 응답 `recipe_signals[]`에 싣고, ⓪은 신호가 잡힌 레시피만 운영자 검토로 보낸다 (⓪ #368, 2026-11-10 ⑥ 연결). 묶음 단위 `review_notes` 칸이 ⓪ 계약에 남아 있어 규칙 7개 계산은 아직 그대로 둔다 (§7).
 
 웹서치를 할 때마다(§2-4) ⑥은 운영자 페이지에 쓸 **검토 자료**를 만든다. ⑥은 자료만 만들고, 화면과 승인 처리는 하지 않는다. 가게 없는 스캔에서도 ⑥은 같은 자료를 만들지만, Supervisor가 저장 명령을 만들지 않아 운영자 페이지에 올라가지 않는다 (§2-4 "가게 없는 스캔").
 
@@ -510,7 +510,7 @@ PPT 7·8쪽은 ⑥을 "검색 전략 수립·근거 검토"를 하는 Agent로 �
     - **DB 등록 기준은 통과 레시피 30개 그대로** (§2-4)
     - **"다른 음식 의심"은 이번에 새로 모은 레시피끼리만 비교한다.** 캐시 레시피는 이미 이전 검색에서 신호를 거쳤고, §2-6 규칙도 새 레시피만으로 계산한다 (2026-10-12)
     - **신호는 ⑥이 계산한다** (2단계, ④ 매핑 뒤). 신호 3개에 필요한 것(이번 묶음 레시피의 표준 재료, 제목, ④ 매핑 실패)이 모두 ⑥ 2단계 입력에 이미 있다. 백엔드가 계산하면 ④ 매핑 결과를 따로 받아 같은 규칙을 다시 만들어야 한다
-  - **구현** (2026-11-02): `ai_web_search_agent/aggregate.py` `recipe_signals()`가 새 레시피마다 `other_dish_suspected`·`title_mismatch`·`unmapped_ingredient`를 낸다. ⓪ 계약에 담을 칸이 없어 아직 ⑥ 안에서만 계산하고 응답에는 싣지 않는다 (§7). 반영한 곳: ⑥ §0·§2-4·§2-6. 남은 곳: ⓪ §4-5·§4-6, ⑦(검토 명령을 신호가 잡힌 레시피에만), DB 스키마
+  - **구현** (2026-11-02): `ai_web_search_agent/aggregate.py` `recipe_signals()`가 새 레시피마다 `other_dish_suspected`·`title_mismatch`·`unmapped_ingredient`를 낸다. 응답 `recipe_signals[]`(`evidence_id`·`code`·`message`)에 싣는다 (2026-11-10). 신호가 없으면 빈 배열을 보낸다. 칸이 빠지면 ⓪이 예전처럼 새 레시피 전부를 검토로 보내기 때문이다 (⓪ §4-6). 반영한 곳: ⑥ §0·§2-4·§2-6, ⓪ §4-5·§4-6과 계약 코드(⓪ #368: 신호가 잡힌 새 레시피만 `create_review_item`, 새 레시피는 전부 캐시 저장). 남은 곳: ⑦·백엔드의 이상 레시피 저장 형식, DB 스키마
 
 ---
 
@@ -693,6 +693,6 @@ python -m evaluation.websearch --concurrency 1 --limit 10 --price-in 입력가�
 이 문서에서 정했지만 [⓪ Supervisor 문서](0-agent-supervisor.md)에 아직 반영되지 않은 것을 적는다. JSON 형식은 ⓪에서만 정의하므로, 여기 남은 항목은 ⓪만 보고 구현하면 빠진다. ⓪에 반영되면 체크한다.
 
 - [x] **2단계 응답 `sources`를 채울 자료가 2단계 요청에 없음** (2026-10-23, 구현 중 발견) — 2단계 응답에서 `sources`를 뺐다. 새 출처 원본은 Supervisor가 1단계 응답 `sources`를 쓴다 (다은님 확인, 2026-10-23). ⓪ §4-5·`contracts/web_search.py` 반영
-- [ ] **⑥ LLM 조립** (2026-10-28) — ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(search_provider_from_env(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꿔야 검색과 LLM이 쓰인다. `search_provider_from_env()`는 네이버 키가 있으면 네이버, 없으면 `UnconfiguredSearchProvider`를 줘서, 키가 없는 것을 `web_search_not_configured`로 알린다 (#120, §3-2). 지금의 `StaticSearchProvider()`는 키가 없을 때 "검색했는데 못 찾음"으로 보인다. 네이버 검색과 본문 읽기는 #254에서 만들었다 (2026-10-28). 배포 환경에 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`도 넣어야 한다
-- [ ] **레시피별 이상 신호 칸** (2026-11-02) — 웹 레시피 자동 등록에서 ⑥이 새 레시피마다 신호 3개(`other_dish_suspected`·`title_mismatch`·`unmapped_ingredient`)를 계산한다 (§5). ⓪ `WebAggregateResponse`에는 묶음 단위 `review_notes`(`rule_code`·`message`)만 있어 어느 레시피에 걸렸는지 담을 수 없다. 제안: `recipe_signals[]`(`evidence_id`, `code`, `message`) 칸을 더하고, Supervisor는 신호가 잡힌 레시피만 ⑦ `create_review_item`에 넣는다. 신호가 없는 레시피는 바로 통과다. 그러면 운영자 페이지에 쓰지 않는 묶음 단위 `review_notes`와 규칙 1·3·4·5·7은 지울 수 있다
-- [x] **`next_rank` 칸 빼기** (2026-10-28, 10/27 회의) — ⓪에 반영함 (2026-10-28): `WebCollectRequest`·`WebCollectResponse`와 Judge 요청 `web_search_cache`에서 칸을 지웠다 (예전 백엔드가 보내면 받아서 버림). Item Graph의 전달·"뒤로 가지 않음" 검사, ⓪ 문서 §1-3·§4-5·§4-6과 테스트도 고쳤다. ⑦ 코드는 `next_rank`를 더 읽지 않고(#354), DB 스키마 문서도 `web_search_cache`에 순위 칸을 두지 않기로 했다(#354). 남은 것: ⓪ 계약 `save_web_search_cache` 저장 명령의 선택 칸 `next_rank` 삭제 (이제 ⓪에서 지워도 됨)
+- [x] **⑥ LLM 조립** (2026-10-28) — ⓪에 반영됨 (2026-11-08 확인): `app.py` `_build_supervisor_service()`가 `WebCollectAgent(search_provider_from_env(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`를 쓴다 (#358). 배포 환경 키는 확인하지 못했다. 원래 기록: ⑥은 레시피 판별 LLM `OpenAIRecipeReader`(`ai_web_search_agent/reader.py`)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `web_collect=WebCollectAgent(StaticSearchProvider())`라 검색 결과도 LLM도 없다 (#150). `WebCollectAgent(search_provider_from_env(), OpenAIRecipeReader.from_env_if_configured(), pages=HttpPageFetcher())`로 바꿔야 검색과 LLM이 쓰인다. `search_provider_from_env()`는 네이버 키가 있으면 네이버, 없으면 `UnconfiguredSearchProvider`를 줘서, 키가 없는 것을 `web_search_not_configured`로 알린다 (#120, §3-2). 지금의 `StaticSearchProvider()`는 키가 없을 때 "검색했는데 못 찾음"으로 보인다. 네이버 검색과 본문 읽기는 #254에서 만들었다 (2026-10-28). 배포 환경에 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`도 넣어야 한다
+- [x] **레시피별 이상 신호 칸** (2026-11-02) — ⓪에 반영됨 (#368, 2026-11-10 확인): `WebAggregateResponse.recipe_signals[]`가 생겼고, Supervisor는 신호가 잡힌 새 레시피만 `create_review_item`에 넣고 새 레시피는 전부 캐시에 저장한다. ⑥은 이 칸에 신호를 싣는다 (2026-11-10). 남은 것: 묶음 단위 `review_notes`와 규칙 1·3·4·5·7 지우기(⓪ 계약 칸 삭제가 먼저). 원래 기록: 웹 레시피 자동 등록에서 ⑥이 새 레시피마다 신호 3개(`other_dish_suspected`·`title_mismatch`·`unmapped_ingredient`)를 계산한다 (§5). ⓪ `WebAggregateResponse`에는 묶음 단위 `review_notes`(`rule_code`·`message`)만 있어 어느 레시피에 걸렸는지 담을 수 없다. 제안: `recipe_signals[]`(`evidence_id`, `code`, `message`) 칸을 더하고, Supervisor는 신호가 잡힌 레시피만 ⑦ `create_review_item`에 넣는다. 신호가 없는 레시피는 바로 통과다. 그러면 운영자 페이지에 쓰지 않는 묶음 단위 `review_notes`와 규칙 1·3·4·5·7은 지울 수 있다
+- [x] **`next_rank` 칸 빼기** (2026-10-28, 10/27 회의) — ⓪에 반영함 (2026-10-28): `WebCollectRequest`·`WebCollectResponse`와 Judge 요청 `web_search_cache`에서 칸을 지웠다 (예전 백엔드가 보내면 받아서 버림). Item Graph의 전달·"뒤로 가지 않음" 검사, ⓪ 문서 §1-3·§4-5·§4-6과 테스트도 고쳤다. ⑦ 코드는 `next_rank`를 더 읽지 않고(#354), DB 스키마 문서도 `web_search_cache`에 순위 칸을 두지 않기로 했다(#354). ⓪ 계약 `save_web_search_cache`의 선택 칸 `next_rank`도 지웠다 (#368, 2026-11-10 확인)

@@ -100,9 +100,13 @@ def merge_same_ingredient(items: list[DecisionRiskIngredient]) -> list[DecisionR
 
 
 def is_hard_evidence(result: ConfirmedResult) -> bool:
-    """Only eligible present/absent answers count; ``unknown`` never means "absent" (§1-1)."""
+    """Every present/absent owner answer counts; ``unknown`` never means "absent" (§1-1).
 
-    return result.override_eligible and result.status in ("present", "absent")
+    The legacy ``override_eligible`` flag is ignored: owner answers always override
+    (10/27 meeting, ⓪ #368), so an omitted or false value changes nothing.
+    """
+
+    return result.status in ("present", "absent")
 
 
 def has_no_ingredients(request: DecisionRequest) -> bool:

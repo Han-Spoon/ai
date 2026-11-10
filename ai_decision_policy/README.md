@@ -44,7 +44,7 @@ ItemGraphDependencies(..., decision=DecisionTool(), ...)
 | 5 | 재료는 모두 사장님 확인값인데 매운맛 등 메뉴 속성이 겹침 | `caution` / `estimated` |
 | 6 | 그 밖 | `safe` / `confirmed` |
 
-같은 재료에 쓸 수 있는 사장님 확인값(`override_eligible: true`)이 있으면 확률보다 확인값을 씁니다 (§6).
+같은 재료에 사장님 확인값(`present`/`absent`)이 있으면 확률보다 확인값을 씁니다 (§6). 예전 칸 `override_eligible`은 보지 않습니다. ⓪ 계약에서 선택 칸이 되어(#368) 빠지거나 `false`로 와도 같습니다 (§1-1).
 
 입력은 ⓪ §4-7 `DecisionRequest`(`ai_supervisor/contracts/decision.py`)이고, 위험 재료와 재검증 표시는 같은 파일의 `DecisionRiskIngredient`·`HighRiskReview`로 냅니다.
 
@@ -54,7 +54,6 @@ ItemGraphDependencies(..., decision=DecisionTool(), ...)
 
 | `reason_code` | 신호 | 이 사용자와 관련 있을 때만 |
 |---|---|---|
-| `anomaly` | `anomaly_locked` 재료 (10/27 회의로 잠금이 없어져 지금은 오지 않음) | 그 재료 태그가 금지 태그와 겹칠 때 |
 | `unknown_tag` | ④ 경고 `unmapped_constraint_tags`, `constraint_tags_lookup_failed` | 항상 (겹치는지 알 수 없음) |
 | `no_information` | `no_information`, 또는 재료 0개 | 금지 태그가 하나라도 있을 때 |
 | `partial_information` | `information_status`가 `complete`가 아님 | 금지 태그가 하나라도 있을 때 |
@@ -116,6 +115,7 @@ message = build_message(request, outcome)  # DecisionMessage(verdict, reason, no
 | `safe` / `confirmed` | 사장님이 확인한 재료에 할랄 기준에 맞지 않는 재료가 없어요. (제한이 없으면 "사장님이 확인한 재료 중 피해야 할 재료가 없어요.") |
 
 - 같은 재료가 태그 묶음별로 두 번 와도(④ #327) 한 번만 씁니다
+- 재료 이름은 최대 7개까지 쓰고 나머지는 "외 N개"로 줄입니다 (11/08). 화면이 재료마다 확률을 따로 보여 줍니다
 - 안내: `ambiguous_menu`는 "젓갈에 생선이 들어갈 수 있어 확인이 필요해요.", `hard_to_remove`는 "참치는 이 메뉴의 주재료라 빼기 어려울 수 있어요." / "새우는 양념이나 소스 같은 다른 재료 안에 들어 있어 빼기 어려울 수 있어요."
 - `reason`(이유 설명)은 아래 LLM이 씁니다. LLM이 없거나 실패·검수 탈락이면 `null`이고, 판정 한 줄과 안내는 그대로 나갑니다 (§4 "LLM 실패")
 

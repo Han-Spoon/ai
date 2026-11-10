@@ -55,7 +55,8 @@ def check_flag(
     asked = ask_tags(flag, forbidden)
     if not asked:
         return None
-    usable = [a for a in answers if a.ambiguity_flag == flag and a.override_eligible]
+    # Legacy ``override_eligible`` is ignored; flag answers always override (③ §1-8).
+    usable = [a for a in answers if a.ambiguity_flag == flag]
     for answer in usable:
         tags = set(answer.constraint_tags)
         if answer.status == "present" and tags and tags <= forbidden:
