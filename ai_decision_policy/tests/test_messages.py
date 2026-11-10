@@ -203,6 +203,48 @@ def test_several_ingredients_highest_probability_first() -> None:
     assert message(req).verdict == "We still need to check for tuna and shrimp."
 
 
+NINE_FISH = [
+    IngredientRef(ingredient_id=300 + i, canonical_name=name)
+    for i, name in enumerate(["멸치", "새우젓", "까나리", "참치", "꽁치", "굴", "어묵", "다시마", "생선"])
+]
+
+
+def _nine_fish(locale: str):
+    # Probability falls with the index, so the order stays the list order.
+    return request(
+        SEAFOOD_ALLERGY,
+        probability_results=[
+            probability(ref, ["is_fish"], 0.9 - i * 0.05) for i, ref in enumerate(NINE_FISH)
+        ],
+        locale=locale,
+    )
+
+
+def test_verdict_names_at_most_seven_ingredients_and_counts_the_rest() -> None:
+    # 2026-11-08: the screen lists every ingredient with its probability under the
+    # sentence (Figma S10), so the sentence stops at seven, highest probability first.
+    assert message(_nine_fish("ko")).verdict == (
+        "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵 외 2개는 아직 확인이 필요해요."
+    )
+    en = message(_nine_fish("en")).verdict
+    assert en.startswith("We still need to check for ") and en.endswith(" and 2 more.")
+    assert en.count(", ") == 6
+    assert message(_nine_fish("ja")).verdict.endswith("ほか2種類はまだ確認が必要です。")
+    assert message(_nine_fish("zh-CN")).verdict.endswith("及其他2种还需要确认。")
+    assert message(_nine_fish("zh-TW")).verdict.endswith("及其他2種還需要確認。")
+    assert message(_nine_fish("es")).verdict.endswith(" y 2 más.")
+    assert "من المكونات الأخرى" in message(_nine_fish("ar")).verdict
+
+
+def test_seven_ingredients_are_all_named() -> None:
+    req = request(
+        SEAFOOD_ALLERGY,
+        probability_results=[probability(ref, ["is_fish"], 0.9 - i * 0.05) for i, ref in enumerate(NINE_FISH[:7])],
+        locale="ko",
+    )
+    assert message(req).verdict == "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵은 아직 확인이 필요해요."
+
+
 def test_31_reason_is_empty_but_verdict_and_notes_stay() -> None:
     req = request(SEAFOOD_ALLERGY, confirmed_results=[confirmed(TUNA, ["is_fish"], role="identity")])
     result = message(req)

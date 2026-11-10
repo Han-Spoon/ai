@@ -43,6 +43,27 @@ AND_LISTS: dict[str, Callable[[list[str]], str]] = {
 }
 
 
+# The verdict names at most this many ingredients (2026-11-08); the screen shows them all.
+MAX_NAMES = 7
+# "and N more". Korean, Chinese and Japanese attach it to the list without "and";
+# the Korean particle then follows "개".
+MORE: dict[str, Callable[[int], str]] = {
+    "ko": lambda n: f" 외 {n}개",
+    "en": lambda n: f"{n} more",
+    "ar": lambda n: f"{n} من المكونات الأخرى",
+    "zh-CN": lambda n: f"及其他{n}种",
+    "zh-TW": lambda n: f"及其他{n}種",
+    "ja": lambda n: f"ほか{n}種類",
+    "es": lambda n: f"{n} más",
+}
+LISTS_NO_AND: dict[str, Callable[[list[str]], str]] = {
+    "ko": ", ".join,
+    "zh-CN": "、".join,
+    "zh-TW": "、".join,
+    "ja": "、".join,
+}
+
+
 def _ko(word: str, with_final: str, without: str) -> str:
     return with_final if _has_final_consonant(word) else without
 
@@ -216,7 +237,20 @@ def _named(items: list[DecisionRiskIngredient]) -> list[str]:
 
 
 def _say(template: dict[str, VerdictTemplate], names: list[str], lang: str) -> str:
-    return template[lang](AND_LISTS[lang](names), names[-1])
+    """At most ``MAX_NAMES`` names, the rest counted ("외 6개"). The screen lists every
+    ingredient with its own probability below the sentence (Figma S10), so the sentence
+    need not repeat a long list; names come in the order given (highest probability
+    first for estimates)."""
+
+    if len(names) <= MAX_NAMES:
+        return template[lang](AND_LISTS[lang](names), names[-1])
+    shown, rest = names[:MAX_NAMES], len(names) - MAX_NAMES
+    more = MORE[lang](rest)
+    if lang in ("ko", "zh-CN", "zh-TW", "ja"):
+        joined = LISTS_NO_AND[lang](shown) + more
+    else:
+        joined = AND_LISTS[lang]([*shown, more])
+    return template[lang](joined, more)
 
 
 def _sentences(parts: list[str], lang: str) -> str:
