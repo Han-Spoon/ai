@@ -145,6 +145,7 @@ def test_origin_is_preserved_in_ocr_menu_response():
     response = build_menu_analysis(menu, display_order=1)
     assert response["menu_name_ko"] == "소고기국밥"
     assert response["origin_text"] == "호주산"
+    assert response["ocr_confidence"] == 0.88
 
 
 def _clova_token(text, x1, y1, x2, y2):

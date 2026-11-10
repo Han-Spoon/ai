@@ -287,6 +287,7 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
       "menu_name_en": null,
       "description_ko": "",
       "description_en": null,
+      "ocr_confidence": 0.93,
       "price_text": "10,000",
       "risk_level": null,
       "is_spicy": false,

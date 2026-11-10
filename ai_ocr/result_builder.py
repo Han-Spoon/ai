@@ -101,6 +101,7 @@ def build_menu_analysis(menu, display_order: int):
         "menu_name_en": None,
         "description_ko": description,
         "description_en": None,
+        "ocr_confidence": float(menu.get("confidence") or 0.0),
         "price_text": price_text,
         "price_options": price_options,
         "origin_text": menu.get("originText"),
