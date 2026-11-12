@@ -160,7 +160,8 @@ flowchart TD
 - 30개 전까지는 등록하지 않고, ⑥이 웹 캐시 레시피로 판정한다 (CAUTION).
 - 30개가 되면 백엔드가 `menus`(`source: web_search_generated`) → `recipe_ingredients`(`evidence_type: web_search`) 순서로 등록한다. 이후 그 메뉴는 ④⑤ 경로로 간다.
 - 가게 없는 스캔은 저장 명령을 만들지 않으므로 새 레시피가 캐시·통과 수에 들어가지 않는다 (⓪ §1-3).
-- **정해야 할 것 (⓪·⑥)**: 지금 ⓪ `WebAggregateResponse`에는 묶음 단위 `review_notes`만 있어 어느 레시피에 신호가 걸렸는지 담을 수 없다. ⑥ 제안(⑥ §8 "레시피별 이상 신호 칸")대로 레시피별 신호 칸이 생기면, Supervisor는 신호가 잡힌 레시피만 `create_review_item`에 넣는다. 그 전까지 지금 코드는 웹 검색마다 묶음 전체를 검토 항목 하나로 만든다.
+- **레시피별 신호 (⓪ 반영, #372·#373)**: ⑥이 `WebAggregateResponse.recipe_signals[]`(`evidence_id`, `code`, `message`)로 레시피마다 신호를 돌려준다. Supervisor는 신호가 잡힌 신규 출처만 `create_review_item.web_sources`에 넣고, 신호가 없는 신규 출처는 `save_web_search_cache`에만 넣는다 (⓪ §4-6). ⑦은 받은 내용을 그대로 명령으로 만든다.
+- **정해야 할 것 (⓪)**: 지금 `create_review_item` 형식에는 레시피 목록(`web_sources`)과 묶음 단위 `review_notes`만 있고 **레시피별 신호(`recipe_signals`)는 들어가지 않는다.** 그래서 운영자 페이지가 "걸린 신호와 이유"(⑥ §5)를 보여 줄 근거가 백엔드에 전달되지 않는다. ⓪ 계약에 레시피별 신호 칸이 생기면 ⑦은 그대로 담아 보낸다 (⑦ 코드는 입력 payload를 보존하므로 따로 고칠 것이 없다).
 - 미확정: 30개 레시피의 "n개 중 k개" 통계도 함께 넣을지. 제안은 크롤링 코퍼스와 같은 형태로 `menu_recipe_corpora`·`menu_ingredient_priors`에 `corpus: web_search`로 넣는 것이다 (§8, `caution-db-schema.md` §6 22번).
 
 **변형 태깅 근거는 그 가게 메뉴판에서 나온 것**이라 운영자가 승인한 뒤 가게 prior(`ocr_variant_tag`)에 반영한다. 자동 등록 대상이 아니다.
@@ -488,7 +489,8 @@ AGENTS.md 기준 역할 분리는 다음과 같다.
 
 ## 8. 미확정 항목 (팀 확인 대기)
 
-- [ ] **레시피별 이상 신호 칸 (외부 의존, ⓪·⑥)** — ⓪ 계약에 레시피별 신호가 생기면 Supervisor가 신호 잡힌 레시피만 `create_review_item`에 넣는다 (§2-1, ⑥ §8)
+- [x] **레시피별 이상 신호 칸** — ⓪·⑥에 반영됨 (#372·#373). Supervisor가 신호 잡힌 레시피만 `create_review_item`에 넣는다 (§2-1)
+- [ ] **검토 명령에 레시피별 신호 담기 (외부 의존, ⓪)** — `create_review_item`에 레시피별 `recipe_signals`가 없어 운영자 페이지가 신호와 이유를 보여 줄 수 없다. ⓪ 계약에 칸을 더하면 ⑦은 그대로 보존한다 (§2-1)
 - [ ] **웹 레시피 30개 등록 때 통계 함께 저장 (백엔드와)** — `corpus: web_search`로 `menu_recipe_corpora`·`menu_ingredient_priors`에 넣을지 (§2-1, `caution-db-schema.md` §6 22번)
 - [x] **10개 후보의 병합/선택 규칙** — 병합·선택하지 않는다. 신호 없는 레시피는 바로 통과, 신호가 잡힌 레시피만 운영자가 예/아니오 (2026-10-26 회의, 2026-11-02 ⑥ 결정. 2026-10-12 "재료별 합산 후 재료 단위 승인"을 대체)
 - [x] **운영자 검토 SLA** — 두지 않는다. 검토 항목은 예/아니오가 나올 때까지 `pending`으로 쌓이고, 대기 일수 표시나 자동 만료도 없다 (2026-10-12)
