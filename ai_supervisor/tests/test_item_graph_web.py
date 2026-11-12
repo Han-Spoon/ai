@@ -564,13 +564,14 @@ def test_web_collection_concurrency_is_capped_at_five() -> None:
     assert collect.max_active == 5
 
 
-def test_each_judge_request_has_its_own_five_web_search_slots() -> None:
+def test_judge_requests_share_five_service_web_search_slots() -> None:
     collect = ConcurrencyCollect([web_source()])
     item_analyzer, *_ = analyzer([], collect_adapter=collect)
 
     async def run_two_requests():
         first = item_analyzer.for_request()
         second = item_analyzer.for_request()
+        assert first.web_search_slots is second.web_search_slots
         first_context = context()
         second_context = context()
         return await asyncio.gather(
@@ -587,4 +588,4 @@ def test_each_judge_request_has_its_own_five_web_search_slots() -> None:
     outputs = asyncio.run(run_two_requests())
 
     assert len(outputs) == 14
-    assert collect.max_active == 10
+    assert collect.max_active == 5
