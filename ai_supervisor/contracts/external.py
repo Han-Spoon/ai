@@ -351,21 +351,6 @@ class WebSearchCache(StrictModel):
     status: SliceStatus
     cached_sources: list[WebSource]
 
-    @model_validator(mode="before")
-    @classmethod
-    def discard_legacy_next_rank(cls, value: Any) -> Any:
-        """⑥ reads from rank 1 and skips cached URLs (10/27 meeting), so the stored
-        rank is unused. An old backend may still send it; accept and drop it."""
-
-        if not isinstance(value, dict) or "next_rank" not in value:
-            return value
-        rank = value["next_rank"]
-        if type(rank) is not int or rank < 1:
-            raise ValueError("legacy next_rank must be a positive integer")
-        cleaned = dict(value)
-        cleaned.pop("next_rank")
-        return cleaned
-
     @model_validator(mode="after")
     def validate_cache_shape(self) -> "WebSearchCache":
         if self.status == "ok" and not self.cached_sources:
