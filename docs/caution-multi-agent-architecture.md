@@ -33,8 +33,8 @@ flowchart TD
     L --> BE_CUR[백엔드: 추천 메뉴 정렬·큐레이션]
     BE_CUR --> O[사용자에게 결과 제공]
 
-    G -.신규 변형 메뉴 제안.-> J[⑦ DB Update Tool: 관리자 컨펌 후 반영]
-    I -.신규 메뉴 제안.-> J
+    G -.신규 변형 메뉴 제안.-> J[⑦ DB Update Tool: 저장 명령 생성<br/>물리 DB 쓰기는 백엔드]
+    I -.웹 레시피 자동 등록·이상 신호만 운영자 검토.-> J
     N --> J
 ```
 
@@ -123,7 +123,7 @@ flowchart TB
     W --> E["⑤ Bayesian Tool\n(웹서치 결과 기반 확률 계산, DB 저장 없이 즉시 사용)"]
     E --> F["⑧ Decision Policy / XAI Agent\n(웹서치 실패 시 CAUTION 이상 유지)"]
     F --> G[사용자: 결과 제공]
-    F -.검토 자료 전달.-> ADMIN["⑦ DB Update Tool\n(관리자 페이지에서 사람이 컨펌 후 반영)"]
+    F -.새 레시피 저장 명령.-> ADMIN["⑦ DB Update Tool\n(자동 등록이 기본,\n이상 신호 레시피만 운영자 검토)"]
 ```
 
 #### 엣지 케이스
@@ -188,7 +188,7 @@ graph TB
     SUP -.질문/답변.-> OWNER[사장님]
 ```
 
-※ ⑦ DB Update Tool은 예외: 사장님 답변(hard evidence)은 Supervisor가 즉시 호출·반영하지만, 웹서치/변형 태깅(soft evidence)은 ⓪ Supervisor Agent를 거쳐 관리자 페이지로 검토 자료가 전달되고, **관리자가 컨펌한 시점에만** 실행됨 (3번 섹션 ⑦ 참고)
+※ ⑦ DB Update Tool은 물리 DB에 직접 쓰지 않고 백엔드가 실행할 명령만 만든다. 사장님 답변(hard evidence)은 즉시 확정 명령으로 만들고, 웹 레시피는 자동 등록이 기본이며 이상 신호가 잡힌 레시피만 운영자 검토 명령을 만든다. 변형 태깅 제안은 운영자 승인 후 반영한다 (3번 섹션 ⑦ 참고).
 
 ---
 
@@ -239,8 +239,8 @@ Prepare(store_id 없음)
 ### ③ Exact Feedback Tool (재료 단위로 재설계)
 - **역할 개요**: 확률로 추정하기 전에 "이미 사람이 확인해준 확실한 값이 있는지"부터 재료 단위로 체크하는 1차 관문. 여기서 확인되면 Bayesian 계산 자체가 불필요해 비용·속도 면에서 이득이고, 무엇보다 사람이 확인한 값이 확률 추정치보다 신뢰도가 높음.
 - **입력**: 양의 정수 store_id, 메뉴명 (Supervisor로부터 전달받음). 가게 없는 스캔에서는 ③을 호출하지 않음
-- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). 사장님 답변은 대상마다 한 번 받고 즉시 확정하며 기간 만료 없이 사용한다. **예외**: `flagged_anomaly: true`이면서 `present: false`("없음" 확정이 base rate와 극단적으로 어긋남)인 재료는 답변 이력은 존재하지만 override 가능한 확정값으로 취급하지 않고 **미확인으로 분류** — Bayesian 확률과 비교해서 더 위험한 쪽으로 판정하도록 함(`caution-db-schema.md` 참고)
-- **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵, 일부만 확인되면(anomaly 예외 포함) 나머지 재료만 ⓪ Supervisor Agent가 다음 노드로 라우팅
+- **처리**: `ingredient_confirmations` 테이블에서 해당 store_id·menu_id 조합으로 이미 저장된 확정값(사장님 확인 또는 과거 hard evidence)이 있는지 **재료 하나하나 단위로** 조회. 메뉴 전체가 아니라 재료 단위로 확인 여부가 갈릴 수 있음(예: 돼지고기는 확인됐지만 액젓 여부는 아직 미확인). 사장님 답변은 대상마다 한 번 받고 즉시 확정하며 기간 만료 없이 사용한다. 통계적으로 이상해 보여도 잠그거나 override를 거부하지 않고 `present`/`absent` 답을 그대로 확정 정보로 쓴다 (10/27 회의).
+- **출력**: `{재료: 확인여부}` 맵 → **Supervisor에게 반환**. 전부 확인되면 Supervisor가 확률 모델 호출을 스킵하고, 일부만 확인되면 확인되지 않은 나머지 재료만 ⓪ Supervisor Agent가 다음 노드로 라우팅
 - **설계 원칙**: 메뉴 단위 이분법(전부 확인 vs 전부 미확인) 금지 — 부분 확인을 지원해야 "새우젓만 사장님이 확인해줬고 나머지는 아직 모름" 같은 현실적인 상황을 표현할 수 있음.
 
 ### ④ DB / Ontology Tool (조회 + 재귀 확장 + 변형 태깅)
@@ -249,7 +249,7 @@ Prepare(store_id 없음)
 - **처리**:
   - **기본 조회**: 레시피 DB(`menus`/`recipe_ingredients`) 조회 → `recursive_expand.py` 로직으로 재귀 확장 (예: 김치찌개 → 김치 → 액젓 → 새우) → hidden_rules.py 99개 재료 taxonomy 매핑
   - **변형 태깅**: longest-match로 기본 메뉴를 찾고 남은 토큰(remain)이 있으면(예: "차돌된장찌개" → base="된장찌개", remain="차돌"), 변형 재료를 태깅해서 **제안**(이 시점엔 DB에 쓰지 않고, ⑤ Bayesian Tool이 즉시 사용). 실제 DB 반영 시엔 **원본 메뉴 row를 그대로 쓰지 않고** `base_menu_id`로 원본을 참조하는 새 `menus` 행(`source: variant_generated`)을 만들어야 함 — 원본 메뉴의 확률과 안 섞이게 하기 위함이며, 이 INSERT는 ⑦ DB Update Tool이 관리자 컨펌 후 처리
-- **출력**: 확장된 재료 리스트(발효장류/소스/육수/양념/고명견과/유지류/기타 카테고리 태깅 포함, 교차오염은 모델 범위 외로 제외, 재료마다 `anomaly_locked` 값을 입력받은 그대로 보존해 포함) + (변형 메뉴인 경우) 제안된 변형 재료 태그(DB 미반영 상태) + 메뉴 DB 존재 여부 → **Supervisor에게 반환**
+- **출력**: 확장된 재료 리스트(발효장류/소스/육수/양념/고명견과/유지류/기타 카테고리 태깅 포함, 교차오염은 모델 범위 외로 제외) + (변형 메뉴인 경우) 제안된 변형 재료 태그(DB 미반영 상태) + 메뉴 DB 존재 여부 → **Supervisor에게 반환**
 - **분기**: 메뉴가 DB에 없으면 ⓪ Supervisor Agent가 그 결과를 보고 ⑥ Web Search Agent 호출 여부를 결정
 
 ### ⑤ Bayesian Tool
@@ -257,28 +257,29 @@ Prepare(store_id 없음)
 - **입력**: store_id(가게 없는 스캔은 null), 확장된 재료 리스트, 각 재료의 alpha/beta prior (Supervisor로부터 전달받음)
 - **처리**: Beta-Binomial 업데이트 (α = k_count+1, β = (n_total−k_count)+1, Beta(1,1) 라플라스 스무딩) — **5-tool-Statistics.md 확정 공식**(doc2 갱신 완료). 가게가 있으면 `store → cluster(menu_category) → global → uninformative` 순으로 fallback하고, 가게가 없으면 store 단계를 건너뛰어 global 또는 uninformative prior만 사용한다. 재료 출처(recipe/expanded/variant_suggested)에 따라 α·β를 동일 비율로 스케일 조정
 - **출력**: 재료별 존재 확률 (posterior mean) → **Supervisor에게 반환**
-- **주의**: 전역 prior는 최후의 수단(`uninformative`). ③에서 override 거부된 anomaly 재료는 `anomaly_locked: true`로 표시되어, 확률 값과 무관하게 ⑧이 CAUTION 이상을 강제하도록 함.
+- **주의**: 전역 prior는 최후의 데이터 기반 fallback이며, 그것도 없으면 `uninformative`를 사용한다. ③에서 `present`/`absent`로 확정된 재료는 확률 계산 대상에서 제외하고 답을 그대로 사용한다.
 
 ### ⑥ Web Search Agent
 - **역할 개요**: ④ DB / Ontology Tool이 메뉴 자체를 못 찾았을 때만 호출되는 마지막 정보 수집 수단. 비용·속도 문제로 전체 메뉴 아이템마다 부르지 않고 "완전히 모르는 메뉴"에만 사용한다. 크롤링 데이터는 실제 이 가게의 레시피가 아니므로 태생적으로 신뢰도가 낮은 정보원으로 취급된다.
 - **입력**: 메뉴명 (Supervisor가 DB에 없는 경우에만 호출 — 전체 아이템마다 호출 금지, 비용/속도 문제)
-- **처리**: 웹 크롤링으로 레시피/재료 정보 수집
-- **출력**: 크롤링된 재료 후보 리스트 → **Supervisor에게 반환** (Supervisor가 확률 계산에 즉시 사용하고, 관리자 검토용으로 ⑦ DB Update Tool도 호출)
+- **처리**: 웹 크롤링으로 레시피/재료 정보를 수집하고, 새 레시피마다 `recipe_signals`를 계산한다. 신호는 다른 음식 의심(`other_dish_suspected`), 제목에 메뉴명 없음(`title_mismatch`), 매핑 안 된 재료(`unmapped_ingredient`) 3종이다.
+- **출력**: 크롤링된 재료 후보와 레시피별 이상 신호 → **Supervisor에게 반환**. Supervisor는 재료를 확률 계산에 즉시 사용하고, 모든 새 레시피를 웹 캐시에 저장하되 이상 신호가 잡힌 레시피만 ⑦의 운영자 검토 명령에 넣는다.
 - **fallback**: 웹서치도 실패하면 "정보 없음" 상태로 CAUTION 이상 처리 (SAFE로 떨어뜨리지 않음 — FN-minimization 원칙)
 
 ### ⑦ DB Update Tool
-- **역할 개요**: AI 판단 결과를 어떤 저장 명령으로 전달할지 결정하는 관문. 증거의 신뢰도에 따라 즉시 반영 요청(hard evidence)과 관리자 검토 요청(soft evidence)을 명확히 구분한다. 물리 DB 쓰기와 트랜잭션은 백엔드가 담당한다.
+- **역할 개요**: AI 판단 결과를 어떤 저장 명령으로 전달할지 결정하는 관문. 사장님 답변은 즉시 확정하고, 웹 레시피는 자동 등록을 기본으로 하되 이상 신호가 잡힌 것만 운영자 검토 대상으로 만든다. 변형 태깅 제안은 운영자 승인 대상으로 구분한다. 물리 DB 쓰기와 트랜잭션은 백엔드가 담당한다.
 - **입력**: Supervisor로부터 전달받은 웹서치 결과 OR 사장님 답변 피드백 OR ④의 변형 태깅(ocr_variant_tag) 결과
 - **호출 방식**: Judge에서는 메뉴별 변형 검토·웹 검토·웹 캐시·사장님 질문 operation을 Supervisor가 모두 모은 뒤, 고위험 재검증이 끝난 마지막 단계에서 ⑦을 한 번만 호출한다. `store_id: null`이면 호출하지 않는다.
 - **처리**:
-  - **웹서치/변형 태깅 결과(신규 메뉴·재료, soft evidence)**: 실시간 사용자 응답 흐름과는 분리된 별도 프로세스. AI는 여기서 DB를 바로 갱신하지 않고, **관리자 페이지에 검토 자료로 전달**만 함 — **사람이 컨펌해야** `menus` INSERT(`source: web_search_generated`/`variant_generated`, 먼저 실행) → `recipe_ingredients`/`ingredient_evidence_log`(`source_type: web_search`/`ocr_variant_tag`) 순으로 반영되고, 이후 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산. **`ingredient_risk_scores` 직접 UPDATE 금지**
-  - **사장님 답변 피드백(확정 저장, hard evidence)**: 대상별 답변을 한 번만 받고 `ingredient_confirmations` 또는 `owner_flag_confirmations` upsert 명령을 만든다. 백엔드는 권한·FK·멱등성을 검증한 뒤 즉시 반영하며 2·3차 확인이나 다수결을 수행하지 않는다. 확정값은 기간 만료 없이 유지한다. base rate와 극단적으로 어긋나면(예: 돈까스인데 "돼지고기 없음") `flagged_anomaly`를 포함해 SAFE 근거로 사용하지 않는다.
+  - **웹 레시피 결과(soft evidence)**: 모든 새 레시피의 `save_web_search_cache` 명령을 만들고, `recipe_signals`가 잡힌 레시피만 `create_review_item` 명령에 넣는다. 신호가 없는 레시피는 자동 통과로 세며, 같은 메뉴의 통과 레시피가 30개 이상 모이면 백엔드가 `menus`(`source: web_search_generated`) → `recipe_ingredients`(`evidence_type: web_search`) 순서로 공용 메뉴를 등록한다. 웹 레시피는 특정 가게의 레시피가 아니므로 가게 prior에는 넣지 않는다.
+  - **변형 태깅 결과(soft evidence)**: 운영자가 승인하면 백엔드가 `menus`(`source: variant_generated`) → `recipe_ingredients` → `ingredient_evidence_log`(`source_type: ocr_variant_tag`) 순서로 반영하고, 애플리케이션 로직이 `ingredient_risk_scores`의 α/β를 재계산한다. **`ingredient_risk_scores` 직접 UPDATE 금지**.
+  - **사장님 답변 피드백(확정 저장, hard evidence)**: 대상별 답변을 한 번만 받고 `ingredient_confirmations` 또는 `owner_flag_confirmations` upsert 명령을 만든다. 백엔드는 권한·FK·멱등성을 검증한 뒤 즉시 반영하며 2·3차 확인이나 다수결을 수행하지 않는다. 확정값은 기간 만료 없이 유지하며, 통계적으로 이상해 보여도 답을 잠그거나 무시하지 않는다.
 - **출력**: 백엔드가 검증·저장할 구조화된 명령(`action`, `idempotency_key`, `payload`)
-- **주의**: 웹서치 기반 신규 데이터는 AI가 자동으로 쓰지 않음 — 사용자에게 결과를 보여주는 것과 DB에 영구 반영하는 것은 별개 트리거임. `flagged_anomaly: true` + `present: false`인 확정값은 저장은 그대로 하되, ③ Exact Feedback Tool이 이를 미확인으로 분류해서 Bayesian 확률과 비교 후 더 위험한 쪽으로 판정하도록 함 — 저장(⑦)과 신뢰 여부 판단(③)의 책임을 분리.
+- **주의**: ⑦은 저장 명령과 근거만 반환하고 물리 DB 쓰기는 백엔드가 수행한다. 웹 레시피는 자동 등록이 기본이지만 이상 신호가 잡힌 레시피는 운영자가 예(DB에 넣기)/아니오(빼기)로 결정한다. 사장님 `present`/`absent` 답변은 이상 여부와 관계없이 그대로 확정 정보로 쓴다.
 
 ### ⑧ Decision Policy / XAI Agent
 - **역할 개요**: 판정과 설명을 담당하는 파이프라인의 마지막 단계. ⑤ Bayesian Tool이 만든 확률과 ③ Exact Feedback Tool이 만든 확정값을 사용자 개인의 알레르기·식이 제약과 대조해 최종 위험도를 정하고, 그 근거를 사람이 이해할 수 있는 문장으로 바꾼다. 동시에 정보가 부족한 재료에 대해 사장님에게 물어볼 질문도 함께 만든다.
-- **입력**: Supervisor가 취합해서 전달한 확인된 재료 override 결과 + ⑤ Bayesian Tool 결과(재료별 `anomaly_locked` 포함) + 사용자 알레르기/식이 태그
+- **입력**: Supervisor가 취합해서 전달한 확인된 재료 결과 + ⑤ Bayesian Tool의 미확정 재료별 확률 + 사용자 알레르기/식이 태그
 - **처리**: 사용자 태그와 충돌하는 재료 식별, 확률 기반 근거 설명, DANGER/CAUTION/SAFE 판정(F2 최적화 threshold 적용), 사장님에게 물어볼 질문 생성
 - **출력**: 사용자용 최종 설명 + 판정 결과 + 사장님 질문 텍스트 → **Supervisor에게 반환**
 - **분리 이유**: 판정 로직(확률 계산)과 설명/표현 로직을 분리해두면, 판정 기준이나 문구/언어가 바뀔 때 ⑧만 수정하면 되어 유지보수가 쉬움
