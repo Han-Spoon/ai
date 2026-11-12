@@ -297,6 +297,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 
 - 정해진 칸 외에는 받지 않는다 (Pydantic 구조화 출력, ⓪ §2-13). 형식이 맞지 않으면 버리고 기본 결과를 낸다.
 - JSON 형식은 ⓪ §4-7 `HighRiskReviewRequest`·`HighRiskReviewResponse`다. Supervisor가 넘기는 것: 메뉴명·원문·메뉴판 설명 문구(`menu`), 재검증 이유(`reason_code`), 이 메뉴의 원래 판정·문장·카드(`decision`), 찾은 재료(`found_ingredients`), 표준 재료 선택지(`ingredient_choices`), 사용자 프로필, 언어. ⑧이 돌려주는 것: 놓친 재료(`missed_ingredients`, 추적용), 보강한 이유 설명 전체(`reason`), 보강한 카드 전체(`owner_cards`). 판정 값은 돌려주지 않으므로 바꿀 수 없다.
+- **버린 선택지는 이유 문장에 쓰지 않는다** (2026-11-12). LLM이 "드묾"으로 답했거나 고르지 않은 선택지(`ingredient_choices`)가 보강한 이유 문장에 나오면 검수에서 탈락시키고 원래 문장을 쓴다. 지시문에도 넣었다. 실제 한 사이클에서 제육볶음 재검증이 땅콩·잣·호두를 드물다고 버리고 "일부 변형에서는 들어갈 수 있어요"라고 썼는데, 검수는 사용자 제한 이름("땅콩 알레르기")을 말하는 것을 허용해서 통과했다. 견과류·돼지고기는 제한 이름과 재료 이름이 같아(땅콩) 구분이 안 됐다. 카드도 없는 재료를 문장으로만 겁주는 셈이라 막는다 (`check_reason(dropped_names=…)`)
 - 놓친 재료는 사용자 금지 태그와 겹칠 때만 카드(`reason_codes: ["high_risk_review"]`)를 만든다. 사장님이 이미 답한 재료는 더하지 않는다 (§1-3, 10/26 회의) (§6 "관련 없는 질문 금지"와 같은 원칙).
 
 **한 스캔당 개수 (결정, 2026-10-12)**
@@ -503,6 +504,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 32 | 할랄 사용자 + `no_information: false` + `confirmed_results: []` + `probability_results: []` + `proposed_variant_ingredients: []` + SAFE 금지 조건 없음 | `caution`, `evidence_basis: unknown` | 재료가 0개일 때 "모두 확인값" 조건이 저절로 참이 되어 SAFE가 나가지 않을 것 |
 | 33 | 할랄 사용자 + 가게 없는 스캔(`owner_interaction_allowed: false`, `store_context_missing` warning) + 돼지고기 확률 0.8 + `no_information: false` | `caution`, `owner_cards: []`, `high_risk_review.required: false` | 가게 없는 스캔에서 질문 카드·재검증·SAFE가 나오지 않을 것 (⓪ 테스트 2-a·35) |
 | 34 | 할랄 사용자 + 가게 없는 스캔 + `no_information: true` | `caution`, `owner_cards: []` | 정보 없는 메뉴의 화면 표시용 카드도 만들지 않을 것 |
+| 35 | 새우·땅콩 알레르기 + 고위험 재검증, LLM이 땅콩을 `few_recipes`로 답하고 이유 문장에 "땅콩은 일부 변형에서 들어갈 수 있어요" | 땅콩 카드 없음, 이유 문장은 원래 문장 | 버린 재료를 문장으로만 겁주지 않을 것. 제한 이름과 재료 이름이 같아도(땅콩) 걸러질 것 (2026-11-12) |
 
 ### 7-1. LLM 비용 측정 (2026-11-02)
 
@@ -583,3 +585,5 @@ python -m evaluation.xai_cost --price-in 입력가격 --price-out 출력가격
 - [x] **고위험 재검증 모델 저가로** (2026-10-28, 10/27 회의) — ⑧ §2-3. ⓪ `high_risk_review.required` 설명과 `HighRiskReviewRequest` 설명의 "고가 모델"을 저가 모델로 고침 (2026-10-28)
 - [x] **⑧ LLM 조립** (2026-10-28) — ⓪에 반영됨 (2026-11-08 확인): `app.py` `_build_supervisor_service()`가 `DecisionTool.from_env()`·`HighRiskReviewAgent.from_env()`를 쓴다 (#358). 원래 기록: ⑧은 `DecisionTool.from_env()`(이유 문장 LLM)와 `HighRiskReviewAgent.from_env()`(고위험 재검증)를 만들었다. ⓪ 서비스를 조립하는 `app.py` `_build_supervisor_service()`는 지금 `decision`을 기본값(LLM 없는 `DecisionTool()`)으로 두고, `high_risk_review`에는 항상 실패하는 임시 어댑터(`_UnavailableHighRiskReviewAdapter`)를 넣는다 (#150). 이 둘을 바꿔야 LLM이 실제로 쓰인다
 - [ ] **질문 다듬기·`anomaly` 재검증 이유 빼기** (2026-11-02) — `anomaly` 쪽은 ⓪에 반영됨 (#368, 2026-11-10 확인): `high_risk_review.reason_code` 허용값·우선순위, §2-10 고르는 순서, 계약 `ReviewReason`에서 뺐다. 남은 것: ⓪ §2-7·§2-10 `db_update`·§4-7 `HighRiskReviewRequest`·`owner_cards` 설명의 "질문을 다듬는다"·"다듬은 질문". 원래 기록: ⑧ §2-3·§8에서 질문 다듬기를 하지 않기로 하고 재검증 이유 `anomaly`를 지웠다. ⓪ §4-7 `HighRiskReviewResponse.owner_cards` 설명의 "다듬은 질문"과 `high_risk_review.reason_code`의 `anomaly`(허용값·우선순위, §2-10 고르는 순서)를 빼야 한다
+- [ ] **판정 한 줄 설명** (2026-11-10, 리뷰 중 발견) — ⓪ §4-7 `message.verdict` 설명이 "재료 이름·확률은 코드 값을 넣는다"로 되어 있다. 판정 한 줄에서 확률은 뺐고(2026-11-06, #363, §4), 재료 이름은 최대 7개까지 쓰고 나머지는 "외 N개"로 줄인다(2026-11-08, #370, §4). "재료 이름(최대 7개, 나머지는 개수)은 코드 값을 넣고 확률은 넣지 않는다"로 고쳐야 한다
+- [ ] **웹 레시피 부족이 "정보 일부 실패"로 바뀜** (2026-11-10, 리뷰 중 발견) — ⓪ `item_graph.py` `_information_status()`는 `forces_caution: true` 경고가 하나라도 있으면(`store_context_missing` 제외) `information_status: partial`을 보낸다. ⓪ 문서 §6 표와 ⑧ §2-3은 `partial`을 "앞 단계 조회·계산 실패"로 정의한다. 그래서 ⑥ 경고 `insufficient_sources`·`web_search_deadline_exceeded`·`web_llm_extraction_failed`만 있는 메뉴도 `partial`이 된다. 영향: ① 이유 문장 LLM에 "일부 정보를 불러오지 못했어요"라는 사실과 다른 문장이 들어갈 수 있다(`reason.py` `INFORMATION_FACTS`). ② 재검증 이유가 늘 `partial_information`이 되어 `insufficient_web_sources`가 나오지 않는다. 판정은 어차피 CAUTION이라 FN 문제는 아니다. 실제 실행으로 확인함 (⑥ 집계 + ⑧ 판정, 레시피 3개 → `partial`, `partial_information`). 제안: `partial`은 `errors`와 지식 조회 실패(`knowledge_slice_unavailable`) 같은 실패에만 쓰고, 경고는 ⑧이 경고 코드로 따로 본다

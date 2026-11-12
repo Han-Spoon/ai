@@ -389,6 +389,31 @@ def test_review_drops_rare_additions() -> None:
     assert response.missed_ingredients == [SHRIMP]
 
 
+def test_review_reason_may_not_name_a_choice_it_dropped() -> None:
+    # 2026-11-12 제육볶음: the review dropped 땅콩 as rare, then wrote that it may be in
+    # some versions. 땅콩 is also this user's restriction name, which the check allows.
+    nut = SHRIMP_ALLERGY.model_copy(update={"allergies": ["is_shrimp", "is_peanut"]})
+    llm = FakeLLM(ReviewOutput(
+        missed_ingredients=[missed(150, "few_recipes"), missed(130, "most_recipes")],
+        reason="새우가 들어갈 수 있고, 땅콩은 일부 변형에서 들어갈 수 있어요.",
+    ))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(review_request(user=nut)))
+    assert response.missed_ingredients == [SHRIMP]
+    assert response.reason == "이 메뉴의 재료 정보가 부족해요."
+    assert "Never mention a choice you did not list" in llm.calls[0]["instructions"]
+
+
+def test_review_reason_may_name_a_kept_choice_and_the_restriction() -> None:
+    nut = SHRIMP_ALLERGY.model_copy(update={"allergies": ["is_shrimp", "is_peanut"]})
+    llm = FakeLLM(ReviewOutput(
+        missed_ingredients=[missed(150, "many_recipes")],
+        reason="땅콩을 피하신다면 땅콩이 들어갈 수 있어 확인이 필요해요.",
+    ))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(review_request(user=nut)))
+    assert response.missed_ingredients == [PEANUT]
+    assert response.reason == "땅콩을 피하신다면 땅콩이 들어갈 수 있어 확인이 필요해요."
+
+
 def test_review_gives_found_ingredients_in_the_users_language() -> None:
     llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="Tofu needs care here."))
     asyncio.run(HighRiskReviewAgent(llm).run(review_request(locale="en")))

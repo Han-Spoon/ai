@@ -29,6 +29,14 @@ COMMON_MIN_INGREDIENTS = 3
 # "다른 음식 의심" (§5): this recipe lacks at least this share of the ingredients that
 # half or more of the other new recipes have (초기값, 2026-10-27 초안).
 OTHER_DISH_MISSING_SHARE = 0.8
+# Words that are not one ingredient (조미료, 야채, 반죽 ...) or carry no restriction (냉수,
+# 비타민). ④ cannot map them, but an operator learns nothing from them either: in the
+# 2026-11-12 run they sent 10 of 80 new recipes to review on their own (§5). "고기" is
+# not here: it may be 돼지고기 or 소고기, so a recipe with it still goes to the operator.
+GENERIC_UNMAPPED_NAMES = frozenset({
+    "앙금", "비타민", "조미료", "어린잎", "야채", "채소", "반죽", "껍질", "잎",
+    "냉수", "찬물", "물", "유지류", "필링", "원당", "양념", "토핑", "고명",
+})
 
 IngredientKey = tuple[str, int | str]
 
@@ -238,7 +246,12 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
                 message=f"제목에 '{menu_name}'이(가) 없어요: {source.title}",
             ))
         unmapped = sorted(
-            {i.ingredient.canonical_name for i in source.ingredients if i.ingredient.ingredient_id is None}
+            {
+                i.ingredient.canonical_name
+                for i in source.ingredients
+                if i.ingredient.ingredient_id is None
+                and _compact(i.ingredient.canonical_name) not in GENERIC_UNMAPPED_NAMES
+            }
         )
         if unmapped:
             signals.append(RecipeSignal(

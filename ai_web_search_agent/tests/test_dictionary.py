@@ -50,3 +50,12 @@ def test_one_letter_name_with_a_particle_is_found() -> None:
     # Garnishes are often written in a sentence: "잣을 올린다" (2026-11-02).
     assert find_ingredient_names("잣을 올려 마무리하고 굴과 무를 넣는다") == ["잣", "굴", "무"]
     assert find_ingredient_names("무엇을 넣을까") == []
+
+
+
+def test_ramen_as_an_if_ending_is_not_an_ingredient() -> None:
+    # 2026-11-12 run: "~이라면" read as 라면 put a pork-tagged ingredient on 콩국수.
+    assert find_ingredient_names("여름이라면 시원하게, 아니라면 따뜻하게, 그렇다라면") == []
+    # Real ramen still counts, also as part of a product name.
+    assert find_ingredient_names("신라면 1봉지") == ["라면"]
+    assert find_ingredient_names("라면사리 넣고 라면을 끓인다") == ["라면사리", "라면"]

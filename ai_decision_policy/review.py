@@ -53,7 +53,9 @@ Code already decided the verdict; you must not change it.
      dropped, so never round it up.
 2. reason: one or two short, friendly sentences in {language}, speaking to the
    tourist, about why this dish needs care for them. A missed ingredient may only be
-   described as a possibility. Use only ingredients from the input, with the given
+   described as a possibility. Never mention a choice you did not list in
+   missed_ingredients or listed as few_recipes, not even to say it is rare or only in
+   some versions. Use only ingredients from the input, with the given
    names (localized_name for choices). A name given in Korean has no translation
    yet: translate it into {language}, and list each such name with your translation
    in name_translations. Do not name other dishes, cooking methods,
@@ -206,6 +208,19 @@ class HighRiskReviewAgent:
             request.locale,
         )
         names |= translated_names(output.name_translations, korean_only)
+        # Choices the model judged rare, or did not pick, must not show up in the reason
+        # as "may be in some versions": they made no card (2026-11-12, 제육볶음 땅콩·잣·호두).
+        kept = {c.ingredient_id for c in missed} | {
+            i.ingredient.ingredient_id for i in request.found_ingredients
+        }
+        dropped = [
+            c
+            for c in choices
+            if c.ingredient_id not in kept and _card_id(item_id, c.ingredient_id) not in asked
+        ]
+        dropped_names = with_translations(c.canonical_name for c in dropped) | {
+            c.localized_name for c in dropped if c.localized_name
+        }
         reason = check_reason(
             output.reason,
             locale=request.locale,
@@ -215,6 +230,7 @@ class HighRiskReviewAgent:
             allowed_names=names,
             menu_names=[request.menu.normalized_menu_name, request.menu.raw_menu_name],
             verdict=message.verdict,
+            dropped_names=dropped_names,
         )
         return HighRiskReviewResponse(
             context=request.context,

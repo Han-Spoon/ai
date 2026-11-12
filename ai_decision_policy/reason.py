@@ -207,8 +207,15 @@ def check_reason(
     allowed_names: Iterable[str],
     menu_names: Iterable[str] = (),
     verdict: str | None = None,
+    dropped_names: Iterable[str] = (),
 ) -> str | None:
-    """``text`` when it passes the #174 checks, else ``None``."""
+    """``text`` when it passes the #174 checks, else ``None``.
+
+    ``dropped_names`` may never appear, even when ``allowed_names`` has them: the
+    high-risk review passes the choices it judged rare. A nut allergy's restriction name
+    (땅콩) is also the ingredient's name, so being allowed as a restriction let "땅콩은
+    일부 변형에서 들어갈 수 있어요" through for 제육볶음 (2026-11-12).
+    """
 
     if text is None:
         return None
@@ -246,6 +253,13 @@ def check_reason(
     # inside an allowed "돼지고기" or "김치" inside "김치찌개" is not read as a new name.
     allowed = {name.strip().lower() for name in allowed_names if name and name.strip()}
     blanks = {name.strip().lower() for name in menu_names if name and name.strip()} | allowed
+    dropped = {name.strip().lower() for name in dropped_names if name and name.strip()}
+    if dropped:
+        probe = lowered
+        for name in sorted(blanks - dropped, key=len, reverse=True):
+            probe = probe.replace(name, " ")
+        if any(_mentions(probe, name, locale) for name in dropped):
+            return None
     for name in sorted(blanks, key=len, reverse=True):
         lowered = lowered.replace(name, " ")
     for name in known_names(locale) - allowed:
