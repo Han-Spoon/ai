@@ -113,18 +113,16 @@ class ItemGraphAnalyzer:
 
     def __init__(self, dependencies: ItemGraphDependencies) -> None:
         self.graph = build_item_graph(dependencies)
-        self._max_concurrent_web_searches = (
+        self._web_search_slots = asyncio.Semaphore(
             dependencies.max_concurrent_web_searches
         )
 
     def for_request(self) -> "ItemGraphRun":
-        """Create one lightweight run scope shared only by one Judge request."""
+        """Create a Judge run scope that shares the service-wide web limit."""
 
         return ItemGraphRun(
             graph=self.graph,
-            web_search_slots=asyncio.Semaphore(
-                self._max_concurrent_web_searches
-            ),
+            web_search_slots=self._web_search_slots,
         )
 
     async def run(
@@ -135,7 +133,7 @@ class ItemGraphAnalyzer:
 
 @dataclass(frozen=True)
 class ItemGraphRun:
-    """Request-scoped Item Graph resources shared by one Judge fan-out."""
+    """Request-scoped Item Graph runner using service-scoped web slots."""
 
     graph: Any
     web_search_slots: asyncio.Semaphore
