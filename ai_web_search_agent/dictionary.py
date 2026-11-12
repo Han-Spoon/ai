@@ -21,6 +21,11 @@ PARTICLES = (
     "을", "를", "은", "는", "이", "가", "과", "와", "도", "만", "의", "로", "으로", "에",
     "랑", "이랑", "하고", "까지", "부터", "가루",
 )
+# Names that also end a word as grammar: "여름이라면", "아니라면", "그렇다라면" ("if ...").
+# Read as 라면 they put a pork-tagged ingredient on 콩국수·닭강정·호두과자 (2026-11-12
+# run). Skipped only at the end of a longer word right after these letters, so 신라면,
+# 진라면, 라면사리 and "라면 1개" still count.
+GRAMMAR_ENDINGS = {"라면": ("이", "니", "다", "으")}
 
 
 @lru_cache(maxsize=1)
@@ -37,7 +42,8 @@ def find_ingredient_names(text: str) -> list[str]:
     Each Hangul run is scanned left to right with the longest name first, so "새우젓"
     is not also read as "새우". A one-letter name (무, 파, 김 ...) only counts when it is
     the whole run, as in "무 1/4개", or is followed only by a particle ("잣을", "굴과");
-    inside a word ("무엇", "김치찌개") it is skipped.
+    inside a word ("무엇", "김치찌개") it is skipped. A name in ``GRAMMAR_ENDINGS`` is
+    skipped where it is that grammar ending ("이라면").
     """
 
     names = load_dictionary()
@@ -53,10 +59,15 @@ def find_ingredient_names(text: str) -> list[str]:
         start = 0
         while start < len(run):
             for end in range(min(len(run), start + longest), start + 1, -1):
-                if run[start:end] in names:
+                if run[start:end] in names and not _grammar_ending(run, start, end):
                     found.setdefault(run[start:end])
                     start = end
                     break
             else:
                 start += 1
     return list(found)
+
+
+def _grammar_ending(run: str, start: int, end: int) -> bool:
+    before = GRAMMAR_ENDINGS.get(run[start:end])
+    return bool(before) and start > 0 and end == len(run) and run[start - 1] in before

@@ -257,6 +257,19 @@ def test_title_and_unmapped_signals_are_per_recipe() -> None:
     assert "마라소스" in outcome.recipe_signals[1].message
 
 
+def test_generic_unmapped_words_send_no_recipe_to_review() -> None:
+    # 2026-11-12 run: 조미료·야채·반죽 alone sent a quarter of the recipes to review.
+    generic = [{"ingredient_id": None, "canonical_name": n} for n in ("조미료", "야채", "반죽")]
+    meat = {"ingredient_id": None, "canonical_name": "고기"}
+    sources = ten_kimchi_stew_recipes()
+    sources[2] = source(2, "10000recipe", [KIMCHI, TOFU, ONION, *generic])
+    sources[3] = source(3, "10000recipe", [KIMCHI, TOFU, ONION, *generic, meat])
+    outcome = aggregate_sources(request(sources))
+    # 고기 may be pork or beef, so that recipe still goes to the operator.
+    assert signals(outcome) == [("3", "unmapped_ingredient")]
+    assert outcome.recipe_signals[0].message.endswith(": 고기")
+
+
 def test_signals_cover_new_recipes_only() -> None:
     cached = [source(i, "10000recipe", [BEEF], origin="cache", title="김치찜") for i in range(10)]
     new = [source(i, "wtable", [KIMCHI, TOFU, ONION]) for i in range(10, 20)]
