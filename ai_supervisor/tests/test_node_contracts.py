@@ -252,15 +252,10 @@ def test_web_collect_has_no_search_rank() -> None:
         WebCollectResponse.model_validate({**payload, "next_rank": 14})
 
 
-def test_judge_web_cache_drops_a_legacy_next_rank() -> None:
-    # An old backend may still send the stored rank; it is accepted and dropped.
-    cache = WebSearchCache.model_validate(
-        {"status": "not_found", "cached_sources": [], "next_rank": 11}
-    )
-    assert "next_rank" not in cache.model_dump()
+def test_judge_web_cache_rejects_next_rank() -> None:
     with pytest.raises(ValidationError, match="next_rank"):
         WebSearchCache.model_validate(
-            {"status": "not_found", "cached_sources": [], "next_rank": 0}
+            {"status": "not_found", "cached_sources": [], "next_rank": 11}
         )
 
 

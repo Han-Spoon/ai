@@ -2214,7 +2214,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 }
 ```
 
-`cached_sources`는 백엔드가 `JudgeRequest.knowledge_bundle.items[].web_search_cache`에서 꺼내 전달하며 1단계 응답의 `sources[]`와 같은 closed schema를 사용한다. 캐시가 없으면 `[]`다. 검색 순위는 넘기지 않는다. ⑥은 매번 1위부터 읽고 이 목록에 있는 URL만 건너뛴다 (10/27 회의, ⑥ §2-4). 예전 백엔드가 Judge 요청 `web_search_cache`에 `next_rank`를 보내도 받아서 버린다.
+`cached_sources`는 백엔드가 `JudgeRequest.knowledge_bundle.items[].web_search_cache`에서 꺼내 전달하며 1단계 응답의 `sources[]`와 같은 closed schema를 사용한다. 캐시가 없으면 `[]`다. 검색 순위는 넘기지 않으며 `next_rank`가 들어오면 계약 오류로 거부한다. ⑥은 매번 1위부터 읽고 이 목록에 있는 URL만 건너뛴다 (10/27 회의, ⑥ §2-4).
 
 KnowledgeBundle의 웹 캐시 영역은 다음 형식으로 고정한다.
 
