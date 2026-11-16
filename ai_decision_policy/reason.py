@@ -78,6 +78,8 @@ def _squash(text: str) -> str:
 
 
 _WORD_LOCALES = {"en", "es"}
+_LATIN_LOCALES = {"en", "es"}
+_LATIN_WORD_RE = re.compile(r"[a-z]{3,}")
 _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 _PERCENT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
 # Arabic-Indic and full-width digits and percent signs read as plain ones.
@@ -97,10 +99,6 @@ Write one or two short, friendly sentences in {language}, speaking to the touris
 - Say why the listed ingredients matter: role "identity" is a main ingredient,
   "component" is a regular ingredient, "hidden" is inside a sauce or base.
   If role is null, do not say what part it plays.
-- For every risk ingredient with name_shows_restriction false, write that it may
-  contain its matched_user_restrictions, in this form: "<name> may contain <restriction>"
-  (e.g. "napa cabbage kimchi may contain shrimp"). Its name alone does not tell the
-  tourist why it is listed, so this comes first. Do not say how or why.
 - Use only ingredients from the input, with the given names. Never add others.
   A name given in Korean has no translation yet: translate it into {language}, and
   list each such name with your translation in name_translations.
@@ -308,6 +306,10 @@ def check_reason(
     # untranslated name in Korean); anything else means the wrong language.
     if locale != "ko" and _HANGUL_RUN_RE.search(lowered):
         return None
+    # In a language not written in Latin letters, a Latin word left after the allowed
+    # names are blanked is English slipping in ("굴소스 may contain 조개류", 2026-11-17).
+    if locale not in _LATIN_LOCALES and _LATIN_WORD_RE.search(lowered):
+        return None
     return text
 
 
@@ -394,11 +396,11 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
                 "name": item.ingredient.localized_name,
                 "korean_name": item.ingredient.canonical_name,
                 "role": item.role,
-                # Restriction names in the user's language, not tag codes, and whether the
-                # name already shows them: "napa cabbage kimchi" for a shrimp restriction
-                # came back with no word on why (2026-11-12).
+                # Restriction names in the user's language, not tag codes (2026-11-15).
+                # A per-item "say which restriction" rule was tried and removed (2026-11-17):
+                # the model copied its English example into Korean and Chinese ("굴소스 may
+                # contain 조개류") and listed every item; see ⑧ §8.
                 "matched_user_restrictions": [tag_name(t, request.locale) for t in item.matched_tags],
-                "name_shows_restriction": not needs_explaining(item),
                 "status": item.status,
                 "percent": (
                     f"{shown_percent(item.posterior_mean)}%"
@@ -422,10 +424,20 @@ def needs_explaining(item) -> bool:
 
     name = item.ingredient.canonical_name
     for tag in item.matched_tags:
-        restriction = TAG_NAMES.get(tag, {}).get("ko")
-        if not restriction or restriction not in name:
+        words = (TAG_NAMES.get(tag, {}).get("ko"), *NAME_ALIASES.get(tag, ()))
+        if not any(word and word in name for word in words):
             return True
     return False
+
+
+# Other Korean words that already show the restriction in an ingredient name: 계란 for
+# 달걀 (egg) called the LLM for "계란" on every vegan scan (2026-11-17).
+NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    "is_egg": ("계란",),
+    "is_beef": ("쇠고기",),
+    "is_pork": ("돼지",),
+    "is_chicken": ("닭",),
+}
 
 
 def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
