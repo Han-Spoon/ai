@@ -236,6 +236,28 @@ def _named(items: list[DecisionRiskIngredient]) -> list[str]:
     return [item.ingredient.localized_name for item in ordered]
 
 
+def _without_carried(items: list[DecisionRiskIngredient]) -> list[DecisionRiskIngredient]:
+    """Drop a hidden ingredient that only repeats one listed above it (2026-11-15).
+
+    ④ expands 맛술 into its hidden 알코올 with 맛술's own count, so both reached the
+    sentence ("みりん、アルコール"). ⑧ gets no parent link, so a hidden row is read as
+    carried when a non-hidden row covers its restrictions with the same probability.
+    The sentence only: the screen list and the cards keep every row.
+    """
+
+    shown = [i for i in items if i.role != "hidden"]
+
+    def carried(item: DecisionRiskIngredient) -> bool:
+        return item.role == "hidden" and item.posterior_mean is not None and any(
+            other.posterior_mean is not None
+            and round(other.posterior_mean, 2) == round(item.posterior_mean, 2)
+            and set(item.matched_tags) <= set(other.matched_tags)
+            for other in shown
+        )
+
+    return [i for i in items if not carried(i)]
+
+
 def _say(template: dict[str, VerdictTemplate], names: list[str], lang: str) -> str:
     """At most ``MAX_NAMES`` names, the rest counted ("외 6개"). The screen lists every
     ingredient with its own probability below the sentence (Figma S10), so the sentence
@@ -317,7 +339,7 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
     absent = owner_said_absent(request, outcome, lang)
     lead = [_say(OWNER_SAYS_ABSENT, absent, lang)] if absent else []
     if level == "caution" and basis == "estimated":
-        names = _named(outcome.risk_ingredients)
+        names = _named(_without_carried(outcome.risk_ingredients))
         # Tags matched by a menu attribute (e.g. spicy) rather than an ingredient (§2-1 5-1).
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]

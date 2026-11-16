@@ -142,6 +142,43 @@ def test_reason_check_drops_the_whole_sentence_that_repeats_the_verdict() -> Non
     assert check_reason(text, **kwargs) == "참치는 주재료라 빼기 어려워요."
 
 
+def test_reason_check_cuts_a_verdict_copy_that_differs_only_in_punctuation() -> None:
+    # 2026-11-12 돼지불백: the reason repeated the verdict with one more comma.
+    verdict = "We still need to check for blue crab, napa cabbage kimchi, yogurt and cheese."
+    text = (
+        "We still need to check for blue crab, napa cabbage kimchi, yogurt, and cheese, and "
+        "these may be in this dish. Part of the information could not be loaded."
+    )
+    kwargs = dict(
+        locale="en", risk_level="caution", percents=[],
+        allowed_names=["blue crab", "napa cabbage kimchi", "yogurt", "cheese"], verdict=verdict,
+    )
+    assert check_reason(text, **kwargs) == "Part of the information could not be loaded."
+
+
+@pytest.mark.parametrize(
+    ("locale", "text"),
+    [
+        ("en", "This dish already includes blue crab."),
+        ("ko", "이 음식에는 꽃게가 이미 들어 있어요."),
+        ("ja", "ワタリガニがすでに入っています。"),
+    ],
+)
+def test_reason_check_drops_an_estimate_told_as_fact(locale, text) -> None:
+    # 2026-11-12 꽃게탕: "already includes" for an estimated ingredient.
+    names = ["blue crab", "꽃게", "ワタリガニ"]
+    kwargs = dict(locale=locale, risk_level="caution", percents=[], allowed_names=names)
+    assert check_reason(text, evidence_basis="estimated", **kwargs) is None
+    # The same words are fine once the owner confirmed it.
+    assert check_reason(text, evidence_basis="confirmed", **kwargs) == text
+
+
+def test_reason_check_keeps_a_possibility_and_a_hedge() -> None:
+    kwargs = dict(locale="ko", risk_level="caution", percents=[], allowed_names=["꽃게"], evidence_basis="estimated")
+    text = "꽃게가 들어갈 수 있어요. 아직 확실히 알 수는 없어요."
+    assert check_reason(text, **kwargs) == text
+
+
 def test_reason_may_name_the_users_restriction() -> None:
     # "if you avoid fish" names the restriction, not an ingredient the request lacks.
     fish_sauce = IngredientRef(ingredient_id=110, canonical_name="액젓")
@@ -277,6 +314,17 @@ def test_known_limits_reach_the_llm_as_plain_facts() -> None:
     ]
     assert "insufficient_sources" not in str(llm.calls[0]["payload"])
     assert response.message.reason == "웹에서 찾은 레시피가 적어서 더 불확실해요."
+
+
+def test_reason_payload_names_the_restriction_a_hidden_carrier_hits() -> None:
+    # 2026-11-12: "napa cabbage kimchi" for a shrimp allergy came with no word on why.
+    kimchi = IngredientRef(ingredient_id=109, canonical_name="배추김치")
+    llm = FakeLLM(ReasonOutput(reason="Napa cabbage kimchi may contain shrimp."))
+    req = request(SHRIMP_ALLERGY, probability_results=[probability(kimchi, ["is_shrimp"], 0.86)], locale="en")
+    asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    item = llm.calls[0]["payload"]["risk_ingredients"][0]
+    assert (item["matched_user_restrictions"], item["name_shows_restriction"]) == (["shrimp"], False)
+    assert "name_shows_restriction false" in llm.calls[0]["instructions"]
 
 
 def test_known_limits_alone_are_worth_a_reason() -> None:

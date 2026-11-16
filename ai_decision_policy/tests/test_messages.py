@@ -325,3 +325,29 @@ def test_33_storeless_scan_has_no_cards_and_is_not_safe() -> None:
     assert response.owner_cards == []
     assert not response.high_risk_review.required
     assert [w.code for w in response.warnings] == ["store_context_missing"]
+
+
+def test_verdict_drops_a_hidden_row_that_repeats_its_carrier() -> None:
+    # 2026-11-15: 맛술 and its hidden 알코올 (same count) both reached the sentence.
+    mirin = IngredientRef(ingredient_id=99, canonical_name="맛술")
+    alcohol = IngredientRef(ingredient_id=98, canonical_name="알코올")
+    shrimp = IngredientRef(ingredient_id=130, canonical_name="새우")
+    req = request(
+        HALAL,
+        probability_results=[
+            probability(mirin, ["is_alcohol"], 0.24, role="component"),
+            probability(alcohol, ["is_alcohol"], 0.24, role="hidden"),
+        ],
+        locale="ko",
+    )
+    result = judge(req)
+    assert "알코올" not in result.message.verdict and "맛술" in result.message.verdict
+    # The screen list keeps every row.
+    assert {r.ingredient.canonical_name for r in result.risk_ingredients} == {"맛술", "알코올"}
+    # A hidden row with its own probability, or with nothing above it, stays.
+    other = request(
+        SHRIMP_ALLERGY,
+        probability_results=[probability(shrimp, ["is_shrimp"], 0.4, role="hidden")],
+        locale="ko",
+    )
+    assert "새우" in judge(other).message.verdict

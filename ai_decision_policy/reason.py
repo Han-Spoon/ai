@@ -31,7 +31,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 from .llm import XaiLLM
 from .names import all_rows, dictionary_name, display_name, standard_rows
 from .profile import forbidden_tags
-from .questions import TAG_NAMES
+from .questions import TAG_NAMES, tag_name
 
 MAX_REASON_CHARS = 300
 MAX_OUTPUT_TOKENS = 400
@@ -55,6 +55,28 @@ SAFE_CLAIMS: dict[str, tuple[str, ...]] = {
     "ja": ("安全です", "安心して", "含まれていません"),
     "es": ("es seguro", "sin riesgo", "no contiene"),
 }
+# An estimate told as fact. Only phrases that state the ingredient is in, so "may
+# contain", "들어갈 수 있어요" and hedges like "확실히 알 수 없어요" / "can't say for
+# sure" pass; in the 2026-11-12 run 꽃게탕 read "This dish already includes blue crab".
+CERTAIN_CLAIMS: dict[str, tuple[str, ...]] = {
+    "ko": ("이미 들어", "반드시 들어", "틀림없이 들어", "확실히 들어"),
+    "en": ("already includes", "already contains", "definitely contains", "definitely includes",
+           "certainly contains", "certainly includes"),
+    "ar": ("يحتوي بالفعل", "يحتوي بالتأكيد"),
+    "zh-CN": ("肯定含有", "一定含有", "已经含有"),
+    "zh-TW": ("肯定含有", "一定含有", "已經含有"),
+    "ja": ("必ず入って", "すでに入って", "間違いなく入って", "確実に入って"),
+    "es": ("ya contiene", "ya incluye", "contiene sin duda", "definitivamente contiene"),
+}
+# A verdict sentence shorter than this (squashed) is not looked for in the reason.
+MIN_REPEAT_CHARS = 10
+_SQUASH_RE = re.compile(r"[\W_]+")
+
+
+def _squash(text: str) -> str:
+    return _SQUASH_RE.sub("", text.lower())
+
+
 _WORD_LOCALES = {"en", "es"}
 _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 _PERCENT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
@@ -75,6 +97,10 @@ Write one or two short, friendly sentences in {language}, speaking to the touris
 - Say why the listed ingredients matter: role "identity" is a main ingredient,
   "component" is a regular ingredient, "hidden" is inside a sauce or base.
   If role is null, do not say what part it plays.
+- For every risk ingredient with name_shows_restriction false, write that it may
+  contain its matched_user_restrictions, in this form: "<name> may contain <restriction>"
+  (e.g. "napa cabbage kimchi may contain shrimp"). Its name alone does not tell the
+  tourist why it is listed, so this comes first. Do not say how or why.
 - Use only ingredients from the input, with the given names. Never add others.
   A name given in Korean has no translation yet: translate it into {language}, and
   list each such name with your translation in name_translations.
@@ -208,8 +234,12 @@ def check_reason(
     menu_names: Iterable[str] = (),
     verdict: str | None = None,
     dropped_names: Iterable[str] = (),
+    evidence_basis: str | None = None,
 ) -> str | None:
     """``text`` when it passes the #174 checks, else ``None``.
+
+    With ``evidence_basis`` other than ``confirmed``, a sentence that states an estimate
+    as fact ("already includes blue crab", 2026-11-12) is dropped (``CERTAIN_CLAIMS``).
 
     ``dropped_names`` may never appear, even when ``allowed_names`` has them: the
     high-risk review passes the choices it judged rare. A nut allergy's restriction name
@@ -237,15 +267,24 @@ def check_reason(
 
     if verdict:
         # Drop each sentence that repeats the verdict, so "이 음식에는 새우가 들어 있어요."
-        # goes as a whole instead of leaving "이 음식에는" behind.
-        core = verdict.strip().rstrip(".。!！").lower()
+        # goes as a whole instead of leaving "이 음식에는" behind. Compared without spaces
+        # and punctuation: "yogurt, and cheese" repeated "yogurt and cheese" (2026-11-12),
+        # and sentence by sentence, so a repeat of one verdict sentence goes too.
+        cores = {_squash(verdict)} | {
+            _squash(s) for s in _SENTENCE_RE.findall(verdict) if len(_squash(s)) >= MIN_REPEAT_CHARS
+        }
+        cores.discard("")
         sentences = [s.strip() for s in _SENTENCE_RE.findall(text) if s.strip()]
-        kept = [s for s in sentences if core not in s.lower()]
+        kept = [s for s in sentences if not any(core in _squash(s) for core in cores)]
         if len(kept) != len(sentences):
             text = " ".join(kept)
             if not text:
                 return None
     lowered = text.lower()
+    if evidence_basis != "confirmed" and evidence_basis is not None and any(
+        claim in lowered for claim in CERTAIN_CLAIMS[locale]
+    ):
+        return None
     if risk_level != "safe" and any(claim in lowered for claim in SAFE_CLAIMS[locale]):
         return None
 
@@ -355,7 +394,11 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
                 "name": item.ingredient.localized_name,
                 "korean_name": item.ingredient.canonical_name,
                 "role": item.role,
-                "matched_user_restrictions": item.matched_tags,
+                # Restriction names in the user's language, not tag codes, and whether the
+                # name already shows them: "napa cabbage kimchi" for a shrimp restriction
+                # came back with no word on why (2026-11-12).
+                "matched_user_restrictions": [tag_name(t, request.locale) for t in item.matched_tags],
+                "name_shows_restriction": not needs_explaining(item),
                 "status": item.status,
                 "percent": (
                     f"{shown_percent(item.posterior_mean)}%"
@@ -439,4 +482,5 @@ class ReasonWriter:
             | translated_names(output.name_translations, korean_only),
             menu_names=[request.menu.normalized_menu_name],
             verdict=response.message.verdict,
+            evidence_basis=response.evidence_basis,
         )
