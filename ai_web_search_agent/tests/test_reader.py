@@ -43,6 +43,8 @@ def test_reader_returns_one_reading_per_result_in_order() -> None:
 def test_21_prompt_keeps_unsure_results() -> None:
     # Dropping a real recipe loses its ingredients (FN), so unsure means keep (§3-0).
     assert "If unsure, true." in INSTRUCTIONS
+    # Names come without amounts: semie posts gave "당면100g" (2026-11-17).
+    assert "without amounts" in INSTRUCTIONS
 
 
 @pytest.mark.parametrize(

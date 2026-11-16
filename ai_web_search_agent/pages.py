@@ -112,11 +112,32 @@ def visible_text(page: str) -> str:
     return _SPACES.sub(" ", " ".join(parser.parts)).strip()
 
 
-def page_content(page: str) -> str:
+# 새미네부엌 user posts (/cooking/id/...) carry no Recipe data, and under the post the
+# page lists the writer's other posts: "스크랩 댕댕이 2025.05.13 01:30 … 수제 요거트 만들기".
+# Read whole, 꽃게탕 got 우유·요구르트 and 제육볶음 got 만두·된장 from those titles
+# (2026-11-12 runs). The text is cut where the post ends: the comment box, the "다른 글도
+# 살펴보세요" list, or the first "스크랩 {writer} {date}" line, whichever comes first.
+_SEMIE_HEADER_END = "URL복사"
+_OTHER_POSTS = re.compile(
+    r"로그인 하시고 댓글|다른 글도 살펴보세요|스크랩 \S+ 20\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}"
+)
+
+
+def page_content(page: str, url: str = "") -> str:
     ingredients = recipe_ingredients(page)
     if ingredients:
         return "재료: " + ", ".join(ingredients)
-    return visible_text(page)[:MAX_CONTENT_CHARS]
+    text = visible_text(page)
+    if urlparse(url).netloc.lower().removeprefix("www.").endswith("semie.cooking"):
+        listing = _OTHER_POSTS.search(text)
+        if listing:
+            text = text[: listing.start()].rstrip()
+        # The site menu before the post ("여러분의 부엌으로 로그인 해주세요 회원가입 홈 …
+        # 공유 × 카카오톡 URL복사") took 130 of the 800 characters the LLM reads (2026-11-17).
+        header = text.find(_SEMIE_HEADER_END)
+        if header >= 0:
+            text = text[header + len(_SEMIE_HEADER_END):].lstrip()
+    return text[:MAX_CONTENT_CHARS]
 
 
 class HttpPageFetcher:
@@ -153,5 +174,5 @@ class HttpPageFetcher:
             response.raise_for_status()
         except httpx.HTTPError:
             return result
-        content = page_content(response.text)
+        content = page_content(response.text, result.url)
         return replace(result, content=content) if content else result

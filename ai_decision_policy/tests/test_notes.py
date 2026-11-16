@@ -110,3 +110,15 @@ def test_notes_do_not_change_the_verdict() -> None:
     hidden = request(SHRIMP_ALLERGY, probability_results=[probability(SHRIMP, ["is_shrimp"], 0.4, role="hidden")])
     a, b = decide(plain), decide(hidden)
     assert (a.risk_level, a.evidence_basis) == (b.risk_level, b.evidence_basis)
+
+
+def test_broth_note_is_dropped_when_the_sauce_seasoning_broth_note_says_it() -> None:
+    # 2026-11-12: "…in the sauces, seasoning or broth" next to "…in the broth".
+    outcome = decide(
+        request(FISH_ALLERGY, confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_broth", "has_hidden_animal"])
+    )
+    flags = [n.ambiguity_flag for n in select_notes(outcome) if n.code == "ambiguous_menu"]
+    assert flags == ["has_hidden_animal"]
+    # Without has_hidden_animal the broth note stays.
+    alone = decide(request(FISH_ALLERGY, confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_broth"]))
+    assert [n.ambiguity_flag for n in select_notes(alone)] == ["has_unclear_broth"]

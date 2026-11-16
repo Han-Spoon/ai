@@ -7,6 +7,7 @@ auto registration come from fixed rules, words included; no LLM rewrites them (�
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -32,11 +33,15 @@ OTHER_DISH_MISSING_SHARE = 0.8
 # Words that are not one ingredient (조미료, 야채, 반죽 ...) or carry no restriction (냉수,
 # 비타민). ④ cannot map them, but an operator learns nothing from them either: in the
 # 2026-11-12 run they sent 10 of 80 new recipes to review on their own (§5). "고기" is
-# not here: it may be 돼지고기 or 소고기, so a recipe with it still goes to the operator.
+# not here: it may be 돼지고기 or 소고기, so a recipe with it still goes to the operator,
+# unless the recipe already names a meat (see ``VAGUE_MEAT``).
 GENERIC_UNMAPPED_NAMES = frozenset({
     "앙금", "비타민", "조미료", "어린잎", "야채", "채소", "반죽", "껍질", "잎",
     "냉수", "찬물", "물", "유지류", "필링", "원당", "양념", "토핑", "고명",
 })
+# "고기" next to a mapped 돼지고기 / 소고기 / 닭고기 ... is that meat again ("고기를 재운다").
+# In the second 2026-11-12 run it alone sent 돼지불백 recipes to review (14 of 55).
+VAGUE_MEAT = "고기"
 
 IngredientKey = tuple[str, int | str]
 
@@ -59,6 +64,15 @@ def _key(ingredient: IngredientRef) -> IngredientKey:
 
 def _compact(text: str) -> str:
     return "".join(text.split()).lower()
+
+
+_AMOUNT_START = re.compile(r"[\d(（½⅓¼⅔¾]")
+
+
+def _bare(name: str) -> str:
+    """The name without the amount or note the LLM may leave on it: "고기100g" → 고기."""
+
+    return _compact(_AMOUNT_START.split(name, 1)[0])
 
 
 def _domain(url: str) -> str:
@@ -245,12 +259,21 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
                 code="title_mismatch",
                 message=f"제목에 '{menu_name}'이(가) 없어요: {source.title}",
             ))
+        names_meat = any(
+            i.ingredient.ingredient_id is not None
+            and i.ingredient.canonical_name.endswith(VAGUE_MEAT)
+            and i.ingredient.canonical_name != VAGUE_MEAT
+            for i in source.ingredients
+        )
+        # The menu itself ("잡채" in a 잡채 recipe) is not an ingredient ④ can map; it
+        # sent every 잡채 recipe to review in the 2026-11-17 site check.
+        skip = GENERIC_UNMAPPED_NAMES | {menu} | ({VAGUE_MEAT} if names_meat else set())
         unmapped = sorted(
             {
                 i.ingredient.canonical_name
                 for i in source.ingredients
                 if i.ingredient.ingredient_id is None
-                and _compact(i.ingredient.canonical_name) not in GENERIC_UNMAPPED_NAMES
+                and _bare(i.ingredient.canonical_name) not in skip
             }
         )
         if unmapped:

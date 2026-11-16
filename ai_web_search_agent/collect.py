@@ -38,7 +38,7 @@ from ai_supervisor.contracts.web_search import (
 )
 
 from .aggregate import PRIORITY_DOMAINS
-from .dictionary import find_ingredient_names
+from .dictionary import find_ingredient_names, ingredient_line_names
 from .providers import SearchNotConfiguredError, SearchProvider, SearchResult, domain_of
 
 NODE = "web_search"
@@ -124,13 +124,16 @@ def merge_names(rule_names: list[str], llm_names: list[str], text: str) -> list[
     """Union of dictionary and LLM names (§3-0).
 
     An LLM name the text does not contain is dropped as made up. Dictionary names come
-    first, then names only the LLM found.
+    first, then names only the LLM found. A one-letter name is in almost any text ("게"
+    inside "맛있게"), so it is kept only when the dictionary read it as a word too.
     """
 
     body = _compact(text)
     merged = dict.fromkeys(rule_names)
     for name in llm_names:
         name = name.strip()
+        if len(_compact(name)) == 1 and name not in merged:
+            continue
         if name and _compact(name) in body:
             merged.setdefault(name)
     return list(merged)
@@ -390,7 +393,9 @@ class WebCollectAgent:
                 text = result.text()
                 names = drop_dish_name(
                     merge_names(
-                        find_ingredient_names(text),
+                        list(dict.fromkeys(
+                            find_ingredient_names(text) + ingredient_line_names(result.content or "")
+                        )),
                         reading.ingredients if reading is not None else [],
                         text,
                     ),

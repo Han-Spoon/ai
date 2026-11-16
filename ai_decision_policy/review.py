@@ -231,6 +231,7 @@ class HighRiskReviewAgent:
             menu_names=[request.menu.normalized_menu_name, request.menu.raw_menu_name],
             verdict=message.verdict,
             dropped_names=dropped_names,
+            evidence_basis=request.decision.evidence_basis,
         )
         return HighRiskReviewResponse(
             context=request.context,

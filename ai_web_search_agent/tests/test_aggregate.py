@@ -270,6 +270,18 @@ def test_generic_unmapped_words_send_no_recipe_to_review() -> None:
     assert outcome.recipe_signals[0].message.endswith(": 고기")
 
 
+def test_vague_meat_next_to_a_named_meat_sends_no_recipe_to_review() -> None:
+    # 2026-11-12 second run: "고기" in 돼지불백 recipes that list 돼지고기 is that pork.
+    pork = {"ingredient_id": 101, "canonical_name": "돼지고기"}
+    meat = {"ingredient_id": None, "canonical_name": "고기"}
+    sources = ten_kimchi_stew_recipes()
+    sources[2] = source(2, "10000recipe", [KIMCHI, TOFU, ONION, pork, meat])
+    sources[3] = source(3, "10000recipe", [KIMCHI, TOFU, ONION, BEEF, meat])
+    sources[4] = source(4, "10000recipe", [KIMCHI, TOFU, ONION, meat])
+    # Only the recipe with no named meat still goes to the operator.
+    assert signals(aggregate_sources(request(sources))) == [("4", "unmapped_ingredient")]
+
+
 def test_signals_cover_new_recipes_only() -> None:
     cached = [source(i, "10000recipe", [BEEF], origin="cache", title="김치찜") for i in range(10)]
     new = [source(i, "wtable", [KIMCHI, TOFU, ONION]) for i in range(10, 20)]
@@ -289,3 +301,21 @@ def test_run_sends_empty_signals_explicitly() -> None:
     response = asyncio.run(WebAggregateAgent().run(request(ten_kimchi_stew_recipes())))
     assert response.recipe_signals == []
     assert "recipe_signals" in response.model_fields_set
+
+
+def test_the_menu_itself_is_not_an_unmapped_ingredient() -> None:
+    # 2026-11-17: "잡채" in 잡채 recipes cannot map and sent each one to review.
+    dish = {"ingredient_id": None, "canonical_name": "김치찌개"}
+    sources = ten_kimchi_stew_recipes()
+    sources[2] = source(2, "10000recipe", [KIMCHI, TOFU, ONION, dish])
+    assert aggregate_sources(request(sources)).recipe_signals == []
+
+
+def test_unmapped_names_are_compared_without_their_amounts() -> None:
+    # 2026-11-17: the LLM kept "고기100g" and "조미료 약간" as written.
+    pork = {"ingredient_id": 101, "canonical_name": "돼지고기"}
+    meat = {"ingredient_id": None, "canonical_name": "고기100g"}
+    msg = {"ingredient_id": None, "canonical_name": "조미료(생략 가능)"}
+    sources = ten_kimchi_stew_recipes()
+    sources[2] = source(2, "10000recipe", [KIMCHI, TOFU, ONION, pork, meat, msg])
+    assert aggregate_sources(request(sources)).recipe_signals == []

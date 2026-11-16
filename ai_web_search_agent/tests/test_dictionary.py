@@ -59,3 +59,23 @@ def test_ramen_as_an_if_ending_is_not_an_ingredient() -> None:
     # Real ramen still counts, also as part of a product name.
     assert find_ingredient_names("신라면 1봉지") == ["라면"]
     assert find_ingredient_names("라면사리 넣고 라면을 끓인다") == ["라면사리", "라면"]
+
+
+def test_crab_alone_needs_an_amount() -> None:
+    # 2026-11-12 second run: "섞어주는 게 포인트예요" (게 = 것이) read as 꽃게 put crab
+    # on 돼지불백. Alone, 게 counts only before an amount; with a particle it counts.
+    assert find_ingredient_names("섞어주는 게 포인트예요. 늘리는 게 안전해요") == []
+    assert find_ingredient_names("게 2마리") == ["게"]
+    assert find_ingredient_names("게 한 마리") == ["게"]
+    assert find_ingredient_names("게를 깨끗이 손질한다") == ["게"]
+
+
+def test_recipe_data_lines_give_names_the_dictionary_missed() -> None:
+    from ai_web_search_agent.dictionary import ingredient_line_names
+
+    # 2026-11-17 check of the priority sites: ④ maps these (오리고기·콩·빵), the dictionary
+    # had no entry, so with the LLM down they were lost.
+    content = "재료: 오리슬라이스 1/2팩(500g), 콩비지 1봉 (300g), 꽃빵 8~9개, 양파 1개, 소금 약간"
+    assert ingredient_line_names(content) == ["오리슬라이스", "콩비지", "꽃빵"]
+    # Page text (no recipe data) is sentences, so nothing is taken from it.
+    assert ingredient_line_names("오리슬라이스를 넣고 볶아요") == []
