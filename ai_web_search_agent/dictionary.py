@@ -26,6 +26,12 @@ PARTICLES = (
 # run). Skipped only at the end of a longer word right after these letters, so 신라면,
 # 진라면, 라면사리 and "라면 1개" still count.
 GRAMMAR_ENDINGS = {"라면": ("이", "니", "다", "으")}
+# One-letter names that stand alone as grammar far more often than as food: "섞어주는 게
+# 포인트예요" (게 = 것이). Read as 게 → 꽃게, they put crab on 돼지불백 (43%) and 로제떡볶이
+# in the 2026-11-12 run, 13 times in one menu's blogs. Alone they count only before an
+# amount ("게 2마리", "게 한 마리"); with a particle ("게를 손질") they still count.
+ALONE_NEEDS_AMOUNT = frozenset({"게"})
+AMOUNT_AFTER_RE = re.compile(r"\s*(?:\d|(?:한|두|세|네|다섯)\s*(?:마리|팩|개|kg|g))")
 
 
 @lru_cache(maxsize=1)
@@ -43,13 +49,17 @@ def find_ingredient_names(text: str) -> list[str]:
     is not also read as "새우". A one-letter name (무, 파, 김 ...) only counts when it is
     the whole run, as in "무 1/4개", or is followed only by a particle ("잣을", "굴과");
     inside a word ("무엇", "김치찌개") it is skipped. A name in ``GRAMMAR_ENDINGS`` is
-    skipped where it is that grammar ending ("이라면").
+    skipped where it is that grammar ending ("이라면"), and one in ``ALONE_NEEDS_AMOUNT``
+    standing alone counts only before an amount ("게 2마리", not "하는 게 좋아요").
     """
 
     names = load_dictionary()
     longest = max(map(len, names))
     found: dict[str, None] = {}
-    for run in HANGUL_RUN_RE.findall(text):
+    for match in HANGUL_RUN_RE.finditer(text):
+        run = match.group()
+        if run in ALONE_NEEDS_AMOUNT and not AMOUNT_AFTER_RE.match(text, match.end()):
+            continue
         if run in names:
             found.setdefault(run)
             continue
@@ -71,3 +81,29 @@ def find_ingredient_names(text: str) -> list[str]:
 def _grammar_ending(run: str, start: int, end: int) -> bool:
     before = GRAMMAR_ENDINGS.get(run[start:end])
     return bool(before) and start > 0 and end == len(run) and run[start - 1] in before
+
+
+# Head of a recipe-data ingredient line: "오리슬라이스 1/2팩(500g)" → 오리슬라이스. Used only
+# where the dictionary found nothing in that line (2026-11-17 check of the three priority
+# sites: 7 of 1,116 lines, e.g. 오리슬라이스 (duck), 콩비지 (soy), 꽃빵 (wheat); ④ maps them).
+_LINE_HEAD = re.compile(
+    r"^\s*(?:\[[^\]]*\]\s*)?([가-힣][가-힣 ]{0,14}?)\s*(?=[\d(（½⅓¼⅔¾⅛~]|약간|적당|조금|한\s?줌|톡톡|$)"
+)
+RECIPE_DATA_PREFIX = "재료: "
+
+
+def ingredient_line_names(content: str) -> list[str]:
+    """Names the dictionary missed in schema.org ingredient lines (``pages.page_content``
+    writes them as "재료: a, b, ..."). Page text without recipe data gives nothing here:
+    its lines are sentences, not ingredient lines."""
+
+    if not content.startswith(RECIPE_DATA_PREFIX):
+        return []
+    found: dict[str, None] = {}
+    for line in content[len(RECIPE_DATA_PREFIX):].split(", "):
+        if find_ingredient_names(line):
+            continue
+        head = _LINE_HEAD.match(line)
+        if head and head.group(1).strip():
+            found.setdefault(head.group(1).strip())
+    return list(found)

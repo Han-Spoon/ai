@@ -36,8 +36,9 @@ For every result, by its index:
   even when ingredients overlap (for 김치찌개: 김치찜, 김치볶음밥, 애호박찌개, 김치쌀국수;
   for 닭한마리: 닭가슴살 샐러드, 닭볶음탕). The same dish with an added or swapped
   ingredient is the same dish (for 김치찌개: 참치김치찌개, 돼지고기 김치찌개). If unsure, true.
-- ingredients: ingredient names exactly as written in that result's text, in Korean.
-  Do not translate, normalize, or add ingredients that are not written there.
+- ingredients: ingredient names exactly as written in that result's text, in Korean,
+  without amounts, units or notes (for "당면100g" or "양파 1/2개(70g)", write "당면" and
+  "양파"). Do not translate, normalize, or add ingredients that are not written there.
 Return one entry for every index you were given."""
 
 

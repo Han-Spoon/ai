@@ -42,6 +42,23 @@ def test_pages_without_recipe_data_use_visible_text() -> None:
     assert page_content(page) == "재료: 돼지고기 200g, 두부"
 
 
+def test_semie_user_post_stops_where_the_post_ends() -> None:
+    # 2026-11-12: 꽃게탕 got 우유·요구르트 from the writer's other posts listed below.
+    page = (
+        "<html><body><div>요리해요 꽃게탕 2024.09.18 23:07 꽃게와 된장을 넣어 끓여요</div>"
+        "<div>댓글 0 로그인 하시고 댓글을 남겨보세요.</div>"
+        "<div>댕댕이님 의 다른 글도 살펴보세요 스크랩 댕댕이 2025.05.13 01:30 우유와 요구르트로 요거트 만들기</div>"
+        "</body></html>"
+    )
+    url = "https://semie.cooking/cooking/id/6053"
+    assert page_content(page, url) == "요리해요 꽃게탕 2024.09.18 23:07 꽃게와 된장을 넣어 끓여요 댓글 0"
+    # The site menu before the post is cut too.
+    headed = page.replace("<div>요리해요", "<div>로그인 해주세요 회원가입 홈 공유 × 카카오톡 URL복사 요리해요", 1)
+    assert page_content(headed, url).startswith("요리해요 꽃게탕")
+    # Other sites keep the whole text.
+    assert "요구르트" in page_content(page, "https://blog.example.com/1")
+
+
 def test_naver_blog_posts_are_read_from_the_mobile_page() -> None:
     assert readable_url("https://blog.naver.com/love-cafe/224453539431") == (
         "https://m.blog.naver.com/love-cafe/224453539431"

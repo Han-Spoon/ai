@@ -662,3 +662,11 @@ def test_input_signals_are_kept() -> None:
 
     assert codes(response.warnings) == ["store_context_missing"]
     assert response.context == req.context
+
+
+def test_one_letter_llm_name_needs_the_dictionary_to_read_it_as_a_word() -> None:
+    from ai_web_search_agent.collect import merge_names
+
+    # "게" is inside 맛있게, so a text check alone would keep it (2026-11-12 second run).
+    assert merge_names([], ["게", "대파"], "맛있게 끓인 대파 국") == ["대파"]
+    assert merge_names(["게"], ["게"], "게 2마리") == ["게"]
