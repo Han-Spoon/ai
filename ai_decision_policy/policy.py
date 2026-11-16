@@ -117,6 +117,26 @@ def has_no_ingredients(request: DecisionRequest) -> bool:
     )
 
 
+def information_failed(request: DecisionRequest) -> bool:
+    """``information_status: partial`` that means something failed to load (2026-11-17).
+
+    ⓪ also sends ``partial`` when a warning forces caution, e.g. only a few web recipes
+    or an ingredient with unknown tags. Those warnings say what happened themselves, so
+    "part of the information could not be loaded" would be untrue: it showed on almost
+    every web menu in the 2026-11-12~17 runs, and the review reason became
+    ``partial_information`` instead of ``insufficient_web_sources``. Errors, or
+    ``partial`` with no such warning, still count.
+    """
+
+    if request.information_status != "partial":
+        return False
+    if request.errors:
+        return True
+    return not any(
+        w.forces_caution and w.code != "store_context_missing" for w in request.warnings
+    )
+
+
 def high_risk_review(request: DecisionRequest, forbidden: frozenset[str]) -> HighRiskReview:
     """Mark whether this menu should get the high-risk review (§2-3).
 
@@ -135,7 +155,7 @@ def high_risk_review(request: DecisionRequest, forbidden: frozenset[str]) -> Hig
         # No ingredients at all is treated like no_information, as in §2-1 step 3.
         if request.no_information or has_no_ingredients(request):
             signals.add("no_information")
-        if request.information_status != "complete":
+        if information_failed(request):
             signals.add("partial_information")
         if codes & WEB_SHORTAGE_WARNINGS:
             signals.add("insufficient_web_sources")

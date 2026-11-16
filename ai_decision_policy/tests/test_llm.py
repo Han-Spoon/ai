@@ -308,23 +308,33 @@ def test_known_limits_reach_the_llm_as_plain_facts() -> None:
         locale="ko",
     )
     response = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    # partial here comes from the web warning, which says what happened itself; "could
+    # not be loaded" would be untrue (2026-11-17).
     assert llm.calls[0]["payload"]["known_limits"] == [
         "Only a few web recipes were found for this dish.",
-        "Part of the ingredient information could not be loaded.",
     ]
     assert "insufficient_sources" not in str(llm.calls[0]["payload"])
     assert response.message.reason == "웹에서 찾은 레시피가 적어서 더 불확실해요."
 
 
-def test_reason_payload_names_the_restriction_a_hidden_carrier_hits() -> None:
-    # 2026-11-12: "napa cabbage kimchi" for a shrimp allergy came with no word on why.
+def test_reason_payload_names_restrictions_in_the_users_language() -> None:
     kimchi = IngredientRef(ingredient_id=109, canonical_name="배추김치")
     llm = FakeLLM(ReasonOutput(reason="Napa cabbage kimchi may contain shrimp."))
     req = request(SHRIMP_ALLERGY, probability_results=[probability(kimchi, ["is_shrimp"], 0.86)], locale="en")
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
     item = llm.calls[0]["payload"]["risk_ingredients"][0]
-    assert (item["matched_user_restrictions"], item["name_shows_restriction"]) == (["shrimp"], False)
-    assert "name_shows_restriction false" in llm.calls[0]["instructions"]
+    assert item["matched_user_restrictions"] == ["shrimp"]
+
+
+@pytest.mark.parametrize(
+    ("locale", "text"),
+    [("ko", "굴소스 may contain 조개류예요."), ("zh-CN", "蚝油 may contain 贝类。"), ("ja", "オイスターソース may contain 貝類です。")],
+)
+def test_reason_check_drops_english_inside_another_language(locale, text) -> None:
+    # 2026-11-17: an English example in the prompt was copied into Korean and Chinese.
+    kwargs = dict(locale=locale, risk_level="caution", percents=[],
+                  allowed_names=["굴소스", "조개류", "蚝油", "贝类", "オイスターソース", "貝類"])
+    assert check_reason(text, **kwargs) is None
 
 
 def test_known_limits_alone_are_worth_a_reason() -> None:
@@ -504,3 +514,26 @@ def test_more_known_limits_worth_a_reason() -> None:
     assert "No restaurant was chosen" in " ".join(reason_facts(storeless))
     for req in (guessed, unknown_prior, storeless):
         assert needs_reason(req, judge(req))
+
+
+def test_egg_named_gyeran_needs_no_explaining() -> None:
+    from ai_decision_policy.reason import needs_explaining
+    from types import SimpleNamespace
+
+    def item(name, tags):
+        return SimpleNamespace(ingredient=SimpleNamespace(canonical_name=name), matched_tags=tags)
+
+    assert not needs_explaining(item("계란", ["is_egg"]))
+    assert not needs_explaining(item("돼지갈비", ["is_pork"]))
+    assert needs_explaining(item("배추김치", ["is_shrimp"]))
+
+
+def test_partial_with_an_error_or_no_warning_is_still_a_load_failure() -> None:
+    from ai_decision_policy.policy import information_failed
+    from ai_supervisor.contracts.common import NodeError
+
+    error = NodeError(code="x", node="ontology", item_id="scan-123:0", message="x", retryable=False, fallback=None)
+    base = dict(probability_results=[probability(PORK, ["is_pork"], 0.6)], information_status="partial")
+    assert information_failed(request(HALAL, **base))
+    assert information_failed(request(HALAL, **base, warnings=[warning("insufficient_sources")]).model_copy(update={"errors": [error]}))
+    assert not information_failed(request(HALAL, **base, warnings=[warning("unmapped_constraint_tags")]))
