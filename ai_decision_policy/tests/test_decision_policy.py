@@ -520,6 +520,20 @@ def test_review_partial_information() -> None:
     assert review(outcome) == (True, "partial_information")
 
 
+def test_partial_from_a_web_warning_is_not_a_load_failure() -> None:
+    # 2026-11-17: ⓪ sends partial for any caution-forcing warning; a web shortage is
+    # its own review reason, not "information could not be loaded".
+    outcome = decide(
+        request(
+            HALAL,
+            probability_results=[probability(KIMCHI, [], 0.1)],
+            warnings=[warning("insufficient_sources")],
+            information_status="partial",
+        )
+    )
+    assert review(outcome) == (True, "insufficient_web_sources")
+
+
 @pytest.mark.parametrize(
     "code", ["insufficient_sources", "web_search_deadline_exceeded", "web_llm_extraction_failed"]
 )

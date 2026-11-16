@@ -308,9 +308,10 @@ def test_known_limits_reach_the_llm_as_plain_facts() -> None:
         locale="ko",
     )
     response = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    # partial here comes from the web warning, which says what happened itself; "could
+    # not be loaded" would be untrue (2026-11-17).
     assert llm.calls[0]["payload"]["known_limits"] == [
         "Only a few web recipes were found for this dish.",
-        "Part of the ingredient information could not be loaded.",
     ]
     assert "insufficient_sources" not in str(llm.calls[0]["payload"])
     assert response.message.reason == "웹에서 찾은 레시피가 적어서 더 불확실해요."
@@ -525,3 +526,14 @@ def test_egg_named_gyeran_needs_no_explaining() -> None:
     assert not needs_explaining(item("계란", ["is_egg"]))
     assert not needs_explaining(item("돼지갈비", ["is_pork"]))
     assert needs_explaining(item("배추김치", ["is_shrimp"]))
+
+
+def test_partial_with_an_error_or_no_warning_is_still_a_load_failure() -> None:
+    from ai_decision_policy.policy import information_failed
+    from ai_supervisor.contracts.common import NodeError
+
+    error = NodeError(code="x", node="ontology", item_id="scan-123:0", message="x", retryable=False, fallback=None)
+    base = dict(probability_results=[probability(PORK, ["is_pork"], 0.6)], information_status="partial")
+    assert information_failed(request(HALAL, **base))
+    assert information_failed(request(HALAL, **base, warnings=[warning("insufficient_sources")]).model_copy(update={"errors": [error]}))
+    assert not information_failed(request(HALAL, **base, warnings=[warning("unmapped_constraint_tags")]))

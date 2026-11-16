@@ -30,6 +30,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
 from .names import all_rows, dictionary_name, display_name, standard_rows
+from .policy import information_failed
 from .profile import forbidden_tags
 from .questions import TAG_NAMES, tag_name
 
@@ -357,7 +358,7 @@ def reason_facts(request: DecisionRequest) -> list[str]:
     recipe data at all."""
 
     facts = [WARNING_FACTS[w.code] for w in request.warnings if w.code in WARNING_FACTS]
-    if request.information_status in INFORMATION_FACTS:
+    if request.information_status == "none" or information_failed(request):
         facts.append(INFORMATION_FACTS[request.information_status])
 
     forbidden = forbidden_tags(request.user_profile)
