@@ -30,6 +30,30 @@ from normalize_ingredients import CATEGORY_RULES, EXACT_MAP, canonicalize, clean
 SITES = ("semie", "wtable", "10000recipe")
 RAW_TAXONOMY = {"base", "garnish"}
 
+# Tag fixes on top of the keyword dictionary (ai_ruleengine/constants.py), which tags by
+# substring and so misfires on names that only contain a keyword. Reviewed by hand
+# against all 324 seed ingredients (2026-11). Removals are only cases that are certainly
+# wrong; anything doubtful stays tagged (FN first).
+TAG_REMOVE: dict[str, set[str]] = {
+    "강낭콩": {"is_soybean"},  # kidney bean, not soybean (콩)
+    "렌틸콩": {"is_soybean"},
+    "병아리콩": {"is_soybean"},
+    "완두콩": {"is_soybean"},
+    "땅콩": {"is_soybean"},  # peanut keeps is_peanut
+    "둥굴레": {"is_shellfish"},  # a herb tea root (굴)
+    "굴비": {"is_shellfish"},  # dried yellow croaker, a fish (굴)
+    "멍게": {"is_crab"},  # sea squirt (게)
+    "성게": {"is_crab"},  # sea urchin (게)
+    "밀크초콜릿": {"is_wheat"},  # 밀크 = milk (밀)
+    "햄버거번": {"is_pork"},  # a bread bun (햄)
+}
+TAG_ADD: dict[str, set[str]] = {
+    "햄버거번": {"is_wheat"},
+    "다시다": {"is_beef"},  # beef stock powder
+    "카레가루": {"is_wheat"},  # curry powder usually has wheat flour
+    "베이크드빈스": {"is_tomato"},  # beans in tomato sauce
+}
+
 
 def _rows(path: Path) -> list[dict]:
     with open(path, encoding="utf-8-sig") as f:
@@ -111,7 +135,13 @@ def build() -> SeedData:
         ingredients=ingredients,
         ingredient_id={n: i + 1 for i, n in enumerate(ingredients)},
         taxonomy={n: taxonomy_rows.get(n) or "unknown" for n in ingredients},
-        tags={n: sorted(t for t, ks in keywords.items() if any(k in n for k in ks)) for n in ingredients},
+        tags={
+            n: sorted(
+                ({t for t, ks in keywords.items() if any(k in n for k in ks)} - TAG_REMOVE.get(n, set()))
+                | TAG_ADD.get(n, set())
+            )
+            for n in ingredients
+        },
         edges=edges,
         edge_tags=list(edge_tags),
         priors=priors,

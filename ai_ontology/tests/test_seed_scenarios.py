@@ -191,3 +191,24 @@ def test_web_names_from_real_recipes_mostly_map():
     assert len(mapped) / len(names) >= 0.9
     assert sum(counts) / len(counts) >= 0.98
     assert any(w.code == "unmapped_constraint_tags" for w in out.warnings)  # misses block SAFE
+
+
+@pytest.mark.parametrize(
+    "name, absent, present",
+    [
+        ("땅콩", "is_soybean", "is_peanut"),
+        ("강낭콩", "is_soybean", None),
+        ("굴비", "is_shellfish", "is_fish"),
+        ("둥굴레", "is_shellfish", None),
+        ("멍게", "is_crab", None),
+        ("밀크초콜릿", "is_wheat", "is_milk"),
+        ("햄버거번", "is_pork", "is_wheat"),
+        ("다시다", None, "is_beef"),
+    ],
+)
+def test_keyword_tag_fixes(name, absent, present):
+    tags = set(seed().data.tags[name])
+    if absent:
+        assert absent not in tags
+    if present:
+        assert present in tags
