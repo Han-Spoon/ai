@@ -18,10 +18,49 @@ from ai_supervisor.contracts import (
     WebCollectRequest,
     WebCollectResponse,
 )
-from ai_supervisor.contracts.db_update import SaveWebSearchCachePayload
+from ai_supervisor.contracts.bayesian import BayesianIngredient, ProbabilityResult
+from ai_supervisor.contracts.db_update import (
+    CreateReviewItemPayload,
+    SaveWebSearchCachePayload,
+)
+from ai_supervisor.contracts.decision import (
+    DecisionProbabilityResult,
+    DecisionRiskIngredient,
+)
 from ai_supervisor.contracts.external import WebSearchCache
+from ai_supervisor.contracts.ontology import OntologyIngredient
+from ai_supervisor.contracts.web_search import WebAggregateResponse
 
 TRACE_ID = "0199a2f0-0000-7000-8000-000000000001"
+
+
+@pytest.mark.parametrize(
+    ("model_type", "field_name", "legacy_value", "default_value"),
+    [
+        (BayesianIngredient, "anomaly_locked", True, False),
+        (ProbabilityResult, "anomaly_locked", True, False),
+        (DecisionProbabilityResult, "anomaly_locked", True, False),
+        (DecisionRiskIngredient, "anomaly_locked", True, False),
+        (OntologyIngredient, "anomaly_locked", True, False),
+        (OntologyRequest, "anomaly_locked_ingredients", [], []),
+        (WebAggregateResponse, "review_notes", [], []),
+        (CreateReviewItemPayload, "review_notes", [], []),
+    ],
+)
+def test_deprecated_contract_fields_are_optional_and_not_serialized(
+    model_type, field_name, legacy_value, default_value
+) -> None:
+    field = model_type.model_fields[field_name]
+    assert field.is_required() is False
+    assert field.exclude is True
+
+    legacy_model = model_type.model_construct(**{field_name: legacy_value})
+    assert getattr(legacy_model, field_name) == legacy_value
+    assert field_name not in legacy_model.model_dump()
+
+    fieldless_model = model_type.model_construct()
+    assert getattr(fieldless_model, field_name) == default_value
+    assert field_name not in fieldless_model.model_dump()
 
 
 def item_context(store_id=123) -> dict:

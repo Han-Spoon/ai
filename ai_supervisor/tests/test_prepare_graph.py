@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from uuid import UUID
 
+import pytest
+
 from ai_normalization import NameCleaningAgent
+from ai_normalization.contracts import NameResolution
 from ai_supervisor.contracts.external import ImageRef
 from ai_supervisor.contracts.ocr import (
     OcrItem,
@@ -19,9 +22,15 @@ PREPARE_ID = UUID("0199a2f0-0000-7000-8000-000000000101")
 
 
 class FakeOcr:
-    def __init__(self, status: str, names: list[str]) -> None:
+    def __init__(
+        self,
+        status: str,
+        names: list[str],
+        foreign_segments: dict[int, list[dict]] | None = None,
+    ) -> None:
         self.status = status
         self.names = names
+        self.foreign_segments = foreign_segments or {}
         self.requests = []
 
     async def run(self, request):
@@ -43,6 +52,7 @@ class FakeOcr:
                     item_id=f"scan-123:{index}",
                     source_index=index,
                     raw_menu_name=name,
+                    foreign_text_segments=self.foreign_segments.get(index, []),
                     description=None,
                     price_text="8,000원",
                     price_options=[],
@@ -60,6 +70,20 @@ class FakeOcr:
 class FailingNormalization:
     async def run(self, request):
         raise AssertionError("normalization must not run for needs_retake")
+
+
+class TranslationResolver:
+    async def resolve_name(self, item):
+        return NameResolution(
+            normalized_menu_name="된장찌개",
+            confidence=0.99,
+            foreign_text_segments=[
+                segment.model_copy(
+                    update={"role": "translation", "confidence": 0.99}
+                )
+                for segment in item.foreign_text_segments
+            ],
+        )
 
 
 def context() -> RunContext:
@@ -104,6 +128,43 @@ def test_prepare_graph_runs_ocr_then_name_cleaning() -> None:
     assert response.prepared_items[0].options == ["2인"]
     assert "store_id" not in ocr.requests[0].context.model_fields_set
     validate_prepare_response_hash(response)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_name", "expected_role"),
+    [
+        ("된장찌개 Soybean Paste Stew", "된장찌개", "translation"),
+        ("Bulgogi", "불고기", "translation"),
+    ],
+)
+def test_prepare_graph_accepts_normalization_owned_foreign_segments(
+    name: str, expected_name: str, expected_role: str
+) -> None:
+    graph = build_prepare_graph(
+        PrepareDependencies(
+            ocr=FakeOcr(
+                "usable",
+                [name],
+                {
+                    0: [
+                        {
+                            "text": "Soybean Paste Stew" if " " in name else name,
+                            "role": "unknown",
+                            "confidence": 0.0,
+                        }
+                    ]
+                },
+            ),
+            normalization=NameCleaningAgent(TranslationResolver()),
+            prepare_id_factory=lambda: PREPARE_ID,
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke(input_state(), context=context()))
+    prepared = result["response"].prepared_items[0]
+
+    assert prepared.normalized_menu_name == expected_name
+    assert prepared.foreign_text_segments[0].role == expected_role
 
 
 def test_prepare_graph_skips_normalization_for_needs_retake() -> None:

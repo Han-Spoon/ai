@@ -9,6 +9,7 @@ from hashlib import sha256
 import pytest
 
 from ai_normalization.contracts import CandidateSelectionResult
+from ai_supervisor.contracts.common import NodeWarning
 from ai_supervisor.contracts.bayesian import BayesianResponse, ProbabilityResult
 from ai_supervisor.contracts.db_update import DbUpdateResponse
 from ai_supervisor.contracts.external import OntologySlice, WebSearchCache
@@ -294,6 +295,25 @@ class RecordingAggregate:
         )
 
 
+class InsufficientSourcesAggregate(RecordingAggregate):
+    async def run(self, request):
+        response = await super().run(request)
+        return response.model_copy(
+            update={
+                "warnings": [
+                    *response.warnings,
+                    NodeWarning(
+                        code="insufficient_sources",
+                        node="web_search",
+                        item_id=request.context.item_id,
+                        message="유효 레시피가 기준보다 적어요.",
+                        forces_caution=True,
+                    ),
+                ]
+            }
+        )
+
+
 class LegacyAggregate(RecordingAggregate):
     async def run(self, request):
         response = await super().run(request)
@@ -416,6 +436,18 @@ def test_web_path_maps_aggregates_reviews_and_calculates() -> None:
     assert [item.evidence_id for item in output.evidence] == [
         "web:https://www.10000recipe.com/recipe/1"
     ]
+
+
+def test_insufficient_web_sources_do_not_mark_information_partial() -> None:
+    item_analyzer, _, _, _, _, decision, _ = analyzer(
+        [web_source()], aggregate_adapter=InsufficientSourcesAggregate()
+    )
+
+    output = asyncio.run(item_analyzer.run(unknown_task(), context()))
+
+    assert decision.requests[0].information_status == "complete"
+    assert "insufficient_sources" in [warning.code for warning in output.result.warnings]
+    assert output.result.risk_level == "caution"
 
 
 def test_sources_without_recipe_signals_are_cached_without_review() -> None:

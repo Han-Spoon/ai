@@ -119,3 +119,34 @@ def test_legacy_ocr_adapter_rejects_out_of_range_quality_score() -> None:
 
     with pytest.raises(ValueError, match="between 0 and 100"):
         asyncio.run(LegacyOcrAdapter(runner).run(request()))
+
+
+def test_legacy_ocr_adapter_uses_menu_name_with_origin_removed() -> None:
+    def runner(image):
+        return {
+            "final": {
+                "scan_quality": {
+                    "status": "usable",
+                    "score": 95,
+                    "reasons": [],
+                    "retake_suggestions": [],
+                },
+                "menu_analyses": [
+                    {
+                        "raw_menu_name": "육회국내산(암소한우)",
+                        "origin_text": "국내산 암소한우",
+                        "menu_name_ko": "육회",
+                        "description_ko": None,
+                        "price_text": "20,000원",
+                        "price_options": [],
+                        "ocr_confidence": 0.95,
+                        "is_spicy": False,
+                    }
+                ],
+            }
+        }
+
+    response = asyncio.run(LegacyOcrAdapter(runner).run(request()))
+
+    assert response.items[0].raw_menu_name == "육회"
+    assert response.items[0].origin_text == "국내산 암소한우"

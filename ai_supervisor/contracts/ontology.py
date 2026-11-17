@@ -49,7 +49,9 @@ class OntologyRequest(StrictModel):
     menu: OntologyMenuInput
     unconfirmed_only: StrictBool
     confirmed_ingredients: list[ConfirmedIngredient]
-    anomaly_locked_ingredients: list[IngredientRef]
+    anomaly_locked_ingredients: list[IngredientRef] = Field(
+        default_factory=list, exclude=True
+    )
     knowledge: OntologySlice
     ingredient_graph: IngredientGraph
     warnings: list[NodeWarning]
@@ -115,7 +117,7 @@ class OntologyIngredient(StrictModel):
     curated: StrictBool
     observation_basis: ObservationBasis
     observations: list[IngredientObservation]
-    anomaly_locked: StrictBool
+    anomaly_locked: StrictBool = Field(default=False, exclude=True)
     evidence_refs: list[NonEmptyString]
 
     @model_validator(mode="after")

@@ -149,9 +149,11 @@ def _validate_cleaning_response(
             "Normalization must preserve every OCR item and source order"
         )
 
-    pass_through_fields = set(OcrMenuItem.model_fields)
+    pass_through_fields = set(OcrMenuItem.model_fields) - {"foreign_text_segments"}
     for source, cleaned in zip(request.items, response.items):
-        if source.model_dump() != cleaned.model_dump(include=pass_through_fields):
+        if source.model_dump(include=pass_through_fields) != cleaned.model_dump(
+            include=pass_through_fields
+        ):
             raise PrepareGraphInvariantError(
                 f"Normalization changed OCR pass-through fields for {source.item_id}"
             )

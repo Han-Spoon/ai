@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import StrictBool, model_validator
+from pydantic import Field, StrictBool, model_validator
 
 from ._validation import ensure_unique, require_item_context
 from .bayesian import PriorSource
@@ -79,7 +79,7 @@ class DecisionProbabilityResult(StrictModel):
     posterior_mean: Probability
     confidence: Probability | None
     prior_source: PriorSource | None
-    anomaly_locked: StrictBool
+    anomaly_locked: StrictBool = Field(default=False, exclude=True)
     evidence_refs: list[NonEmptyString]
 
 
@@ -160,7 +160,7 @@ class DecisionRiskIngredient(StrictModel):
     posterior_mean: Probability | None
     confidence: Probability | None
     prior_source: PriorSource | None
-    anomaly_locked: StrictBool
+    anomaly_locked: StrictBool = Field(default=False, exclude=True)
     evidence_refs: list[NonEmptyString]
 
 

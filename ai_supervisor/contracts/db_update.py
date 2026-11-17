@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal, Union
 
-from pydantic import StrictBool, field_validator, model_validator
+from pydantic import Field, StrictBool, field_validator, model_validator
 
 from ._validation import require_item_context
 from .common import (
@@ -39,7 +39,7 @@ class CreateReviewItemPayload(StrictModel):
     review_origin: Literal["web_search", "variant_suggestion"]
     menu: WebMenu
     web_sources: list[WebSource]
-    review_notes: list[ReviewNote]
+    review_notes: list[ReviewNote] = Field(default_factory=list, exclude=True)
     variant_suggestion: VariantSuggestion | None
 
     @model_validator(mode="after")
