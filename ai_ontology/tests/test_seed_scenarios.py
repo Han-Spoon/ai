@@ -112,7 +112,8 @@ def test_rice_and_seaweed_carry_no_seafood_tags():
 def test_kimchi_jjigae_carries_fish_and_shellfish_for_allergy_users():
     res = ontology("김치찌개")
     assert {"is_fish", "is_shellfish", "is_pork"} <= tags(res)
-    assert any("is_fish" in i.constraint_tags for i in entries(res, "새우젓"))
+    assert any("is_shrimp" in i.constraint_tags for i in entries(res, "새우젓"))
+    assert any("is_fish" in i.constraint_tags for i in entries(res, "멸치액젓"))  # not on 새우젓
     assert res.menu_ambiguity_flags  # 젓갈·육수 불분명 표시가 ⑧까지 간다
 
 
@@ -151,11 +152,10 @@ def test_cheese_option_token_is_added():
 
 
 def test_path_tag_does_not_leak_onto_plain_ingredient():
-    # 삼겹살 corpus has plain 식초 and 마요네즈→식초 (is_egg path tag)
+    # 삼겹살 corpus has plain 식초 and 마요네즈 -> 식초 / 계란: vinegar never gets the egg
     res = ontology("삼겹살")
-    plain = [i for i in entries(res, "식초") if i.depth == 0]
-    assert plain and "is_egg" not in plain[0].constraint_tags
-    assert any("is_egg" in i.constraint_tags for i in entries(res, "식초") if i.depth > 0)
+    assert all("is_egg" not in i.constraint_tags for i in entries(res, "식초"))
+    assert any("is_egg" in i.constraint_tags for i in entries(res, "마요네즈"))
 
 
 def test_storeless_scan_keeps_tags_without_cache():
@@ -217,17 +217,54 @@ def test_keyword_tag_fixes(name, absent, present):
         assert present in tags
 
 
-def test_kelp_carries_no_path_tag_but_its_parent_still_does():
-    # 육수 -> 다시마 used to carry is_beef / is_fish, so a beef-avoiding guest was asked
-    # about kelp. The sibling 멸치 / 쇠고기 keeps the parent's tags (no FN).
+@pytest.mark.parametrize(
+    "parent, child",
+    [("햄", "소금"), ("햄", "아질산나트륨"), ("만두", "부추"), ("어묵", "전분"), ("육수", "다시마"), ("양념장", "참기름")],
+)
+def test_path_tag_is_not_put_on_a_plain_child(parent, child):
+    # salt in ham has no pork: 계란말이 asked "salt?" for pork at 72% and kelp for beef
+    s = seed()
+    assert (parent, child) in s.edges
+    assert not [t for p, c, t in s.edge_tags if (p, c) == (parent, child)]
+
+
+def test_parent_keeps_every_hidden_rule_tag():
+    # moving a path tag onto the owning sibling must not drop it from the parent (FN)
     import db_seed
 
     s = seed()
-    assert not any(c == "다시마" for _, c, _ in s.edge_tags)
+    kept = {(p, t) for p, _, t in s.edge_tags}
+    dropped = {raw for raw, _ in s.data.dropped_rules}
     for parent, flags in db_seed.HIDDEN_RULES.items():
         p = db_seed.canon(parent)
-        kelp = {ch["tag"] for chs in flags.values() for ch in chs if db_seed.canon(ch["name"]) == "다시마"}
-        if not kelp or (p, "다시마") not in s.edges:
+        if parent in dropped or not p:
             continue
-        kept = {t for pp, c, t in s.edge_tags if pp == p}
-        assert kelp <= kept, (parent, kelp - kept)
+        for chs in flags.values():
+            for ch in chs:
+                c = db_seed.canon(ch["name"])
+                if c and c != p:
+                    assert (p, ch["tag"]) in kept, (parent, ch)
+
+
+def test_path_tag_sits_on_an_owning_child_when_there_is_one():
+    s = seed()
+    owned = {(p, t) for p, c, t in s.edge_tags if t in s.data.tags[c]}
+    stray = [(p, c, t) for p, c, t in s.edge_tags if (p, t) in owned and t not in s.data.tags[c]]
+    assert not stray
+
+
+@pytest.mark.parametrize("menu", ["간장게장", "약과"])
+def test_other_dish_bundle_is_left_out(menu):
+    # wtable 간장게장: 911 recipes, 907 soy sauce and 3 crab; wtable 약과: one ice-cream recipe
+    assert "wtable" not in [c.corpus for c in seed().ontology(menu).menu_recipe_corpora]
+
+
+def test_dropped_bundle_keeps_ingredient_ids():
+    # ids are list positions; 아이스크림 only came from the dropped 약과 bundle
+    s = seed()
+    assert "아이스크림" in s.id and len(s.id) == 324
+
+
+def test_sauce_name_does_not_map_to_vegetables():
+    out = map_ingredients(["잡채소스"], seed().graph, "x")
+    assert out.results[0].ingredient.canonical_name != "채소"

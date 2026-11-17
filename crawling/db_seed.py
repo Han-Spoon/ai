@@ -47,10 +47,9 @@ TAG_REMOVE: dict[str, set[str]] = {
     "밀크초콜릿": {"is_wheat"},  # 밀크 = milk (밀)
     "햄버거번": {"is_pork"},  # a bread bun (햄)
 }
-# Children that never carry a path tag. The hidden rules put 육수 -> 다시마 under is_fish
-# and is_beef, so ④ asked "does the kelp contain beef?". Kelp is neither; the 멸치 / 쇠고기
-# sibling on the same parent already carries the tag (checked in the seed tests).
-PATH_TAG_FREE = {"다시마"}
+# Recipe bundles that are another dish. wtable's "간장게장" search returned 911 soy sauce
+# recipes (3 with crab); its "약과" bundle is one ice-cream recipe.
+CORPUS_DROP = {("wtable", "간장게장"), ("wtable", "약과")}
 TAG_ADD: dict[str, set[str]] = {
     "햄버거번": {"is_wheat"},
     "다시다": {"is_beef"},  # beef stock powder
@@ -92,9 +91,25 @@ class SeedData:
     dropped_rules: list[tuple[str, str]] = field(default_factory=list)  # (rule parent, mapped parent)
 
 
+def _owned_path_tags(edge_tags: list[tuple[str, str, str]], tags: dict[str, list[str]]) -> list[tuple[str, str, str]]:
+    """Put a path tag only on the child that has the allergen itself.
+
+    The hidden rules tag every child of a parent: 햄 -> 소금 (is_pork), 만두 -> 부추
+    (is_pork), 육수 -> 다시마 (is_beef), so ④ asked about salt or kelp. When another child
+    of the same parent owns the tag (햄 -> 돼지고기), the parent keeps it through that
+    child and the others drop it. With no owning child the tags stay (no FN).
+    """
+
+    owners = {(p, t) for p, c, t in edge_tags if t in tags[c]}
+    return [(p, c, t) for p, c, t in edge_tags if (p, t) not in owners or t in tags[c]]
+
+
 def build() -> SeedData:
     known = {c for c, _ in CATEGORY_RULES} | set(EXACT_MAP.values())
-    priors = {s: _rows(ROOT / f"crawling/{s}_prior.csv") for s in SITES}
+    raw_priors = {s: _rows(ROOT / f"crawling/{s}_prior.csv") for s in SITES}
+    # ingredient ids are positions in the sorted name list: list names from every bundle,
+    # dropped ones too, so a dropped bundle never shifts the ids the backend stored
+    priors = {s: [r for r in rows if (s, r["menu_name"]) not in CORPUS_DROP] for s, rows in raw_priors.items()}
     curated = _rows(ROOT / "ai_ruleengine/data/menus.csv")
     taxonomy_rows = {r["name_ko"]: r["taxonomy_category"] for r in _rows(ROOT / "crawling/ingredient_taxonomy.csv")}
 
@@ -123,15 +138,21 @@ def build() -> SeedData:
             if not p or not c or p == c:
                 continue
             edges.setdefault((p, c), flag)
-            if c not in PATH_TAG_FREE:
-                edge_tags[(p, c, tag)] = None
+            edge_tags[(p, c, tag)] = None
 
-    names = {r["ingredient_canonical"] for rows in priors.values() for r in rows}
+    names = {r["ingredient_canonical"] for rows in raw_priors.values() for r in rows}
     names = {n for n in names if n in known}
     names |= {i for items in recipe.values() for i in items}
     names |= endpoints
     ingredients = sorted(names)
     keywords = {t: sorted(k, key=len, reverse=True) for t, k in VARIANT_INGREDIENTS.items()}
+    tags = {
+        n: sorted(
+            ({t for t, ks in keywords.items() if any(k in n for k in ks)} - TAG_REMOVE.get(n, set()))
+            | TAG_ADD.get(n, set())
+        )
+        for n in ingredients
+    }
     menus = sorted({r["menu_name"] for rows in priors.values() for r in rows} | set(recipe))
     return SeedData(
         menus=menus,
@@ -143,15 +164,9 @@ def build() -> SeedData:
         ingredients=ingredients,
         ingredient_id={n: i + 1 for i, n in enumerate(ingredients)},
         taxonomy={n: taxonomy_rows.get(n) or "unknown" for n in ingredients},
-        tags={
-            n: sorted(
-                ({t for t, ks in keywords.items() if any(k in n for k in ks)} - TAG_REMOVE.get(n, set()))
-                | TAG_ADD.get(n, set())
-            )
-            for n in ingredients
-        },
+        tags=tags,
         edges=edges,
-        edge_tags=list(edge_tags),
+        edge_tags=_owned_path_tags(list(edge_tags), tags),
         priors=priors,
         dropped_rules=dropped,
     )
