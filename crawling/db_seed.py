@@ -56,6 +56,9 @@ TAG_ADD: dict[str, set[str]] = {
     "다시다": {"is_beef"},  # beef stock powder
     "카레가루": {"is_wheat"},  # curry powder usually has wheat flour
     "베이크드빈스": {"is_tomato"},  # beans in tomato sauce
+    "젓갈": {"is_shrimp"},  # generic jeotgal can be 새우젓
+    "곱창": {"is_pork"},  # 돼지곱창 (순대곱창) is common
+    "와인": {"is_sulfite"},  # wine almost always has sulfites
 }
 
 

@@ -351,3 +351,87 @@ def test_verdict_drops_a_hidden_row_that_repeats_its_carrier() -> None:
         locale="ko",
     )
     assert "새우" in judge(other).message.verdict
+
+
+def _broth_yes(tags: list[str]):
+    # A flag card asked "육수에 돼지고기나 새우가 들어가나요?" and the owner said yes.
+    return flag_answer(tags, "present").model_copy(update={"ambiguity_flag": "has_unclear_broth"})
+
+
+PORK_SHRIMP = profile(allergies=["is_pork", "is_shrimp"])
+
+
+def test_two_tag_flag_answer_says_or_not_both() -> None:
+    # 2026-11-17 scenario: the owner said yes to the pork-or-shrimp broth card and no to
+    # 새우, yet the verdict said "사장님이 돼지고기와 새우가 들어 있다고 확인했어요".
+    req = request(
+        PORK_SHRIMP,
+        confirmed_results=[confirmed(PORK, ["is_pork"], "present"), confirmed(SHRIMP, ["is_shrimp"], "absent")],
+        flags=["has_unclear_broth"],
+        flag_answers=[_broth_yes(["is_pork", "is_shrimp"])],
+        locale="ko",
+    )
+    result = judge(req)
+    assert result.risk_level == "danger"
+    assert result.message.verdict == (
+        "사장님이 돼지고기가 들어 있다고 확인했어요. "
+        "사장님이 육수에 돼지고기나 새우가 들어간다고 답했어요. "
+        "돼지고기 알레르기 기준에 맞지 않아요."
+    )
+
+
+def test_two_tag_flag_answer_alone_names_every_restriction_it_may_break() -> None:
+    req = request(
+        PORK_SHRIMP,
+        confirmed_results=KIMCHI_STEW_CONFIRMED[:1],
+        flags=["has_unclear_broth"],
+        flag_answers=[_broth_yes(["is_pork", "is_shrimp"])],
+        locale="en",
+    )
+    verdict = judge(req).message.verdict
+    assert verdict.startswith("The owner said there is pork or shrimp in the broth.")
+    assert "confirmed" not in verdict
+    assert "pork allergy" in verdict and "shrimp allergy" in verdict
+
+
+def test_two_tag_flag_answer_is_left_out_when_confirmed_ingredients_cover_it() -> None:
+    req = request(
+        PORK_SHRIMP,
+        confirmed_results=[confirmed(PORK, ["is_pork"], "present"), confirmed(SHRIMP, ["is_shrimp"], "present")],
+        flags=["has_unclear_broth"],
+        flag_answers=[_broth_yes(["is_pork", "is_shrimp"])],
+        locale="ko",
+    )
+    assert "답했어요" not in judge(req).message.verdict
+
+
+@pytest.mark.parametrize("locale", LOCALES)
+def test_two_tag_flag_answer_sentence_in_every_language(locale) -> None:
+    req = request(
+        PORK_SHRIMP,
+        confirmed_results=KIMCHI_STEW_CONFIRMED[:1],
+        flags=["has_unclear_broth", "has_variant"],
+        flag_answers=[
+            _broth_yes(["is_pork", "is_shrimp"]),
+            flag_answer(["is_pork", "is_shrimp"], "present").model_copy(update={"ambiguity_flag": "has_variant"}),
+        ],
+        locale=locale,
+    )
+    verdict = judge(req).message.verdict
+    assert "None" not in verdict
+    if locale != "ko":
+        assert not any("가" <= ch <= "힣" for ch in verdict), verdict
+    print(locale, verdict)
+
+
+def test_one_tag_flag_answer_is_left_out_when_a_confirmed_ingredient_carries_it() -> None:
+    # 김치찌개: 새우젓 "있음" and the jeotgal flag "있음" read "salted shrimp, pork and shrimp".
+    salted_shrimp = IngredientRef(ingredient_id=131, canonical_name="새우젓")
+    req = request(
+        SHRIMP_ALLERGY,
+        confirmed_results=[confirmed(salted_shrimp, ["is_shrimp"], "present")],
+        flags=["has_unclear_jeotgal"],
+        flag_answers=[flag_answer(["is_shrimp"], "present")],
+        locale="ko",
+    )
+    assert judge(req).message.verdict == "사장님이 새우젓이 들어 있다고 확인했어요. 새우 알레르기 기준에 맞지 않아요."

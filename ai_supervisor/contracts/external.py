@@ -54,10 +54,18 @@ class RiskTagObservation(StrictModel):
     evidence: EvidenceRef
 
 
+class ForeignTextSegment(StrictModel):
+    text: NonEmptyString
+    role: Literal["translation", "semantic_detail", "unknown"]
+    confidence: Probability
+
+
 class PreparedItem(StrictModel):
     item_id: NonEmptyString
     source_index: NonNegativeInt
     raw_menu_name: NonEmptyString
+    origin_text: NonEmptyString | None = None
+    foreign_text_segments: list[ForeignTextSegment] = Field(default_factory=list)
     normalized_menu_name: NonEmptyString
     display_name: NonEmptyString
     description: str | None

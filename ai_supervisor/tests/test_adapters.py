@@ -57,6 +57,15 @@ def test_legacy_ocr_adapter_converts_and_orders_canonical_items() -> None:
                     },
                     {
                         "display_order": 1,
+                        "raw_menu_name": "■ 김치 찌게 8,000원",
+                        "origin_text": "국내산",
+                        "foreign_text_segments": [
+                            {
+                                "text": "Kimchi stew",
+                                "role": "unknown",
+                                "confidence": 0.0,
+                            }
+                        ],
                         "menu_name_ko": "김치찌개",
                         "description_ko": "돼지고기 김치찌개",
                         "price_text": "8,000원",
@@ -80,8 +89,13 @@ def test_legacy_ocr_adapter_converts_and_orders_canonical_items() -> None:
 
     assert response.scan_quality.score == 0.94
     assert [item.item_id for item in response.items] == ["scan-123:0", "scan-123:1"]
-    assert [item.raw_menu_name for item in response.items] == ["김치찌개", "된장찌개"]
+    assert [item.raw_menu_name for item in response.items] == [
+        "■ 김치 찌게 8,000원",
+        "된장찌개",
+    ]
     assert response.items[0].ocr_confidence == 0.93
+    assert response.items[0].origin_text == "국내산"
+    assert response.items[0].foreign_text_segments[0].role == "unknown"
     assert response.items[0].price_options[0].price_text == "10000"
     assert response.items[0].risk_tag_observations[0].confidence == 0.78
     assert response.items[0].risk_tag_observations[0].evidence.observed_at == OBSERVED_AT

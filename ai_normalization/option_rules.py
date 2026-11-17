@@ -6,7 +6,33 @@ import re
 from dataclasses import dataclass
 
 _SERVING_RE = re.compile(r"(?:^|\s)(?P<option>\d+\s*(?:인분|인|人))\s*$", re.IGNORECASE)
-_SIZE_RE = re.compile(r"(?:^|\s)(?P<option>소자|중자|대자|소|중|대|곱빼기)\s*$")
+_SIZE_RE = re.compile(
+    r"(?:^|\s)(?P<option>특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|"
+    r"小|中|大|특|보통|곱빼기|곱배기)\s*$"
+)
+_QUANTITY_RE = re.compile(
+    r"(?:^|\s)(?P<option>\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)"
+    r"(?:\s*이상)?)\s*$",
+    re.IGNORECASE,
+)
+_BRACKETED_TERMINAL_RE = re.compile(
+    r"\s*[\(\[【]\s*(?P<option>"
+    r"\d+\s*(?:인분|인|人)|"
+    r"특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|小|中|大|특|보통|곱빼기|곱배기|"
+    r"\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)(?:\s*이상)?"
+    r")\s*[\)\]】]\s*$",
+    re.IGNORECASE,
+)
+
+_OPTION_NORMALIZATIONS = {
+    "小": "소",
+    "中": "중",
+    "大": "대",
+    "소짜": "소자",
+    "중짜": "중자",
+    "대짜": "대자",
+    "곱배기": "곱빼기",
+}
 
 _COOKING_OPTIONS = ("덜 맵게", "매운맛", "튀김")
 _INGREDIENT_OPTION_PATTERNS = (
@@ -32,11 +58,23 @@ def extract_options(text: str) -> OptionExtraction:
     menu_text = text.strip()
     terminal_options: list[str] = []
     while menu_text:
-        match = _SERVING_RE.search(menu_text) or _SIZE_RE.search(menu_text)
-        if match is None or match.start("option") == 0:
+        match = (
+            _BRACKETED_TERMINAL_RE.search(menu_text)
+            or _SERVING_RE.search(menu_text)
+            or _SIZE_RE.search(menu_text)
+            or _QUANTITY_RE.search(menu_text)
+        )
+        if match is None:
             break
-        terminal_options.insert(0, re.sub(r"\s+", "", match.group("option")))
-        menu_text = menu_text[: match.start()].rstrip()
+        prefix = menu_text[: match.start()].rstrip()
+        if not prefix:
+            break
+        option = re.sub(r"\s+", "", match.group("option"))
+        option = _OPTION_NORMALIZATIONS.get(option, option)
+        if option.endswith("개이상"):
+            option = f"{option[:-2]} 이상"
+        terminal_options.insert(0, option)
+        menu_text = prefix
 
     observations: list[tuple[int, str, str | None]] = []
     for phrase in _COOKING_OPTIONS:

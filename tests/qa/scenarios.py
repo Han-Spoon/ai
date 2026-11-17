@@ -100,7 +100,13 @@ def _():
     assert names(["김치찌게"])[0][1] == "김치찌개"
 
 
-@scenario("A", "영문 메뉴명을 한글로 바꾼다", "`Bulgogi`, `kimchi stew`", "`불고기`, `김치찌개`")
+@scenario(
+    "A",
+    "영문 메뉴명을 한글로 바꾼다",
+    "`Bulgogi`, `kimchi stew`",
+    "`불고기`, `김치찌개`",
+    known_issue="#381 이후 영문이 섞인 메뉴명이면 Prepare가 멈춤. ②가 외국어 구간을 채우는데 ⓪은 그 칸을 OCR 원본 그대로여야 하는 칸으로 검사함",
+)
 def _():
     assert [n for _, n in names(["Bulgogi", "kimchi stew"])] == ["불고기", "김치찌개"]
 

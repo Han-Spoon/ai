@@ -43,6 +43,21 @@ def item(index: int, name: str, *, locale: str | None = "ko") -> dict:
         ("돈까스", "돈까스", "돈가스", []),
         ("부대찌개 2인", "부대찌개", "부대찌개", ["2인"]),
         ("부대찌개 대자", "부대찌개", "부대찌개", ["대자"]),
+        ("1. 불고기", "불고기", "불고기", []),
+        ("① 불고기", "불고기", "불고기", []),
+        ("BEST · 불고기", "불고기", "불고기", []),
+        ("된장찌개(1인)", "된장찌개", "된장찌개", ["1인"]),
+        ("된장찌개[2인]", "된장찌개", "된장찌개", ["2인"]),
+        ("감자탕(大)", "감자탕", "감자탕", ["대"]),
+        ("감자탕 대짜", "감자탕", "감자탕", ["대자"]),
+        ("냉면 곱배기", "냉면", "냉면", ["곱빼기"]),
+        ("삼겹살 500g", "삼겹살", "삼겹살", ["500g"]),
+        ("볶음밥 2개이상", "볶음밥", "볶음밥", ["2개 이상"]),
+        ("김치찌개8000원", "김치찌개", "김치찌개", []),
+        ("김치찌개(8,O00원)", "김치찌개", "김치찌개", []),
+        ("소고기국밥 호주산", "소고기국밥", "소고기국밥", []),
+        ("육회국내산 암소한우", "육회", "육회", []),
+        ("Bulgogi 불고기", "Bulgogi 불고기", "불고기", []),
         ("차돌된장찌개", "차돌된장찌개", "차돌된장찌개", []),
         ("대구탕", "대구탕", "대구탕", []),
     ],
@@ -62,6 +77,35 @@ def test_ingredient_option_is_never_removed() -> None:
     assert result.normalized_menu_name == "라면치즈추가"
     assert result.options == ("치즈 추가",)
     assert result.residual_tokens == ("치즈",)
+
+
+def test_leading_number_requires_list_punctuation_and_space() -> None:
+    assert clean_menu_name("1) 불고기").normalized_menu_name == "불고기"
+    assert clean_menu_name("①불고기").status == "cleaned"
+    assert clean_menu_name("24시 뼈해장국").display_name == "24시 뼈해장국"
+    assert clean_menu_name("1.5인분 피자").display_name == "1.5인분 피자"
+
+
+def test_price_without_currency_requires_a_separating_space() -> None:
+    assert clean_menu_name("김치찌개 8000").normalized_menu_name == "김치찌개"
+    assert clean_menu_name("김치찌개8000").normalized_menu_name == "김치찌개8000"
+
+
+def test_terminal_option_requires_a_real_menu_prefix() -> None:
+    assert clean_menu_name("대").normalized_menu_name == "대"
+    assert clean_menu_name("500g").normalized_menu_name == "500g"
+    assert clean_menu_name("특 갈비탕").normalized_menu_name == "특갈비탕"
+
+
+def test_origin_like_text_is_removed_only_as_a_known_suffix() -> None:
+    assert clean_menu_name("국내산 한우육회").display_name == "국내산 한우육회"
+    assert clean_menu_name("자연산광어회").display_name == "자연산광어회"
+
+
+def test_nonduplicate_mixed_language_name_is_preserved_for_llm() -> None:
+    result = clean_menu_name("Bulgogi 덮밥")
+    assert result.normalized_menu_name == "bulgogi덮밥"
+    assert result.dictionary_hit is False
 
 
 def test_header_is_invalid_but_unknown_single_character_is_valid() -> None:
@@ -121,16 +165,23 @@ def test_documented_section_headers_are_invalid(header: str) -> None:
 
 
 def test_batch_preserves_fields_and_returns_source_order() -> None:
+    valid_item = item(0, "■ Kimchi 김치 찌개 2인")
+    valid_item["origin_text"] = "국내산"
+    valid_item["foreign_text_segments"] = [
+        {"text": "Kimchi", "role": "unknown", "confidence": 0.0}
+    ]
     payload = {
         "context": context(),
-        "items": [item(1, "식사류"), item(0, "■ 김치 찌개 2인")],
+        "items": [item(1, "식사류"), valid_item],
         "warnings": [],
         "errors": [],
     }
     response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
 
     assert [value.source_index for value in response.items] == [0, 1]
-    assert response.items[0].raw_menu_name == "■ 김치 찌개 2인"
+    assert response.items[0].raw_menu_name == "■ Kimchi 김치 찌개 2인"
+    assert response.items[0].origin_text == "국내산"
+    assert response.items[0].foreign_text_segments[0].role == "unknown"
     assert response.items[0].ocr_confidence == 0.93
     assert response.items[1].cleaning_status == "invalid"
     assert response.warnings[0].code == "section_header"
@@ -155,8 +206,17 @@ def test_cleaning_request_rejects_store_context_and_unknown_fields() -> None:
 
 
 class UnsafeNameResolver:
-    async def resolve_name(self, _item):
-        return NameResolution(normalized_menu_name="라면", confidence=0.99)
+    async def resolve_name(self, item):
+        return NameResolution(
+            normalized_menu_name="라면",
+            confidence=0.99,
+            foreign_text_segments=[
+                segment.model_copy(
+                    update={"role": "translation", "confidence": 0.99}
+                )
+                for segment in item.foreign_text_segments
+            ],
+        )
 
 
 class EnglishNameResolver:
@@ -165,7 +225,32 @@ class EnglishNameResolver:
 
     async def resolve_name(self, item):
         self.received = item
-        return NameResolution(normalized_menu_name="치킨", confidence=0.99)
+        return NameResolution(
+            normalized_menu_name="치킨",
+            confidence=0.99,
+            foreign_text_segments=[
+                segment.model_copy(
+                    update={"role": "translation", "confidence": 0.99}
+                )
+                for segment in item.foreign_text_segments
+            ],
+        )
+
+
+def test_known_bilingual_duplicate_skips_llm() -> None:
+    resolver = EnglishNameResolver()
+    payload = {
+        "context": context(),
+        "items": [item(0, "Bulgogi 불고기", locale="ko")],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(
+        NameCleaningAgent(resolver).run(NameCleaningRequest.model_validate(payload))
+    )
+    assert response.items[0].normalized_menu_name == "불고기"
+    assert response.items[0].foreign_text_segments[0].role == "translation"
+    assert resolver.received is None
 
 
 class ConcurrentNameResolver:
@@ -180,7 +265,16 @@ class ConcurrentNameResolver:
             await asyncio.sleep(0)
             if item.display_name == "Fail":
                 raise RuntimeError("resolver failure")
-            return NameResolution(normalized_menu_name="번역메뉴", confidence=0.99)
+            return NameResolution(
+                normalized_menu_name="번역메뉴",
+                confidence=0.99,
+                foreign_text_segments=[
+                    segment.model_copy(
+                        update={"role": "translation", "confidence": 0.99}
+                    )
+                    for segment in item.foreign_text_segments
+                ],
+            )
         finally:
             self.active -= 1
 
@@ -216,7 +310,84 @@ def test_unknown_latin_name_uses_minimal_resolver_input() -> None:
         "normalized_menu_name",
         "locale_hint",
         "residual_tokens",
+        "foreign_text_segments",
     }
+
+
+def test_cjk_name_is_valid_and_uses_multilingual_resolver() -> None:
+    resolver = EnglishNameResolver()
+    payload = {
+        "context": context(),
+        "items": [item(0, "チキン", locale=None)],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(
+        NameCleaningAgent(resolver).run(NameCleaningRequest.model_validate(payload))
+    )
+
+    assert resolver.received.display_name == "チキン"
+    assert response.items[0].normalized_menu_name == "치킨"
+
+
+class SemanticDetailResolver:
+    async def resolve_name(self, item):
+        return NameResolution(
+            normalized_menu_name="소고기불고기",
+            confidence=0.99,
+            foreign_text_segments=[
+                segment.model_copy(
+                    update={"role": "semantic_detail", "confidence": 0.99}
+                )
+                for segment in item.foreign_text_segments
+            ],
+        )
+
+
+def test_semantic_detail_is_preserved_as_a_residual_token() -> None:
+    payload = {
+        "context": context(),
+        "items": [item(0, "Beef 불고기", locale="en")],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(
+        NameCleaningAgent(SemanticDetailResolver()).run(
+            NameCleaningRequest.model_validate(payload)
+        )
+    )
+
+    cleaned = response.items[0]
+    assert cleaned.normalized_menu_name == "소고기불고기"
+    assert cleaned.foreign_text_segments[0].role == "semantic_detail"
+    assert cleaned.residual_tokens == ["Beef"]
+
+
+class UnknownChangingResolver:
+    async def resolve_name(self, item):
+        return NameResolution(
+            normalized_menu_name="임의메뉴",
+            confidence=0.99,
+            foreign_text_segments=list(item.foreign_text_segments),
+        )
+
+
+def test_unknown_foreign_segment_cannot_change_the_search_name() -> None:
+    payload = {
+        "context": context(),
+        "items": [item(0, "Mystery", locale="en")],
+        "warnings": [],
+        "errors": [],
+    }
+    response = asyncio.run(
+        NameCleaningAgent(UnknownChangingResolver()).run(
+            NameCleaningRequest.model_validate(payload)
+        )
+    )
+
+    assert response.items[0].normalized_menu_name == "mystery"
+    assert response.items[0].foreign_text_segments[0].role == "unknown"
+    assert response.warnings[0].code == "name_llm_failed"
 
 
 def test_name_llm_calls_are_bounded_ordered_and_failure_isolated() -> None:

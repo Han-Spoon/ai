@@ -204,6 +204,9 @@ def test_web_names_from_real_recipes_mostly_map():
         ("밀크초콜릿", "is_wheat", "is_milk"),
         ("햄버거번", "is_pork", "is_wheat"),
         ("다시다", None, "is_beef"),
+        ("젓갈", None, "is_shrimp"),
+        ("곱창", None, "is_pork"),
+        ("와인", None, "is_sulfite"),
     ],
 )
 def test_keyword_tag_fixes(name, absent, present):

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Protocol, TypeVar, Union
 
 from .contracts.common import EvidenceRef, NodeWarning
-from .contracts.external import PriceOption, RiskTagObservation
+from .contracts.external import ForeignTextSegment, PriceOption, RiskTagObservation
 from .contracts.ocr import OcrItem, OcrRequest, OcrResponse, OcrScanQuality
 
 RequestT = TypeVar("RequestT", contravariant=True)
@@ -132,9 +132,9 @@ def _legacy_ocr_item(
     if not 0.0 <= normalized_confidence <= 1.0:
         raise ValueError("legacy OCR item confidence must be between 0 and 100")
 
-    raw_menu_name = value.get("menu_name_ko")
+    raw_menu_name = value.get("raw_menu_name") or value.get("menu_name_ko")
     if not isinstance(raw_menu_name, str) or not raw_menu_name.strip():
-        raise ValueError("legacy OCR item menu_name_ko must not be empty")
+        raise ValueError("legacy OCR item raw menu name must not be empty")
 
     observations: list[RiskTagObservation] = []
     if value.get("is_spicy") is True:
@@ -171,6 +171,10 @@ def _legacy_ocr_item(
             item_id=item_id,
             source_index=source_index,
             raw_menu_name=raw_menu_name.strip(),
+            origin_text=_optional_string(value.get("origin_text")),
+            foreign_text_segments=_legacy_foreign_text_segments(
+                value.get("foreign_text_segments", [])
+            ),
             description=_optional_string(value.get("description_ko")),
             price_text=_optional_string(value.get("price_text")),
             price_options=_legacy_price_options(value.get("price_options", [])),
@@ -201,6 +205,12 @@ def _legacy_price_options(value: Any) -> list[PriceOption]:
             )
         )
     return options
+
+
+def _legacy_foreign_text_segments(value: Any) -> list[ForeignTextSegment]:
+    if not isinstance(value, list):
+        raise ValueError("legacy OCR foreign_text_segments must be an array")
+    return [ForeignTextSegment.model_validate(segment) for segment in value]
 
 
 def _legacy_display_order(value: Any) -> tuple[int, int]:
