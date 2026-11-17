@@ -48,6 +48,8 @@ _PHONE_RE = re.compile(r"^(?:전화|tel\.?\s*)?\s*\d{2,4}[-\s]\d{3,4}[-\s]\d{4}$
 _HOURS_RE = re.compile(
     r"^(?:영업시간\s*)?(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:~|-|–)\s*(?:[01]?\d|2[0-3]):[0-5]\d$"
 )
+_SERVING_ONLY_RE = re.compile(r"^\d+(?:\.\d+)?인분(?:추가)?$")
+_NON_MENU_NOTICES = frozenset({"셀프코너이용"})
 _HAS_LATIN_RE = re.compile(r"[A-Za-z]")
 _HAS_FOREIGN_SCRIPT_RE = re.compile(
     r"[A-Za-z\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]"
@@ -332,7 +334,15 @@ def _compact(text: str) -> str:
 
 def _is_non_menu_text(text: str) -> bool:
     compact = _compact(text).casefold()
-    return compact in SECTION_HEADERS or bool(_PHONE_RE.fullmatch(text) or _HOURS_RE.fullmatch(text))
+    return (
+        compact in SECTION_HEADERS
+        or compact in _NON_MENU_NOTICES
+        or bool(
+            _PHONE_RE.fullmatch(text)
+            or _HOURS_RE.fullmatch(text)
+            or _SERVING_ONLY_RE.fullmatch(compact)
+        )
+    )
 
 
 def _invalid(display_name: str, warning_code: str) -> CleaningOutcome:
@@ -419,7 +429,7 @@ def _warning(code: str, item_id: str, *, forces_caution: bool) -> NodeWarning:
         "empty_menu_name": "메뉴명 정제 후 남은 문자열이 없습니다.",
         "price_only": "가격만 있는 문자열은 메뉴에서 제외했습니다.",
         "section_header": "메뉴판 섹션 제목은 메뉴에서 제외했습니다.",
-        "invalid_menu_text": "전화번호 또는 영업시간 문자열은 메뉴에서 제외했습니다.",
+        "invalid_menu_text": "메뉴가 아닌 안내·옵션 문자열은 메뉴에서 제외했습니다.",
         "name_llm_failed": "다국어 메뉴명 해석에 실패해 규칙 기반 이름을 유지했습니다.",
         "low_ocr_confidence": "OCR 신뢰도가 설정된 품질 기준보다 낮습니다.",
     }

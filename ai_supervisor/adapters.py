@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any, Protocol, TypeVar, Union
@@ -132,7 +133,16 @@ def _legacy_ocr_item(
     if not 0.0 <= normalized_confidence <= 1.0:
         raise ValueError("legacy OCR item confidence must be between 0 and 100")
 
+    origin_text = _optional_string(value.get("origin_text"))
     raw_menu_name = value.get("raw_menu_name") or value.get("menu_name_ko")
+    if (
+        origin_text
+        and isinstance(raw_menu_name, str)
+        and _metadata_compact(origin_text) in _metadata_compact(raw_menu_name)
+    ):
+        separated_menu_name = value.get("menu_name_ko")
+        if isinstance(separated_menu_name, str) and separated_menu_name.strip():
+            raw_menu_name = separated_menu_name
     if not isinstance(raw_menu_name, str) or not raw_menu_name.strip():
         raise ValueError("legacy OCR item raw menu name must not be empty")
 
@@ -171,7 +181,7 @@ def _legacy_ocr_item(
             item_id=item_id,
             source_index=source_index,
             raw_menu_name=raw_menu_name.strip(),
-            origin_text=_optional_string(value.get("origin_text")),
+            origin_text=origin_text,
             foreign_text_segments=_legacy_foreign_text_segments(
                 value.get("foreign_text_segments", [])
             ),
@@ -229,6 +239,10 @@ def _optional_string(value: Any) -> str | None:
         value = str(value)
     stripped = value.strip()
     return stripped or None
+
+
+def _metadata_compact(value: str) -> str:
+    return re.sub(r"[\W_]+", "", value).casefold()
 
 
 def _string_list(value: Any, field: str) -> list[str]:

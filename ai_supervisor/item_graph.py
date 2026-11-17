@@ -1259,7 +1259,7 @@ def _information_status(
     if state.get("errors"):
         return "partial"
     if any(
-        warning.forces_caution and warning.code != "store_context_missing"
+        warning.code == "knowledge_slice_unavailable"
         for warning in state.get("warnings", [])
     ):
         return "partial"

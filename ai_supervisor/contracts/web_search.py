@@ -120,7 +120,7 @@ class WebAggregateResponse(StrictModel):
     menu: WebMenu
     found: StrictBool
     ingredients: list[BayesianIngredient]
-    review_notes: list[ReviewNote]
+    review_notes: list[ReviewNote] = Field(default_factory=list, exclude=True)
     recipe_signals: list[RecipeSignal] = Field(default_factory=list)
     warnings: list[NodeWarning]
     errors: list[NodeError]

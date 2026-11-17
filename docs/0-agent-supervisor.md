@@ -73,7 +73,7 @@ Supervisor는 **LangGraph `StateGraph`로 전체 실행 순서를 만들고, LLM
 
 #### 0-2-1. 왜 Supervisor를 자유형 LLM Agent로 만들지 않는가
 
-Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입력도 실행 경로가 달라질 수 있고, `store_id`, 3-State, `anomaly_locked`, 근거 ID가 중간에 빠질 수 있다. 이 프로젝트는 FN 최소화가 우선이므로 호출 순서를 코드로 고정한다.
+Supervisor에게 "다음 Tool을 알아서 선택하라"고 맡기면 같은 입력도 실행 경로가 달라질 수 있고, `store_id`, 3-State, 근거 ID가 중간에 빠질 수 있다. 이 프로젝트는 FN 최소화가 우선이므로 호출 순서를 코드로 고정한다.
 
 - 분기 판단은 `if`와 conditional edge가 담당한다.
 - LLM은 graph의 다음 node 이름을 만들 수 없다.
@@ -196,7 +196,7 @@ POST /v1/analyze/prepare
 - `schema_version`, `trace_id`, `scan_session_id`; Judge에서는 `store_id`도 끝까지 보존
 - `item_id`, `source_index`
 - OCR 원문, 정규화 메뉴명, 가격과 설명
-- `constraint_tags`, `role`, `anomaly_locked`
+- `constraint_tags`, `role`
 - `evidence_refs`, `warnings`, `errors`
 
 노드 요청에 당장 쓰이지 않는 값도 state에서는 삭제하지 않는다. 예를 들어 ②가 가격을 사용하지 않더라도 Supervisor는 가격을 state에 보존해 Judge 결과에 다시 넣는다.
@@ -891,7 +891,7 @@ Supervisor는 JudgeResponse를 반환하기 직전에 다음 참조 정합성을
 | `owner_cards[].ingredient` | object \| null | 재료 카드면 물어볼 재료, 메뉴 애매함 플래그 카드면 null (§4-7) |
 | `owner_cards[].ambiguity_flag` | string \| null | 메뉴 애매함 플래그 카드일 때만 플래그 이름 |
 
-`high_risk_review`와 `risk_ingredients[].anomaly_locked`는 Judge Graph 내부에서 재검증·SAFE 차단·질문 생성에 사용하지만 최종 JudgeResponse에는 노출하지 않는다. `risk_ingredients[].role`, `confidence`, `prior_source`는 사용자 설명에 필요하므로 외부 응답에 유지한다.
+`high_risk_review`는 Judge Graph 내부에서 재검증 후보 선택에 사용하지만 최종 JudgeResponse에는 노출하지 않는다. `risk_ingredients[].role`, `confidence`, `prior_source`는 사용자 설명에 필요하므로 외부 응답에 유지한다. 폐기된 `risk_ingredients[].anomaly_locked`는 판정·SAFE 차단·질문 생성에 사용하지 않는다.
 
 `items[].message`는 판정 한 줄(`verdict`)·이유 설명(`reason`)·안내(`notes[]`)를 나눈 object이고, 세 칸 모두 요청 `locale` 하나로 작성한다 (⑧ §4). 화면이 부분별로 따로 배치하고, LLM이 만든 `reason`만 숨기거나 다시 만들 수 있게 나눈다. 판정 결과에는 다른 언어 번역을 함께 넣지 않는다. 반면 `owner_cards[].question`은 가게에서 손님과 사장님이 함께 보는 문구이므로 한국어와 요청 `locale`만 담는다. 요청 언어가 한국어면 `ko` 하나만 담는다.
 
@@ -1151,7 +1151,7 @@ Adapter의 공통 순서는 다음과 같다.
 2. Pydantic JSON을 기존 Python 함수 또는 HTTP API에 전달한다.
 3. 받은 값을 §4 Response 모델로 검증한다.
 4. 응답 `context`가 요청과 같은지 검사한다.
-5. `evidence_refs`, 3-State, tags, `anomaly_locked` 보존 여부를 검사한다.
+5. `evidence_refs`, 3-State, tags 보존 여부와 폐기 필드가 직렬화에서 제외되는지 검사한다.
 6. 검증된 모델만 node가 state update로 반환한다.
 
 node는 `async def node(state, runtime) -> dict` 형태로 자기 결과 필드만 반환한다. 다음을 금지한다.
@@ -1695,7 +1695,6 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
   },
   "unconfirmed_only": true,
   "confirmed_ingredients": [],
-  "anomaly_locked_ingredients": [],
   "knowledge": {
     "status": "ok",
     "menu": {
@@ -1813,7 +1812,6 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
           "n_total": 57
         }
       ],
-      "anomaly_locked": false,
       "evidence_refs": ["recipe:menu-001:ingredient-010"]
     }
   ],
@@ -1868,7 +1866,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 
 ③의 출력 중 `status: present | absent`인 재료를 legacy `flagged_anomaly`·`override_eligible` 값과 관계없이 `confirmed_ingredients`로 전달한다. 원소는 `{ingredient: IngredientRef, status: present | absent}`다. 두 legacy 칸이 생략되거나 false여도 확률 계산 대상으로 되돌리지 않는다.
 
-`anomaly_locked_ingredients`는 항상 `[]`다. 10/27 회의로 이상 답변 잠금이 없어졌다 (③ §1-6). 칸과 ④⑤의 `anomaly_locked`를 지울지는 #340에서 정한다. 원소 형식은 `IngredientRef`다.
+`anomaly_locked_ingredients`와 ④·⑤·⑧의 `anomaly_locked`는 #340 단계적 삭제를 위한 호환 입력이다. 전환 기간에는 필드가 있거나 없어도 계약 검증을 통과하고, 있으면 기존 내부 호출을 위해 값을 보존하지만 Supervisor 직렬화 출력에는 포함하지 않는다. 필드가 없으면 각각 `[]`, `false`로 동작한다. ④·⑤·⑧이 생성·전달·참조를 모두 제거한 뒤 호환 필드도 삭제한다.
 
 `cache_command`는 ④가 만든 `save_menu_ingredient_cache` 저장 명령이다. 캐시를 쓰지 않고 새로 펼쳤을 때만 채우고, 캐시를 그대로 썼거나 `knowledge.menu`가 null이면 `null`이다. 형식은 §4-6 `DbUpdateResponse.commands[]` 원소와 같다 (`operation_id`는 ⑦ 요청이 없으므로 `null`). Supervisor는 이 명령을 ⑦ 명령과 함께 `persistence_commands`에 넣는다. 관리자 게이트를 거치지 않는 파생 캐시라 ⑦을 거치지 않는다 (AGENTS.md 예외).
 
@@ -2061,7 +2059,6 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
           "n_total": 57
         }
       ],
-      "anomaly_locked": false,
       "evidence_refs": ["recipe:menu-001:ingredient-010"]
     }
   ],
@@ -2134,7 +2131,6 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
       "source": "expanded",
       "depth": 1,
       "confidence": 0.55,
-      "anomaly_locked": false,
       "evidence_refs": ["recipe:menu-001:ingredient-010"]
     }
   ],
@@ -2145,7 +2141,7 @@ Supervisor는 ②-A가 반환한 `raw_menu_name`과 `normalized_menu_name`의 �
 
 `prior_source`는 `store | cluster | global | uninformative`다. Supervisor는 선택된 후보의 KnowledgeBundle에서 `priors.store`, `priors.evidence`, `source_reliability`를 읽고, 외부 계약에서 제거한 `priors.cluster`와 `priors.global`은 내부 ⑤ 요청을 조립할 때 빈 배열로 채운다. ⑤는 store prior가 없으면 빈 cluster 단계를 건너뛰고 ④의 corpus별 `observations`로 global prior를 계산하며, 관측도 없으면 uninformative prior를 사용한다. `not_found`는 정의된 fallback으로 진행하고 `unavailable`은 warning과 SAFE 금지 신호를 유지한다.
 
-⑤는 질문 후보를 확률이나 confidence 숫자로 거르지 않으므로 질문 후보용 확률 구간 필드를 계산하거나 반환하지 않는다. ⑤는 사장님 답변을 prior 보정에 사용하지 않으며, 기본 메뉴의 사장님 답변도 받지 않는다. ⑤에는 확정 override 대상이 아닌 재료만 전달한다. ⑤는 `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`를 계산하거나 수정하지 않고 입력 그대로 각 probability에 복사한다. ⑤의 결과는 최종 판정이 아니며 ⑧이 사용자 프로필과 정책을 적용해 해석한다.
+⑤는 질문 후보를 확률이나 confidence 숫자로 거르지 않으므로 질문 후보용 확률 구간 필드를 계산하거나 반환하지 않는다. ⑤는 사장님 답변을 prior 보정에 사용하지 않으며, 기본 메뉴의 사장님 답변도 받지 않는다. ⑤에는 확정 override 대상이 아닌 재료만 전달한다. 전환 중인 기존 ⑤가 `anomaly_locked`를 복사해도 호환 계약이 받아들이지만 Supervisor 직렬화 출력에서는 제외한다. ⑤는 `constraint_tags`, `role`, `evidence_refs`를 입력 그대로 각 probability에 복사한다. ⑤의 결과는 최종 판정이 아니며 ⑧이 사용자 프로필과 정책을 적용해 해석한다.
 
 ⑤가 내는 warning code는 `empty_ingredients`(계산할 재료 0개), `integrity_error`(`k_count > n_total` 등 관측값 이상, 해당 재료는 무정보로 계산), `prior_global_ignored`(항상 빈 배열이어야 할 `priors.global`·`cluster`에 값이 와서 무시함)다. `empty_ingredients`와 `integrity_error`는 `forces_caution: true`다.
 
@@ -2331,14 +2327,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
           "n_total": 1
         }
       ],
-      "anomaly_locked": false,
       "evidence_refs": ["web:https://example.com/recipe/mala-tang"]
-    }
-  ],
-  "review_notes": [
-    {
-      "rule_code": "general_web_source",
-      "message": "일반 웹 출처이므로 관리자 확인이 필요해요."
     }
   ],
   "recipe_signals": [
@@ -2355,7 +2344,7 @@ Supervisor는 `item_id`가 같은 항목만 해당 Item Graph에 전달하고, �
 
 Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `mapped_sources`로 전달한다. `source_origin`은 `new | cache`이며, 2단계는 둘을 합쳐 표준 재료·사이트별 `observations`를 계산한다. 2단계 응답에는 출처 원본(`sources`)을 다시 넣지 않는다. 저장·관리자 검토 대상인 신규 출처 원본은 Supervisor가 1단계 응답 `sources`를 그대로 쓴다 (2단계 요청에는 `fetched_at`·`evidence`·원문 재료명이 없어 ⑥이 원본을 다시 만들 수 없고, 같은 자료를 두 번 주고받을 이유도 없다). `curated`는 false, `observation_basis`는 `direct`로 고정한다. `role`은 ④ 매핑 결과를 그대로 옮기며 ⑥이 새로 판단하지 않는다.
 
-집계 재료의 `evidence_refs`는 원본 출처를 가리킨다. 매핑하지 못한 재료는 버리지 않고 `ingredient_id: null`로 유지하며, ④의 `unmapped_constraint_tags` warning을 이어받아 ⑧이 SAFE를 막게 한다. `recipe_signals[]`는 `{evidence_id, code, message}`이며 `code`는 `other_dish_suspected | title_mismatch | unmapped_ingredient`다. `evidence_id`는 같은 요청의 `source_origin: new` 출처를 가리켜야 한다. Supervisor는 신호가 있는 신규 출처만 운영자 검토 대상으로 보내고, 신호가 없는 출처도 웹 캐시에는 저장한다. 전환 중인 ⑥이 이 칸 자체를 생략하면 기존처럼 신규 출처 전부를 검토 대상으로 보내는 보수적 fallback을 사용한다. ⑥이 명시적으로 빈 배열을 보내면 신호가 없는 것으로 확정해 검토 명령 없이 캐시만 저장한다. `review_notes`는 검토 보조 정보이며 판정에는 사용하지 않는다. 수집 결과와 캐시가 모두 없을 때만 `found: false`다.
+집계 재료의 `evidence_refs`는 원본 출처를 가리킨다. 매핑하지 못한 재료는 버리지 않고 `ingredient_id: null`로 유지하며, ④의 `unmapped_constraint_tags` warning을 이어받아 ⑧이 SAFE를 막게 한다. `recipe_signals[]`는 `{evidence_id, code, message}`이며 `code`는 `other_dish_suspected | title_mismatch | unmapped_ingredient`다. `evidence_id`는 같은 요청의 `source_origin: new` 출처를 가리켜야 한다. Supervisor는 신호가 있는 신규 출처만 운영자 검토 대상으로 보내고, 신호가 없는 출처도 웹 캐시에는 저장한다. 전환 중인 ⑥이 이 칸 자체를 생략하면 기존처럼 신규 출처 전부를 검토 대상으로 보내는 보수적 fallback을 사용한다. ⑥이 명시적으로 빈 배열을 보내면 신호가 없는 것으로 확정해 검토 명령 없이 캐시만 저장한다. 폐기 예정인 `review_notes`는 있거나 없어도 받아들이지만 직렬화 출력에서는 제외하며 판정에도 사용하지 않는다. 수집 결과와 캐시가 모두 없을 때만 `found: false`다.
 
 ⑥의 warning `code`에는 `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 제한 초과로 일부 결과만 반환), `web_llm_extraction_failed`(LLM 추출 실패로 규칙 결과만 반환)가 있다. 모두 `forces_caution: true`다. 기준값은 ⑥ 문서를 따른다.
 
@@ -2405,12 +2394,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
               "reliability_weight": null,
               "observed_at": "2026-10-08T03:00:00Z"
             }
-          }
-        ],
-        "review_notes": [
-          {
-            "rule_code": "general_web_source",
-            "message": "일반 웹 출처이므로 관리자 확인이 필요해요."
           }
         ],
         "variant_suggestion": null
@@ -2494,12 +2477,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
         }
       }
     ],
-    "review_notes": [
-      {
-        "rule_code": "general_web_source",
-        "message": "일반 웹 출처이므로 관리자 확인이 필요해요."
-      }
-    ],
     "variant_suggestion": null
   },
   "create_owner_verification_request": {
@@ -2571,7 +2548,7 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
 
 - `create_review_item.review_origin`은 `web_search | variant_suggestion`이다. `web_search`이면 `web_sources`가 비어 있지 않고 `variant_suggestion`은 `null`; `variant_suggestion`이면 `web_sources: []`이고 ④가 반환한 `variant_suggestion` 객체를 그대로 넣는다.
 - 런타임 변형의 `variant_review` node는 위 `create_review_item` operation 하나를 state에 모은다. Judge 마지막 `db_update`가 다른 operation과 함께 ⑦에 보낸다. ⑦ 응답은 `origin_node: ontology`, `source_type: ocr_variant_tag`, `evidence_class: soft`, `evidence_refs: [variant_suggestion.evidence.evidence_id]`를 보존해야 한다. `store_id: null`이면 ⑦을 호출하지 않지만 같은 변형 제안을 ⑤·⑧ 분석에서는 유지한다.
-- `create_review_item`은 ⑥ `recipe_signals[]`가 가리키는 신규 웹 출처가 하나 이상일 때만 만들고, `web_sources`에는 그 출처만 넣는다. 신호가 없는 신규 출처도 `save_web_search_cache.sources`에는 포함한다. `review_notes`는 ⑥ 응답을 그대로 보존하며 위험 판정이나 확률 계산에는 사용하지 않는다.
+- `create_review_item`은 ⑥ `recipe_signals[]`가 가리키는 신규 웹 출처가 하나 이상일 때만 만들고, `web_sources`에는 그 출처만 넣는다. 신호가 없는 신규 출처도 `save_web_search_cache.sources`에는 포함한다. 전환 중인 기존 호출의 `review_notes`는 받아들이되 ⑦ 요청 직렬화에서는 제외하며 위험 판정이나 확률 계산에도 사용하지 않는다.
 - `create_owner_verification_request`와 `record_owner_answer`는 ⑧ 카드의 종류를 그대로 따른다. `create_owner_verification_request.item_id`와 `card_id`는 원래 `owner_cards[]`의 같은 값을 보존해 화면 카드와 저장 명령을 잇는다. 재료 카드는 `ingredient` 객체 + `ambiguity_flag: null` + `constraint_tags: []`, 메뉴 애매함 플래그 카드는 `ingredient: null` + `ambiguity_flag` + 물어본 `constraint_tags`다. 플래그 답은 재료 확인값(`ingredient_confirmations`)과 다른 곳에 저장해 ③ `flag_confirmations`로 돌아와야 하며, 저장 테이블은 백엔드가 정한다 (§8).
 - `create_owner_verification_request.question`은 한국어 `ko`와 Judge 요청 `locale`의 문구만 보존한다. 요청 언어가 한국어면 `ko` 하나만 보낸다.
 - 사장님 질문은 대상마다 한 번만 생성한다. `round`, `previous_question_id`, `confirmation_state`를 만들거나 저장하지 않는다.
@@ -2658,12 +2635,6 @@ Supervisor는 신규 수집 결과와 캐시를 모두 ④에 매핑한 뒤 `map
             }
           }
         ],
-        "review_notes": [
-          {
-            "rule_code": "general_web_source",
-            "message": "일반 웹 출처이므로 관리자 확인이 필요해요."
-          }
-        ],
         "variant_suggestion": null,
         "provenance": {
           "origin_node": "web_search",
@@ -2739,7 +2710,6 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
       "posterior_mean": 0.62,
       "confidence": 0.55,
       "prior_source": "store",
-      "anomaly_locked": false,
       "evidence_refs": ["recipe:menu-001:ingredient-010"]
     }
   ],
@@ -2825,7 +2795,6 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
       "posterior_mean": null,
       "confidence": null,
       "prior_source": null,
-      "anomaly_locked": false,
       "evidence_refs": ["evidence-001"]
     }
   ],
@@ -2851,7 +2820,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 }
 ```
 
-`risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다.
+`risk_level`은 `danger | caution | safe`, 출력 `evidence_basis`는 `confirmed | estimated | unknown`, `information_status`는 `complete | partial | none`이다. `partial`은 node error나 `knowledge_slice_unavailable`처럼 실제 조회·계산이 실패했거나, 판정할 재료 결과가 비어 있을 때만 사용한다. `insufficient_sources`처럼 결과는 받았지만 근거 수가 적다는 warning만으로는 `partial`로 바꾸지 않으며, warning 자체가 SAFE를 막는다.
 
 `owner_interaction_allowed`는 Supervisor가 `store_id != null`로 계산해 전달한다. false이면 ⑧은 `owner_cards: []`, `high_risk_review.required: false`를 반환하고 `store_context_missing` warning 때문에 SAFE를 만들지 않는다. LLM이 이 값을 바꾸거나 질문을 생성할 수 없다.
 
@@ -2899,7 +2868,7 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 
 `high_risk_review.required`는 해당 메뉴가 고위험 재검증 후보인지 나타낸다 (재검증도 저가 모델, 10/27 회의). `reason_code`는 `unknown_tag | no_information | partial_information | insufficient_web_sources | null`이며 `required: false`이면 반드시 `null`이다. `insufficient_web_sources`는 ⑥ warning `insufficient_sources`(유효 출처 부족), `web_search_deadline_exceeded`(시간 초과로 일부만 수집), `web_llm_extraction_failed`(LLM 추출 실패) 셋을 모두 포함한다. 이 값은 Judge Graph가 메뉴판 전체 후보 중 최대 3개를 고르기 위한 신호이며 ⑧의 현재 `risk_level`을 바꾸지 않는다.
 
-`probability_results`의 legacy `anomaly_locked`는 ④를 거쳐 ⑤까지 온 값을 그대로 옮기지만 현재는 항상 `false`다. 폐기된 이상 답변 잠금과 `anomaly` 재검증 이유는 사용하지 않는다.
+`probability_results`의 legacy `anomaly_locked`는 전환 기간에만 선택 입력으로 허용하고, 생략 시 `false`로 처리하며 직렬화 출력에서는 제외한다. 폐기된 이상 답변 잠금과 `anomaly` 재검증 이유는 사용하지 않는다.
 
 `runtime_tagged`의 `variant_suggestion.suggested_ingredients[]`는 `proposed_variant_ingredients[]`로 옮기고 제안 근거 ID를 각 `evidence_refs`에 넣는다. 같은 재료를 ⑤ `probability_results[]`에도 중복해서 넣으면 ⑧의 위험 재료가 두 번 만들어지므로, `source: variant_suggested`인 ⑤ 결과는 확률 계산·scale 검증까지만 수행하고 ⑧ 경계에서는 제안 목록 하나로 합친다. 나머지 ⑤ 결과는 `probability_results[]`로 전달한다.
 
@@ -2908,7 +2877,6 @@ soft evidence는 관리자 검토 명령까지만 만들고, hard evidence는 �
 - `forces_caution: true` warning이 있음
 - `no_information: true`
 - `information_status != complete`
-- `anomaly_locked: true` (10/27 회의 뒤로는 오지 않음)
 - `probability_results`가 비어 있지 않음
 - `owner_interaction_allowed: false`
 - `proposed_variant_ingredients`가 비어 있지 않음
@@ -3101,7 +3069,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 2-b | `store_id: null` + exact/store prior/가게 캐시 포함 | HTTP 422 `storeless_scope_violation` | 가게 없는 스캔에 다른 가게 데이터가 섞이지 않음 |
 | 3 | Exact complete 메뉴 | 확장·⑤는 스킵하고 ④ tag lookup 후 ⑧ | confirmed 기반 판정과 태그 유지 |
 | 4 | Exact 일부 확인 | 확인 재료 제외, 미확인 재료만 ④⑤ | 부분 확인 유지 |
-| 5 | `flagged_anomaly`·`override_eligible` 생략 또는 false | `present`/`absent`를 다른 확인값처럼 확정 사용, `anomaly_locked_ingredients: []` | legacy 칸이 라우팅·확정값 사용을 바꾸지 않음 |
+| 5 | `flagged_anomaly`·`override_eligible` 생략 또는 false | `present`/`absent`를 다른 확인값처럼 확정 사용 | legacy 칸이 라우팅·확정값 사용을 바꾸지 않음 |
 | 5-a | 사장님 확인값이 3개월보다 오래됨 | 기간과 관계없이 기존 hard evidence로 사용 | 시간 경과만으로 확인값을 만료하거나 재질문하지 않음 |
 | 6 | 차돌된장찌개 런타임 변형 | ④ variant_suggested → ⑤ scale 0.5 → ⑧ caution 가능 | DB 자동 INSERT 없음 |
 | 7 | unknown 메뉴 + 웹서치 실패 | ⑧에 `no_information: true` | CAUTION 이상 |
@@ -3113,7 +3081,7 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 12 | exact `present` 돼지고기 + halal 프로필 | `tag_lookup`(④)이 `constraint_tags: [is_pork]`를 채운 뒤 DANGER | 모든 경로에서 확인값 태그 손실 없음 |
 | 12-a | 일부 확인 메뉴 + 돼지고기 `present` | ④⑤ 이후 공통 `tag_lookup`이 확인값의 `is_pork`를 채움 | heavy path에서도 확인값 태그 손실 없음 |
 | 12-b | ⑥ 웹 재료가 표준 재료로 매핑 안 됨 | ④ `unmapped_constraint_tags` warning, CAUTION 이상 | 태그 없이 SAFE로 새지 않음 |
-| 13 | ④ 재료가 ⑤를 통과 | `constraint_tags`·`anomaly_locked`·`evidence_refs` 동일 | ⑧ 입력까지 메타데이터 손실 없음 |
+| 13 | ④ 재료가 ⑤를 통과 | `constraint_tags`·`role`·`evidence_refs` 동일 | ⑧ 입력까지 유효 메타데이터 손실 없음 |
 | 14 | 확률 재료 또는 변형 제안만 존재 | 확률값이 낮아도 CAUTION | Hard Evidence 없이 SAFE 금지 |
 | 15 | 한 메뉴에 확인할 재료 2개 | `owner_cards` 2개 + ⑦ 명령 2개 | 질문 누락 없음 |
 | 17 | ⑧ 판정 실패 | `partial_failed`, CAUTION, unknown, partial | 백엔드가 처리 가능한 보수적 메뉴 결과 반환 |

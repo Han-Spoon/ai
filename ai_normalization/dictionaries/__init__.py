@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 
-DICTIONARY_VERSION = "2026-11-v1"
+DICTIONARY_VERSION = "2026-11-v2"
 
 # Entries may correct spelling, but must not remove ingredient or variant meaning.
 NORMALIZATION_REPLACEMENTS = MappingProxyType(
@@ -40,6 +40,7 @@ SECTION_HEADERS = frozenset(
         "음료류",
         "추천메뉴",
         "대표메뉴",
+        "오늘의메뉴",
     }
 )
 

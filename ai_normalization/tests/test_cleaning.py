@@ -164,6 +164,21 @@ def test_documented_section_headers_are_invalid(header: str) -> None:
     assert result.warning_code == "section_header"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1인분 추가 3,000원",
+        "오늘의 메뉴",
+        "셀프 코너 이용",
+    ],
+)
+def test_non_menu_lines_are_invalid(text: str) -> None:
+    result = clean_menu_name(text)
+
+    assert result.status == "invalid"
+    assert result.normalized_menu_name is None
+
+
 def test_batch_preserves_fields_and_returns_source_order() -> None:
     valid_item = item(0, "■ Kimchi 김치 찌개 2인")
     valid_item["origin_text"] = "국내산"

@@ -41,7 +41,7 @@ class BayesianIngredient(StrictModel):
     curated: StrictBool
     observation_basis: ObservationBasis
     observations: list[IngredientObservation]
-    anomaly_locked: StrictBool
+    anomaly_locked: StrictBool = Field(default=False, exclude=True)
     evidence_refs: list[NonEmptyString]
 
     @model_validator(mode="after")
@@ -98,7 +98,7 @@ class ProbabilityResult(StrictModel):
     source: IngredientSource
     depth: NonNegativeInt
     confidence: Probability
-    anomaly_locked: StrictBool
+    anomaly_locked: StrictBool = Field(default=False, exclude=True)
     evidence_refs: list[NonEmptyString]
 
 
