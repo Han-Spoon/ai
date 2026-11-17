@@ -17,6 +17,7 @@ from ai_decision_policy.tests.test_decision_policy import (
     PORK,
     SHRIMP_ALLERGY,
     probability,
+    profile,
     request,
 )
 from ai_supervisor.contracts.common import IngredientRef
@@ -177,6 +178,29 @@ def test_reason_check_keeps_a_possibility_and_a_hedge() -> None:
     kwargs = dict(locale="ko", risk_level="caution", percents=[], allowed_names=["꽃게"], evidence_basis="estimated")
     text = "꽃게가 들어갈 수 있어요. 아직 확실히 알 수는 없어요."
     assert check_reason(text, **kwargs) == text
+
+
+def test_reason_keeps_korean_only_for_names_given_in_korean() -> None:
+    # 2026-11-17 scenario 5: "This dish can still contain 양념" passed in English though
+    # 양념 went to the LLM as "seasoning sauce".
+    sauce = IngredientRef(ingredient_id=170, canonical_name="양념")
+    soy = profile(allergies=["is_soybean"])
+    req = request(soy, probability_results=[probability(sauce, ["is_soybean"], 0.29)], locale="en")
+    text = "This dish can still contain 양념, which may include soybean-based ingredients."
+    assert asyncio.run(DecisionTool(ReasonWriter(FakeLLM(ReasonOutput(reason=text)))).run(req)).message.reason is None
+    # A name given only in Korean may stay in Korean.
+    kwargs = dict(locale="en", risk_level="caution", percents=[], allowed_names={"까나리액젓"}, menu_names=[])
+    kept = "This dish may contain 까나리액젓."
+    assert check_reason(kept, korean_names=["까나리액젓"], **kwargs) == kept
+    assert check_reason(kept, korean_names=[], **kwargs) is None
+
+
+@pytest.mark.parametrize("text", [
+    "This dish already lists several soybean-based ingredients, so there is no additional soybean item that clearly needs to be flagged.",
+    "There is nothing to worry about beyond the soy sauce.",
+])
+def test_caution_reason_may_not_sound_reassuring(text) -> None:
+    assert check(text, locale="en", percents=(), names={"soy sauce", "간장"}) is None
 
 
 def test_reason_may_name_the_users_restriction() -> None:
