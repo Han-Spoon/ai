@@ -234,10 +234,11 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
 3. CLOVA General OCR로 polygon과 confidence가 포함된 field를 추출합니다.
 4. 엄격한 가격 형식으로 가격 anchor를 찾습니다.
 5. polygon의 지역 기준선과 앞 가격 열 경계를 이용해 낱글자 메뉴명을 결합하고 가격과 매칭합니다.
-6. 대/중/소, 1인/2인, 세트, 곱빼기 같은 옵션 가격은 가능한 경우 `options`로 보존합니다.
-7. 메뉴명 앞뒤의 OCR 잡문자와 용량 표기를 제거합니다.
-   예: `■김치찌개–` -> `김치찌개`, `■두루치기200g出` -> `두루치기`
-8. `scan_session`, `menu_image`, `menu_analyses` 구조의 최종 JSON을 생성합니다.
+6. 대/중/소 같은 가격 옵션은 공간 구조로 확정할 수 있을 때 `options`로 보존합니다.
+7. 메뉴명 앞뒤의 OCR 장식만 정리하고, 인분·용량·오탈자·외국어와 `+`, 괄호 같은 내부 표기는 `raw_menu_name`에 보존해 ② Menu Normalization Agent로 넘깁니다.
+8. `/`로 연결된 비숫자 선택 메뉴는 같은 가격을 가진 별도 메뉴로 분리합니다. `+`는 조합 메뉴 하나로 유지하고 `1/2` 같은 숫자 분수는 분리하지 않습니다.
+9. 순수 영문·중문·일문 메뉴도 가격과 구조적으로 연결되면 메뉴 후보로 유지합니다. 같은 줄의 외국어는 우선 `unknown` segment로 보존하고 ②가 `translation | semantic_detail | unknown`으로 분류합니다.
+10. `scan_session`, `menu_image`, `menu_analyses` 구조의 최종 JSON을 생성합니다.
 
 ## 출력 JSON 형식
 
@@ -283,6 +284,9 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
   },
   "menu_analyses": [
     {
+      "raw_menu_name": "수 육 국 밥(1인)",
+      "origin_text": null,
+      "foreign_text_segments": [],
       "menu_name_ko": "수육국밥",
       "menu_name_en": null,
       "description_ko": "",
@@ -306,6 +310,8 @@ ERD 매핑:
 | `menu_image` | `menu_images` |
 | `scan_quality` | 재촬영/검수 판단용 OCR 품질 메타데이터 |
 | `menu_analyses[]` | `menu_analyses` |
+
+`raw_menu_name`은 Supervisor가 ②에 전달하는 OCR 원문이고, 기존 소비자용 `menu_name_ko`는 하위 호환을 위해 ①의 정규화 후보를 유지합니다. `origin_text`는 분리된 원산지 원문이며, `foreign_text_segments`는 같은 줄의 외국어 조각과 3값 역할을 보존합니다. GPT 후처리가 켜져도 이 원문 필드는 바꾸지 않습니다.
 
 재촬영 판단 기준:
 

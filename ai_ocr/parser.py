@@ -7,6 +7,7 @@ from normalizer import (
     match_known_menu_name,
     normalize_menu_name,
     normalize_name_text,
+    normalize_ocr_menu_text,
     normalize_price,
     normalize_price_detail,
     remove_price,
@@ -120,7 +121,9 @@ def extract_menu_items_from_row(row):
 
         if price is not None:
             if pending_name_lines:
-                raw_name = normalize_name_text(" ".join(name_line["text"] for name_line in pending_name_lines))
+                raw_name = normalize_ocr_menu_text(
+                    " ".join(name_line["text"] for name_line in pending_name_lines)
+                )
                 if looks_like_menu_name_with_price(raw_name) and not should_skip_menu_name(raw_name):
                     items.append(build_menu_item(raw_name, price, pending_name_lines + [line]))
                 pending_name_lines = []
@@ -169,7 +172,7 @@ def build_single_name_price_items(name_line, price_lines):
         first_option = option_prices[0]
         return [
             build_menu_item(
-                normalize_name_text(name_line["text"]),
+                normalize_ocr_menu_text(name_line["text"]),
                 first_option["price"],
                 [name_line] + price_lines,
                 price_raw=first_option["priceRaw"],
@@ -216,7 +219,7 @@ def pair_by_x_order(name_lines, price_lines):
 
 
 def build_menu_item_from_lines(name_line, price_line):
-    raw_name = normalize_name_text(name_line["text"])
+    raw_name = normalize_ocr_menu_text(name_line["text"])
     price_raw = extract_price_text(price_line["text"])
     return build_menu_item(
         raw_name,
@@ -566,7 +569,7 @@ def clean_inline_menu_name(text):
     text = remove_price(text)
     text = re.sub(r"^[\dOoO\s,\.]+", "", text)
     text = re.sub(r"^[\/\\\s]+", "", text)
-    text = normalize_name_text(text)
+    text = normalize_ocr_menu_text(text)
     return text
 
 
@@ -719,12 +722,12 @@ def extract_name_from_row(row):
         if normalize_price(text) is not None:
             text = remove_price(text)
 
-        text = normalize_name_text(text)
+        text = normalize_ocr_menu_text(text)
         if text and normalize_price(text) is None:
             name_parts.append(text)
 
     if name_parts:
-        return normalize_name_text(" ".join(name_parts))
+        return normalize_ocr_menu_text(" ".join(name_parts))
 
     joined = " ".join(line["text"] for line in row)
     return remove_price(joined)

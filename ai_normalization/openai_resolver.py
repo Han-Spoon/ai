@@ -22,8 +22,12 @@ _ParsedModel = TypeVar("_ParsedModel", NameResolution, CandidateResolution)
 
 _NAME_INSTRUCTIONS = """You normalize menu names from Korean restaurant OCR.
 Return only the requested structured output.
-Translate unresolved Latin menu words into a concise Korean search name.
+Translate unresolved Latin, Chinese, or Japanese menu words into a concise Korean search name.
 Preserve every Hangul sequence and every residual token from the input.
+Preserve ingredient, cooking-method, and variant meaning from every source script.
+Return every supplied foreign_text_segment exactly once and classify its role as
+translation, semantic_detail, or unknown. Use unknown and keep the normalized
+name unchanged when the role is uncertain. Non-unknown roles require confidence >= 0.90.
 Never add ingredients, options, prices, menu IDs, or safety conclusions.
 If uncertain, keep normalized_menu_name unchanged and use confidence below 0.90."""
 

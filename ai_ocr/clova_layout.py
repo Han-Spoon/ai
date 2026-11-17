@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from statistics import mean, median
 
-from normalizer import normalize_name_text, normalize_price, remove_serving_amount
+from normalizer import normalize_name_text, normalize_ocr_menu_text, normalize_price
 from price_metrics import count_matched_price_anchors
 
 
@@ -25,6 +25,7 @@ _BULLET_RE = re.compile(r"^[·•▶▷■□◆◇★☆▪▫/|\-]+$")
 _SERVING_ONLY_RE = re.compile(
     r"^\s*\d+(?:\.\d+)?\s*(?:kg|g|그램|인분|인|개|人)\s*$", re.IGNORECASE
 )
+_OPTION_GLYPH_ONLY_RE = re.compile(r"^[小中大★ㅊ\s]+$")
 _NOISE_PARTS = (
     "http",
     "www",
@@ -570,8 +571,7 @@ def _pair_price_with_name(
     if not name_tokens:
         return None
 
-    raw_name = normalize_name_text(" ".join(token["text"] for token in name_tokens))
-    raw_name = remove_serving_amount(raw_name)
+    raw_name = normalize_ocr_menu_text(" ".join(token["text"] for token in name_tokens))
     compact_name = re.sub(r"\s+", "", raw_name)
     if not _is_valid_menu_name(compact_name):
         return None
@@ -712,7 +712,9 @@ def _is_ignored_text(text: str) -> bool:
 
 
 def _is_valid_menu_name(name: str) -> bool:
-    if not name or not _KOREAN_RE.search(name):
+    if not name or not any(character.isalpha() for character in name):
+        return False
+    if _OPTION_GLYPH_ONLY_RE.fullmatch(name):
         return False
     if any(part in name for part in _EXCLUDED_MENU_PARTS):
         return False

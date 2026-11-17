@@ -1,10 +1,17 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import mimetypes
+import re
 
 from spicy_detector import infer_is_spicy
 from image_quality import analyze_image_quality
+from normalizer import match_known_menu_name, normalize_menu_name
 from price_metrics import count_matched_price_anchors
+
+
+_FOREIGN_TEXT_RE = re.compile(
+    r"[A-Za-z]+(?:[\s_-]+[A-Za-z]+)*|[\u3040-\u30ff]+|[\u3400-\u4dbf\u4e00-\u9fff]+"
+)
 
 
 def build_final_result(
@@ -40,10 +47,11 @@ def build_final_result(
     """
     image = Path(image_path)
     scan_quality = build_scan_quality(image, menus, raw_lines)
+    expanded_menus = expand_slash_menu_choices(menus)
 
     menu_analyses = [
         build_menu_analysis(menu, index)
-        for index, menu in enumerate(menus, start=1)
+        for index, menu in enumerate(expanded_menus, start=1)
     ]
 
     if enable_gpt_post_process:
@@ -51,12 +59,12 @@ def build_final_result(
 
         menu_analyses = post_process_menu_analyses(menu_analyses)
 
-    apply_spicy_flags(menu_analyses, menus, raw_lines or [])
+    apply_spicy_flags(menu_analyses, expanded_menus, raw_lines or [])
 
     result = {
         "scan_session": {
             "title": image_title or image.name,
-            "menu_count": len(menus),
+            "menu_count": len(expanded_menus),
             "risky_menu_count": None,
             "scan_status": scan_status,
             "scanned_at": current_timestamp(),
@@ -84,6 +92,7 @@ def build_final_result(
 
 def build_menu_analysis(menu, display_order: int):
     menu_name = menu.get("normalizedCandidate") or menu.get("rawName") or menu.get("matchedMenu")
+    raw_menu_name = menu.get("rawName") or menu_name
     description = menu.get("description") or ""
     price_text = stringify_price(menu.get("price")) or menu.get("priceRaw")
     price_options = [
@@ -97,6 +106,11 @@ def build_menu_analysis(menu, display_order: int):
     ]
 
     return {
+        # Supervisor/②는 이 필드를 우선 사용한다. 기존 /v1/ocr 표시 계약인
+        # menu_name_ko는 하위 호환을 위해 정규화 후보를 계속 반환한다.
+        "raw_menu_name": raw_menu_name,
+        "origin_text": menu.get("originText"),
+        "foreign_text_segments": extract_foreign_text_segments(raw_menu_name),
         "menu_name_ko": menu_name,
         "menu_name_en": None,
         "description_ko": description,
@@ -104,7 +118,6 @@ def build_menu_analysis(menu, display_order: int):
         "ocr_confidence": float(menu.get("confidence") or 0.0),
         "price_text": price_text,
         "price_options": price_options,
-        "origin_text": menu.get("originText"),
         "risk_level": None,
         "is_spicy": infer_is_spicy(
             {
@@ -117,6 +130,55 @@ def build_menu_analysis(menu, display_order: int):
         "image_url": None,
         "display_order": display_order,
     }
+
+
+def expand_slash_menu_choices(menus):
+    """Expand slash-delimited choices while preserving plus-delimited combinations."""
+
+    expanded = []
+    for menu in menus:
+        raw_name = str(menu.get("rawName") or "").strip()
+        choices = split_slash_choices(raw_name)
+        if len(choices) == 1:
+            expanded.append(menu)
+            continue
+
+        for choice in choices:
+            copied = dict(menu)
+            copied["rawName"] = choice
+            copied["normalizedCandidate"] = normalize_menu_name(choice)
+            matched = match_known_menu_name(choice)
+            copied["matchedMenu"] = matched["name"] if matched else None
+            copied["category"] = matched["category"] if matched else None
+            copied["matchScore"] = matched["score"] if matched else None
+            copied["choiceSourceRawName"] = raw_name
+            expanded.append(copied)
+    return expanded
+
+
+def split_slash_choices(raw_name: str) -> list[str]:
+    if "/" not in raw_name or "://" in raw_name:
+        return [raw_name]
+    if re.search(r"\d\s*/\s*\d", raw_name):
+        return [raw_name]
+
+    choices = [part.strip() for part in raw_name.split("/")]
+    if not 2 <= len(choices) <= 5:
+        return [raw_name]
+    if any(
+        not choice or not any(character.isalpha() for character in choice)
+        for choice in choices
+    ):
+        return [raw_name]
+    return choices
+
+
+def extract_foreign_text_segments(raw_name: str) -> list[dict]:
+    return [
+        {"text": match.group().strip(), "role": "unknown", "confidence": 0.0}
+        for match in _FOREIGN_TEXT_RE.finditer(raw_name)
+        if match.group().strip()
+    ]
 
 
 def apply_spicy_flags(menu_analyses, raw_menus, raw_lines):
