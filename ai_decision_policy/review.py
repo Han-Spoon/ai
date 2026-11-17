@@ -232,6 +232,7 @@ class HighRiskReviewAgent:
             verdict=message.verdict,
             dropped_names=dropped_names,
             evidence_basis=request.decision.evidence_basis,
+            korean_names=korean_only,
         )
         return HighRiskReviewResponse(
             context=request.context,

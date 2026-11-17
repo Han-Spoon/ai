@@ -435,3 +435,40 @@ def test_one_tag_flag_answer_is_left_out_when_a_confirmed_ingredient_carries_it(
         locale="ko",
     )
     assert judge(req).message.verdict == "사장님이 새우젓이 들어 있다고 확인했어요. 새우 알레르기 기준에 맞지 않아요."
+
+
+def test_hard_to_remove_notes_of_the_same_role_share_one_sentence() -> None:
+    # 2026-11-17: a vegan 비빔밥 got one "…빼기 어려울 수 있어요" note per hidden ingredient.
+    sand_eel = IngredientRef(ingredient_id=210, canonical_name="까나리")
+    kelp = IngredientRef(ingredient_id=211, canonical_name="다시마")
+    beef = IngredientRef(ingredient_id=212, canonical_name="소고기")
+    egg = IngredientRef(ingredient_id=213, canonical_name="계란")
+    squid = IngredientRef(ingredient_id=214, canonical_name="오징어")
+    results = [
+        probability(egg, ["is_egg"], 0.9, role="identity"),
+        probability(sand_eel, ["is_fish"], 0.5, role="hidden"),
+        probability(squid, ["is_squid"], 0.8, role="identity"),
+        probability(kelp, ["is_fish"], 0.4, role="hidden"),
+        probability(beef, ["is_beef"], 0.3, role="hidden"),
+    ]
+    ko = message(request(VEGAN, probability_results=results, locale="ko"))
+    assert [(n.code, n.text) for n in ko.notes] == [
+        ("hard_to_remove", "계란, 오징어는 이 메뉴의 주재료라 빼기 어려울 수 있어요."),
+        ("hard_to_remove", "까나리, 다시마, 소고기는 양념이나 소스 같은 다른 재료 안에 들어 있어 빼기 어려울 수 있어요."),
+    ]
+    en = message(request(VEGAN, probability_results=results, locale="en", localized_names={
+        210: "sand lance", 211: "kelp", 212: "beef", 213: "egg", 214: "squid"}))
+    assert [n.text for n in en.notes] == [
+        "Egg and squid are main ingredients of this dish, so they may be hard to leave out.",
+        "Sand lance, kelp and beef are inside other ingredients such as sauces or seasoning, so they may be hard to leave out.",
+    ]
+
+
+@pytest.mark.parametrize("locale", LOCALES)
+def test_grouped_hard_to_remove_note_in_every_language(locale) -> None:
+    results = [
+        probability(IngredientRef(ingredient_id=211, canonical_name="다시마"), ["is_fish"], 0.4, role="hidden"),
+        probability(IngredientRef(ingredient_id=212, canonical_name="소고기"), ["is_beef"], 0.3, role="hidden"),
+    ]
+    notes = message(request(VEGAN, probability_results=results, locale=locale)).notes
+    assert len(notes) == 1 and notes[0].code == "hard_to_remove"

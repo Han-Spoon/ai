@@ -235,6 +235,19 @@ HIDDEN_INGREDIENT: dict[str, Callable[[str], str]] = {
     "ja": lambda name: f"{name}はタレや調味料など別の食材に含まれているため、抜くのは難しいかもしれません。",
     "es": lambda name: f"Puede ser difícil pedir este plato sin {name}, porque va dentro de otro ingrediente, como una salsa o un aliño.",
 }
+# Several names in one note (2026-11-17): "까나리, 다시마, 소고기는 … 빼기 어려울 수 있어요"
+# instead of one note per ingredient (a vegan 비빔밥 got ten notes saying the same thing).
+# Korean, Chinese and Japanese read the same with a list; these need the plural.
+MAIN_INGREDIENTS: dict[str, Callable[[str], str]] = {
+    "en": lambda names: f"{_capital(names)} are main ingredients of this dish, so they may be hard to leave out.",
+    "ar": lambda names: f"قد يصعب طلب هذا الطبق بدون {names} لأنّ هذه المكوّنات أساسية فيه.",
+    "es": lambda names: f"Puede ser difícil pedir este plato sin {names}, porque son ingredientes principales.",
+}
+HIDDEN_INGREDIENTS: dict[str, Callable[[str], str]] = {
+    "en": lambda names: f"{_capital(names)} are inside other ingredients such as sauces or seasoning, so they may be hard to leave out.",
+    "ar": lambda names: f"قد يصعب طلب هذا الطبق بدون {names} لأنّ هذه المكوّنات موجودة داخل مكوّنات أخرى مثل الصلصة أو التتبيلة.",
+    "es": lambda names: f"Puede ser difícil pedir este plato sin {names}, porque van dentro de otros ingredientes, como salsas o aliños.",
+}
 
 
 def _capital(word: str) -> str:
@@ -392,14 +405,38 @@ def note_text(note: NoteChoice, check_tags: dict[str, list[str]], lang: str) -> 
     return HIDDEN_INGREDIENT[lang](name)
 
 
+def hard_to_remove_text(names: list[str], role: str, lang: str) -> str:
+    """One note for every ingredient of the same role, names in the given order."""
+
+    if len(names) == 1:
+        return (MAIN_INGREDIENT if role == "identity" else HIDDEN_INGREDIENT)[lang](names[0])
+    plural = MAIN_INGREDIENTS if role == "identity" else HIDDEN_INGREDIENTS
+    single = MAIN_INGREDIENT if role == "identity" else HIDDEN_INGREDIENT
+    return plural.get(lang, single[lang])(AND_LISTS[lang](names))
+
+
 def build_message(request: DecisionRequest, outcome: DecisionOutcome) -> DecisionMessage:
     lang: Locale = request.locale
     check_tags = {check.flag: check.ask_tags for check in outcome.flag_checks}
-    return DecisionMessage(
-        verdict=verdict(request, outcome, lang),
-        reason=None,
-        notes=[
-            MessageNote(code=note.code, text=note_text(note, check_tags, lang))
-            for note in select_notes(outcome)
-        ],
-    )
+    # ``select_notes`` picks one note per ingredient; the text joins those of the same
+    # role into one sentence, placed where the first of them was (2026-11-17).
+    texts: list[tuple[str, str | list[str]]] = []
+    by_role: dict[str, list[str]] = {}
+    for note in select_notes(outcome):
+        if note.code == "hard_to_remove" and note.ingredient is not None and note.role is not None:
+            if note.role not in by_role:
+                by_role[note.role] = []
+                texts.append((note.code, note.role))
+            by_role[note.role].append(note.ingredient.localized_name)
+        else:
+            texts.append((note.code, note_text(note, check_tags, lang)))
+    notes = [
+        MessageNote(
+            code=code,
+            text=hard_to_remove_text(list(dict.fromkeys(by_role[body])), body, lang)
+            if code == "hard_to_remove" and body in by_role
+            else body,
+        )
+        for code, body in texts
+    ]
+    return DecisionMessage(verdict=verdict(request, outcome, lang), reason=None, notes=notes)

@@ -92,7 +92,7 @@ notes = select_notes(outcome)  # [NoteChoice(code, ambiguity_flag, ingredient, r
 | `code` | 언제 | 한 장 단위 |
 |---|---|---|
 | `ambiguous_menu` | 이 사용자와 관련 있고 사장님 답으로 풀리지 않은 메뉴 애매함 플래그 | 플래그마다 |
-| `hard_to_remove` | 위험 재료(`risk_ingredients`)의 `role`이 `identity`(주재료)나 `hidden`(양념 속 재료) | 재료마다 |
+| `hard_to_remove` | 위험 재료(`risk_ingredients`)의 `role`이 `identity`(주재료)나 `hidden`(양념 속 재료) | 역할마다 한 문장 (같은 역할 재료를 묶음, 11/17) |
 
 - 순서: `ambiguous_menu` 먼저, 그다음 `hard_to_remove`를 `risk_ingredients` 순서대로
 - `role`이 `component`이거나 없으면 안내를 붙이지 않습니다 (모르는 역할을 지어내지 않음)

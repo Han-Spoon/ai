@@ -47,14 +47,19 @@ LANGUAGE_NAMES: dict[str, str] = {
 }
 # Phrases that call the dish safe or free of something. Never allowed unless the
 # verdict itself is safe. Matched on lowercased text.
+# "Nothing more to worry about" counts too (2026-11-17): a CAUTION reason read "there is
+# no additional soybean item … that clearly needs to be flagged".
 SAFE_CLAIMS: dict[str, tuple[str, ...]] = {
-    "ko": ("안전해요", "안전합니다", "안전한 메뉴", "드셔도 괜찮", "먹어도 괜찮", "들어 있지 않", "들어있지 않", "걱정 없"),
-    "en": ("is safe", "safe to eat", "safe for you", "no risk", "does not contain", "doesn't contain", "free of"),
-    "ar": ("آمن تماما", "آمن للأكل", "لا يحتوي"),
-    "zh-CN": ("是安全的", "很安全", "放心食用", "不含有"),
-    "zh-TW": ("是安全的", "很安全", "放心食用", "不含有"),
-    "ja": ("安全です", "安心して", "含まれていません"),
-    "es": ("es seguro", "sin riesgo", "no contiene"),
+    "ko": ("안전해요", "안전합니다", "안전한 메뉴", "드셔도 괜찮", "먹어도 괜찮", "들어 있지 않", "들어있지 않", "걱정 없",
+           "걱정할 필요", "걱정하지 않으셔도", "추가로 확인할 필요", "더 확인할 필요는 없"),
+    "en": ("is safe", "safe to eat", "safe for you", "no risk", "does not contain", "doesn't contain", "free of",
+           "no additional", "nothing else to", "no need to worry", "nothing to worry", "needs to be flagged",
+           "need to be flagged", "no further concern"),
+    "ar": ("آمن تماما", "آمن للأكل", "لا يحتوي", "لا داعي للقلق"),
+    "zh-CN": ("是安全的", "很安全", "放心食用", "不含有", "不用担心", "无需担心"),
+    "zh-TW": ("是安全的", "很安全", "放心食用", "不含有", "不用擔心", "無需擔心"),
+    "ja": ("安全です", "安心して", "含まれていません", "心配ありません", "心配いりません"),
+    "es": ("es seguro", "sin riesgo", "no contiene", "no hay que preocuparse", "no te preocupes"),
 }
 # An estimate told as fact. Only phrases that state the ingredient is in, so "may
 # contain", "들어갈 수 있어요" and hedges like "확실히 알 수 없어요" / "can't say for
@@ -234,6 +239,7 @@ def check_reason(
     verdict: str | None = None,
     dropped_names: Iterable[str] = (),
     evidence_basis: str | None = None,
+    korean_names: Iterable[str] | None = None,
 ) -> str | None:
     """``text`` when it passes the #174 checks, else ``None``.
 
@@ -307,6 +313,16 @@ def check_reason(
     # untranslated name in Korean); anything else means the wrong language.
     if locale != "ko" and _HANGUL_RUN_RE.search(lowered):
         return None
+    # With ``korean_names``, only the names the LLM was given in Korean (no translation
+    # yet) may stay in Korean. "can still contain 양념" passed in English (2026-11-17)
+    # because 양념 is an allowed name, though the LLM had it as "seasoning sauce".
+    if locale != "ko" and korean_names is not None:
+        probe = text.lower()
+        keep = {n.strip().lower() for n in [*korean_names, *menu_names] if n and n.strip()}
+        for name in sorted(keep, key=len, reverse=True):
+            probe = probe.replace(name, " ")
+        if _HANGUL_RUN_RE.search(probe):
+            return None
     # In a language not written in Latin letters, a Latin word left after the allowed
     # names are blanked is English slipping in ("굴소스 may contain 조개류", 2026-11-17).
     if locale not in _LATIN_LOCALES and _LATIN_WORD_RE.search(lowered):
@@ -496,4 +512,5 @@ class ReasonWriter:
             menu_names=[request.menu.normalized_menu_name],
             verdict=response.message.verdict,
             evidence_basis=response.evidence_basis,
+            korean_names=korean_only,
         )
