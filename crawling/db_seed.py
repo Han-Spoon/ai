@@ -47,6 +47,10 @@ TAG_REMOVE: dict[str, set[str]] = {
     "밀크초콜릿": {"is_wheat"},  # 밀크 = milk (밀)
     "햄버거번": {"is_pork"},  # a bread bun (햄)
 }
+# Children that never carry a path tag. The hidden rules put 육수 -> 다시마 under is_fish
+# and is_beef, so ④ asked "does the kelp contain beef?". Kelp is neither; the 멸치 / 쇠고기
+# sibling on the same parent already carries the tag (checked in the seed tests).
+PATH_TAG_FREE = {"다시마"}
 TAG_ADD: dict[str, set[str]] = {
     "햄버거번": {"is_wheat"},
     "다시다": {"is_beef"},  # beef stock powder
@@ -119,7 +123,8 @@ def build() -> SeedData:
             if not p or not c or p == c:
                 continue
             edges.setdefault((p, c), flag)
-            edge_tags[(p, c, tag)] = None
+            if c not in PATH_TAG_FREE:
+                edge_tags[(p, c, tag)] = None
 
     names = {r["ingredient_canonical"] for rows in priors.values() for r in rows}
     names = {n for n in names if n in known}

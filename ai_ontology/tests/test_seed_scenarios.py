@@ -215,3 +215,19 @@ def test_keyword_tag_fixes(name, absent, present):
         assert absent not in tags
     if present:
         assert present in tags
+
+
+def test_kelp_carries_no_path_tag_but_its_parent_still_does():
+    # 육수 -> 다시마 used to carry is_beef / is_fish, so a beef-avoiding guest was asked
+    # about kelp. The sibling 멸치 / 쇠고기 keeps the parent's tags (no FN).
+    import db_seed
+
+    s = seed()
+    assert not any(c == "다시마" for _, c, _ in s.edge_tags)
+    for parent, flags in db_seed.HIDDEN_RULES.items():
+        p = db_seed.canon(parent)
+        kelp = {ch["tag"] for chs in flags.values() for ch in chs if db_seed.canon(ch["name"]) == "다시마"}
+        if not kelp or (p, "다시마") not in s.edges:
+            continue
+        kept = {t for pp, c, t in s.edge_tags if pp == p}
+        assert kelp <= kept, (parent, kelp - kept)
