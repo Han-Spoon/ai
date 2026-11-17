@@ -89,6 +89,8 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
       "item_id": "scan-123:0",
       "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
+      "origin_text": null,
+      "foreign_text_segments": [],
       "description": null,
       "price_text": "8,000원",
       "price_options": [],
@@ -118,6 +120,8 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
       "item_id": "scan-123:0",
       "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
+      "origin_text": null,
+      "foreign_text_segments": [],
       "normalized_menu_name": "김치찌개",
       "display_name": "김치 찌개",
       "description": null,
@@ -143,6 +147,9 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 - `normalized_menu_name`은 후보 검색용 이름이다. 장식·가격·비위험 옵션·불필요 공백을 제거하되 재료 의미는 보존한다.
 - `options`는 분리한 인분·크기·조리·추가 옵션 전체다.
 - `residual_tokens`는 `치즈 추가`처럼 재료 의미가 있어 ④가 다시 확인해야 하는 옵션 토큰만 담는다.
+- `origin_text`는 ①이 메뉴명 접미사에서 분리한 원산지 원문이다. ②는 값을 수정하지 않고 통과시키며 후보 검색명에는 넣지 않는다.
+- `foreign_text_segments[].role`은 `translation | semantic_detail | unknown` 3값이다. 검증된 사전은 `translation`을 결정론적으로 만들고, 나머지는 ②-A LLM이 분류한다. `semantic_detail` 원문은 `residual_tokens`에도 보존하고, `unknown`이 하나라도 있으면 LLM이 검색명을 바꾸지 못한다.
+- ①은 `/`로 연결된 비숫자 선택 메뉴를 별도 item으로 분리한다. `+`는 조합 메뉴로 유지하며 양쪽 의미를 검색명에 남긴다. `1/2` 같은 숫자 분수는 선택지로 분리하지 않는다.
 - `description`, `price_text`, `price_options`, `ocr_confidence`, `locale_hint`, `risk_tag_observations`는 해석하거나 수정하지 않고 보존한다.
 
 ### 1-2. Judge — `CandidateSelectionRequest / Response`
@@ -164,6 +171,8 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
       "item_id": "scan-123:0",
       "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
+      "origin_text": null,
+      "foreign_text_segments": [],
       "normalized_menu_name": "김치찌개",
       "display_name": "김치 찌개",
       "description": null,
@@ -208,6 +217,8 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
       "item_id": "scan-123:0",
       "source_index": 0,
       "raw_menu_name": "■ 김치 찌개 2인",
+      "origin_text": null,
+      "foreign_text_segments": [],
       "normalized_menu_name": "김치찌개",
       "display_name": "김치 찌개",
       "description": null,
@@ -293,31 +304,38 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 | 유형 | 예시 | `display_name` | `normalized_menu_name` |
 |---|---|---|---|
 | 장식·가격 | `■ 김치 찌개 8,000원` | `김치 찌개` | `김치찌개` |
+| 메뉴 번호 | `1. 불고기` | `불고기` | `불고기` |
+| 원문 번호·홍보 라벨 | `① BEST · 불고기` | `불고기` | `불고기` |
 | 인분 | `부대찌개 2인` | `부대찌개` | `부대찌개` |
+| 괄호 인분 | `된장찌개(1인)` | `된장찌개` | `된장찌개` |
 | 크기 | `부대찌개 대자` | `부대찌개` | `부대찌개` |
+| 수량·중량 | `삼겹살 500g`, `볶음밥 2개 이상` | `삼겹살`, `볶음밥` | `삼겹살`, `볶음밥` |
+| 붙은 가격 | `김치찌개(8,O00원)` | `김치찌개` | `김치찌개` |
+| 원산지 접미사 | `소고기국밥 호주산` | `소고기국밥` | `소고기국밥` |
 | 재료 추가 | `라면 치즈 추가` | 원문 표기 보존 | `라면치즈추가` |
 | 변형 메뉴 | `차돌 된장찌개` | 원문 표기 보존 | `차돌된장찌개` |
 | 조리·매운맛 | `매운 닭갈비` | 원문 표기 보존 | `매운닭갈비` |
 | 표기 사전 | `돈까스` | `돈까스` | `돈가스` |
+| 영문·한글 병기 | `Bulgogi 불고기` | `Bulgogi 불고기` | `불고기` |
 
-가격 제거는 통화 기호 또는 `원`과 결합되거나 문자열 끝에서 가격 열로 확실히 분리된 숫자에만 적용한다. `오삼불고기`처럼 이름에 포함된 숫자·문자를 가격으로 오인해 지우지 않는다.
+가격 제거는 통화 기호 또는 `원`과 결합되거나 문자열 끝에서 가격 열로 확실히 분리된 숫자에만 적용한다. OCR의 숫자 `0` 오인식인 `O/o`와 쉼표·점 구분도 이 조건 안에서만 허용한다. `오삼불고기`처럼 이름에 포함된 숫자·문자를 가격으로 오인해 지우지 않는다. 알려진 국가 원산지가 접미사로 붙은 경우 검색명에서는 분리하되, 정보가 사라지지 않도록 입력 `raw_menu_name`은 그대로 유지한다.
 
 검색 키에서는 한글 음절 사이 공백과 일반 구분 공백을 제거한다. 사용자 표시 이름에서는 인분·크기 옵션을 분리한 뒤 원래 메뉴명의 띄어쓰기와 표기를 최대한 보존한다. Latin 문자는 검색 비교용으로만 case-fold하고 `display_name`의 메뉴명 표기는 바꾸지 않는다.
 
 `cleaning_status: unchanged`는 NFKC·제어문자·공백 처리 후의 원문과 `display_name`, `normalized_menu_name`이 모두 같고 옵션 분리와 사전 치환도 없을 때만 사용한다. 그 외 유효한 변경은 `cleaned`다.
 
-v1에서 선행 장식으로 제거하는 문자는 `· • ▶ ▷ ■ □ ◆ ◇ ★ ☆ ▪ ▫ _ - – — | ※ *`다. 끝 가격은 메뉴명과 공백으로 분리된 3~7자리 숫자 또는 쉼표 천 단위 숫자이며, 선택적으로 `₩ ￦ $ € ¥`나 `원`이 붙은 형태만 제거한다. 통화 기호·`원` 없이 붙은 숫자는 반드시 앞 메뉴명과 공백으로 분리돼야 한다.
+v1에서 선행 장식으로 제거하는 문자는 `· • ▶ ▷ ■ □ ◆ ◇ ★ ☆ ▪ ▫ _ - – — | ※ *`다. 선행 메뉴 번호는 1~3자리 숫자 뒤에 `.` 또는 `)`와 공백이 있는 형태 및 유니코드 원문 동그라미 번호로 한정한다. 따라서 `1. 불고기`, `1) 불고기`, `①불고기`는 번호를 제거하지만 `24시 뼈해장국`, `1.5인분 피자`는 보존한다. `BEST`, `추천`은 문자열 맨 앞에서 공백이나 장식 구분자 뒤에 실제 메뉴명이 이어질 때만 제거한다. 끝 가격은 메뉴명과 공백으로 분리된 가격, 통화 기호가 붙은 가격, `원`이 붙은 가격 또는 끝 괄호 안의 가격만 제거한다. 통화 기호·`원` 없이 붙은 숫자는 반드시 앞 메뉴명과 공백으로 분리돼야 한다.
 
 ### 2-3. 옵션과 위험 토큰
 
 | 분류 | 예시 | `options` | `residual_tokens` | 이름에서 제거 |
 |---|---|---|---|---|
-| 인분·수량 | `1인`, `2인`, `2인분` | 포함 | 미포함 | O (`display_name`, `normalized_menu_name` 모두) |
-| 크기 | `소`, `중`, `대`, `소자`, `중자`, `대자`, `곱빼기` | 포함 | 미포함 | O (`display_name`, `normalized_menu_name` 모두) |
+| 인분·수량 | `1인`, `2인`, `2인분`, `2개 이상`, `500g`, `1kg` | 포함 | 미포함 | O (`display_name`, `normalized_menu_name` 모두) |
+| 크기 | `소/중/대`, `小/中/大`, `소자/소짜`, `특/특대`, `보통`, `곱빼기/곱배기` | 포함 | 미포함 | O (`display_name`, `normalized_menu_name` 모두) |
 | 조리·맵기 | `매운맛`, `덜 맵게`, `튀김` | 포함 | 미포함 | X |
 | 재료 추가·교체 | `치즈 추가`, `차돌 추가`, `해물` | 포함 | 재료 토큰 포함 | X |
 
-`소/중/대/소자/중자/대자/곱빼기`는 문자열 끝에서 독립 토큰이고 앞에 실제 메뉴명이 있을 때만 크기 옵션이다. 인분 표기도 문자열 끝에서 독립된 `숫자+인` 또는 `숫자+인분` 형태일 때만 분리한다. `대구탕`의 `대`처럼 메뉴명 내부 문자는 제거하지 않는다.
+크기·인분·수량·중량은 문자열 끝에서 독립 토큰이거나 끝 괄호/대괄호 안에 있고 앞에 실제 메뉴명이 있을 때만 옵션이다. CJK 크기 `小/中/大`, `소짜/중짜/대짜`, `곱배기`는 각각 `소/중/대`, `소자/중자/대자`, `곱빼기`로 옵션 값만 통일한다. 수량·중량 단위는 숫자와 결합한 `kg/g/그램/개/마리/접시/판/팩`만 분리한다. `대구탕`의 `대`, `특 갈비탕`의 `특`처럼 메뉴명 내부나 앞쪽 문자는 제거하지 않는다.
 
 v1 옵션 사전은 다음으로 고정한다.
 
@@ -346,27 +364,29 @@ v1 옵션 사전은 다음으로 고정한다.
 | 검증된 영문 별칭 | `bibimbap → 비빔밥`, `bulgogi → 불고기`, `kimchi jjigae → 김치찌개`, `kimchi stew → 김치찌개`, `doenjang jjigae → 된장찌개`, `gimbap/kimbap → 김밥`, `japchae → 잡채`, `samgyeopsal → 삼겹살`, `tteokbokki → 떡볶이` |
 | 섹션 헤더 | `메뉴`, `메뉴판`, `식사류`, `안주류`, `주류`, `음료`, `음료류`, `추천 메뉴`, `대표 메뉴` |
 
-사전 비교 키는 NFKC 적용 후 Latin 별칭에 한해 공백·하이픈·밑줄을 제거하고 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi-stew`, `kimchi_stew`, `kimchistew`는 같은 키로 비교한다. 별칭 전체가 사전에 정확히 있을 때만 치환하며 `display_name`은 바꾸지 않는다.
+사전 비교 키는 NFKC 적용 후 Latin 별칭에 한해 공백·하이픈·밑줄을 제거하고 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi-stew`, `kimchi_stew`, `kimchistew`는 같은 키로 비교한다. 별칭 전체가 사전에 정확히 있거나, 그 별칭과 사전의 한국어 번역을 앞뒤로 한 번씩 병기한 경우에만 치환하며 `display_name`은 바꾸지 않는다. 예를 들어 `Bulgogi 불고기`와 `불고기 Bulgogi`는 `불고기`가 되지만 `Bulgogi 덮밥`은 LLM 해석 전까지 전체 검색명을 보존한다.
 
 다국어 처리는 다음 순서다.
 
 1. 검증된 다국어 별칭 사전
-2. 한글·Latin 혼합 표기의 결정론적 정리
+2. 한글·외국어 혼합 표기의 결정론적 정리
 3. 둘로 해석되지 않을 때만 OpenAI Responses API 구조화 출력
 
-②-A의 LLM은 `normalized_menu_name` 후보와 confidence만 반환한다. confidence가 0.90 미만이거나 빈 문자열·과도한 삭제·schema 위반이면 결과를 폐기하고 정제된 원문을 사용한다. LLM은 `menu_id`를 받거나 만들지 않는다.
+②-A의 LLM은 `normalized_menu_name`, 전체 `foreign_text_segments`의 3값 role과 각 confidence를 구조화 출력으로 반환한다. 원문 segment text는 빠뜨리거나 추가하거나 순서를 바꿀 수 없다. 전체 confidence가 0.90 미만이거나, `translation | semantic_detail`의 segment confidence가 0.90 미만이거나, 빈 문자열·과도한 삭제·schema 위반이면 결과를 폐기하고 정제된 원문을 사용한다. LLM은 `menu_id`를 받거나 만들지 않는다.
 
 v1에서 “과도한 삭제”는 다음처럼 검증한다.
 
 - 원문 `display_name`에 남은 모든 한글 연속 토큰이 LLM 결과에도 있어야 한다.
 - `residual_tokens`의 모든 토큰이 LLM 결과에도 있어야 한다.
+- `semantic_detail`은 원문 text를 `residual_tokens`에 추가해 후속 단계까지 보존한다.
+- `unknown` segment가 하나라도 있으면 `normalized_menu_name`을 규칙 결과에서 바꿀 수 없다.
 - 하나라도 사라지면 `name_llm_failed` warning을 남기고 결정론적 검색명을 유지한다.
 
 현재 구현은 `OpenAINormalizationResolver`를 `NameResolver` 인터페이스로 주입한다. `OPENAI_API_KEY`가 있으면 Supervisor 서비스 생성 시 Resolver를 한 번 만들고 ②-A·②-B가 공유한다. 키가 없으면 검증된 사전·점수 규칙만 사용하며, 해석되지 않은 외국어·혼합 표기는 정제된 원문 검색명을 유지한다.
 
 기본 모델은 `gpt-5.4-mini`, API는 Responses API, 출력은 Pydantic Structured Outputs다. 기본 timeout은 5초, SDK 재시도는 최대 1회, 최대 출력은 256 token이다. 모델만 바꾸려면 `NORMALIZATION_OPENAI_MODEL`을 설정하며, 일반 실행에는 `OPENAI_API_KEY` 외 설정이 필요 없다. reasoning·temperature는 별도로 지정하지 않고 모델 기본값을 사용한다.
 
-Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin 문자가 하나 이상 포함된 경우 ②-A LLM 대상이 된다. 순수 Latin 메뉴도 `locale_hint` 값과 관계없이 대상이며, 한글·숫자만 있는 이름은 호출하지 않는다.
+Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin·한자·히라가나·가타카나가 하나 이상 포함된 경우 ②-A LLM 대상이 된다. 순수 외국어 메뉴도 `locale_hint` 값과 관계없이 대상이며, 한글·숫자만 있는 이름은 호출하지 않는다.
 
 ### 2-5. invalid 판정
 
@@ -585,7 +605,8 @@ ai_normalization/
 | 이름 정확도·후보 Recall@5·자동 선택 정확도/커버리지·오매칭률·상태 혼동행렬 | 구현 | `python -m ai_normalization.evaluation <검증셋.jsonl>`, provider 호출 없음 |
 | Supervisor Prepare Graph의 ②-A 연결 | 구현 | `ai_supervisor/prepare_graph.py` |
 | Supervisor Judge Graph의 ②-B 연결 | 구현 | `ai_supervisor/judge_graph.py` |
-| 기존 OCR·Rule Engine 중복 로직 제거 | 미완료 | #165 |
+| Supervisor 경로에서 ① OCR 원문을 ②-A로 전달 | 구현 | `raw_menu_name` 우선, 기존 `menu_name_ko`는 API 호환 유지 |
+| 기존 Rule Engine과 외부 OCR 표시 필드의 중복 정리 | 미완료 | #165 |
 
 ②가 소유하는 v1 코드와 #164의 OpenAI 연결은 구현 완료다. #165의 기존 모듈 정리는 별도 후속 이슈다. API 오류·timeout·schema 위반 시에는 현재의 결정론적 fallback을 유지한다.
 
@@ -626,6 +647,8 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 2 | `돈까스` | 사전으로 `돈가스`, 원문·display 유지 |
 | 3 | `부대찌개 2인` | display·normalized `부대찌개`, options `["2인"]` |
 | 3-a | `부대찌개 대자` | display·normalized `부대찌개`, options `["대자"]` |
+| 3-b | `된장찌개(1인)` | display·normalized `된장찌개`, options `["1인"]` |
+| 3-c | `1. 불고기` | display·normalized `불고기` |
 | 4 | `라면 치즈 추가` | 치즈가 이름과 residual token에 남음 |
 | 5 | `차돌된장찌개` | 전체 이름 유지, ②가 `된장찌개`로 축약하지 않음 |
 | 6 | `대구탕` | `대`를 크기 옵션으로 잘못 제거하지 않음 |
@@ -640,6 +663,7 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 15 | LLM이 후보 밖 ID 반환 | 결과 폐기, `ambiguous` |
 | 16 | LLM timeout | 규칙 결과 유지, 다른 메뉴 정상 처리 |
 | 17 | 다국어 별칭 사전 적중 | LLM 없이 한국어 검색명 생성 |
+| 17-a | `Bulgogi 불고기` | display 원문 유지, normalized `불고기`, LLM 호출 없음 |
 | 18 | 메뉴 20개 중 정확 후보 18개 | LLM은 나머지 문맥 있는 모호 항목에만 호출 |
 | 19 | 입력 순서와 비동기 완료 순서가 다름 | 출력은 `source_index` 순서 |
 | 19-a | LLM 대상 메뉴가 10개를 넘음 | 요청 안에서 동시에 최대 10개 실행, 한 메뉴 실패는 다른 메뉴에 영향 없음 |
@@ -649,6 +673,13 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 23 | Prepare context에 `store_id: null` | schema 거부 |
 | 24 | Judge context에서 `store_id` 누락 | schema 거부 |
 | 25 | LLM reason과 실제 문맥 필드 불일치 | 결과 폐기, `invalid_llm_candidate` |
+| 26 | `소주/맥주` 한 가격 행 | ①이 `소주`, `맥주` 두 item으로 분리 |
+| 27 | `치킨+감자튀김` | 한 조합 메뉴로 유지, 양쪽 이름 보존 |
+| 28 | `반마리 1/2` | 숫자 분수이므로 `/` 분리 금지 |
+| 29 | `소고기국밥 호주산` | `origin_text: 호주산`, 검색명 `소고기국밥` |
+| 30 | `Bulgogi 불고기` | 영문 segment `translation`, normalized `불고기` |
+| 31 | `Beef 불고기` | LLM 확정 시 `semantic_detail`, `Beef`를 residual에도 보존 |
+| 32 | 해석 불명 영문 segment | `unknown`, LLM이 규칙 검색명을 바꾸지 못함 |
 
 ---
 

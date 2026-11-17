@@ -36,7 +36,13 @@ class FakeClient:
 
 def test_name_resolution_uses_responses_structured_output() -> None:
     client = FakeClient(
-        NameResolution(normalized_menu_name="타코", confidence=0.96)
+        NameResolution(
+            normalized_menu_name="타코",
+            confidence=0.96,
+            foreign_text_segments=[
+                {"text": "Taco", "role": "translation", "confidence": 0.96}
+            ],
+        )
     )
     resolver = OpenAINormalizationResolver(client)
 
@@ -47,6 +53,9 @@ def test_name_resolution_uses_responses_structured_output() -> None:
                 normalized_menu_name="taco",
                 locale_hint="en",
                 residual_tokens=[],
+                foreign_text_segments=[
+                    {"text": "Taco", "role": "unknown", "confidence": 0.0}
+                ],
             )
         )
     )
@@ -108,6 +117,9 @@ def test_missing_parsed_output_is_rejected() -> None:
                     normalized_menu_name="taco",
                     locale_hint="en",
                     residual_tokens=[],
+                    foreign_text_segments=[
+                        {"text": "Taco", "role": "unknown", "confidence": 0.0}
+                    ],
                 )
             )
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ._validation import ensure_unique, require_scan_context
 from .common import (
@@ -15,7 +15,13 @@ from .common import (
     Probability,
     StrictModel,
 )
-from .external import ImageRef, PriceOption, RiskTagObservation, ScanQuality
+from .external import (
+    ForeignTextSegment,
+    ImageRef,
+    PriceOption,
+    RiskTagObservation,
+    ScanQuality,
+)
 
 
 class OcrImageRef(ImageRef):
@@ -30,6 +36,8 @@ class OcrItem(StrictModel):
     item_id: NonEmptyString
     source_index: NonNegativeInt
     raw_menu_name: NonEmptyString
+    origin_text: NonEmptyString | None = None
+    foreign_text_segments: list[ForeignTextSegment] = Field(default_factory=list)
     description: str | None
     price_text: str | None
     price_options: list[PriceOption]

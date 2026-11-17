@@ -22,7 +22,11 @@ from clova_layout import (  # noqa: E402
 from ocr_client import ClovaOCRClient, OCRConfigError  # noqa: E402
 from normalizer import normalize_menu_name, split_menu_name_and_origin  # noqa: E402
 from parser import build_menu_item, parse_menu_candidates  # noqa: E402
-from result_builder import build_final_result, build_menu_analysis  # noqa: E402
+from result_builder import (  # noqa: E402
+    build_final_result,
+    build_menu_analysis,
+    expand_slash_menu_choices,
+)
 
 _OCR_MAIN_SPEC = importlib.util.spec_from_file_location(
     "ocr_main_under_test", OCR_DIR / "main.py"
@@ -143,6 +147,7 @@ def test_origin_is_preserved_in_ocr_menu_response():
     assert menu["correctionReason"] == "origin_metadata_removed"
 
     response = build_menu_analysis(menu, display_order=1)
+    assert response["raw_menu_name"] == "소고기국밥 호주산"
     assert response["menu_name_ko"] == "소고기국밥"
     assert response["origin_text"] == "호주산"
     assert response["ocr_confidence"] == 0.88
@@ -160,6 +165,111 @@ def _clova_token(text, x1, y1, x2, y2):
         "confidence": 0.99,
         "source": "clova_field",
     }
+
+
+@pytest.mark.parametrize("menu_name", ["Chicken", "牛肉麵", "チキンカレー"])
+def test_foreign_only_menu_names_are_not_dropped(menu_name):
+    pairs = parse_spatial_pairs(
+        [
+            _clova_token(menu_name, 100, 100, 220, 124),
+            _clova_token("12,000", 250, 100, 310, 124),
+        ]
+    )
+
+    assert len(pairs) == 1
+    assert pairs[0].name == menu_name
+
+
+@pytest.mark.parametrize("menu_name", ["소주/맥주", "고기+야채추가"])
+def test_internal_menu_delimiters_are_preserved_for_normalization(menu_name):
+    menus = parse_menu_candidates(
+        [
+            _clova_token(menu_name, 100, 100, 220, 124),
+            _clova_token("8,000", 250, 100, 310, 124),
+        ]
+    )
+
+    assert len(menus) == 1
+    assert menus[0]["rawName"] == menu_name
+    assert build_menu_analysis(menus[0], 1)["raw_menu_name"] == menu_name
+
+
+def test_slash_choices_expand_but_plus_combination_stays_one_menu():
+    source = {
+        "rawName": "소주/맥주",
+        "normalizedCandidate": "소주맥주",
+        "originText": None,
+    }
+    combined = {
+        "rawName": "치킨+감자튀김",
+        "normalizedCandidate": "치킨감자튀김",
+        "originText": None,
+    }
+
+    expanded = expand_slash_menu_choices([source, combined])
+
+    assert [menu["rawName"] for menu in expanded] == [
+        "소주",
+        "맥주",
+        "치킨+감자튀김",
+    ]
+    assert [menu["normalizedCandidate"] for menu in expanded] == [
+        "소주",
+        "맥주",
+        "치킨감자튀김",
+    ]
+
+
+def test_numeric_fraction_is_not_split_as_menu_choices():
+    source = {"rawName": "반마리 1/2", "normalizedCandidate": "반마리1/2"}
+    assert expand_slash_menu_choices([source]) == [source]
+
+
+def test_edge_slash_is_decoration_but_internal_slash_is_preserved():
+    menus = parse_menu_candidates(
+        [
+            _clova_token("/ 소주/맥주 /", 100, 100, 220, 124),
+            _clova_token("8,000", 250, 100, 310, 124),
+        ]
+    )
+
+    assert menus[0]["rawName"] == "소주/맥주"
+
+
+def test_serving_text_is_preserved_in_ocr_raw_name_for_agent_two():
+    menus = parse_menu_candidates(
+        [
+            _clova_token("된장찌개(1인)", 100, 100, 230, 124),
+            _clova_token("8,000", 250, 100, 310, 124),
+        ]
+    )
+
+    assert menus[0]["rawName"] == "된장찌개(1인)"
+    assert menus[0]["normalizedCandidate"] == "된장찌개"
+
+
+def test_translation_on_a_separate_baseline_does_not_enter_menu_name():
+    pairs = parse_spatial_pairs(
+        [
+            _clova_token("물냉면", 100, 100, 180, 124),
+            _clova_token("Cold Noodle", 100, 132, 220, 150),
+            _clova_token("10,000", 250, 100, 310, 124),
+        ]
+    )
+
+    assert len(pairs) == 1
+    assert pairs[0].name == "물냉면"
+
+
+def test_foreign_text_starts_as_unknown_until_agent_two_classifies_it():
+    response = build_menu_analysis(
+        {"rawName": "Beef 불고기", "normalizedCandidate": "beef불고기"},
+        display_order=1,
+    )
+
+    assert response["foreign_text_segments"] == [
+        {"text": "Beef", "role": "unknown", "confidence": 0.0}
+    ]
 
 
 def test_korean_size_rows_are_grouped_into_single_menu_options():

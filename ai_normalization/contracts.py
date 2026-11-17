@@ -18,7 +18,12 @@ from ai_supervisor.contracts.common import (
     SliceStatus,
     StrictModel,
 )
-from ai_supervisor.contracts.external import Candidate, PriceOption, RiskTagObservation
+from ai_supervisor.contracts.external import (
+    Candidate,
+    ForeignTextSegment,
+    PriceOption,
+    RiskTagObservation,
+)
 
 CleaningStatus = Literal["cleaned", "unchanged", "invalid"]
 NormalizationStatus = Literal["normalized", "ambiguous", "unmatched", "invalid"]
@@ -40,6 +45,8 @@ class OcrMenuItem(StrictModel):
     item_id: NonEmptyString
     source_index: NonNegativeInt
     raw_menu_name: NonEmptyString
+    origin_text: NonEmptyString | None = None
+    foreign_text_segments: list[ForeignTextSegment] = Field(default_factory=list)
     description: str | None
     price_text: str | None
     price_options: list[PriceOption]
@@ -94,6 +101,8 @@ class CandidateSelectionItem(StrictModel):
     item_id: NonEmptyString
     source_index: NonNegativeInt
     raw_menu_name: NonEmptyString
+    origin_text: NonEmptyString | None = None
+    foreign_text_segments: list[ForeignTextSegment] = Field(default_factory=list)
     normalized_menu_name: str | None
     display_name: str
     description: str | None
@@ -184,6 +193,7 @@ class CandidateSelectionResponse(StrictModel):
 class NameResolution(StrictModel):
     normalized_menu_name: NonEmptyString
     confidence: Probability
+    foreign_text_segments: list[ForeignTextSegment]
 
 
 class NameResolutionInput(StrictModel):
@@ -191,6 +201,7 @@ class NameResolutionInput(StrictModel):
     normalized_menu_name: NonEmptyString
     locale_hint: Locale | None
     residual_tokens: list[NonEmptyString]
+    foreign_text_segments: list[ForeignTextSegment] = Field(default_factory=list)
 
 
 class CandidateResolutionCandidate(StrictModel):

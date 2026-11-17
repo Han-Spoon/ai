@@ -123,7 +123,7 @@ def remove_price(text: str):
         return ""
 
     without_price = re.sub(r"[₩]?\s*[\d,\.OoO\s]{3,}\s*원?", " ", text)
-    return normalize_name_text(without_price)
+    return normalize_ocr_menu_text(without_price)
 
 
 def split_menu_name_and_origin(text: str) -> tuple[str, str | None]:
@@ -206,6 +206,21 @@ def normalize_name_text(text: str):
     return text.strip()
 
 
+def normalize_ocr_menu_text(text: str):
+    """Trim OCR decorations while preserving meaningful internal delimiters.
+
+    Slash/plus/brackets can distinguish alternatives, combinations, or options.
+    Their meaning is intentionally left for ② instead of being erased by ①.
+    """
+    if not text:
+        return ""
+
+    text = text.strip()
+    text = re.sub(r"^[·•▶▷■□◆◇★☆▪▫_\u2010-\u2015|/\\]+\s*", "", text)
+    text = re.sub(r"\s*[·•▶▷■□◆◇★☆▪▫_\u2010-\u2015|/\\]+$", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def clean_menu_name_artifacts(text: str):
     if not text:
         return ""
@@ -235,7 +250,7 @@ def looks_like_menu_name(text: str):
 
     if len(compact) < 2:
         return False
-    if not re.search(r"[가-힣]", compact):
+    if not any(character.isalpha() for character in compact):
         return False
     if mostly_numeric(compact):
         return False
