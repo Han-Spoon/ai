@@ -19,7 +19,7 @@ from .names import display_name
 from .notes import NoteChoice, select_notes
 from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence
 from .profile import RELIGION_TAGS, VEGETARIAN_TAGS
-from .questions import FLAG_PLACES, LISTS, _has_final_consonant, tag_name
+from .questions import FLAG_PLACES, LISTS, _has_final_consonant, _tags, tag_name
 
 
 def _and(comma: str, last: str) -> Callable[[list[str]], str]:
@@ -84,6 +84,19 @@ OWNER_SAYS_PRESENT: dict[str, VerdictTemplate] = {
     "zh-TW": lambda x, last: f"店家已確認這道菜含有{x}。",
     "ja": lambda x, last: f"店主が、この料理に{x}が入っていると確認しました。",
     "es": lambda x, last: f"El dueño confirmó que este plato lleva {x}.",
+}
+# DANGER from a "present" answer to a flag card that asked about several tags at once
+# ("육수에 돼지고기나 새우가 들어가나요?"). "Yes" means at least one of them (§1-1), so the
+# sentence repeats what the owner said with "or" instead of claiming every tag (2026-11-17).
+# {place} is where the flag hides it; None (has_variant) means the whole dish.
+OWNER_SAYS_ONE_OF: dict[str, Callable[[str | None, str], str]] = {
+    "ko": lambda place, x: f"사장님이 {place or '이 메뉴'}에 {x}{_ko(x, '이', '가')} 들어간다고 답했어요.",
+    "en": lambda place, x: f"The owner said there is {x} in {place or 'this dish'}.",
+    "ar": lambda place, x: f"قال صاحب المطعم إن {place or 'هذا الطبق'} يحتوي على {x}.",
+    "zh-CN": lambda place, x: f"店主表示{place or '这道菜'}里有{x}。",
+    "zh-TW": lambda place, x: f"店家表示{place or '這道菜'}裡有{x}。",
+    "ja": lambda place, x: f"店主によると、{place or 'この料理'}に{x}が入っています。",
+    "es": lambda place, x: f"El dueño dijo que hay {x} en {place or 'este plato'}.",
 }
 BREAKS: dict[str, Callable[[str], str]] = {
     "ko": lambda r: f"{r} 기준에 맞지 않아요.",
@@ -324,14 +337,25 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
         present = [r for r in outcome.risk_ingredients if r.status == "present"]
         names = _named(present)
         tags = {t for r in present for t in r.matched_tags}
-        # A "present" answer to a flag names tags, not an ingredient (§2-1 5-2).
-        for check in outcome.flag_checks:
-            if check.state == "danger":
+        danger_flags = [c for c in outcome.flag_checks if c.state == "danger"]
+        # A "present" answer to a one-tag flag names that tag, not an ingredient (§2-1 5-2),
+        # unless a confirmed ingredient already carries it ("새우젓" covers "새우").
+        for check in danger_flags:
+            if len(check.matched_tags) == 1 and not set(check.matched_tags) <= tags:
                 names += [tag_name(tag, lang) for tag in check.matched_tags]
                 tags |= set(check.matched_tags)
         names = list(dict.fromkeys(names))  # two flags can name the same tag
-        if names:
-            parts = [_say(OWNER_SAYS_PRESENT, names, lang)]
+        # A several-tag flag answer says "one or more of them": say it as the owner did,
+        # unless the confirmed ingredients above already cover every tag it asked about.
+        one_of = [c for c in danger_flags if len(c.matched_tags) > 1 and not set(c.matched_tags) <= tags]
+        parts = [_say(OWNER_SAYS_PRESENT, names, lang)] if names else []
+        for check in one_of:
+            place = FLAG_PLACES[check.flag]
+            parts.append(OWNER_SAYS_ONE_OF[lang](place[lang] if place else None, _tags(check.matched_tags, lang)))
+        if parts:
+            # Restrictions it surely breaks; with only "or" answers, any of them may be the one.
+            if not tags:
+                tags = {t for c in one_of for t in c.matched_tags}
             restrictions = restriction_names(profile, lang, tags)
             if restrictions:
                 parts.append(BREAKS[lang](restrictions))
