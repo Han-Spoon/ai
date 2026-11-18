@@ -2,7 +2,14 @@
 
 from types import MappingProxyType
 
-DICTIONARY_VERSION = "2026-11-v2"
+from .beverages import (
+    BEVERAGE_EXACT_NAMES,
+    BEVERAGE_TYPE_SUFFIXES,
+    is_beverage_item,
+)
+
+
+DICTIONARY_VERSION = "2026-11-v3"
 
 # Entries may correct spelling, but must not remove ingredient or variant meaning.
 NORMALIZATION_REPLACEMENTS = MappingProxyType(
@@ -45,8 +52,11 @@ SECTION_HEADERS = frozenset(
 )
 
 __all__ = [
+    "BEVERAGE_EXACT_NAMES",
+    "BEVERAGE_TYPE_SUFFIXES",
     "DICTIONARY_VERSION",
     "MULTILINGUAL_ALIASES",
     "NORMALIZATION_REPLACEMENTS",
     "SECTION_HEADERS",
+    "is_beverage_item",
 ]
