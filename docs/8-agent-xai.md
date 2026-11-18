@@ -81,7 +81,7 @@
 
 **`probability_results` (⑤ 확률, soft evidence)**
 - `confidence`는 ⑤가 계산한 근거 충분도(0~1)다. 출력 `evidence_basis`(confirmed/estimated/unknown)와는 별개다. "낮음" 기준은 §1-3 `insufficient_recipe_evidence`.
-- `anomaly_locked: true`(③이 override를 거부한 이상 답변 재료)면 확률값과 무관하게 CAUTION 이상 강제 (§2-1 3-1). 10/27 회의로 이상 답변 잠금이 없어져 지금은 `true`가 오지 않는다 (③ §1-6).
+- `anomaly_locked`는 읽지 않는다 (2026-11-18). 10/27 회의로 이상 답변 잠금이 없어졌고, ⓪ 계약에서 있어도 없어도 되는 칸이 됐다(#385). 예전 규칙("`true`면 CAUTION 이상 강제", §2-1 3-1)은 지웠다.
 
 **`proposed_variant_ingredients` (④ 변형 추정 재료)**
 - DB에 저장되지 않은 런타임 추정이고 관측값도 없다 (`source: variant_suggested`, ④ §1-3·§1-5). 확정 재료와 같은 신뢰도로 다루지 않는다. 사용자 제한과 겹치면 **최소 CAUTION, DANGER 확정 근거로 쓰지 않는다** (§2-1 5단계).
@@ -222,7 +222,7 @@ flowchart TD
 1. **forbidden_tags 매핑**: `religion_type`(halal→is_pork/is_alcohol 등), `vegetarian_type`, `no_alcohol`, `allergies`, `no_spicy`를 하나의 금지 태그 집합으로 변환. 종교·채식 유형별 태그 목록은 룰엔진 `ai_ruleengine/profile_mapper.py`를 원본으로 쓴다 (예: kosher → `is_pork`·`is_crab`·`is_shrimp`·`is_shellfish`·`is_squid`, hindu → `is_beef`).
 2. **hard evidence 우선 체크**: `confirmed_results` 중 `status: present`인 재료의 `constraint_tags`가 forbidden_tags와 겹치면 다른 계산 없이 즉시 `danger` + `evidence_basis: confirmed`. `status: absent`인 재료는 확률과 무관하게 "없음"으로 확정한다. `unknown`은 이 단계에서 쓰지 않는다. legacy `override_eligible` 값은 보지 않는다 (§1-1).
 3. **정보 없음 우선순위**: hard evidence로 안 걸렸어도 `no_information: true`면 확률 계산 자체를 건너뛰고 `caution` 이상 강제 (엣지 케이스 4와 동일 원칙). **판정에 쓸 재료가 하나도 없을 때**(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음)도 `no_information: true`와 같이 처리한다 (결정, 2026-10-18). 재료가 0개면 4-1단계의 "모두 사장님 확인값" 조건이 저절로 참이 되어 SAFE가 나갈 수 있기 때문이다 (FN).
-3-1. **anomaly_locked 강제** (10/27 회의로 이상 답변 잠금이 없어져 지금은 `anomaly_locked: true`가 오지 않는다. ⓪ 계약에 필드가 남아 있는 동안 규칙은 그대로 둔다): `probability_results`에서 `anomaly_locked: true`인 재료는 posterior_mean이 아무리 낮게 나와도 `caution` 이상으로 강제하고 `evidence_basis: estimated`로 표시 — ③이 override를 거부한 이상 답변이 확률 계산을 거치며 조용히 SAFE로 새는 것을 막기 위함(이 값이 ④를 거쳐 여기까지 끊기지 않고 와야 함).
+3-1. (지움, 2026-11-18) **anomaly_locked 강제** — 10/27 회의로 이상 답변 잠금이 없어져 `anomaly_locked: true`가 오지 않고, ⓪ 계약에서도 선택 칸이 됐다(#385). ⑧은 이 칸을 읽지도 넘기지도 않는다.
 3-2. **정보 부족 시 SAFE 금지**: `information_status`가 `partial` 또는 `none`이면 확률이 낮게 나와도 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계 조회·계산이 일부 실패한 상태에서 남은 재료만 보고 SAFE를 내면 빠진 재료를 놓친다 (FN).
 3-3. **앞 단계 경고 시 SAFE 금지**: 입력 `warnings` 중 `forces_caution: true`가 하나라도 있으면 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계가 문제를 발견했다는 신호다 (예: ④ 태그 조회 실패 `constraint_tags_lookup_failed`, ④ 순환 참조 `cycle_detected`, ④ 웹 재료 매핑 실패 `unmapped_constraint_tags`). 예를 들어 Supervisor가 ③ 확인값의 태그를 ④에 조회했는데 실패해 돼지고기에 `is_pork`가 안 붙으면, 이 단계가 없을 때 할랄 사용자에게 SAFE가 나갈 수 있다 (FN).
 4. **확정값이 없는 재료는 CAUTION**: `probability_results`나 `proposed_variant_ingredients`에 재료가 하나라도 있으면(사장님 확인값이 아닌 근거에 기대는 재료) `risk_level: caution`, `evidence_basis: estimated`로 둔다. 확률이 아무리 높거나 낮아도 확률만으로 DANGER/SAFE를 내지 않는다 (§3, PPT 8쪽 6). 금지 태그와 겹치는 재료는 `risk_ingredients`에 `posterior_mean`(확률 수치)과 함께 담아 사용자에게 보여준다.
@@ -250,7 +250,7 @@ flowchart TD
 |---|---|---|
 | `no_information: true` | 메뉴·재료 정보 자체가 없음 | 3 |
 | `confirmed_results`·`probability_results`·`proposed_variant_ingredients`가 모두 비어 있음 | 판정에 쓸 재료가 하나도 없음. "모두 확인값" 조건이 저절로 참이 되는 것을 막는다 (2026-10-18) | 3 |
-| `probability_results`에 `anomaly_locked: true` 재료 존재 | ③이 override를 거부한 이상 답변 재료. 10/27 회의 뒤로는 오지 않는다 | 3-1 |
+| (지움, 2026-11-18) `probability_results`에 `anomaly_locked: true` 재료 존재 | 10/27 회의로 이상 답변 잠금이 없어짐. ⑧은 이 칸을 읽지 않는다 | 3-1 |
 | `information_status`가 `partial` 또는 `none` | 앞 단계 조회·계산이 일부 또는 전부 실패 | 3-2 |
 | `warnings`에 `forces_caution: true` 존재 | 앞 단계가 "SAFE 금지" 신호를 보냄 | 3-3 |
 | `owner_interaction_allowed: false` | 가게 없는 스캔. 사장님 확인값이 없어 SAFE를 낼 근거가 없다. Supervisor가 붙이는 `store_context_missing` warning(`forces_caution: true`)으로도 막힌다 (⓪ §4-7, #281) | 3-3 |
@@ -504,8 +504,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 21 | 18번 + 같은 플래그 답 `present`, `constraint_tags: ["is_fish"]` | `danger`, `evidence_basis: confirmed`, 최상위 `matched_tags`에 `is_fish` | "들어 있다" 답을 hard evidence로 쓸 것 |
 | 22 | 새우 알레르기(`is_shrimp`) + 18번 메뉴 + 답 `absent`, `constraint_tags: ["is_fish"]` | `caution`, 플래그 카드(`constraint_tags: ["is_shrimp"]`) | 다른 태그에 대한 답으로 플래그를 풀지 않을 것 |
 | 23 | 생선 알레르기 + 18번 메뉴 + 답 `present`, `constraint_tags: ["is_fish", "is_shrimp"]` | `caution` (DANGER 아님) | 어느 태그가 들어 있는지 모르는 답으로 DANGER를 내지 않을 것 |
-| 24 | (10/27 회의 뒤로는 들어오지 않는 입력. ⓪ 계약에 `anomaly_locked`가 남아 있는 동안 유지) 할랄 사용자 + `probability_results`: 돈까스 돼지고기 `posterior_mean: 0.95`, `anomaly_locked: true` (레시피 확률 0.9 이상인데 사장님이 "없음"이라고 해 이상 답변으로 잠김, ③ §1-6) | `caution`, `evidence_basis: estimated`, 돼지고기가 `risk_ingredients`에 남음, `owner_cards`에 돼지고기 카드 없음(이미 답한 재료), `high_risk_review.required: false`·`reason_code: null` | 잠긴 재료는 SAFE로 새지 않고 다시 묻지도 않을 것 (10/26 회의). 재검증 이유 `anomaly`는 없어졌다 (§8, ⓪ #368) |
-| 25 | (24와 같이 10/27 회의 뒤로는 들어오지 않는 입력) 생선 알레르기 사용자 + `anomaly_locked: true`인 재료가 돼지고기(`is_pork`)뿐 | `caution`(SAFE 금지 조건), 고위험 재검증 대상 아님 (`required: false`) | 이상 답변 잠금은 SAFE를 막되, 재검증은 사용자 금지 태그와 겹칠 때만일 것 (§2-3) |
+| 24 | (지움, 2026-11-18) 이상 답변 잠금(`anomaly_locked: true`) 재료 — 10/27 회의로 잠금이 없어지고 ⑧이 이 칸을 읽지 않음 | — | — |
+| 25 | 생선 알레르기 사용자 + 사용자와 관련 없는 돼지고기(`is_pork`) 추정만 있음 (2026-11-18, 예전엔 `anomaly_locked` 재료로 시험) | `caution`(SAFE 금지 조건), 고위험 재검증 대상 아님 (`required: false`) | 관련 없는 추정도 SAFE를 막되, 재검증은 사용자 금지 태그와 겹칠 때만일 것 (§2-3) |
 | 26 | (삭제, 2026-10-26) 만료 이유 코드 | — | 만료가 없어 `expired` 이유를 만들지 않는다 |
 | 27 | 할랄 사용자 + `no_information: true` (DB에 없고 웹서치도 실패) | `caution`, `evidence_basis: unknown`, `owner_cards`에 메뉴 전체 카드 1장(`ingredient: null`, `ambiguity_flag: null`, `constraint_tags: ["is_pork", "is_alcohol"]`, `reason_codes: ["no_information"]`) | 정보가 없어도 사장님께 물을 수 있는 카드가 나올 것 |
 | 28 | 금지 태그가 없는 사용자 + `no_information: true` | `caution`, `owner_cards: []` | 물을 것이 없으면 카드를 만들지 않을 것 |

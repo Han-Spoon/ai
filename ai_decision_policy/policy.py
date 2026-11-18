@@ -200,7 +200,6 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
             posterior_mean=probability.posterior_mean if probability else None,
             confidence=probability.confidence if probability else None,
             prior_source=probability.prior_source if probability else None,
-            anomaly_locked=probability.anomaly_locked if probability else False,
             evidence_refs=list(item.evidence_refs),
         )
 
