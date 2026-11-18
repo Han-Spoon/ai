@@ -1,7 +1,7 @@
 """⑥ stage 2: count mapped web recipes per standard ingredient and site (docs/6-agent-websearch.md §2-2, §2-6).
 
 No search, no LLM, no DB. ④ has already mapped every recipe's ingredients, so names
-like 간장/진간장 are counted once. ``review_notes`` and the per-recipe signals for
+like 간장/진간장 are counted once. The per-recipe signals for
 auto registration come from fixed rules, words included; no LLM rewrites them (§2-6, §5).
 """
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from ai_supervisor.contracts.bayesian import BayesianIngredient
 from ai_supervisor.contracts.common import IngredientRef, NodeWarning
@@ -18,15 +17,12 @@ from ai_supervisor.contracts.web_search import (
     MappedIngredient,
     MappedSource,
     RecipeSignal,
-    ReviewNote,
     WebAggregateRequest,
     WebAggregateResponse,
 )
 
 MIN_SOURCES = 10
 PRIORITY_DOMAINS = ("10000recipe.com", "wtable.co.kr", "semie.cooking")
-RARE_MAX_RECIPES = 2
-COMMON_MIN_INGREDIENTS = 3
 # "다른 음식 의심" (§5): this recipe lacks at least this share of the ingredients that
 # half or more of the other new recipes have (초기값, 2026-10-27 초안).
 OTHER_DISH_MISSING_SHARE = 0.8
@@ -50,7 +46,6 @@ IngredientKey = tuple[str, int | str]
 class AggregateOutcome:
     found: bool
     ingredients: list[BayesianIngredient]
-    review_notes: list[ReviewNote]
     warnings: list[NodeWarning]
     # One entry per new recipe and signal; only these recipes go to the operator (§5).
     recipe_signals: list[RecipeSignal]
@@ -73,15 +68,6 @@ def _bare(name: str) -> str:
     """The name without the amount or note the LLM may leave on it: "고기100g" → 고기."""
 
     return _compact(_AMOUNT_START.split(name, 1)[0])
-
-
-def _domain(url: str) -> str:
-    return urlparse(url).netloc.lower().removeprefix("www.")
-
-
-def is_priority_source(url: str) -> bool:
-    domain = _domain(url)
-    return any(domain == d or domain.endswith("." + d) for d in PRIORITY_DOMAINS)
 
 
 def _unique_ingredients(source: MappedSource) -> dict[IngredientKey, MappedIngredient]:
@@ -145,86 +131,10 @@ def count_ingredients(sources: list[MappedSource]) -> list[BayesianIngredient]:
                 )
                 for corpus in corpora
             ],
-            anomaly_locked=False,
             evidence_refs=refs[key],
         )
         for key in ordered
     ]
-
-
-def review_notes(menu_name: str, new_sources: list[MappedSource]) -> list[ReviewNote]:
-    """Rule-based admin review reasons for this batch of new recipes (§2-6).
-
-    Cached recipes were reviewed before, so only ``source_origin: new`` counts.
-    Order is A (same dish?) → B (ingredients extracted right?) → C (risky ingredients).
-    Rule 5 (``llm_only_ingredient``) needs the LLM extractor and is not produced yet.
-    """
-
-    recipes = [s for s in new_sources if is_valid_source(s)]
-    if not recipes:
-        return []
-    count = len(recipes)
-    notes: list[ReviewNote] = []
-
-    general = sorted({_domain(s.source_url) for s in recipes if not is_priority_source(s.source_url)})
-    if general:
-        notes.append(ReviewNote(
-            rule_code="general_web_source",
-            message=f"우선 레시피 사이트가 아닌 출처가 섞여 있어요: {', '.join(general)}",
-        ))
-
-    menu = _compact(menu_name)
-    mismatched = [s.title for s in recipes if menu not in _compact(s.title)]
-    if mismatched:
-        notes.append(ReviewNote(
-            rule_code="title_mismatch",
-            message=f"제목에 '{menu_name}'이(가) 없는 레시피가 {len(mismatched)}개 있어요: {', '.join(mismatched)}",
-        ))
-
-    appearances: dict[IngredientKey, int] = {}
-    items: dict[IngredientKey, MappedIngredient] = {}
-    for source in recipes:
-        for key, item in _unique_ingredients(source).items():
-            appearances[key] = appearances.get(key, 0) + 1
-            items.setdefault(key, item)
-
-    def name(key: IngredientKey) -> str:
-        return items[key].ingredient.canonical_name
-
-    common = [k for k, n in appearances.items() if n * 2 >= count]
-    if len(common) < COMMON_MIN_INGREDIENTS:
-        notes.append(ReviewNote(
-            rule_code="inconsistent_recipes",
-            message=f"레시피 절반 이상에 나오는 재료가 {len(common)}개뿐이라 서로 다른 음식이 섞였을 수 있어요",
-        ))
-
-    rare = sorted((k for k, n in appearances.items() if n <= RARE_MAX_RECIPES), key=name)
-    if rare:
-        notes.append(ReviewNote(
-            rule_code="rare_ingredient",
-            message=f"레시피 {count}개 중 1~2개에만 나온 재료예요: "
-            + ", ".join(f"{name(k)} {appearances[k]}/{count}" for k in rare),
-        ))
-
-    unmapped = sorted((k for k in appearances if items[k].ingredient.ingredient_id is None), key=name)
-    if unmapped:
-        notes.append(ReviewNote(
-            rule_code="unmapped_ingredient",
-            message="표준 재료로 맞추지 못해 위험 태그를 알 수 없는 재료예요: "
-            + ", ".join(name(k) for k in unmapped),
-        ))
-
-    risky = sorted(
-        (k for k, n in appearances.items() if items[k].constraint_tags and n * 2 < count),
-        key=name,
-    )
-    if risky:
-        notes.append(ReviewNote(
-            rule_code="risky_ingredient_partial",
-            message="위험 태그가 있는데 레시피 절반 미만에만 나온 재료예요: "
-            + ", ".join(f"{name(k)} {appearances[k]}/{count}" for k in risky),
-        ))
-    return notes
 
 
 def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[RecipeSignal]:
@@ -303,7 +213,6 @@ def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
     return AggregateOutcome(
         found=bool(ingredients),
         ingredients=ingredients,
-        review_notes=review_notes(request.menu.normalized_menu_name, new_sources),
         warnings=warnings,
         recipe_signals=recipe_signals(request.menu.normalized_menu_name, new_sources),
     )
@@ -324,7 +233,6 @@ class WebAggregateAgent:
             menu=request.menu,
             found=outcome.found,
             ingredients=outcome.ingredients,
-            review_notes=outcome.review_notes,
             # Always sent, even empty: an empty list tells ⓪ no recipe needs the
             # operator, while an omitted field makes ⓪ send every new recipe (⓪ §4-6).
             recipe_signals=outcome.recipe_signals,

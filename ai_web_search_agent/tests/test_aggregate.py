@@ -75,10 +75,6 @@ def observations(outcome, ingredient: dict) -> dict[str, tuple[int, int]]:
     return {o.corpus: (o.k_count, o.n_total) for o in row.observations}
 
 
-def rule_codes(outcome) -> list[str]:
-    return [note.rule_code for note in outcome.review_notes]
-
-
 def test_03_counts_per_site_including_zero() -> None:
     sources = (
         [source(i, "10000recipe", [BEEF if i < 3 else KIMCHI]) for i in range(5)]
@@ -90,8 +86,8 @@ def test_03_counts_per_site_including_zero() -> None:
     beef = next(i for i in outcome.ingredients if i.ingredient.ingredient_id == 120)
     assert beef.constraint_tags == ["is_beef"]
     assert beef.role == "identity"
-    assert (beef.source, beef.depth, beef.curated, beef.observation_basis, beef.anomaly_locked) == (
-        "web_search", 0, False, "direct", False,
+    assert (beef.source, beef.depth, beef.curated, beef.observation_basis) == (
+        "web_search", 0, False, "direct",
     )
     assert len(beef.evidence_refs) == 4
 
@@ -116,7 +112,7 @@ def test_recipe_without_ingredients_is_not_counted() -> None:
 
 def test_nothing_found_is_found_false() -> None:
     outcome = aggregate_sources(request([source(0, "10000recipe", [])]))
-    assert (outcome.found, outcome.ingredients, outcome.review_notes) == (False, [], [])
+    assert (outcome.found, outcome.ingredients) == (False, [])
 
 
 def test_unmapped_ingredient_is_kept_and_flagged() -> None:
@@ -125,17 +121,6 @@ def test_unmapped_ingredient_is_kept_and_flagged() -> None:
     outcome = aggregate_sources(request(sources))
     sauce = next(i for i in outcome.ingredients if i.ingredient.canonical_name == "마라소스")
     assert sauce.ingredient.ingredient_id is None
-    assert "unmapped_ingredient" in rule_codes(outcome)
-
-
-def test_15_risky_ingredient_in_few_recipes_is_reported() -> None:
-    sources = [
-        source(i, "10000recipe", [KIMCHI, TOFU, ONION] + ([PEANUT] if i < 3 else []))
-        for i in range(22)
-    ]
-    outcome = aggregate_sources(request(sources))
-    risky = next(n for n in outcome.review_notes if n.rule_code == "risky_ingredient_partial")
-    assert "땅콩 3/22" in risky.message
 
 
 def test_17_cache_counts_but_notes_cover_new_recipes_only() -> None:
@@ -143,67 +128,14 @@ def test_17_cache_counts_but_notes_cover_new_recipes_only() -> None:
     new = [source(i, "wtable", [KIMCHI, TOFU, ONION]) for i in range(10, 20)]
     outcome = aggregate_sources(request(cached + new))
     assert observations(outcome, KIMCHI) == {"10000recipe": (10, 10), "wtable": (10, 10)}
-    assert "title_mismatch" not in rule_codes(outcome)
     assert outcome.warnings == []
 
 
-def test_title_mismatch_flags_other_dish() -> None:
-    sources = ten_kimchi_stew_recipes()
-    sources[0]["title"] = "김치찜 만들기"
-    outcome = aggregate_sources(request(sources))
-    note = next(n for n in outcome.review_notes if n.rule_code == "title_mismatch")
-    assert "김치찜 만들기" in note.message
-
-
-def test_21_title_without_menu_name_is_flagged_not_dropped() -> None:
+def test_21_title_without_menu_name_is_not_dropped() -> None:
     sources = ten_kimchi_stew_recipes()
     sources[0]["title"] = "엄마표 얼큰 찌개"
     outcome = aggregate_sources(request(sources))
     assert sum(o.n_total for o in outcome.ingredients[0].observations) == 10
-    note = next(n for n in outcome.review_notes if n.rule_code == "title_mismatch")
-    assert "엄마표 얼큰 찌개" in note.message
-
-
-def test_title_match_ignores_spacing() -> None:
-    outcome = aggregate_sources(request(ten_kimchi_stew_recipes(title="엄마표 김치 찌개")))
-    assert "title_mismatch" not in rule_codes(outcome)
-
-
-def test_general_web_source_is_flagged_by_domain() -> None:
-    sources = ten_kimchi_stew_recipes()
-    sources[-1] = source(9, "web_search", [KIMCHI, TOFU, ONION])
-    outcome = aggregate_sources(request(sources))
-    note = next(n for n in outcome.review_notes if n.rule_code == "general_web_source")
-    assert "blog.example.com" in note.message
-
-
-def test_inconsistent_and_rare_rules() -> None:
-    # Only 김치 and 두부 reach half of the recipes; 양파 appears in just two.
-    sources = [
-        source(i, "10000recipe", [KIMCHI if i % 2 else TOFU] + ([ONION] if i < 2 else []))
-        for i in range(10)
-    ]
-    codes = rule_codes(aggregate_sources(request(sources)))
-    assert "inconsistent_recipes" in codes
-    assert "rare_ingredient" in codes
-
-
-def test_notes_follow_a_b_c_order() -> None:
-    sources = [source(i, "10000recipe", [KIMCHI]) for i in range(10)]
-    sources[0] = source(0, "web_search", [KIMCHI, PEANUT, MALA_SAUCE], title="김치찜")
-    codes = rule_codes(aggregate_sources(request(sources)))
-    assert codes == [
-        "general_web_source",
-        "title_mismatch",
-        "inconsistent_recipes",
-        "rare_ingredient",
-        "unmapped_ingredient",
-        "risky_ingredient_partial",
-    ]
-
-
-def test_clean_batch_has_no_notes() -> None:
-    assert aggregate_sources(request(ten_kimchi_stew_recipes())).review_notes == []
 
 
 def test_run_returns_contract_response_and_keeps_input_warnings() -> None:
@@ -225,7 +157,7 @@ def test_run_returns_contract_response_and_keeps_input_warnings() -> None:
 
 def test_run_with_nothing_found() -> None:
     response = asyncio.run(WebAggregateAgent().run(request([source(0, "10000recipe", [])])))
-    assert (response.found, response.ingredients, response.review_notes) == (False, [], [])
+    assert (response.found, response.ingredients) == (False, [])
 
 
 # --- recipe signals for auto registration (§5, 2026-11-02) --------------------
