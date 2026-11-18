@@ -561,3 +561,31 @@ def test_partial_with_an_error_or_no_warning_is_still_a_load_failure() -> None:
     assert information_failed(request(HALAL, **base))
     assert information_failed(request(HALAL, **base, warnings=[warning("insufficient_sources")]).model_copy(update={"errors": [error]}))
     assert not information_failed(request(HALAL, **base, warnings=[warning("unmapped_constraint_tags")]))
+
+
+@pytest.mark.parametrize("text", [
+    "This dish may include egg and peanut. The percentages show these ingredients can appear at nonzero rates.",
+    "This dish may contain egg, and the ingredients are marked unknown.",
+    "Wheat is listed as hidden, so the result is still estimated.",
+])
+def test_reason_may_not_talk_about_our_data(text) -> None:
+    # 2026-11-18 scenario 6 (분식집, en): reasons described the data instead of the dish.
+    assert check(text, locale="en", percents=(), names={"egg", "peanut", "wheat", "계란", "땅콩", "밀"}) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Esta dish puede incluir huesos de res y carne de res.",
+    "Es posible que this dish lleve carne de res.",
+])
+def test_spanish_reason_may_not_slip_into_english(text) -> None:
+    # 2026-11-18 scenario 7 (힌두·es): "this dish" from the instructions was copied as is.
+    assert check(text, locale="es", percents=(), names={"carne de res", "huesos de res", "소고기", "사골"}) is None
+    ok = "Este plato puede llevar carne de res, así que conviene confirmarlo."
+    assert check(ok, locale="es", percents=(), names={"carne de res", "소고기"}) == ok
+
+
+def test_caution_reason_may_not_say_nothing_was_seen() -> None:
+    # 2026-11-18 scenario 8 (페스코+우유, zh-CN): CAUTION for 갈비·된장·라면, yet the reason
+    # said none of what the user avoids was seen.
+    text = "另有调味用的成分需要确认，但没有看到你特别需要避开的牛、鸡、鸭、奶制品或猪肉成分。"
+    assert check(text, locale="zh-CN", percents=(), names={"排骨", "갈비"}) is None
