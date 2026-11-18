@@ -589,3 +589,25 @@ def test_caution_reason_may_not_say_nothing_was_seen() -> None:
     # said none of what the user avoids was seen.
     text = "另有调味用的成分需要确认，但没有看到你特别需要避开的牛、鸡、鸭、奶制品或猪肉成分。"
     assert check(text, locale="zh-CN", percents=(), names={"排骨", "갈비"}) is None
+
+
+def test_reason_may_not_name_ingredient_roles_as_data() -> None:
+    # 2026-11-18 scenario 9 (큰 메뉴판, en) and 7 (es).
+    en = "This dish may contain nuts and peanut, which matter because they are listed as regular ingredients here."
+    assert check(en, locale="en", percents=(), names={"nuts", "peanut", "견과류", "땅콩"}) is None
+    es = "Es posible que este plato lleve carne de res, pero aparecen como inciertos."
+    assert check(es, locale="es", percents=(), names={"carne de res", "소고기"}) is None
+
+
+def test_no_reason_for_a_user_with_no_restriction() -> None:
+    # 2026-11-18 scenario 10: 공기밥 got an LLM reason for a user who avoids nothing.
+    from ai_decision_policy.tests.test_decision_policy import NO_RESTRICTION
+
+    req = request(
+        NO_RESTRICTION,
+        probability_results=[probability(PORK, ["is_pork"], 0.5)],
+        warnings=[warning("insufficient_sources")],
+    )
+    llm = FakeLLM(ReasonOutput(reason="이 음식은 확인된 자료가 적어요."))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
+    assert llm.calls == []
