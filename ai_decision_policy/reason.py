@@ -82,12 +82,12 @@ CERTAIN_CLAIMS: dict[str, tuple[str, ...]] = {
 META_CLAIMS: dict[str, tuple[str, ...]] = {
     "ko": ("퍼센트", "데이터", "표시되어", "입력값", "0이 아닌"),
     "en": ("percentage", "nonzero", "non-zero", "marked unknown", "marked as unknown", "listed as hidden",
-           "listed amounts", "the data", "the input", "field"),
+           "listed amounts", "the data", "the input", "field", "listed as regular"),
     "ar": ("النسب المئوية", "البيانات"),
     "zh-CN": ("百分比", "数据", "标记为"),
     "zh-TW": ("百分比", "資料", "數據", "標記為"),
     "ja": ("パーセンテージ", "データ", "と表示"),
-    "es": ("porcentajes", "los datos", "marcado como"),
+    "es": ("porcentajes", "los datos", "marcado como", "aparecen como"),
 }
 # A verdict sentence shorter than this (squashed) is not looked for in the reason.
 MIN_REPEAT_CHARS = 10
@@ -485,9 +485,13 @@ def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
     """Write a reason only when it says something the verdict sentence and notes do not
     (2026-11-02): an ingredient whose name does not show the restriction it hits, or a
     known limit (few web recipes, missing information). A menu with no information at
-    all, or a safe one, is already said by the verdict sentence."""
+    all, or a safe one, is already said by the verdict sentence. Neither is a user with
+    no restriction: nothing can go against them, so a reason only spends a call
+    (2026-11-18, 공기밥 for a user with no restriction got one)."""
 
     if response.risk_level == "safe" or request.no_information:
+        return False
+    if not forbidden_tags(request.user_profile):
         return False
     return bool(reason_facts(request)) or any(
         needs_explaining(item) for item in response.risk_ingredients
