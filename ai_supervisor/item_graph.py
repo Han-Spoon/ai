@@ -693,6 +693,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
             context=context,
             ingredient_ids=ingredient_ids,
             ingredient_graph=task.ingredient_graph,
+            absent_ingredient_ids=[
+                c.ingredient.ingredient_id
+                for c in confirmations
+                if c.status == "absent"
+            ],
             warnings=list(state.get("warnings", [])),
             errors=list(state.get("errors", [])),
         )
