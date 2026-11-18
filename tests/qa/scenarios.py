@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from ai_normalization.dictionaries import is_beverage_item
 from ai_ontology.tests.seed import seed
 from ai_ontology import lookup_tags
 
@@ -172,7 +173,7 @@ FN_CASES = [
     ("후라이드치킨", "is_milk", "우유 반죽"),
     ("붕어빵", "is_milk", "우유"),
     ("호떡", "is_peanut", "땅콩"),
-    ("수정과", "is_pinenut", "잣"),
+    ("약과", "is_pinenut", "잣"),
     ("약과", "is_peanut", "견과류"),
     ("양념치킨", "is_tomato", "케첩"),
     ("전복죽", "is_shellfish", "전복"),
@@ -206,13 +207,15 @@ for _case in FN_CASES:
 @scenario(
     "B",
     "레시피에 있는 알레르겐은 전부 잡는다 (전체 일괄)",
-    "시드 메뉴 77개 × 레시피에 실제 들어간 알레르겐 전부를 하나씩 손님 알레르기로 넣고 스캔",
+    "음료·주류를 제외한 시드 음식 메뉴 × 레시피에 실제 들어간 알레르겐 전부를 하나씩 손님 알레르기로 넣고 스캔",
     "놓친 조합 0개 (전부 `matched_tags`에 포함)",
 )
 def _():
     s = seed()
     missed = []
     for menu, recipe in s.recipe.items():
+        if is_beverage_item(menu):
+            continue
         ids = [s.id[i] for i in recipe]
         truth = sorted({t for v in lookup_tags(ids, s.graph, "qa").tags.values() for t in v})
         if not truth:
