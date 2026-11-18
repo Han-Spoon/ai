@@ -86,7 +86,7 @@
 ⑤가 값을 정하는 방법:
 
 - `context`는 입력 값을 수정하지 않고 그대로 돌려준다.
-- `ingredient`, `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`는 입력 그대로 복사한다. ⑤는 계산하거나 바꾸지 않는다.
+- `ingredient`, `constraint_tags`, `role`, `evidence_refs`는 입력 그대로 복사한다. ⑤는 계산하거나 바꾸지 않는다.
 - `posterior_mean`, `alpha_post`, `beta_post`: §2·§3 공식과 scale로 계산한다.
 - `prior_source`: §1-3 fallback 단계.
 - `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과 "낮음" 기준은 §1-2-1에 있다.
@@ -129,8 +129,7 @@ confidence = 1 − 1 / √(ν + 1)
 
 ### 1-4. `anomaly_locked`
 
-**폐기 (10/27 회의, AGENTS.md).** 사장님 답변에 이상 답변 잠금을 걸지 않으므로 이 값은 항상 `false`로 온다. 계약 칸이 남아 있는 동안만 그대로 옮긴다.
-**⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.** 계약에서 칸이 빠지면 같이 지운다.
+**폐기 (10/27 회의, AGENTS.md).** 사장님 답변에 이상 답변 잠금을 걸지 않는다. ⑤는 이 값을 읽지도 출력하지도 않는다 (2026-11-18).
 
 ---
 
@@ -291,7 +290,6 @@ for ing in ingredients:
         beta_post      = beta,
         prior_source   = prior_src,
         confidence     = confidence_score(alpha, beta),   # 1 − 1/√(α+β−2+1), §1-2-1
-        anomaly_locked = ing.anomaly_locked,
     ))
 
 return BayesianResult(context=context, probabilities=results)
@@ -634,7 +632,6 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 - [ ] `α = k + 1`, `β = (n − k) + 1` 계산을 `normalize_ingredients.py`와 동일하게 구현
 - [ ] 최종 α·β 동일 비율 scale 구현
 - [ ] 필드 부재·`k > n` 무정보 처리 구현
-- [ ] `anomaly_locked` 그대로 전달 구현
 - [ ] §7 테스트 케이스 1·5·5-b·11·12 작성
 
 **관련 서비스**

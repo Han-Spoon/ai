@@ -763,7 +763,6 @@ DB 컬럼 우선 판별과 longest-match fallback의 경계가 코드로 고정�
 - [ ] 전 노드 `depth`·`parent`·`k_count`·`n_total` 기록
 - [ ] taxonomy 카테고리와 `unknown` fallback 구현
 - [ ] `constraint_tags` `is_*` 태깅 구현
-- [ ] anomaly 재료 `anomaly_locked` 보존 구현
 - [ ] 확인 재료 제외 규칙 구현 (`present` 하위 재료 유지, `absent` 경로 제외)
 - [ ] 캐시에는 전체 확장 목록 저장, `warnings` 수집 구현
 
