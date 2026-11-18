@@ -59,6 +59,43 @@ def test_semie_user_post_stops_where_the_post_ends() -> None:
     assert "요구르트" in page_content(page, "https://blog.example.com/1")
 
 
+def test_mangae_post_without_ingredient_lines_reads_the_recipe_only() -> None:
+    # 2026-11-18: 멍게비빔밥 (/recipe/5838234) has Recipe data with no recipeIngredient. The
+    # page text held the site menu and other dishes ("짬뽕 맛보장 레시피 더보기").
+    data = {"@context": "http://schema.org/", "@type": "Recipe", "name": "멍게비빔밥"}
+    page = (
+        f'<html><head><script type="application/ld+json">{json.dumps(data, ensure_ascii=False)}'
+        f"</script></head><body>{NAV}<div>소고기 국 두부 조림 제육 볶음</div>"
+        '<div class="view2_summary st3"><h3>멍게비빔밥</h3></div>'
+        '<div class="view_step"><div class="view_cont_old"><div>재료 멍게5개, 고추장 4T</div>'
+        "<p>밥 위에 멍게를 올려요</p></div></div>"
+        '<div id="divRelativeRecipes">짬뽕 맛보장 레시피 더보기 후라이드치킨</div></body></html>'
+    )
+    url = "https://www.10000recipe.com/recipe/5838234"
+
+    assert page_content(page, url) == "멍게비빔밥 재료 멍게5개, 고추장 4T 밥 위에 멍게를 올려요"
+    # Newer posts: the ingredient box and steps.
+    newer = page.replace('class="view_cont_old"', 'class="cont_ingre2"')
+    assert "멍게5개" in page_content(newer, url)
+    # No recipe part on the page: nothing is read, so the title and description stay.
+    bare = page.replace("view2_summary", "x").replace("view_cont_old", "x")
+    assert page_content(bare, url) == ""
+
+
+def test_wtable_text_stops_before_products_and_user_notes() -> None:
+    page = (
+        "<html><body><div>해물 칼국수 재료 칼국수면 2인분 감자 1개</div><div>Step 1 감자를 잘라요</div>"
+        "<div>광고때문에 보기 불편하시죠? 1초만에 로그인/회원가입 하러가기</div>"
+        "<div>이 레시피를 위한 추천 상품 코인육수 (멸치/해물)</div>"
+        "<div>Wisteria 팁 고추가루대신 파프리카가루넣고 밑간했어요</div></body></html>"
+    )
+    url = "https://wtable.co.kr/recipes/7ikM4CQvgdXGqYWuM3FP6o9k"
+
+    assert page_content(page, url) == "해물 칼국수 재료 칼국수면 2인분 감자 1개 Step 1 감자를 잘라요"
+    # Other sites keep the whole text.
+    assert "파프리카가루" in page_content(page, "https://blog.example.com/1")
+
+
 def test_naver_blog_posts_are_read_from_the_mobile_page() -> None:
     assert readable_url("https://blog.naver.com/love-cafe/224453539431") == (
         "https://m.blog.naver.com/love-cafe/224453539431"
