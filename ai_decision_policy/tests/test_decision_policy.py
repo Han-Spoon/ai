@@ -78,7 +78,6 @@ def probability(
     tags: list[str],
     posterior_mean: float,
     *,
-    anomaly_locked: bool = False,
     role: str | None = None,
 ) -> DecisionProbabilityResult:
     return DecisionProbabilityResult(
@@ -88,7 +87,6 @@ def probability(
         posterior_mean=posterior_mean,
         confidence=0.55,
         prior_source="global",
-        anomaly_locked=anomaly_locked,
         evidence_refs=[f"recipe:{ingredient.ingredient_id}"],
     )
 
@@ -440,21 +438,14 @@ def test_flag_answer_present_is_danger_without_legacy_flag() -> None:
     assert (outcome.risk_level, outcome.evidence_basis) == ("danger", "confirmed")
 
 
-def test_24_legacy_anomaly_does_not_request_review() -> None:
-    outcome = decide(
-        request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.95, anomaly_locked=True)])
-    )
-    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
-    assert outcome.risk_ingredients[0].anomaly_locked is True
-    assert (outcome.high_risk_review.required, outcome.high_risk_review.reason_code) == (False, None)
-
-
-def test_25_unrelated_anomaly_blocks_safe_without_review() -> None:
+def test_25_unrelated_estimate_blocks_safe_without_review() -> None:
+    # 24·25 were about anomaly-locked answers; the lock is gone (10/27 meeting) and ⑧ no
+    # longer reads ``anomaly_locked`` (2026-11-18). An unrelated estimate still blocks SAFE.
     outcome = decide(
         request(
             FISH_ALLERGY,
             confirmed_results=[confirmed(KIMCHI, [], "present")],
-            probability_results=[probability(PORK, ["is_pork"], 0.95, anomaly_locked=True)],
+            probability_results=[probability(PORK, ["is_pork"], 0.95)],
         )
     )
     assert outcome.risk_level == "caution"
@@ -472,7 +463,7 @@ def test_33_34_storeless_scan_is_never_safe_or_reviewed(no_information: bool) ->
     outcome = decide(
         request(
             HALAL,
-            probability_results=[] if no_information else [probability(PORK, ["is_pork"], 0.8, anomaly_locked=True)],
+            probability_results=[] if no_information else [probability(PORK, ["is_pork"], 0.8)],
             no_information=no_information,
             store_id=None,
         )
@@ -554,7 +545,7 @@ def test_review_picks_highest_priority_reason() -> None:
     outcome = decide(
         request(
             HALAL,
-            probability_results=[probability(PORK, ["is_pork"], 0.95, anomaly_locked=True)],
+            probability_results=[probability(PORK, ["is_pork"], 0.95)],
             information_status="partial",
             warnings=[warning("unmapped_constraint_tags"), warning("insufficient_sources")],
         )

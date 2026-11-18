@@ -40,7 +40,7 @@ def cards(req):
     return build_owner_cards(req, decide(req))
 
 
-def anomaly_locked(ingredient: IngredientRef, tags: list[str]) -> ConfirmedResult:
+def legacy_ineligible(ingredient: IngredientRef, tags: list[str]) -> ConfirmedResult:
     """An "absent" answer with the legacy ``override_eligible: false`` (no longer sent, ⓪ #368)."""
 
     return confirmed(ingredient, tags, "absent").model_copy(update={"override_eligible": False})
@@ -87,19 +87,19 @@ def test_low_confidence_is_insufficient_recipe_evidence() -> None:
 
 
 @pytest.mark.parametrize(
-    ("answer", "locked"),
+    "answer",
     [
-        (confirmed(PORK, ["is_pork"], "absent"), False),
-        (confirmed(PORK, ["is_pork"], "present"), False),
-        (anomaly_locked(PORK, ["is_pork"]), True),
+        confirmed(PORK, ["is_pork"], "absent"),
+        confirmed(PORK, ["is_pork"], "present"),
+        legacy_ineligible(PORK, ["is_pork"]),
     ],
 )
-def test_17_24_answered_ingredient_is_never_asked_again(answer, locked: bool) -> None:
-    # One answer per target, no expiry, even when the answer is anomaly-locked (§1-3).
+def test_17_24_answered_ingredient_is_never_asked_again(answer) -> None:
+    # One answer per target, no expiry, even with the legacy ``override_eligible: false`` (§1-3).
     req = request(
         HALAL,
         confirmed_results=[answer],
-        probability_results=[probability(PORK, ["is_pork"], 0.95, anomaly_locked=locked)],
+        probability_results=[probability(PORK, ["is_pork"], 0.95)],
     )
     assert cards(req) == []
 
