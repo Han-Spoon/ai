@@ -48,18 +48,20 @@ LANGUAGE_NAMES: dict[str, str] = {
 # Phrases that call the dish safe or free of something. Never allowed unless the
 # verdict itself is safe. Matched on lowercased text.
 # "Nothing more to worry about" counts too (2026-11-17): a CAUTION reason read "there is
-# no additional soybean item … that clearly needs to be flagged".
+# no additional soybean item … that clearly needs to be flagged". So does "we did not see
+# any" (2026-11-18): a pesco user's 고등어구이 read "没有看到你特别需要避开的牛、鸡…成分"
+# while the verdict asked to check 갈비·된장·라면.
 SAFE_CLAIMS: dict[str, tuple[str, ...]] = {
-    "ko": ("안전해요", "안전합니다", "안전한 메뉴", "드셔도 괜찮", "먹어도 괜찮", "들어 있지 않", "들어있지 않", "걱정 없",
+    "ko": ("안전해요", "보이지 않아", "보이지 않습니다", "찾지 못했어요", "찾지 못했습니다",  "안전합니다", "안전한 메뉴", "드셔도 괜찮", "먹어도 괜찮", "들어 있지 않", "들어있지 않", "걱정 없",
            "걱정할 필요", "걱정하지 않으셔도", "추가로 확인할 필요", "더 확인할 필요는 없"),
-    "en": ("is safe", "safe to eat", "safe for you", "no risk", "does not contain", "doesn't contain", "free of",
+    "en": ("is safe", "did not see", "didn't see", "did not find", "didn't find", "no sign of",  "safe to eat", "safe for you", "no risk", "does not contain", "doesn't contain", "free of",
            "no additional", "nothing else to", "no need to worry", "nothing to worry", "needs to be flagged",
            "need to be flagged", "no further concern"),
-    "ar": ("آمن تماما", "آمن للأكل", "لا يحتوي", "لا داعي للقلق"),
-    "zh-CN": ("是安全的", "很安全", "放心食用", "不含有", "不用担心", "无需担心"),
-    "zh-TW": ("是安全的", "很安全", "放心食用", "不含有", "不用擔心", "無需擔心"),
-    "ja": ("安全です", "安心して", "含まれていません", "心配ありません", "心配いりません"),
-    "es": ("es seguro", "sin riesgo", "no contiene", "no hay que preocuparse", "no te preocupes"),
+    "ar": ("آمن تماما", "لم نجد",  "آمن للأكل", "لا يحتوي", "لا داعي للقلق"),
+    "zh-CN": ("是安全的", "没有看到", "没有发现", "未发现",  "很安全", "放心食用", "不含有", "不用担心", "无需担心"),
+    "zh-TW": ("是安全的", "沒有看到", "沒有發現", "未發現",  "很安全", "放心食用", "不含有", "不用擔心", "無需擔心"),
+    "ja": ("安全です", "見当たりません", "見つかりませんでした",  "安心して", "含まれていません", "心配ありません", "心配いりません"),
+    "es": ("es seguro", "no vimos", "no encontramos", "no se ve",  "sin riesgo", "no contiene", "no hay que preocuparse", "no te preocupes"),
 }
 # An estimate told as fact. Only phrases that state the ingredient is in, so "may
 # contain", "들어갈 수 있어요" and hedges like "확실히 알 수 없어요" / "can't say for
@@ -74,6 +76,19 @@ CERTAIN_CLAIMS: dict[str, tuple[str, ...]] = {
     "ja": ("必ず入って", "すでに入って", "間違いなく入って", "確実に入って"),
     "es": ("ya contiene", "ya incluye", "contiene sin duda", "definitivamente contiene"),
 }
+# Words about our own data rather than the dish (2026-11-18 run): "The percentages show
+# these ingredients can appear at nonzero rates", "the ingredients are marked unknown",
+# "listed as hidden". The instructions already forbid them; this catches the slips.
+META_CLAIMS: dict[str, tuple[str, ...]] = {
+    "ko": ("퍼센트", "데이터", "표시되어", "입력값", "0이 아닌"),
+    "en": ("percentage", "nonzero", "non-zero", "marked unknown", "marked as unknown", "listed as hidden",
+           "listed amounts", "the data", "the input", "field"),
+    "ar": ("النسب المئوية", "البيانات"),
+    "zh-CN": ("百分比", "数据", "标记为"),
+    "zh-TW": ("百分比", "資料", "數據", "標記為"),
+    "ja": ("パーセンテージ", "データ", "と表示"),
+    "es": ("porcentajes", "los datos", "marcado como"),
+}
 # A verdict sentence shorter than this (squashed) is not looked for in the reason.
 MIN_REPEAT_CHARS = 10
 _SQUASH_RE = re.compile(r"[\W_]+")
@@ -86,6 +101,9 @@ def _squash(text: str) -> str:
 _WORD_LOCALES = {"en", "es"}
 _LATIN_LOCALES = {"en", "es"}
 _LATIN_WORD_RE = re.compile(r"[a-z]{3,}")
+_ENGLISH_IN_SPANISH_RE = re.compile(
+    r"(?<!\w)(this|dish|the|and|with|may|contain|contains|which|because|ingredients?)(?!\w)"
+)
 _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 _PERCENT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
 # Arabic-Indic and full-width digits and percent signs read as plain ones.
@@ -292,6 +310,8 @@ def check_reason(
         return None
     if risk_level != "safe" and any(claim in lowered for claim in SAFE_CLAIMS[locale]):
         return None
+    if any(word in lowered for word in META_CLAIMS[locale]):
+        return None
 
     # Blank out the menu name and the allowed names first (longest first), so "고기"
     # inside an allowed "돼지고기" or "김치" inside "김치찌개" is not read as a new name.
@@ -326,6 +346,10 @@ def check_reason(
     # In a language not written in Latin letters, a Latin word left after the allowed
     # names are blanked is English slipping in ("굴소스 may contain 조개류", 2026-11-17).
     if locale not in _LATIN_LOCALES and _LATIN_WORD_RE.search(lowered):
+        return None
+    # Spanish uses the same letters, so look for common English words instead: the
+    # instruction's "this dish" came back as "Esta dish" / "this dish lleve" (2026-11-18).
+    if locale == "es" and _ENGLISH_IN_SPANISH_RE.search(lowered):
         return None
     return text
 
