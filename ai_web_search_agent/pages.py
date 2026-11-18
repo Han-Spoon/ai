@@ -3,7 +3,9 @@
 Search APIs return only a title and a short description, which rarely holds the
 ingredient list. The three priority sites embed schema.org ``Recipe`` data (JSON-LD
 ``recipeIngredient``), so their ingredient list is read from there; the page text would
-also pick up food names from site menus. Other pages fall back to their visible text.
+also pick up food names from site menus. Without it, their page text is cut to the recipe
+itself (other dishes, products and comments around it are not read). Other pages fall
+back to their whole visible text.
 Naver blog posts sit in an iframe, so the mobile page is read instead.
 
 A page that cannot be read keeps its title and description only.
@@ -112,6 +114,56 @@ def visible_text(page: str) -> str:
     return _SPACES.sub(" ", " ".join(parser.parts)).strip()
 
 
+class _RegionText(_VisibleText):
+    """Visible text inside elements whose class or id is one of ``regions``."""
+
+    def __init__(self, regions: frozenset[str]) -> None:
+        super().__init__()
+        self.regions = regions
+        self.region_tag = ""
+        self.depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        super().handle_starttag(tag, attrs)
+        if self.depth:
+            self.depth += tag == self.region_tag
+            return
+        values = dict(attrs)
+        names = set((values.get("class") or "").split()) | {values.get("id") or ""}
+        if names & self.regions:
+            self.region_tag, self.depth = tag, 1
+
+    def handle_endtag(self, tag: str) -> None:
+        super().handle_endtag(tag)
+        if self.depth and tag == self.region_tag:
+            self.depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.depth:
+            super().handle_data(data)
+
+
+def region_text(page: str, regions: frozenset[str]) -> str:
+    parser = _RegionText(regions)
+    parser.feed(page)
+    return _SPACES.sub(" ", " ".join(parser.parts)).strip()
+
+
+# 만개의레시피 older posts carry Recipe data with no ``recipeIngredient``; the ingredients
+# are in the post text. The page text around the post holds the site menu ("소고기 국 두부
+# 조림 제육 볶음 …") and "맛보장 레시피 더보기" lists of other dishes (짬뽕·후라이드치킨…),
+# so only the recipe parts are read: title box, ingredient box, steps, and the old-style
+# post body (멍게비빔밥 /recipe/5838234: 5,506 characters of page text, 2026-11-18). A page
+# with none of them keeps its title and description only.
+_MANGAE_REGIONS = frozenset({"view2_summary", "cont_ingre2", "view_step_cont", "view_cont_old"})
+
+# 우리의식탁 pages hold the first recipe steps, then a login notice ("광고때문에 보기
+# 불편하시죠?"), then products ("이 레시피를 위한 추천 상품": 멸치·해물 코인육수) or user
+# notes ("파프리카가루 넣고 밑간했는데", "밀가루 내지는 부침가루를 좀 넣어야할 듯") that
+# are not the recipe's ingredients. The text is cut at the first of these (2026-11-18).
+_WTABLE_AFTER_RECIPE = re.compile(r"광고때문에 보기 불편하시죠|이 레시피를 위한 추천 상품|더 많은 요리노트")
+
+
 # 새미네부엌 user posts (/cooking/id/...) carry no Recipe data, and under the post the
 # page lists the writer's other posts: "스크랩 댕댕이 2025.05.13 01:30 … 수제 요거트 만들기".
 # Read whole, 꽃게탕 got 우유·요구르트 and 제육볶음 got 만두·된장 from those titles
@@ -124,11 +176,24 @@ _OTHER_POSTS = re.compile(
 
 
 def page_content(page: str, url: str = "") -> str:
+    """What the reader sees of a page: Recipe data, else the page text.
+
+    On the three priority sites the page text is cut to the recipe itself, so other
+    dishes listed on the page are not read as ingredients (2026-11-18).
+    """
+
     ingredients = recipe_ingredients(page)
     if ingredients:
         return "재료: " + ", ".join(ingredients)
+    site = urlparse(url).netloc.lower().removeprefix("www.")
+    if site == "10000recipe.com":
+        return region_text(page, _MANGAE_REGIONS)[:MAX_CONTENT_CHARS]
     text = visible_text(page)
-    if urlparse(url).netloc.lower().removeprefix("www.").endswith("semie.cooking"):
+    if site == "wtable.co.kr":
+        after = _WTABLE_AFTER_RECIPE.search(text)
+        if after:
+            text = text[: after.start()].rstrip()
+    if site.endswith("semie.cooking"):
         listing = _OTHER_POSTS.search(text)
         if listing:
             text = text[: listing.start()].rstrip()
