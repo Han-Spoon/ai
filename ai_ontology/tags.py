@@ -54,13 +54,21 @@ def _warning(code: str, item_id: str | None, message: str) -> NodeWarning:
 
 
 def lookup_tags(
-    ingredient_ids: list[int], graph: IngredientGraph, item_id: str | None
+    ingredient_ids: list[int],
+    graph: IngredientGraph,
+    item_id: str | None,
+    absent_ids: frozenset[int] | set[int] = frozenset(),
 ) -> TagLookupOutcome:
     """Return each ingredient's tags, including what its sub-ingredients carry.
 
     A confirmed "present" ingredient also contains its part-of children (김치 → 멸치액젓
     → 멸치), so their node and path tags are added too. Leaving them out would hide
     ``is_fish`` from a 김치 confirmation (FN).
+
+    A sub-ingredient the owner answered "absent" (``absent_ids``) is not read, nor
+    anything under it: "배추김치 present, 새우젓 absent" must not give 배추김치 the
+    shrimp tag. Same rule as the menu expansion (§2-1, ``_drop_confirmed``). The absent
+    ingredient's own lookup keeps its tags.
 
     Lookup failures never shrink to a silent ``[]``: an unknown ingredient or an
     unusable graph adds ``constraint_tags_lookup_failed`` (forces_caution).
@@ -108,6 +116,8 @@ def lookup_tags(
                 )
                 return
             for child in index.children.get(parent, ()):
+                if child in absent_ids:
+                    continue  # owner said it is not in this dish
                 if child in path:
                     add_warning(
                         "cycle_detected",

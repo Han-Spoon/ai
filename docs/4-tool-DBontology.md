@@ -116,7 +116,7 @@ graph TB
 - `menu.normalized_menu_name`은 ②의 출력이며 ④는 다시 정규화하지 않는다. `menu.menu_id`·`match_candidates`·`residual_tokens`는 ②가 정의한 값이다 (④ 승인, 2026-10-12).
 - `confirmed_ingredients`는 ③ 출력 중 `status != unknown`인 재료다. 이상 답변 잠금이 폐기돼(10/27 회의) 사장님 확정값은 모두 여기로 온다. 확인 재료를 빼는 규칙은 §2-1 표.
 - 사장님 확정값에는 기간 만료도 없다 (⓪ #151).
-- `anomaly_locked_ingredients` (폐기, 10/27 회의). 계약 칸이 남아 있는 동안 Supervisor는 빈 목록을 보내고 ④⑤는 받은 값을 그대로 옮기기만 한다. 계약에서 칸이 빠지면 같이 지운다.
+- `anomaly_locked_ingredients` (폐기, 10/27 회의). ④⑤는 읽지도 출력하지도 않는다 (2026-11-18). 계약 칸은 호환용으로만 남아 있다.
 
 ### 1-2. 출력 값을 정하는 규칙
 
@@ -212,7 +212,7 @@ flowchart TD
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
    - **같은 재료가 같은 태그로 여러 번 나오면 하나로 합친다** (결정, 2026-10-26, #321·실데이터 QA). 가장 얕은 위치(`depth`가 작은 것, 같으면 먼저 나온 것)의 값을 쓴다. **태그가 다르면 합치지 않고 따로 남긴다.** 경로 태그는 그 경로에서만 성립한다: 마요네즈 안의 식초는 `is_egg`지만 그냥 식초는 아니다. 합집합으로 합치면 그냥 식초(레시피에 자주 나옴)에 `is_egg`가 붙어 확률이 부풀려진다. ⑧은 카드를 재료별로 묶으므로 같은 재료가 여러 줄이어도 태그는 빠지지 않는다. 확인 재료 제외(7번)는 합치기 전에 경로 단위로 한다
-6. `knowledge.cache`가 없거나 리비전이 다르면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다. 다음 경우는 `null`이다: 리비전이 같은 캐시가 이미 있음 / `store_id: null`(캐시 테이블이 가게 단위라 저장할 곳이 없다) / `runtime_tagged` 변형(검토 전 변형 재료가 원본 메뉴 캐시, 곧 ③의 분모에 섞이면 안 된다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다. `anomaly_locked`는 요청마다 Supervisor가 붙이는 값이라 캐시에 넣지 않는다
+6. `knowledge.cache`가 없거나 리비전이 다르면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다. 다음 경우는 `null`이다: 리비전이 같은 캐시가 이미 있음 / `store_id: null`(캐시 테이블이 가게 단위라 저장할 곳이 없다) / `runtime_tagged` 변형(검토 전 변형 재료가 원본 메뉴 캐시, 곧 ③의 분모에 섞이면 안 된다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다.
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
 | 확인 상태 | 그 재료 자체 | 그 재료의 하위 재료 |
@@ -320,7 +320,6 @@ if suggested and variant_origin is None:
 paths = expand(seeds + suggested, graph, max_depth=5)                 # 캐시가 있어도 매번 펼침
 full  = merge_same_ingredient(paths)                                  # 같은 재료·같은 태그만 합침, 얕은 위치
 kept  = merge_same_ingredient(drop_confirmed(paths, confirmed))       # present 하위는 남기고 absent 경로만 제외
-mark anomaly_locked from anomaly_locked_ingredients                   # 폐기 (10/27). 항상 false
 
 cache_command = save_cache(full) if store_id and not valid_cache and variant_origin != "runtime_tagged" else None
 return OntologyResult(ingredients=kept, cache_command=cache_command, ...)
@@ -339,7 +338,7 @@ return OntologyResult(ingredients=kept, cache_command=cache_command, ...)
 
 | 진입점 | 언제 부르나 | 입력 | 출력 |
 |---|---|---|---|
-| `lookup_tags` | **모든 경로**에서 ⑧ 직전 (⓪ §2-8 `tag_lookup` node). ③ 사장님 확인값에는 태그가 없으므로, 확인된 재료 전부의 태그를 채운다. 일부만 확인된 메뉴도 포함 | `ingredient_id` 목록 | 재료별 `constraint_tags`, `role` |
+| `lookup_tags` | **모든 경로**에서 ⑧ 직전 (⓪ §2-8 `tag_lookup` node). ③ 사장님 확인값에는 태그가 없으므로, 확인된 재료 전부의 태그를 채운다. 일부만 확인된 메뉴도 포함 | `ingredient_id` 목록, 사장님이 "없음"이라고 답한 `absent_ingredient_ids` | 재료별 `constraint_tags`, `role`. "없음" 재료는 다른 재료의 하위 재료로 읽지 않는다 (예: "배추김치 있음, 새우젓 없음"이면 배추김치에 새우젓의 새우 태그를 붙이지 않음). §2-1 확장의 `absent` 경로 제거와 같은 규칙 |
 | `map_ingredients` | ⑥ 웹 재료 후보를 ⑤로 보내기 전 | 재료명 목록 | 재료별 `ingredient_id`, `canonical_name`, `constraint_tags` |
 
 ```python
@@ -589,7 +588,7 @@ graph TB
 | 19 | 김치 → 액젓 경로 | 액젓에 경로 태그 `is_shellfish` 포함 | 노드 태그만 보고 경로 태그를 빠뜨리지 않을 것 |
 | 20 | 메뉴 레시피 변경 후 호출 | 리비전이 다른 캐시는 쓰지 않음 | 옛 캐시로 재료가 빠지지 않을 것 |
 | 15 | `menu_id` 입력 + 다른 이름 | `menu_id` 행 사용 | ③과 ④가 같은 메뉴를 볼 것 |
-| 16 | `anomaly_locked_ingredients`로 받은 값 | 해당 노드에 그대로 옮김 | 폐기된 칸이지만 계약에 남아 있는 동안 값이 끊기지 않을 것 |
+| 16 | `anomaly_locked_ingredients` (폐기) | 읽지 않음 | 폐기 칸 (2026-11-18 ④⑤에서 제거) |
 | 17 | 정상 호출 | 출력 `context`가 입력과 동일 | `store_id`·`item_id`를 수정하지 않을 것 |
 | 23 | 참치김밥: 참치·밥·단무지·마요네즈 속 달걀 | `role`: 참치·밥 `identity`, 단무지 `component`, 달걀 `hidden` | 같은 메뉴는 매번 같은 role일 것 |
 | 24 | 리비전이 같은 캐시가 `knowledge`에 있음 | 그래프에서 다시 펼치고, 캐시 저장 명령은 없음 | 같은 캐시를 두 번 저장하지 않을 것, `absent` 경로 제외가 캐시 때문에 틀리지 않을 것 |

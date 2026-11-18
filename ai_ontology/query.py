@@ -289,9 +289,7 @@ def _ref(ingredient_id: int, graph: _Graph) -> IngredientRef:
     )
 
 
-def _to_wire(
-    node: _Node, graph: _Graph, menu_name: str, curated: set[int], locked: set[int]
-) -> OntologyIngredient:
+def _to_wire(node: _Node, graph: _Graph, menu_name: str, curated: set[int]) -> OntologyIngredient:
     return OntologyIngredient(
         ingredient=_ref(node.ingredient_id, graph),
         taxonomy_category=graph.taxonomy.get(node.ingredient_id, "unknown"),
@@ -303,7 +301,6 @@ def _to_wire(
         curated=node.ingredient_id in curated,
         observation_basis=node.basis,
         observations=node.observations,
-        anomaly_locked=node.ingredient_id in locked,
         evidence_refs=node.evidence_refs,
     )
 
@@ -328,9 +325,9 @@ def _cache_command(
         payload={
             "menu_id": menu_id,
             "menu_revision": revision,
-            # full list before confirmed ingredients are dropped, without per-request lock
+            # full list before confirmed ingredients are dropped
             "ingredients_snapshot": [
-                item.model_dump(mode="json", exclude={"anomaly_locked"}) for item in snapshot
+                item.model_dump(mode="json") for item in snapshot
             ],
         },
     )
@@ -453,15 +450,12 @@ def query_ontology(request: OntologyRequest, *, now: datetime | None = None) -> 
         for c in request.confirmed_ingredients
         if c.ingredient.ingredient_id is not None
     }
-    locked = {
-        ref.ingredient_id for ref in request.anomaly_locked_ingredients if ref.ingredient_id is not None
-    }
     curated_set = set(curated)
-    full = [_to_wire(n, graph, menu_name, curated_set, locked) for n in _merge(occurrences)]
+    full = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(occurrences)]
     kept = (
         _drop_confirmed(occurrences, confirmed) if request.unconfirmed_only else occurrences
     )
-    ingredients = [_to_wire(n, graph, menu_name, curated_set, locked) for n in _merge(kept)]
+    ingredients = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(kept)]
 
     runtime = origin == "runtime_tagged"
     menu = OntologyResultMenu(
