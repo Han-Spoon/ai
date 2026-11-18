@@ -30,7 +30,7 @@ CONTEXT = {
     "item_id": "eval:0",
 }
 FIELDS = ("ingredient", "constraint_tags", "role", "source", "depth", "curated",
-          "observation_basis", "observations", "anomaly_locked", "evidence_refs")
+          "observation_basis", "observations", "evidence_refs")
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,6 @@ def _scores(s, menu: str) -> dict[str, float] | None:
                 },
                 "unconfirmed_only": True,
                 "confirmed_ingredients": [],
-                "anomaly_locked_ingredients": [],
                 "knowledge": knowledge,
                 "ingredient_graph": s.graph,
                 "warnings": [],

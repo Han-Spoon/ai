@@ -106,7 +106,6 @@ def _estimate(
         source=ingredient.source,
         depth=ingredient.depth,
         confidence=confidence_score(alpha, beta),
-        anomaly_locked=ingredient.anomaly_locked,
         evidence_refs=ingredient.evidence_refs,
     )
 

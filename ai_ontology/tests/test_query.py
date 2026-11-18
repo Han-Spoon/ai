@@ -94,7 +94,6 @@ def request(
     g=None,
     store_id=123456,
     confirmed=(),
-    locked=(),
     warnings=(),
 ):
     return OntologyRequest(
@@ -128,9 +127,6 @@ def request(
         confirmed_ingredients=[
             {"ingredient": {"ingredient_id": i, "canonical_name": INGREDIENTS[i][0]}, "status": s}
             for i, s in confirmed
-        ],
-        anomaly_locked_ingredients=[
-            {"ingredient_id": i, "canonical_name": INGREDIENTS[i][0]} for i in locked
         ],
         knowledge=k or knowledge(),
         ingredient_graph=g or graph(),
@@ -256,12 +252,6 @@ def test_cache_key_is_content_based():
     a = query_ontology(request(), now=NOW).cache_command
     b = query_ontology(request(confirmed=[(4, "present")]), now=NOW).cache_command
     assert a.idempotency_key == b.idempotency_key
-
-
-def test_anomaly_lock_is_kept():  # §7-8, 16
-    items = by_name(query_ontology(request(locked=[4]), now=NOW))
-    assert items["돼지고기"].anomaly_locked is True
-    assert items["두부"].anomaly_locked is False
 
 
 def test_unknown_taxonomy_ingredient_is_kept():  # §7-10

@@ -18,7 +18,6 @@ def ingredient(*, source="recipe", obs=(), curated=False):
             "curated": curated,
             "observation_basis": "direct" if observations else "none",
             "observations": observations,
-            "anomaly_locked": False,
             "evidence_refs": [],
         }
     )

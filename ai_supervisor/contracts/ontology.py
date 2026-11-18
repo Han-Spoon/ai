@@ -214,6 +214,8 @@ class TagLookupRequest(StrictModel):
     context: NodeContext
     ingredient_ids: list[PositiveInt]
     ingredient_graph: IngredientGraph
+    # owner "absent" answers: ④ does not read these as sub-ingredients of the others
+    absent_ingredient_ids: list[PositiveInt] = Field(default_factory=list)
     warnings: list[NodeWarning]
     errors: list[NodeError]
 

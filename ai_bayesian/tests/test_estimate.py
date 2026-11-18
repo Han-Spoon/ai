@@ -16,7 +16,6 @@ def ingredient(
     depth=0,
     basis=None,
     curated=False,
-    locked=False,
     ingredient_id=10,
 ):
     observations = [{"corpus": c, "k_count": k, "n_total": n} for c, k, n in obs]
@@ -29,7 +28,6 @@ def ingredient(
         "curated": curated,
         "observation_basis": basis or ("direct" if observations else "none"),
         "observations": observations,
-        "anomaly_locked": locked,
         "evidence_refs": [],
     }
 
@@ -146,11 +144,6 @@ def test_depth_decay_shrinks_spread_not_mean():  # §7-7
 def test_direct_sub_ingredient_is_not_decayed():  # §7-7-b
     p = one(ingredient(source="expanded", depth=2, basis="direct"))
     assert p.alpha_post == 54
-
-
-def test_anomaly_lock_passes_through():  # §7-9
-    p = one(ingredient(locked=True))
-    assert p.anomaly_locked is True
 
 
 def test_same_input_same_output():  # §7-13

@@ -50,7 +50,6 @@ def ontology(name, menu=None, *, store_id=1, residual=()):
                 },
                 "unconfirmed_only": True,
                 "confirmed_ingredients": [],
-                "anomaly_locked_ingredients": [],
                 "knowledge": s.ontology(menu),
                 "ingredient_graph": s.graph,
                 "warnings": [],
@@ -62,7 +61,7 @@ def ontology(name, menu=None, *, store_id=1, residual=()):
 
 def probabilities(response):
     fields = ("ingredient", "constraint_tags", "role", "source", "depth", "curated",
-              "observation_basis", "observations", "anomaly_locked", "evidence_refs")
+              "observation_basis", "observations", "evidence_refs")
     request = BayesianRequest.model_validate(
         {
             "context": CONTEXT,
@@ -268,3 +267,35 @@ def test_dropped_bundle_keeps_ingredient_ids():
 def test_sauce_name_does_not_map_to_vegetables():
     out = map_ingredients(["잡채소스"], seed().graph, "x")
     assert out.results[0].ingredient.canonical_name != "채소"
+
+
+def test_absent_sub_ingredient_is_not_read_for_a_present_parent():
+    # owner: "배추김치 present, 새우젓·새우 absent" gave 배추김치 the shrimp tag through
+    # 새우젓, so a shrimp-allergic guest got DANGER (owner-answer-only route)
+    from ai_ontology import TagLookupTool
+    from ai_supervisor.contracts.ontology import TagLookupRequest
+    import asyncio
+
+    s = seed()
+    kimchi, jeot, shrimp = s.id["배추김치"], s.id["새우젓"], s.id["새우"]
+    request = TagLookupRequest(
+        context={"schema_version": "3.0", "trace_id": "0199a2f0-0000-7000-8000-000000000001",
+                 "scan_session_id": "x", "store_id": 1, "call_scope": "item", "item_id": "x:0"},
+        ingredient_ids=[kimchi, jeot, shrimp],
+        ingredient_graph=s.graph,
+        absent_ingredient_ids=[jeot, shrimp],
+        warnings=[],
+        errors=[],
+    )
+    tags = {r.ingredient_id: r.constraint_tags for r in asyncio.run(TagLookupTool().run(request)).results}
+    assert "is_shrimp" not in tags[kimchi]
+    # 멸치액젓 was not answered: its fish and the kimchi -> 멸치액젓 shellfish path stay (no FN)
+    assert {"is_fish", "is_shellfish"} <= set(tags[kimchi])
+    assert "is_shrimp" in tags[jeot]  # the absent answer itself keeps its tags
+
+
+def test_without_absent_answers_the_parent_keeps_sub_ingredient_tags():
+    s = seed()
+    from ai_ontology import lookup_tags
+
+    assert "is_shrimp" in lookup_tags([s.id["배추김치"]], s.graph, "x").tags[s.id["배추김치"]]

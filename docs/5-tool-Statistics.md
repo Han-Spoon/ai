@@ -26,7 +26,7 @@
 - **불확실은 낮은 확률이 아니다.** 근거가 약하면 확률 평균을 낮추지 않고 분포를 넓힌다 (§2-1). 평균을 낮추면 SAFE 쪽으로 기우는 FN이 생긴다.
 - **근거가 없으면 무정보로 표시한다.** 관측 0건은 0.5와 낮은 `confidence`로 내보내며, SAFE 쪽 기본값을 쓰지 않는다.
 - **판정하지 않는다.** ⑤의 출력은 확률 수치이고 해석은 ⑧이 한다.
-- **받은 플래그를 바꾸지 않는다.** `anomaly_locked`는 그대로 옮긴다 (폐기, 10/27 회의). 계약 칸이 남아 있는 동안 Supervisor는 빈 목록을 보내고 ④⑤는 받은 값을 그대로 옮기기만 한다. 계약에서 칸이 빠지면 같이 지운다.
+- `anomaly_locked`는 폐기됐다 (10/27 회의). ⑤는 읽지도 출력하지도 않는다 (2026-11-18).
 - **부작용이 없다.** 같은 입력에는 같은 결과를 내고, DB에 쓰지 않는다.
 - **외부 경계는 Pydantic 모델로 검증한다** (⓪ §1-3).
 
@@ -57,7 +57,7 @@
 - `context.store_id`는 양의 정수 또는 `null`. 필드 누락·문자열·0 이하면 에러. store prior는 가게 스코프다.
 - **가게 없는 스캔(`store_id: null`, AGENTS.md · ⓪ §1-3)**: 에러가 아니다. `priors`는 `{status: not_found, store: [], evidence: []}`로 오므로 store prior 없이 ④의 `observations`(레시피 통계)로 전역 prior를 계산한다. SAFE 금지 경고(`store_context_missing`)는 Supervisor가 붙인다.
 - `menu_category_id`가 `null`이면 `cluster` 단계를 건너뛴다 (지금은 `cluster`가 항상 비어 있다).
-- `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다. `anomaly_locked`는 Supervisor가 붙이고 ④가 보존한 값이다.
+- `ingredients[]`는 ④ 또는 ⑥ 출력이다. `observations`(출처별 관측값)와 `observation_basis`는 ④ §1-5 규칙으로 만들어진 값이다.
 - 원본 메뉴 확인값(`inherited_confirmations`)은 입력에서 **삭제됐다** (2026-10-13, ③ §3-1). 사장님 답변은 확률 계산에 쓰지 않는다 (10/10 회의).
 - `source_reliability.weights[]`에 없는 출처는 0.5로 본다 (⑦ §3-1).
 - ⑤가 내는 warning 코드(`empty_ingredients`, `integrity_error`, `prior_global_ignored`)는 ⓪ §4-4에 있다.
@@ -86,7 +86,7 @@
 ⑤가 값을 정하는 방법:
 
 - `context`는 입력 값을 수정하지 않고 그대로 돌려준다.
-- `ingredient`, `constraint_tags`, `role`, `anomaly_locked`, `evidence_refs`는 입력 그대로 복사한다. ⑤는 계산하거나 바꾸지 않는다.
+- `ingredient`, `constraint_tags`, `role`, `evidence_refs`는 입력 그대로 복사한다. ⑤는 계산하거나 바꾸지 않는다.
 - `posterior_mean`, `alpha_post`, `beta_post`: §2·§3 공식과 scale로 계산한다.
 - `prior_source`: §1-3 fallback 단계.
 - `confidence`는 **0~1 사이 숫자**다 (결정, 2026-10-06, #187). 1에 가까울수록 근거가 충분하다는 뜻이다. 계산식과 "낮음" 기준은 §1-2-1에 있다.
@@ -129,8 +129,7 @@ confidence = 1 − 1 / √(ν + 1)
 
 ### 1-4. `anomaly_locked`
 
-**폐기 (10/27 회의, AGENTS.md).** 사장님 답변에 이상 답변 잠금을 걸지 않으므로 이 값은 항상 `false`로 온다. 계약 칸이 남아 있는 동안만 그대로 옮긴다.
-**⑤는 이 값을 만들거나 바꾸지 않고 출력에 그대로 옮긴다.** 계약에서 칸이 빠지면 같이 지운다.
+**폐기 (10/27 회의, AGENTS.md).** 사장님 답변에 이상 답변 잠금을 걸지 않는다. ⑤는 이 값을 읽지도 출력하지도 않는다 (2026-11-18).
 
 ---
 
@@ -291,7 +290,6 @@ for ing in ingredients:
         beta_post      = beta,
         prior_source   = prior_src,
         confidence     = confidence_score(alpha, beta),   # 1 − 1/√(α+β−2+1), §1-2-1
-        anomaly_locked = ing.anomaly_locked,
     ))
 
 return BayesianResult(context=context, probabilities=results)
@@ -634,7 +632,6 @@ scale을 prior에만 적용하면 평균이 내려가 SAFE 쪽으로 기운다. 
 - [ ] `α = k + 1`, `β = (n − k) + 1` 계산을 `normalize_ingredients.py`와 동일하게 구현
 - [ ] 최종 α·β 동일 비율 scale 구현
 - [ ] 필드 부재·`k > n` 무정보 처리 구현
-- [ ] `anomaly_locked` 그대로 전달 구현
 - [ ] §7 테스트 케이스 1·5·5-b·11·12 작성
 
 **관련 서비스**

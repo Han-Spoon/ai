@@ -61,7 +61,10 @@ class TagLookupTool:
 
     async def run(self, request: TagLookupRequest) -> TagLookupResponse:
         outcome = lookup_tags(
-            request.ingredient_ids, request.ingredient_graph, request.context.item_id
+            request.ingredient_ids,
+            request.ingredient_graph,
+            request.context.item_id,
+            frozenset(request.absent_ingredient_ids),
         )
         return TagLookupResponse(
             context=request.context,
