@@ -223,6 +223,27 @@ def test_prepare_graph_filters_invalid_items_and_blocks_empty_result() -> None:
     validate_prepare_response_hash(response)
 
 
+def test_prepare_graph_excludes_beverages_and_keeps_food_items() -> None:
+    graph = build_prepare_graph(
+        PrepareDependencies(
+            ocr=FakeOcr("usable", ["참이슬 360ml", "김치찌개", "치킨+맥주"]),
+            normalization=NameCleaningAgent(),
+            prepare_id_factory=lambda: PREPARE_ID,
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke(input_state(), context=context()))
+    response = result["response"]
+
+    assert [item.display_name for item in response.prepared_items] == [
+        "김치찌개",
+        "치킨+맥주",
+    ]
+    assert any(warning.code == "beverage_item" for warning in response.warnings)
+    assert response.errors == []
+    validate_prepare_response_hash(response)
+
+
 def test_prepare_graph_compiles_with_documented_nodes() -> None:
     graph = build_prepare_graph(
         PrepareDependencies(

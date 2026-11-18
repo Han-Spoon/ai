@@ -296,7 +296,7 @@ wire JSON의 최종 기준은 ⓪ 문서 §1-2와 §4-1이다. 이 절은 ② �
 5. 표시용 이름과 검색용 이름에서 인분·크기 옵션을 제거하고, 재료·조리 의미 토큰은 보존한다.
 6. 버전 관리 사전으로 안전한 표기만 통일한다.
 7. 다국어·혼합 표기이며 사전으로 해석되지 않을 때만 제한적 LLM 해석을 시도한다.
-8. 메뉴가 아닌 문자열을 `invalid`로 분류한다.
+8. 메뉴가 아닌 문자열과 서비스 분석 범위 밖의 확실한 음료·주류 항목을 `invalid`로 분류한다.
 9. 원래 `source_index` 순서로 반환한다.
 
 ### 2-2. 문자열 처리 규칙
@@ -356,13 +356,16 @@ v1 옵션 사전은 다음으로 고정한다.
 - 매장별 별칭과 DB 메뉴 ID는 ②-A가 조회하지 않는다.
 - DB 기반 별칭은 Prepare 이후 백엔드의 `menu_aliases` 후보 조회에서 처리한다.
 
-현재 저장소 사전은 `ai_normalization/dictionaries/__init__.py`에 두고 애플리케이션 import 시 한 번 immutable 객체로 만든다. 버전은 `2026-11-v1`이다. 사전 내용이 바뀌면 버전도 함께 바꾸고 §7 회귀 테스트를 통과해야 한다.
+현재 저장소 사전은 `ai_normalization/dictionaries/`에 두고 애플리케이션 import 시 한 번 immutable 객체로 만든다. 버전은 `2026-11-v3`이다. 사전 내용이 바뀌면 버전도 함께 바꾸고 §7 회귀 테스트를 통과해야 한다.
 
-| 사전 | 현재 v1 항목 |
+| 사전 | 현재 v3 항목 |
 |---|---|
 | 안전한 표기·OCR 교정 | `돈까스 → 돈가스`, `찌게 → 찌개`, `가재미탕 → 가자미탕` |
 | 검증된 영문 별칭 | `bibimbap → 비빔밥`, `bulgogi → 불고기`, `kimchi jjigae → 김치찌개`, `kimchi stew → 김치찌개`, `doenjang jjigae → 된장찌개`, `gimbap/kimbap → 김밥`, `japchae → 잡채`, `samgyeopsal → 삼겹살`, `tteokbokki → 떡볶이` |
 | 섹션 헤더 | `메뉴`, `메뉴판`, `식사류`, `안주류`, `주류`, `음료`, `음료류`, `추천 메뉴`, `대표 메뉴` |
+| 분석 제외 음료·주류 | 주류 유형(`소주`, `맥주`, `막걸리`, `청주`, `하이볼` 등), 비주류 유형(`콜라`, `사이다`, `주스`, `에이드`, `커피`, `녹차`, `생수` 등), 한식당에서 흔한 제품명·외국어 표기 |
+
+음료·주류 판정은 LLM을 호출하지 않고 `dictionaries/beverages.py`의 버전 관리 규칙만 사용한다. 공백·기본 구두점과 `500ml`, `병`, `캔`, `잔`, `제로`, `후레쉬` 같은 포장·제품 변형 표기를 정리한 뒤 **전체 항목**을 비교한다. `매실차`를 `매실`, `복분자주`를 `복분자`처럼 적는 한식당의 흔한 생략 표기는 정확 일치 별칭으로 처리한다. 따라서 `매실`은 제외하지만 `매실장아찌`는 보존한다. 유형 접미사는 항목 끝에서만 인정하므로 `지역명+막걸리`, `과일+에이드`처럼 새 상품도 처리하지만 `막걸리파전`, `와인소스스테이크`처럼 음식 이름 안에 들어간 단어는 제외 근거가 되지 않는다. `+`, `&`, `/` 조합은 모든 구성 요소가 음료일 때만 제외한다. 따라서 `소주+맥주`는 제외하고 `치킨+맥주`는 보존한다. 확실하지 않으면 후속 분석으로 보내며 음료라고 추정해 삭제하지 않는다.
 
 사전 비교 키는 NFKC 적용 후 Latin 별칭에 한해 공백·하이픈·밑줄을 제거하고 case-fold한 값이다. 따라서 `Kimchi Stew`, `kimchi-stew`, `kimchi_stew`, `kimchistew`는 같은 키로 비교한다. 별칭 전체가 사전에 정확히 있거나, 그 별칭과 사전의 한국어 번역을 앞뒤로 한 번씩 병기한 경우에만 치환하며 `display_name`은 바꾸지 않는다. 예를 들어 `Bulgogi 불고기`와 `불고기 Bulgogi`는 `불고기`가 되지만 `Bulgogi 덮밥`은 LLM 해석 전까지 전체 검색명을 보존한다.
 
@@ -396,6 +399,7 @@ Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin·
 - 가격만 남은 문자열
 - `식사류`, `주류`, `추천 메뉴`처럼 버전 관리된 섹션 헤더와 정확히 일치
 - 전화번호·영업시간처럼 메뉴가 아님을 규칙으로 확정할 수 있는 문자열
+- `참이슬 360ml`, `카스 병`, `서울장수막걸리`, `제로콜라`, `식혜`처럼 전체 항목이 음료·주류임을 버전 관리 규칙으로 확정할 수 있는 문자열
 
 전화번호는 번호 묶음을 하이픈 또는 공백으로 구분한 `지역/휴대전화 식별 번호-중간 번호-끝 번호` 형태, 영업시간은 `HH:MM~HH:MM` 형태(`~`, `-`, `–` 구분자)와 앞의 `전화`, `Tel.`, `영업시간` 라벨을 허용해 정확히 일치할 때만 invalid로 만든다. 이 경우 warning code는 `invalid_menu_text`다. 일부 문자열이 비슷하다는 이유만으로 메뉴를 invalid로 만들지 않는다.
 
@@ -586,7 +590,7 @@ ai_normalization/
 ├── _concurrency.py    # 요청 단위 LLM 동시 실행 상한
 ├── openai_resolver.py # Responses API 구조화 LLM adapter
 ├── evaluation.py      # API 호출 없는 고정 검증셋 지표·JSONL CLI
-├── dictionaries/      # `2026-11-v1` 표기·헤더·다국어 사전
+├── dictionaries/      # `2026-11-v3` 표기·헤더·다국어·음료 사전
 └── tests/
 ```
 
@@ -626,6 +630,7 @@ Resolver가 없거나 호출이 실패하면 규칙 결과를 유지한다. 후�
 | `price_only` | 가격만 존재 | `invalid`, 제외 | false |
 | `section_header` | 확정된 메뉴판 헤더 | `invalid`, 제외 | false |
 | `invalid_menu_text` | 전화번호·영업시간과 정확히 일치 | `invalid`, 제외 | false |
+| `beverage_item` | 전체 항목이 분석 범위 밖 음료·주류로 확정됨 | `invalid`, 제외 | false |
 | `low_ocr_confidence` | 유효 메뉴의 `ocr_confidence < 0.65` | 이름은 보존하고 계속 진행 | true |
 | `name_llm_failed` | ②-A 다국어 해석 실패 | 정제된 원문 fallback | false |
 | `candidate_unavailable` | 백엔드 후보 조회 실패 | `unmatched`, unknown 경로 | true |
@@ -680,6 +685,9 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 30 | `Bulgogi 불고기` | 영문 segment `translation`, normalized `불고기` |
 | 31 | `Beef 불고기` | LLM 확정 시 `semantic_detail`, `Beef`를 residual에도 보존 |
 | 32 | 해석 불명 영문 segment | `unknown`, LLM이 규칙 검색명을 바꾸지 못함 |
+| 33 | `참이슬 360ml`, `생맥주 500cc`, `제로콜라`, `식혜` | `beverage_item`, `invalid`, Prepare 외부 목록에서 제외 |
+| 34 | `막걸리파전`, `와인소스스테이크`, `치킨+맥주` | 음료 단어가 있어도 음식이 포함되므로 보존 |
+| 35 | `소주+맥주`, `콜라/사이다` | 모든 구성 요소가 음료이므로 `beverage_item`, `invalid` |
 
 ---
 
@@ -696,7 +704,8 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 - 후보 조회 실패와 모호성은 SAFE 금지 신호로 보존한다.
 - schema 3.0의 완전한 wire JSON은 ⓪ §4-1과 이 문서 §1을 함께 갱신한다.
 - Python 패키지 경로는 `ai_normalization/`이다.
-- 사전 경로와 버전은 `ai_normalization/dictionaries/__init__.py`, `2026-11-v1`이다.
+- 사전 경로와 버전은 `ai_normalization/dictionaries/`, `2026-11-v3`이다.
+- OCR은 메뉴판 항목을 빠짐없이 전달하고, ②-A가 전체 항목 기준의 결정론적 규칙으로 확실한 음료·주류만 분석 대상에서 제외한다. 음료 판정에는 LLM을 사용하지 않는다.
 - item 단위 저신뢰 기준은 `ocr_confidence < 0.65`이며 유효 메뉴에만 `low_ocr_confidence`를 만든다.
 - LLM 내부 reason code는 §4-3의 세 값이다.
 - warning은 `(code, node, item_id)`로 중복 제거한다.

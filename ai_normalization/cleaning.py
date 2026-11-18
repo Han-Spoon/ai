@@ -22,7 +22,12 @@ from .contracts import (
     NameResolver,
     OcrMenuItem,
 )
-from .dictionaries import MULTILINGUAL_ALIASES, NORMALIZATION_REPLACEMENTS, SECTION_HEADERS
+from .dictionaries import (
+    MULTILINGUAL_ALIASES,
+    NORMALIZATION_REPLACEMENTS,
+    SECTION_HEADERS,
+    is_beverage_item,
+)
 from .option_rules import extract_options
 
 _LEADING_DECORATION_RE = re.compile(r"^[\s·•▶▷■□◆◇★☆▪▫_\-–—|※*]+")
@@ -140,6 +145,8 @@ def clean_menu_name(raw_menu_name: str) -> CleaningOutcome:
             else "invalid_menu_text"
         )
         return _invalid(display, warning)
+    if is_beverage_item(display):
+        return _invalid(display, "beverage_item")
 
     search_name = _compact(display).casefold()
     dictionary_hit = False
@@ -430,6 +437,7 @@ def _warning(code: str, item_id: str, *, forces_caution: bool) -> NodeWarning:
         "price_only": "가격만 있는 문자열은 메뉴에서 제외했습니다.",
         "section_header": "메뉴판 섹션 제목은 메뉴에서 제외했습니다.",
         "invalid_menu_text": "메뉴가 아닌 안내·옵션 문자열은 메뉴에서 제외했습니다.",
+        "beverage_item": "분석 대상이 아닌 음료·주류 항목은 메뉴에서 제외했습니다.",
         "name_llm_failed": "다국어 메뉴명 해석에 실패해 규칙 기반 이름을 유지했습니다.",
         "low_ocr_confidence": "OCR 신뢰도가 설정된 품질 기준보다 낮습니다.",
     }

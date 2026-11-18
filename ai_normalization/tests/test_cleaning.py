@@ -165,6 +165,102 @@ def test_documented_section_headers_are_invalid(header: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "beverage",
+    [
+        # Alcohol types, regional products, brands, and package notation
+        "소주",
+        "참이슬 후레쉬 360ml",
+        "새로 오미자",
+        "생맥주 500cc",
+        "카스(병)",
+        "카스 0.0",
+        "서울 장수 막걸리 750ml",
+        "복분자주",
+        "청하",
+        "연태고량주",
+        "하이볼",
+        "와인",
+        # Carbonated, traditional, coffee/tea, water, and energy drinks
+        "제로 콜라",
+        "칠성사이다 355ml",
+        "환타 오렌지",
+        "환타 포도",
+        "웰치스 포도",
+        "데미소다 사과",
+        "오렌지 주스",
+        "자몽 에이드",
+        "식혜",
+        "수정과",
+        "미숫가루",
+        "매실",
+        "유자",
+        "대추",
+        "생강",
+        "모과",
+        "오미자",
+        "복분자",
+        "아메리카노",
+        "녹차",
+        "삼다수",
+        "포카리스웨트",
+        # Common foreign-script labels
+        "Coca-Cola",
+        "Cass 500ml",
+        "Cass 0.0",
+        "Beer",
+        "Soju",
+        "Makgeolli",
+        "ビール",
+        "啤酒",
+    ],
+)
+def test_beverage_items_are_invalid(beverage: str) -> None:
+    result = clean_menu_name(beverage)
+
+    assert result.status == "invalid"
+    assert result.normalized_menu_name is None
+    assert result.warning_code == "beverage_item"
+
+
+@pytest.mark.parametrize(
+    "food_or_mixed_item",
+    [
+        "막걸리파전",
+        "소주삼겹살세트",
+        "치킨+맥주",
+        "콜라찜닭",
+        "녹차아이스크림",
+        "커피콩빵",
+        "와인소스스테이크",
+        "청주식 돼지짜글이",
+        "새로구이",
+        "밀키스맛빵",
+        "환타맛치킨",
+        "매실장아찌",
+        "유자드레싱샐러드",
+        "대추갈비찜",
+        "생강돼지구이",
+        "모과소스탕수육",
+        "오미자소스샐러드",
+        "복분자소스불고기",
+    ],
+)
+def test_beverage_words_do_not_remove_food_items(food_or_mixed_item: str) -> None:
+    result = clean_menu_name(food_or_mixed_item)
+
+    assert result.status != "invalid"
+    assert result.normalized_menu_name is not None
+
+
+@pytest.mark.parametrize("beverage_combo", ["소주+맥주", "콜라/사이다"])
+def test_all_beverage_combinations_are_invalid(beverage_combo: str) -> None:
+    result = clean_menu_name(beverage_combo)
+
+    assert result.status == "invalid"
+    assert result.warning_code == "beverage_item"
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "1인분 추가 3,000원",
@@ -479,3 +575,16 @@ def test_low_ocr_warning_is_not_created_for_excluded_invalid_item() -> None:
     payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
     response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
     assert [warning.code for warning in response.warnings] == ["section_header"]
+
+
+def test_beverage_warning_replaces_low_ocr_warning_for_excluded_item() -> None:
+    source = item(0, "참이슬 360ml")
+    source["ocr_confidence"] = 0.1
+    payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
+
+    response = asyncio.run(NameCleaningAgent().run(NameCleaningRequest.model_validate(payload)))
+
+    assert response.items[0].cleaning_status == "invalid"
+    assert response.items[0].display_name == "참이슬 360ml"
+    assert [warning.code for warning in response.warnings] == ["beverage_item"]
+    assert response.warnings[0].forces_caution is False
