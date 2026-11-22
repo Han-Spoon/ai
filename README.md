@@ -8,7 +8,7 @@
 
 | 모듈 | 역할 | 문서 |
 |---|---|---|
-| `app.py` | FastAPI 진입점 (`/v1/ocr`, `/v1/ruleengine`, `/v1/result`) | — |
+| `app.py` | FastAPI 진입점 (`/v1/analyze/prepare`, `/v1/analyze/judge`; 레거시 API 병행) | [Supervisor 스펙](docs/0-agent-supervisor.md) |
 | `ai_supervisor/` | Prepare/Judge 계약과 LangGraph 상태 모델 | [Supervisor 스펙](docs/0-agent-supervisor.md) |
 | `ai_ocr/` | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) | [README](ai_ocr/README.md) |
 | `ai_normalization/` | ② 메뉴명 정제 및 허용 후보 선택 | [README](ai_normalization/README.md) |
@@ -27,6 +27,19 @@
 - [멀티 에이전트 아키텍처](docs/caution-multi-agent-architecture.md) — 전체 흐름도와 Agent·Tool별 역할
 
 ## 개발
+
+### API 전환
+
+신규 백엔드 연동은 `POST /v1/analyze/prepare` 후 DB 지식을 조회해
+`POST /v1/analyze/judge`를 호출하는 2-phase 흐름을 사용합니다. Prepare는
+`store_id`를 받지 않고, Judge만 백엔드가 확정한 양의 정수 `store_id`
+또는 가게 없는 스캔을 뜻하는 `null`을 받습니다.
+
+`/v1/ocr`, `/v1/ruleengine`, `/v1/result`는 기존 백엔드의 단계적
+전환을 위해 동작을 유지한 deprecated API입니다. 신규 연동에서는
+사용하지 않으며, 백엔드 전환과 통합 검증이 완료되기 전에 삭제하지
+않습니다. 레거시 `/v1/ocr`와 Supervisor Prepare는 같은 내부 OCR 실행
+경로를 공유합니다.
 
 Python 3.11 기준입니다.
 

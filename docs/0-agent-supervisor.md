@@ -157,7 +157,11 @@ POST /v1/analyze/prepare
 - Prepare와 Judge 사이의 상태를 AI 프로세스 메모리나 LangGraph checkpoint에 보관하지 않는다. Judge에 필요한 값은 백엔드가 Prepare 결과와 KnowledgeBundle로 다시 전달한다.
 - Prepare/Judge와 KnowledgeBundle의 JSON 형식은 §1-3을 따른다. 백엔드는 이 계약에 맞춰 조회 결과를 조립하고, AI는 계약 밖 필드를 추측하지 않는다.
 
-> 전환 참고: 과거의 3-phase API는 신규 구현 및 연동 대상이 아니다. 이 문서의 구현 기준은 위 두 경로뿐이다.
+> 전환 참고: 과거의 3-phase API(`/v1/ocr` → `/v1/ruleengine` →
+> `/v1/result`)는 기존 백엔드의 단계적 전환을 위해 deprecated 상태로
+> 병행한다. 요청·응답 동작은 변경하지 않지만 신규 구현과 연동 대상은
+> 아니다. 신규 표준은 위 두 경로뿐이며, 레거시 `/v1/ocr`와 Prepare는
+> 같은 AI 내부 OCR 실행 경로를 공유한다.
 
 ### 0-5. JSON을 조립해서 전달하는 방법
 

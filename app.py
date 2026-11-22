@@ -5,10 +5,11 @@
 기존 ai_ocr / ai_ruleengine 로직을 그대로 재사용한다 (비즈니스 로직 중복 없음).
 
 엔드포인트:
-    POST /v1/ocr        : S3 IAM 조회(우선) 또는 image_url 다운로드 → OCR 파이프라인 → 최종 dict
-    POST /v1/ruleengine : ocr_result + profile → 위험도 판정 dict
-    POST /v1/analyze/prepare : Supervisor Prepare Graph
-    POST /v1/analyze/judge   : Supervisor Judge Graph
+    POST /v1/analyze/prepare : Supervisor Prepare Graph (신규 표준)
+    POST /v1/analyze/judge   : Supervisor Judge Graph (신규 표준)
+    POST /v1/ocr        : 단계적 전환을 위한 레거시 API (deprecated)
+    POST /v1/ruleengine : 단계적 전환을 위한 레거시 API (deprecated)
+    POST /v1/result     : 단계적 전환을 위한 레거시 API (deprecated)
 
 실행:
     uvicorn app:app --host 0.0.0.0 --port 8000
@@ -136,9 +137,18 @@ def health():
 
 
 # ── 1) OCR ────────────────────────────────────────────────────────────────────
-@app.post("/v1/ocr")
+@app.post("/v1/ocr", deprecated=True)
 def run_ocr(req: OcrRequest):
-    """S3 객체 키(우선) 또는 image_url을 스트리밍해 OCR을 실행한다."""
+    """Deprecated HTTP adapter kept during the Prepare/Judge migration."""
+
+    return _execute_ocr(req)
+
+
+def _execute_ocr(req: OcrRequest):
+    """S3 객체 키(우선) 또는 image_url을 스트리밍해 OCR을 실행한다.
+
+    레거시 HTTP adapter와 Supervisor Prepare가 공유하는 단일 실행 경로다.
+    """
     queue_started_at = time.monotonic()
     request_deadline = queue_started_at + float(
         os.getenv("OCR_REQUEST_BUDGET_SECONDS", "16")
@@ -238,7 +248,7 @@ def _build_supervisor_service() -> SupervisorService:
 def _run_supervisor_ocr(image):
     """Reuse the AI-owned storage download and CLOVA OCR execution path."""
 
-    return run_ocr(
+    return _execute_ocr(
         OcrRequest(
             source=image.source,
             storage_key=image.storage_key,
@@ -250,7 +260,7 @@ def _run_supervisor_ocr(image):
 
 
 # ── 2) Rule Engine ────────────────────────────────────────────────────────────
-@app.post("/v1/ruleengine")
+@app.post("/v1/ruleengine", deprecated=True)
 def run_ruleengine(req: RuleEngineRequest):
     """analyze_all(ocr_result, profile) 결과 dict 를 그대로 반환한다."""
     try:
@@ -263,7 +273,7 @@ def run_ruleengine(req: RuleEngineRequest):
 
 
 # ── 3) Result ─────────────────────────────────────────────────────────────────
-@app.post("/v1/result")
+@app.post("/v1/result", deprecated=True)
 def run_result(judged_result: dict = Body(...)):
     """/v1/ruleengine 응답(judged_result)을 받아 menu_analyses 를 FinalOutput 으로 교체한다.
 
