@@ -45,39 +45,45 @@ FISH_CAKE = IngredientRef(ingredient_id=201, canonical_name="어묵")
 def test_1_confirmed_danger_names_the_ingredient_and_the_restriction() -> None:
     results = [confirmed(PORK, ["is_pork"], "present")]
     assert message(request(HALAL, confirmed_results=results, locale="ko")).verdict == (
-        "사장님이 돼지고기가 들어 있다고 확인했어요. 할랄 기준에 맞지 않아요."
+        "할랄 기준으로는 드시기 어려워요. 사장님이 돼지고기가 들어 있다고 확인했어요."
     )
     en = request(HALAL, confirmed_results=results, localized_names={101: "pork"})
     assert message(en).verdict == (
-        "The owner confirmed this dish contains pork. It doesn't fit your dietary needs (halal)."
+        "This dish isn't suitable for your dietary needs (halal). The owner confirmed this dish contains pork."
     )
 
 
 def test_danger_names_only_the_restriction_it_breaks() -> None:
     user = profile(is_vegetarian=True, vegetarian_type="vegan", allergies=["is_shrimp"])
     req = request(user, confirmed_results=[confirmed(FISH_CAKE, ["is_fish"], "present")], locale="ko")
-    assert message(req).verdict == "사장님이 어묵이 들어 있다고 확인했어요. 비건 기준에 맞지 않아요."
+    assert message(req).verdict == "비건 기준으로는 드시기 어려워요. 사장님이 어묵이 들어 있다고 확인했어요."
     shrimp = request(user, confirmed_results=[confirmed(SHRIMP, ["is_shrimp"], "present")], locale="ko")
-    assert message(shrimp).verdict.endswith("비건 · 새우 알레르기 기준에 맞지 않아요.")
+    assert message(shrimp).verdict.startswith("비건 · 새우 알레르기 기준으로는 드시기 어려워요.")
 
 
 def test_2_and_11_estimate_asks_to_check_without_percent() -> None:
     results = [probability(PORK, ["is_pork"], 0.62)]
     ko = request(HALAL, probability_results=results, locale="ko")
-    assert message(ko).verdict == "돼지고기는 아직 확인이 필요해요."
+    assert message(ko).verdict == "할랄 기준으로는 드시기 전에 직원 확인이 필요해요. 돼지고기가 들어 있을 수 있어요."
     en = request(HALAL, probability_results=results, localized_names={101: "pork"})
-    assert message(en).verdict == "We still need to check for pork."
+    assert message(en).verdict == (
+        "With your dietary needs (halal), please check with the staff before eating this dish. "
+        "It may contain pork."
+    )
 
 
 def test_caution_says_what_the_owner_ruled_out_first() -> None:
-    # S10-01: "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 어묵은 아직 확인이 필요해요."
+    # S10-01, with whether they can eat it first (2026-11-22).
     req = request(
         VEGAN,
         confirmed_results=[confirmed(EGG_GARNISH, ["is_egg"], "absent")],
         probability_results=[probability(FISH_CAKE, ["is_fish"], 0.46)],
         locale="ko",
     )
-    assert message(req).verdict == "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 어묵은 아직 확인이 필요해요."
+    assert message(req).verdict == (
+        "비건 기준으로는 드시기 전에 직원 확인이 필요해요. "
+        "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 어묵이 들어 있을 수 있어요."
+    )
     zh = req.model_copy(update={"locale": "zh-CN"})
     # Chinese sentences join without a space (the untranslated name keeps its own).
     assert " " not in message(zh).verdict.replace("달걀 지단", "")
@@ -85,23 +91,23 @@ def test_caution_says_what_the_owner_ruled_out_first() -> None:
 
 def test_3_no_information_asks_the_staff() -> None:
     req = request(HALAL, no_information=True, locale="ko")
-    assert message(req).verdict == "재료 정보를 찾지 못했어요. 직원에게 직접 확인해 주세요."
+    assert message(req).verdict == "드시기 전에 직원 확인이 필요해요. 재료 정보를 찾지 못했어요."
 
 
 def test_12_owner_confirmed_safe_names_the_restriction() -> None:
     req = request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, locale="ko")
     assert decide(req).risk_level == "safe"
-    assert message(req).verdict == "사장님이 확인한 재료에 할랄 기준에 맞지 않는 재료가 없어요."
+    assert message(req).verdict == "할랄 기준으로 드실 수 있어요. 사장님이 확인한 재료 중 피해야 할 재료가 없어요."
 
 
 def test_safe_without_any_restriction_has_nothing_to_name() -> None:
     req = request(NO_RESTRICTION, confirmed_results=[confirmed(RICE, [], "present")], locale="ko")
-    assert message(req).verdict == "사장님이 확인한 재료 중 피해야 할 재료가 없어요."
+    assert message(req).verdict == "드실 수 있어요. 사장님이 확인한 재료 중 피해야 할 재료가 없어요."
 
 
 def test_estimate_without_overlap_does_not_sound_safe() -> None:
     req = request(HALAL, probability_results=[probability(ONION, [], 0.9)], locale="ko")
-    assert message(req).verdict == "피해야 할 재료는 찾지 못했지만, 추정 결과라 확인이 필요해요."
+    assert message(req).verdict == "드시기 전에 직원 확인이 필요해요. 피해야 할 재료는 찾지 못했지만, 추정 결과예요."
 
 
 def test_13_identity_note_text() -> None:
@@ -111,7 +117,7 @@ def test_13_identity_note_text() -> None:
         locale="ko",
     )
     result = message(req)
-    assert result.verdict == "사장님이 참치가 들어 있다고 확인했어요. 생선 알레르기 기준에 맞지 않아요."
+    assert result.verdict == "생선 알레르기 기준으로는 드시기 어려워요. 사장님이 참치가 들어 있다고 확인했어요."
     assert [(n.code, n.text) for n in result.notes] == [
         ("hard_to_remove", "참치는 이 메뉴의 주재료라 빼기 어려울 수 있어요.")
     ]
@@ -135,13 +141,13 @@ def test_14_hidden_note_text() -> None:
 def test_16_spicy_observation_is_named() -> None:
     observation = DecisionTagObservation(tag="is_spicy", confidence=0.78, evidence_refs=["ocr:is_spicy"])
     req = request(NO_SPICY, confirmed_results=KIMCHI_STEW_CONFIRMED, observations=[observation], locale="ko")
-    assert message(req).verdict == "매운 재료는 아직 확인이 필요해요."
+    assert message(req).verdict == "안 매운 음식 기준으로는 드시기 전에 직원 확인이 필요해요. 매운 재료가 들어 있을 수 있어요."
 
 
 def test_18_unresolved_flag_note() -> None:
     req = request(FISH_ALLERGY, confirmed_results=KIMCHI_STEW_CONFIRMED, flags=["has_unclear_jeotgal"], locale="ko")
     result = message(req)
-    assert result.verdict == "아직 확인되지 않은 정보가 있어요. 직원에게 직접 확인해 주세요."
+    assert result.verdict == "드시기 전에 직원 확인이 필요해요. 아직 확인되지 않은 정보가 있어요."
     assert [(n.code, n.text) for n in result.notes] == [
         ("ambiguous_menu", "젓갈에 생선이 들어갈 수 있어 확인이 필요해요.")
     ]
@@ -162,26 +168,26 @@ def test_21_flag_answer_danger_names_the_tag() -> None:
         flag_answers=[flag_answer(["is_fish"], "present")],
         locale="ko",
     )
-    assert message(req).verdict == "사장님이 생선이 들어 있다고 확인했어요. 생선 알레르기 기준에 맞지 않아요."
+    assert message(req).verdict == "생선 알레르기 기준으로는 드시기 어려워요. 사장님이 생선이 들어 있다고 확인했어요."
 
 
 def test_missing_localized_name_falls_back_to_the_team_tables() -> None:
     # No localized_names from the backend: the standard table still names 돼지고기 (names.py).
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.3)], locale="ja")
-    assert message(req).verdict == "豚肉はまだ確認が必要です。"
+    assert message(req).verdict == "食事制限（ハラール）があるため、食べる前にスタッフに確認してください。豚肉が入っている可能性があります。"
 
 
 def test_unmapped_web_ingredient_is_named_from_the_extra_table() -> None:
     # ④ could not map 삼치 (ingredient_id null); the extra table has it (2026-11-02).
     mackerel = IngredientRef(ingredient_id=None, canonical_name="삼치")
     req = request(SEAFOOD_ALLERGY, probability_results=[probability(mackerel, ["is_fish"], 0.4)], locale="en")
-    assert message(req).verdict == "We still need to check for Spanish mackerel."
+    assert message(req).verdict .endswith("It may contain Spanish mackerel.")
 
 
 def test_name_in_no_table_keeps_korean() -> None:
     sauce = IngredientRef(ingredient_id=None, canonical_name="까나리액젓")
     req = request(SEAFOOD_ALLERGY, probability_results=[probability(sauce, ["is_fish"], 0.3)], locale="ja")
-    assert message(req).verdict == "까나리액젓はまだ確認が必要です。"
+    assert message(req).verdict .endswith("까나리액젓が入っている可能性があります。")
 
 
 def test_same_ingredient_twice_is_named_once_with_higher_probability() -> None:
@@ -191,7 +197,7 @@ def test_same_ingredient_twice_is_named_once_with_higher_probability() -> None:
         probability_results=[probability(SHRIMP, ["is_shrimp"], 0.2), probability(SHRIMP, ["is_fish"], 0.7)],
         locale="ko",
     )
-    assert message(req).verdict == "새우는 아직 확인이 필요해요."
+    assert message(req).verdict .endswith("새우가 들어 있을 수 있어요.")
 
 
 def test_several_ingredients_highest_probability_first() -> None:
@@ -200,7 +206,7 @@ def test_several_ingredients_highest_probability_first() -> None:
         probability_results=[probability(SHRIMP, ["is_shrimp"], 0.2), probability(TUNA, ["is_fish"], 0.7)],
         localized_names={130: "shrimp", 103: "tuna"},
     )
-    assert message(req).verdict == "We still need to check for tuna and shrimp."
+    assert message(req).verdict .endswith("It may contain tuna and shrimp.")
 
 
 NINE_FISH = [
@@ -223,15 +229,15 @@ def _nine_fish(locale: str):
 def test_verdict_names_at_most_seven_ingredients_and_counts_the_rest() -> None:
     # 2026-11-08: the screen lists every ingredient with its probability under the
     # sentence (Figma S10), so the sentence stops at seven, highest probability first.
-    assert message(_nine_fish("ko")).verdict == (
-        "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵 외 2개는 아직 확인이 필요해요."
+    assert message(_nine_fish("ko")).verdict.endswith(
+        "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵 외 2개가 들어 있을 수 있어요."
     )
     en = message(_nine_fish("en")).verdict
-    assert en.startswith("We still need to check for ") and en.endswith(" and 2 more.")
-    assert en.count(", ") == 6
-    assert message(_nine_fish("ja")).verdict.endswith("ほか2種類はまだ確認が必要です。")
-    assert message(_nine_fish("zh-CN")).verdict.endswith("及其他2种还需要确认。")
-    assert message(_nine_fish("zh-TW")).verdict.endswith("及其他2種還需要確認。")
+    assert "It may contain " in en and en.endswith(" and 2 more.")
+    assert en.split("It may contain ")[1].count(", ") == 6
+    assert message(_nine_fish("ja")).verdict.endswith("ほか2種類が入っている可能性があります。")
+    assert message(_nine_fish("zh-CN")).verdict.endswith("及其他2种。")
+    assert message(_nine_fish("zh-TW")).verdict.endswith("及其他2種。")
     assert message(_nine_fish("es")).verdict.endswith(" y 2 más.")
     assert "من المكونات الأخرى" in message(_nine_fish("ar")).verdict
 
@@ -242,7 +248,7 @@ def test_seven_ingredients_are_all_named() -> None:
         probability_results=[probability(ref, ["is_fish"], 0.9 - i * 0.05) for i, ref in enumerate(NINE_FISH[:7])],
         locale="ko",
     )
-    assert message(req).verdict == "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵은 아직 확인이 필요해요."
+    assert message(req).verdict .endswith("멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵이 들어 있을 수 있어요.")
 
 
 def test_31_reason_is_empty_but_verdict_and_notes_stay() -> None:
@@ -255,10 +261,14 @@ def test_31_reason_is_empty_but_verdict_and_notes_stay() -> None:
 TEMPLATES = [
     messages.AND_LISTS,
     messages.OWNER_SAYS_PRESENT,
-    messages.BREAKS,
     messages.OWNER_SAYS_ABSENT,
-    messages.STILL_TO_CHECK,
-    messages.SAFE_FOR,
+    messages.MAY_CONTAIN,
+    messages.CANNOT_EAT_FOR,
+    messages.CANNOT_EAT,
+    messages.CHECK_BEFORE_EATING_FOR,
+    messages.CHECK_BEFORE_EATING,
+    messages.CAN_EAT_FOR,
+    messages.CAN_EAT,
     messages.SAFE,
     messages.NOT_CONFIRMED,
     messages.NO_INFORMATION,
@@ -311,7 +321,7 @@ def test_judge_wraps_verdict_message_and_cards() -> None:
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.8)], localized_names={101: "pork"})
     response = judge(req)
     assert (response.risk_level, response.evidence_basis) == ("caution", "estimated")
-    assert response.message.verdict == "We still need to check for pork."
+    assert response.message.verdict.endswith("It may contain pork.")
     assert [card.ingredient.canonical_name for card in response.owner_cards] == ["돼지고기"]
     assert response.risk_ingredients[0].ingredient.localized_name == "pork"
 
@@ -374,9 +384,9 @@ def test_two_tag_flag_answer_says_or_not_both() -> None:
     result = judge(req)
     assert result.risk_level == "danger"
     assert result.message.verdict == (
+        "돼지고기 알레르기 기준으로는 드시기 어려워요. "
         "사장님이 돼지고기가 들어 있다고 확인했어요. "
-        "사장님이 육수에 돼지고기나 새우가 들어간다고 답했어요. "
-        "돼지고기 알레르기 기준에 맞지 않아요."
+        "사장님이 육수에 돼지고기나 새우가 들어간다고 답했어요."
     )
 
 
@@ -389,7 +399,7 @@ def test_two_tag_flag_answer_alone_names_every_restriction_it_may_break() -> Non
         locale="en",
     )
     verdict = judge(req).message.verdict
-    assert verdict.startswith("The owner said there is pork or shrimp in the broth.")
+    assert verdict.endswith("The owner said there is pork or shrimp in the broth.")
     assert "confirmed" not in verdict
     assert "pork allergy" in verdict and "shrimp allergy" in verdict
 
@@ -434,7 +444,7 @@ def test_one_tag_flag_answer_is_left_out_when_a_confirmed_ingredient_carries_it(
         flag_answers=[flag_answer(["is_shrimp"], "present")],
         locale="ko",
     )
-    assert judge(req).message.verdict == "사장님이 새우젓이 들어 있다고 확인했어요. 새우 알레르기 기준에 맞지 않아요."
+    assert judge(req).message.verdict == "새우 알레르기 기준으로는 드시기 어려워요. 사장님이 새우젓이 들어 있다고 확인했어요."
 
 
 def test_hard_to_remove_notes_of_the_same_role_share_one_sentence() -> None:
