@@ -29,12 +29,15 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
+from .messages import _sentences, reason_tail
 from .names import all_rows, dictionary_name, display_name, standard_rows
 from .policy import information_failed
 from .profile import forbidden_tags
 from .questions import TAG_NAMES, tag_name
 
-MAX_REASON_CHARS = 300
+# 300 until 2026-11-22, when the reason went from one or two sentences to three or four
+# (problem, then the next step on the result screen).
+MAX_REASON_CHARS = 600
 MAX_OUTPUT_TOKENS = 400
 LANGUAGE_NAMES: dict[str, str] = {
     "ko": "Korean",
@@ -120,36 +123,92 @@ _ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 INSTRUCTIONS = """You write the short "why" line under a food safety verdict for a tourist
 at a Korean restaurant. Code already decided the verdict; you only explain it.
 Write one or two short, friendly sentences in {language}, speaking to the tourist.
-- Say why the listed ingredients matter: role "identity" is a main ingredient,
-  "component" is a regular ingredient, "hidden" is inside a sauce or base.
-  If role is null, do not say what part it plays.
+- Do not copy verdict_sentence or write a sentence that only says it again in other
+  words. Your sentences must add the explanation it does not give.
+- Say what the problem is. Take the ingredients with name_shows_cause false (at
+  most two) and, for each:
+  1. what kind of food it is, in general words, without naming other ingredients.
+     If a tourist may not know it (most Korean ingredients, such as fermented
+     sauces, salted seafood or fish cake), say plainly what it is made from and
+     how it is made;
+  2. what may be inside it, naming each word of avoided_in_it as it is. Never put
+     a vague phrase such as "what you avoid" or "ingredients to avoid" in its place;
+  3. only if hard_to_remove is true, say why it may be hard to leave out: because
+     it is a main ingredient of this dish (role "identity"), or because it goes
+     inside a sauce or seasoning (role "hidden"). Always give that reason. Never say
+     what part any other ingredient plays.
+  Skip ingredients with name_shows_cause true. Say nothing else about them: not
+  how often they go into this dish, and not that they go against the tourist's
+  restriction (the verdict already says so).
+- Fixed sentences are added after yours: which ingredients most of our recipes
+  use, and what the tourist can do next with the cards on the screen. So never
+  write a percentage or how likely anything is, never say what to do next, and
+  never mention a card.
+- Say that ingredients may go into this dish, not that they are mixed into it.
+- End every sentence with a period. Never use a semicolon.
 - Use only ingredients from the input, with the given names. Never add others.
   A name given in Korean has no translation yet: translate it into {language}, and
   list each such name with your translation in name_translations.
-- State only what the input says. Do not name other dishes, cooking methods, sauces,
-  broths, or serving styles, and do not invent examples of how it is used.
-- If you give a percentage, copy one from the input exactly, with the % sign.
-  Never write 0% or 100%.
+- State only what the input says. Do not name other dishes, broths, or serving
+  styles, and do not invent examples of how it is used. Saying how an ingredient
+  itself is made is fine.
 - For evidence_basis "estimated", speak of a possibility, never a certainty.
 - If known_limits is not empty, also say in plain words why the result is less
   certain, using only those facts.
 - Never say or imply the dish is safe. Do not use the word "safe" (or its translation)
   at all, not even in "we can't say it is safe". Never soften or change the verdict.
-- Write every word in {language}. Call the dish "this dish" in {language}, not by
-  its Korean name.
-- Do not mention the input, data, codes, or field names. Do not repeat
-  verdict_sentence. No medical advice.{style}"""
+- Write every word in {language}. {dish}
+- Do not mention the input, data, codes, or field names. No medical advice.{style}"""
 
 # Added only for Korean: told to every language, the model put "요" after Chinese.
 KOREAN_STYLE = "\n- Write in polite 해요체, like ~있어요 and ~해요. Do not add an extra 요."
+# Korean wording for the reason only; the high-risk review shares KOREAN_STYLE. Card names and the "80% 이상" sentence are templates now (messages.py
+# ``reason_tail``, 2026-11-22).
+REASON_KOREAN_STYLE = (
+    # 2026-11-22 run: "섞여 있을 수 있어서".
+    "\n- Write 들어갈 수 있어요, not 섞여 있어요."
+    # 2026-11-22: "이런 재료들은 들어가면 빼기 어려워요" gave no reason.
+    "\n- Write the hard-to-leave-out reason as (menu)의 주재료라서 빼기 어려울 수 있어요"
+    " or 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요."
+)
+# Korean may name the dish ("이것도 김치찌개에 들어갈 수 있어요", 2026-11-22). Other
+# languages say "this dish": the Korean menu name inside them read as a slip.
+DISH_IN_KOREAN = "Call the dish by its menu name."
+DISH_OTHERWISE = 'Call the dish "this dish" in {language}, not by its Korean name.'
 # "~없어요요": the style rule once made the model add 요 twice at a sentence end.
 _DOUBLE_YO_RE = re.compile(r"요요(?=[.!?。\s]|$)")
 _SENTENCE_RE = re.compile(r"[^.!?。！？]+[.!?。！？]*")
 
 
-def instructions(template: str, locale: str) -> str:
+# "여러 가지" (several kinds) is not 가지 (eggplant): two vegan reasons were dropped as
+# naming an ingredient the dish did not carry (2026-11-22, 김치찌개·떡볶이).
+_KO_KINDS_RE = re.compile(r"(?:여러|몇|한|두|세|네|다섯|모든|온갖|갖은|이런|그런|어떤)\s*가지")
+_KO_SEMICOLON_RE = re.compile(r"\s*[;；]\s*")
+_PERCENT_SIGN_RE = re.compile(r"[%％٪]")
+_DIGIT_RE = re.compile(r"[0-9٠-٩０-９]")
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,!?。，！？،])")
+
+
+def _drop_lone_percent(text: str) -> str:
+    """Remove a percent sign with no number before it. "…맞지 않아요. %" came back as a
+    reason's last word (2026-11-22) and passed, since only "number %" is checked."""
+
+    def keep(match: re.Match[str]) -> str:
+        before = text[: match.start()].rstrip()
+        return match.group(0) if before and _DIGIT_RE.fullmatch(before[-1]) else ""
+
+    cleaned = _PERCENT_SIGN_RE.sub(keep, text)
+    if cleaned == text:
+        return text
+    return _SPACE_BEFORE_PUNCT_RE.sub(r"\1", " ".join(cleaned.split()))
+
+
+def instructions(template: str, locale: str, *, korean_extra: str = "") -> str:
+    language = LANGUAGE_NAMES[locale]
     return template.format(
-        language=LANGUAGE_NAMES[locale], style=KOREAN_STYLE if locale == "ko" else ""
+        language=language,
+        style=KOREAN_STYLE + korean_extra if locale == "ko" else "",
+        dish=DISH_IN_KOREAN if locale == "ko" else DISH_OTHERWISE.format(language=language),
     )
 
 
@@ -275,6 +334,9 @@ def check_reason(
     text = " ".join(text.split())
     if locale == "ko":
         text = _DOUBLE_YO_RE.sub("요", text)
+        # Sentences end with a period: "빼기 어려울 수 있어요; 까나리는 …" (2026-11-22).
+        text = _KO_SEMICOLON_RE.sub(". ", text).strip()
+    text = _drop_lone_percent(text)
     if not text or len(text) > MAX_REASON_CHARS:
         return None
 
@@ -326,6 +388,8 @@ def check_reason(
             return None
     for name in sorted(blanks, key=len, reverse=True):
         lowered = lowered.replace(name, " ")
+    if locale == "ko":
+        lowered = _KO_KINDS_RE.sub(" ", lowered)
     for name in known_names(locale) - allowed:
         if _mentions(lowered, name, locale):
             return None
@@ -437,17 +501,23 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
                 "name": item.ingredient.localized_name,
                 "korean_name": item.ingredient.canonical_name,
                 "role": item.role,
-                # Restriction names in the user's language, not tag codes (2026-11-15).
-                # A per-item "say which restriction" rule was tried and removed (2026-11-17):
-                # the model copied its English example into Korean and Chinese ("굴소스 may
-                # contain 조개류") and listed every item; see ⑧ §8.
-                "matched_user_restrictions": [tag_name(t, request.locale) for t in item.matched_tags],
+                # What in the ingredient the user avoids, in the user's language, not tag
+                # codes (2026-11-15). A per-item "say which restriction" rule was tried and
+                # removed (2026-11-17): the model copied its English example into Korean
+                # and Chinese ("굴소스 may contain 조개류") and listed every item; see ⑧ §8.
+                # It came back on 2026-11-22 with no example sentence and at most two
+                # ingredients. Called "matched_user_restrictions" until then, and the model
+                # wrote "생선 제한" for a vegan's 어묵.
+                # The same day, the user's restriction ("goes_against_user") and how often
+                # recipes use it ("how_often") went out again: "잡채에는 이것도 자주 들어가고,
+                # 비건 기준에 맞지 않아요" only added words. The verdict names the
+                # restriction, and the fixed tail the ingredients most recipes use.
+                "avoided_in_it": [tag_name(t, request.locale) for t in item.matched_tags],
+                # False when the name alone does not show why (해물 for shrimp), so the
+                # reason explains only those and leaves the rest to the verdict.
+                "name_shows_cause": not needs_explaining(item),
                 "status": item.status,
-                "percent": (
-                    f"{shown_percent(item.posterior_mean)}%"
-                    if item.posterior_mean is not None
-                    else None
-                ),
+                "hard_to_remove": item.role in ("identity", "hidden"),
             }
             for item in response.risk_ingredients
         ],
@@ -457,6 +527,96 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
         ),
         "known_limits": reason_facts(request),
     }
+
+
+def _by_likelihood(items):
+    return sorted(items, key=lambda i: -(i.posterior_mean if i.posterior_mean is not None else 1.0))
+
+
+def tail_text(request: DecisionRequest, response: DecisionResponse) -> str:
+    """Fixed sentences after the LLM's reason (2026-11-22, messages.py ``reason_tail``):
+    the ingredients at ``very_often``, then the remove-request card for those likely and
+    removable, then the question card for the rest. The LLM wrote "80% 이상" for 어묵 at
+    52% and picked the wrong card, so these are templates."""
+
+    items = response.risk_ingredients
+    very_often = [i for i in _by_likelihood(items) if how_often(i, request) == "very_often"]
+    remove = any(next_step(i) == "remove_request_card" for i in items)
+    ask = any(next_step(i) == "question_card" for i in items)
+    names = lambda rows: list(dict.fromkeys(i.ingredient.localized_name for i in rows))  # noqa: E731
+    return reason_tail(
+        names(very_often), remove, ask, f"{round(VERY_HIGH_CHANCE * 100)}%", request.locale
+    )
+
+
+# Words the reason is told to use for a hidden ingredient ("inside a sauce or
+# seasoning"), which are also ingredient names in the tables. Without this, "굴은 양념 안에
+# 들어 있을 수 있어요" was dropped as naming a new ingredient (2026-11-22, 잡채·떡볶이).
+# 젓갈 too: "새우젓도 해산물 젓갈이라" was dropped for 부대찌개 the same way, and the reason
+# is now told to say what an unfamiliar ingredient is (2026-11-22).
+GENERIC_WORDS = ("양념", "소스", "조미료", "젓갈")
+
+
+@lru_cache(maxsize=1)
+def generic_words() -> frozenset[str]:
+    return frozenset(with_translations(GENERIC_WORDS))
+
+
+# At or above this posterior mean an estimated ingredient reads as "very likely, be
+# careful"; below it, "low, but it cannot be ruled out" (2026-11-22, wording only: the
+# verdict does not change).
+HIGH_CHANCE = 0.5
+
+
+def chance(item) -> str | None:
+    """"confirmed" for an owner-confirmed ingredient, else "high" / "low"; None with no
+    probability."""
+
+    if item.status in ("present", "absent"):
+        return "confirmed"
+    if item.posterior_mean is None:
+        return None
+    return "high" if item.posterior_mean >= HIGH_CHANCE else "low"
+
+
+# How often recipes for the dish use an ingredient, in words (2026-11-22). The percent
+# is said only when very high or very low: "한스푼이 수집한 레시피의 21%에 들어가요" after
+# every ingredient was noise, and the screen shows each percent anyway. "자주" only from
+# HIGH_CHANCE up; below it, "이것도 김치찌개에 들어갈 수 있어요".
+VERY_HIGH_CHANCE = 0.8
+VERY_LOW_CHANCE = 0.1
+
+
+def how_often(item, request: DecisionRequest) -> str | None:
+    """"very_often" / "often" / "sometimes" / "rarely", or None for an owner-confirmed
+    ingredient, no probability, or a rough default with no recipe data
+    (``THIN_PRIORS``), which is not a share of recipes."""
+
+    if item.posterior_mean is None or item.status in ("present", "absent"):
+        return None
+    if any(
+        r.prior_source in THIN_PRIORS and r.ingredient.canonical_name == item.ingredient.canonical_name
+        for r in request.probability_results
+    ):
+        return None
+    p = item.posterior_mean
+    if p >= VERY_HIGH_CHANCE:
+        return "very_often"
+    if p >= HIGH_CHANCE:
+        return "often"
+    return "rarely" if p <= VERY_LOW_CHANCE else "sometimes"
+
+
+def next_step(item) -> str:
+    """What the result screen lets the tourist do next (2026-11-22): ask to leave it out
+    with the remove-request card when it is likely in the dish and can be left out,
+    otherwise ask the staff directly with the question card. A main or hidden ingredient
+    may be hard to leave out (§4-1), so it goes to the question card."""
+
+    likely = chance(item) in ("high", "confirmed")
+    if likely and item.role not in ("identity", "hidden"):
+        return "remove_request_card"
+    return "question_card"
 
 
 def needs_explaining(item) -> bool:
@@ -506,13 +666,23 @@ class ReasonWriter:
         self.timeout_seconds = timeout_seconds
 
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
+        """The LLM's checked sentences, then the fixed tail. When the LLM fails or is
+        dropped, ``reason`` stays None as before (§4 "LLM 실패"): the tail goes only
+        with a reason it follows."""
+
         if not needs_reason(request, response):
             return None
+        written = await self._write_checked(request, response)
+        if written is None:
+            return None
+        return _sentences([p for p in (written, tail_text(request, response)) if p], request.locale)
+
+    async def _write_checked(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
         payload = reason_payload(request, response)
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
-                    instructions(INSTRUCTIONS, request.locale),
+                    instructions(INSTRUCTIONS, request.locale, korean_extra=REASON_KOREAN_STYLE),
                     payload,
                     ReasonOutput,
                     MAX_OUTPUT_TOKENS,
@@ -536,7 +706,8 @@ class ReasonWriter:
             ],
             allowed_names=request_names(request)
             | restriction_names(forbidden_tags(request.user_profile))
-            | translated_names(output.name_translations, korean_only),
+            | translated_names(output.name_translations, korean_only)
+            | generic_words(),
             menu_names=[request.menu.normalized_menu_name],
             verdict=response.message.verdict,
             evidence_basis=response.evidence_basis,

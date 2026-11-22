@@ -2,8 +2,9 @@
 
 Fixed templates, no LLM. Ingredient names come from ``localized_name`` (Korean when
 there is no translation); nothing here translates or guesses. The verdict line follows
-the result screen: who confirmed what, what is still unchecked, and which restriction it
-breaks, with no percentages (the screen shows them per ingredient). ``reason`` is the
+the result screen, but first says whether the user can eat the dish (2026-11-22), then
+who confirmed what and what is still unchecked, with no percentages (the screen shows
+them per ingredient). ``reason`` is the
 LLM part (§0-2); the verdict and notes stand on their own (§4 "LLM 실패").
 """
 
@@ -68,8 +69,9 @@ def _ko(word: str, with_final: str, without: str) -> str:
     return with_final if _has_final_consonant(word) else without
 
 
-# The verdict line follows the result screen (front Figma S10, 2026-11-06): who confirmed
-# what, what is still unchecked, and which of the user's restrictions it breaks.
+# The verdict line follows the result screen (front Figma S10, 2026-11-06): whether the
+# user can eat it and for which restriction (first, 2026-11-22), who confirmed what, and
+# what is still unchecked.
 # Probabilities are not in the sentence; the screen shows them next to each ingredient.
 # {x} is a joined list of names, {last} its last plain name (Korean particles follow it),
 # {r} the user's restriction names.
@@ -98,15 +100,6 @@ OWNER_SAYS_ONE_OF: dict[str, Callable[[str | None, str], str]] = {
     "ja": lambda place, x: f"店主によると、{place or 'この料理'}に{x}が入っています。",
     "es": lambda place, x: f"El dueño dijo que hay {x} en {place or 'este plato'}.",
 }
-BREAKS: dict[str, Callable[[str], str]] = {
-    "ko": lambda r: f"{r} 기준에 맞지 않아요.",
-    "en": lambda r: f"It doesn't fit your dietary needs ({r}).",
-    "ar": lambda r: f"لا يناسب احتياجاتك الغذائية ({r}).",
-    "zh-CN": lambda r: f"不符合您的饮食限制（{r}）。",
-    "zh-TW": lambda r: f"不符合您的飲食限制（{r}）。",
-    "ja": lambda r: f"あなたの食事制限（{r}）に合いません。",
-    "es": lambda r: f"No es apto para tus restricciones ({r}).",
-}
 # CAUTION: forbidden ingredients the owner said are not in the dish come first.
 OWNER_SAYS_ABSENT: dict[str, VerdictTemplate] = {
     "ko": lambda x, last: f"사장님이 {x}{_ko(last, '은', '는')} 넣지 않는다고 확인했어요.",
@@ -117,25 +110,76 @@ OWNER_SAYS_ABSENT: dict[str, VerdictTemplate] = {
     "ja": lambda x, last: f"店主が、{x}は入れないと確認しました。",
     "es": lambda x, last: f"El dueño confirmó que no lleva {x}.",
 }
-STILL_TO_CHECK: dict[str, VerdictTemplate] = {
-    "ko": lambda x, last: f"{x}{_ko(last, '은', '는')} 아직 확인이 필요해요.",
-    "en": lambda x, last: f"We still need to check for {x}.",
-    "ar": lambda x, last: f"ما زال يلزم التحقق من {x}.",
-    "zh-CN": lambda x, last: f"{x}还需要确认。",
-    "zh-TW": lambda x, last: f"{x}還需要確認。",
-    "ja": lambda x, last: f"{x}はまだ確認が必要です。",
-    "es": lambda x, last: f"Aún hay que confirmar si lleva {x}.",
+# CAUTION/estimated: ingredients that may be in the dish (an estimate, never "is in").
+MAY_CONTAIN: dict[str, VerdictTemplate] = {
+    "ko": lambda x, last: f"{x}{_ko(last, '이', '가')} 들어 있을 수 있어요.",
+    "en": lambda x, last: f"It may contain {x}.",
+    "ar": lambda x, last: f"قد يحتوي على {x}.",
+    "zh-CN": lambda x, last: f"可能含有{x}。",
+    "zh-TW": lambda x, last: f"可能含有{x}。",
+    "ja": lambda x, last: f"{x}が入っている可能性があります。",
+    "es": lambda x, last: f"Puede llevar {x}.",
 }
-SAFE_FOR: dict[str, Callable[[str], str]] = {
-    "ko": lambda r: f"사장님이 확인한 재료에 {r} 기준에 맞지 않는 재료가 없어요.",
-    "en": lambda r: f"The owner confirmed none of the ingredients goes against your dietary needs ({r}).",
-    "ar": lambda r: f"أكّد صاحب المطعم أنه لا يوجد أي مكوّن يخالف احتياجاتك الغذائية ({r}).",
-    "zh-CN": lambda r: f"店主已确认，没有不符合您饮食限制（{r}）的食材。",
-    "zh-TW": lambda r: f"店家已確認，沒有不符合您飲食限制（{r}）的食材。",
-    "ja": lambda r: f"店主の確認により、食事制限（{r}）に合わない食材は入っていません。",
-    "es": lambda r: f"El dueño confirmó que ningún ingrediente va contra tus restricciones ({r}).",
+
+# The first sentence says whether the user can eat the dish (2026-11-22 feedback: the
+# user wants to know at once if they can eat it, then why). {r} names the restrictions
+# the dish goes against; the plain versions are for when there is none to name.
+CANNOT_EAT_FOR: dict[str, Callable[[str], str]] = {
+    "ko": lambda r: f"{r} 기준으로는 드시기 어려워요.",
+    "en": lambda r: f"This dish isn't suitable for your dietary needs ({r}).",
+    "ar": lambda r: f"هذا الطبق غير مناسب لاحتياجاتك الغذائية ({r}).",
+    "zh-CN": lambda r: f"这道菜不符合您的饮食限制（{r}），不宜食用。",
+    "zh-TW": lambda r: f"這道菜不符合您的飲食限制（{r}），不宜食用。",
+    "ja": lambda r: f"食事制限（{r}）があるため、この料理は食べられません。",
+    "es": lambda r: f"Este plato no es apto para tus restricciones ({r}).",
 }
-# SAFE for a user with no restriction at all (nothing to name).
+CANNOT_EAT: dict[str, str] = {
+    "ko": "드시기 어려워요.",
+    "en": "This dish isn't suitable for you.",
+    "ar": "هذا الطبق غير مناسب لك.",
+    "zh-CN": "这道菜不适合您食用。",
+    "zh-TW": "這道菜不適合您食用。",
+    "ja": "この料理は食べられません。",
+    "es": "Este plato no es apto para ti.",
+}
+CHECK_BEFORE_EATING_FOR: dict[str, Callable[[str], str]] = {
+    "ko": lambda r: f"{r} 기준으로는 드시기 전에 직원 확인이 필요해요.",
+    "en": lambda r: f"With your dietary needs ({r}), please check with the staff before eating this dish.",
+    "ar": lambda r: f"بسبب احتياجاتك الغذائية ({r})، يُرجى التأكد من الموظفين قبل تناول هذا الطبق.",
+    "zh-CN": lambda r: f"根据您的饮食限制（{r}），食用前请先向店员确认。",
+    "zh-TW": lambda r: f"依您的飲食限制（{r}），食用前請先向店員確認。",
+    "ja": lambda r: f"食事制限（{r}）があるため、食べる前にスタッフに確認してください。",
+    "es": lambda r: f"Por tus restricciones ({r}), consulta con el personal antes de comer este plato.",
+}
+CHECK_BEFORE_EATING: dict[str, str] = {
+    "ko": "드시기 전에 직원 확인이 필요해요.",
+    "en": "Please check with the staff before eating this dish.",
+    "ar": "يُرجى التأكد من الموظفين قبل تناول هذا الطبق.",
+    "zh-CN": "食用前请先向店员确认。",
+    "zh-TW": "食用前請先向店員確認。",
+    "ja": "食べる前にスタッフに確認してください。",
+    "es": "Consulta con el personal antes de comer este plato.",
+}
+CAN_EAT_FOR: dict[str, Callable[[str], str]] = {
+    "ko": lambda r: f"{r} 기준으로 드실 수 있어요.",
+    "en": lambda r: f"This dish fits your dietary needs ({r}).",
+    "ar": lambda r: f"هذا الطبق يناسب احتياجاتك الغذائية ({r}).",
+    "zh-CN": lambda r: f"这道菜符合您的饮食限制（{r}），可以食用。",
+    "zh-TW": lambda r: f"這道菜符合您的飲食限制（{r}），可以食用。",
+    "ja": lambda r: f"この料理は食事制限（{r}）に合っていて、食べられます。",
+    "es": lambda r: f"Este plato es apto para tus restricciones ({r}).",
+}
+CAN_EAT: dict[str, str] = {
+    "ko": "드실 수 있어요.",
+    "en": "You can eat this dish.",
+    "ar": "يمكنك تناول هذا الطبق.",
+    "zh-CN": "这道菜可以食用。",
+    "zh-TW": "這道菜可以食用。",
+    "ja": "この料理は食べられます。",
+    "es": "Puedes comer este plato.",
+}
+
+# SAFE: what the owner's answers showed, after CAN_EAT(_FOR).
 SAFE: dict[str, str] = {
     "ko": "사장님이 확인한 재료 중 피해야 할 재료가 없어요.",
     "en": "The owner confirmed none of the ingredients you avoid are in this dish.",
@@ -147,33 +191,77 @@ SAFE: dict[str, str] = {
 }
 # CAUTION from estimates where nothing overlaps the user's restrictions.
 NOT_CONFIRMED: dict[str, str] = {
-    "ko": "피해야 할 재료는 찾지 못했지만, 추정 결과라 확인이 필요해요.",
-    "en": "We found nothing you avoid, but this is an estimate, so it still needs to be checked.",
-    "ar": "لم نجد مكونات تتجنبها، لكن هذه نتيجة تقديرية، لذا يلزم التحقق.",
-    "zh-CN": "没有发现您需要避免的食材，但这是推测结果，仍需确认。",
-    "zh-TW": "沒有發現您需要避免的食材，但這是推測結果，仍需確認。",
-    "ja": "避けるべき食材は見つかりませんでしたが、推定の結果のため確認が必要です。",
-    "es": "No encontramos ingredientes que evites, pero es una estimación, así que hay que confirmarlo.",
+    "ko": "피해야 할 재료는 찾지 못했지만, 추정 결과예요.",
+    "en": "We found nothing you avoid, but this is only an estimate.",
+    "ar": "لم نجد مكونات تتجنبها، لكن هذه نتيجة تقديرية فقط.",
+    "zh-CN": "没有发现您需要避免的食材，但这只是推测结果。",
+    "zh-TW": "沒有發現您需要避免的食材，但這只是推測結果。",
+    "ja": "避けるべき食材は見つかりませんでしたが、推定の結果です。",
+    "es": "No encontramos ingredientes que evites, pero es solo una estimación.",
 }
 # CAUTION with nothing to go on (no information, no ingredients).
 NO_INFORMATION: dict[str, str] = {
-    "ko": "재료 정보를 찾지 못했어요. 직원에게 직접 확인해 주세요.",
-    "en": "We couldn't find ingredient information for this dish. Please check with the staff.",
-    "ar": "لم نجد معلومات عن مكونات هذا الطبق. يُرجى التأكد من الموظفين.",
-    "zh-CN": "没有找到这道菜的食材信息，请直接向店员确认。",
-    "zh-TW": "沒有找到這道菜的食材資訊，請直接向店員確認。",
-    "ja": "この料理の食材情報が見つかりませんでした。スタッフに直接確認してください。",
-    "es": "No encontramos información de los ingredientes de este plato. Confírmalo con el personal.",
+    "ko": "재료 정보를 찾지 못했어요.",
+    "en": "We couldn't find ingredient information for this dish.",
+    "ar": "لم نجد معلومات عن مكونات هذا الطبق.",
+    "zh-CN": "没有找到这道菜的食材信息。",
+    "zh-TW": "沒有找到這道菜的食材資訊。",
+    "ja": "この料理の食材情報が見つかりませんでした。",
+    "es": "No encontramos información de los ingredientes de este plato.",
 }
 # CAUTION/unknown for any other gap (an unanswered flag, failed lookup, no store).
 NOT_ENOUGH_INFORMATION: dict[str, str] = {
-    "ko": "아직 확인되지 않은 정보가 있어요. 직원에게 직접 확인해 주세요.",
-    "en": "Some information about this dish isn't confirmed yet. Please check with the staff.",
-    "ar": "بعض المعلومات عن هذا الطبق لم تُؤكَّد بعد. يُرجى التأكد من الموظفين.",
-    "zh-CN": "这道菜还有未确认的信息，请直接向店员确认。",
-    "zh-TW": "這道菜還有未確認的資訊，請直接向店員確認。",
-    "ja": "まだ確認されていない情報があります。スタッフに直接確認してください。",
-    "es": "Hay información de este plato que aún no está confirmada. Confírmalo con el personal.",
+    "ko": "아직 확인되지 않은 정보가 있어요.",
+    "en": "Some information about this dish isn't confirmed yet.",
+    "ar": "بعض المعلومات عن هذا الطبق لم تُؤكَّد بعد.",
+    "zh-CN": "这道菜还有未确认的信息。",
+    "zh-TW": "這道菜還有未確認的資訊。",
+    "ja": "まだ確認されていない情報があります。",
+    "es": "Hay información de este plato que aún no está confirmada.",
+}
+
+# After the LLM's reason (2026-11-22): fixed sentences the LLM kept getting wrong (it
+# wrote "80% 이상" for 어묵 at 52%, and picked the wrong card). {x} names, {last} the last
+# word, {p} the threshold ("80%"). "Hanspoon" stays in Latin letters like the app name.
+VERY_OFTEN: dict[str, Callable[[str, str, str], str]] = {
+    "ko": lambda x, last, p: f"{x}{_ko(last, '은', '는')} 한스푼이 수집한 레시피의 {p} 이상에 들어가는 재료라서 특히 주의해야 해요.",
+    "en": lambda x, last, p: f"At least {p} of the recipes Hanspoon collected for this dish use {x}, so please be especially careful.",
+    "ar": lambda x, last, p: f"تستخدم {p} على الأقل من الوصفات التي جمعها Hanspoon لهذا الطبق {x}، لذا انتبه جيدًا.",
+    "zh-CN": lambda x, last, p: f"在Hanspoon收集的这道菜的食谱中，至少{p}用到{x}，请特别注意。",
+    "zh-TW": lambda x, last, p: f"在Hanspoon收集的這道菜的食譜中，至少{p}用到{x}，請特別注意。",
+    "ja": lambda x, last, p: f"Hanspoonが集めたこの料理のレシピの{p}以上に{x}が使われているため、特に注意してください。",
+    "es": lambda x, last, p: f"Al menos el {p} de las recetas que recopiló Hanspoon para este plato llevan {x}, así que ten especial cuidado.",
+}
+# Something likely can be left out: the result screen's "빼고 요청" (Request removal)
+# card. No names: "사골은 빼고 요청 카드로…" picked one ingredient out of many (2026-11-22).
+REMOVE_CARD_STEP: dict[str, str] = {
+    "ko": "빼고 요청 카드로 빼 달라고 부탁할 수 있어요.",
+    "en": "You can ask them to leave it out with the Request removal card.",
+    "ar": "يمكنك أن تطلب إزالته باستخدام بطاقة طلب الإزالة.",
+    "zh-CN": "您可以用“请求去除食材”卡片请店家去掉。",
+    "zh-TW": "您可以用「請求去除食材」卡片請店家去掉。",
+    "ja": "「食材抜きのお願い」カードで抜いてもらうよう頼めます。",
+    "es": "Puedes pedir que lo quiten con la tarjeta «Pedir sin un ingrediente».",
+}
+# Both cards apply: one sentence.
+REMOVE_OR_QUESTION_CARD_STEP: dict[str, str] = {
+    "ko": "빼고 요청 카드로 빼 달라고 부탁하거나, 질문 카드로 직원에게 직접 확인해 보세요.",
+    "en": "You can ask them to leave it out with the Request removal card, or ask the staff directly with the question card.",
+    "ar": "يمكنك أن تطلب إزالته باستخدام بطاقة طلب الإزالة، أو أن تسأل الموظفين مباشرة باستخدام بطاقة الأسئلة.",
+    "zh-CN": "您可以用“请求去除食材”卡片请店家去掉，或用问题卡片直接向店员确认。",
+    "zh-TW": "您可以用「請求去除食材」卡片請店家去掉，或用問題卡片直接向店員確認。",
+    "ja": "「食材抜きのお願い」カードで抜いてもらうよう頼むか、質問カードでスタッフに直接確認してみてください。",
+    "es": "Puedes pedir que lo quiten con la tarjeta «Pedir sin un ingrediente» o preguntarle directamente al personal con la tarjeta de preguntas.",
+}
+# Everything else: the question card (the "재료 N개 확인하기" button).
+QUESTION_CARD_STEP: dict[str, str] = {
+    "ko": "질문 카드로 직원에게 직접 확인해 보세요.",
+    "en": "You can ask the staff directly with the question card.",
+    "ar": "يمكنك أن تسأل الموظفين مباشرة باستخدام بطاقة الأسئلة.",
+    "zh-CN": "您可以用问题卡片直接向店员确认。",
+    "zh-TW": "您可以用問題卡片直接向店員確認。",
+    "ja": "質問カードでスタッフに直接確認してみてください。",
+    "es": "Puedes preguntarle directamente al personal con la tarjeta de preguntas.",
 }
 
 # The user's restrictions by name, as the screen shows them ("내 식단: 비건 · 새우 알레르기").
@@ -290,15 +378,38 @@ def _say(template: dict[str, VerdictTemplate], names: list[str], lang: str) -> s
     need not repeat a long list; names come in the order given (highest probability
     first for estimates)."""
 
+    return template[lang](*_joined(names, lang))
+
+
+def _joined(names: list[str], lang: str) -> tuple[str, str]:
+    """``names`` joined, at most ``MAX_NAMES`` and the rest counted, with the last word
+    (Korean particles follow it)."""
+
     if len(names) <= MAX_NAMES:
-        return template[lang](AND_LISTS[lang](names), names[-1])
+        return AND_LISTS[lang](names), names[-1]
     shown, rest = names[:MAX_NAMES], len(names) - MAX_NAMES
     more = MORE[lang](rest)
     if lang in ("ko", "zh-CN", "zh-TW", "ja"):
-        joined = LISTS_NO_AND[lang](shown) + more
-    else:
-        joined = AND_LISTS[lang]([*shown, more])
-    return template[lang](joined, more)
+        return LISTS_NO_AND[lang](shown) + more, more
+    return AND_LISTS[lang]([*shown, more]), more
+
+
+def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, lang: str) -> str:
+    """The fixed sentences after the LLM's reason (2026-11-22): the ingredients most
+    recipes use (names), then what to do on the result screen, with no names: whether
+    any ingredient goes to the remove-request card (``remove``) or the question card
+    (``ask``)."""
+
+    parts = []
+    if very_often:
+        parts.append(VERY_OFTEN[lang](*_joined(very_often, lang), percent))
+    if remove and ask:
+        parts.append(REMOVE_OR_QUESTION_CARD_STEP[lang])
+    elif remove:
+        parts.append(REMOVE_CARD_STEP[lang])
+    elif ask:
+        parts.append(QUESTION_CARD_STEP[lang])
+    return _sentences(parts, lang)
 
 
 def _sentences(parts: list[str], lang: str) -> str:
@@ -308,6 +419,15 @@ def _sentences(parts: list[str], lang: str) -> str:
 def restriction_names(profile: UserProfile, lang: str, tags: set[str] | None = None) -> str:
     """The user's restrictions by name; with ``tags``, only those that forbid one of them
     ("비건" for 어묵, "새우 알레르기" for 새우)."""
+
+    return RESTRICTION_SEPARATOR[lang].join(restriction_list(profile, lang, tags))
+
+
+def restriction_list(
+    profile: UserProfile, lang: str, tags: set[str] | None = None, *, allergies: bool = True
+) -> list[str]:
+    """``restriction_names`` as a list, for the reason LLM (2026-11-22); without
+    ``allergies``, only diets, religion, alcohol and spicy."""
 
     names: list[str] = []
 
@@ -323,9 +443,9 @@ def restriction_names(profile: UserProfile, lang: str, tags: set[str] | None = N
         add(frozenset({"is_alcohol"}), RESTRICTION_NAMES["no_alcohol"][lang])
     if profile.no_spicy:
         add(frozenset({"is_spicy"}), RESTRICTION_NAMES["no_spicy"][lang])
-    for tag in profile.allergies:
+    for tag in profile.allergies if allergies else ():
         add(frozenset({tag}), ALLERGY[lang].format(x=tag_name(tag, lang)))
-    return RESTRICTION_SEPARATOR[lang].join(dict.fromkeys(names))
+    return list(dict.fromkeys(names))
 
 
 def owner_said_absent(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> list[str]:
@@ -340,12 +460,17 @@ def owner_said_absent(request: DecisionRequest, outcome: DecisionOutcome, lang: 
     ))
 
 
+def _lead(table_for: dict[str, Callable[[str], str]], table: dict[str, str], restrictions: str, lang: str) -> str:
+    return table_for[lang](restrictions) if restrictions else table[lang]
+
+
 def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> str:
+    """Whether the user can eat it first, then why (2026-11-22)."""
+
     level, basis = outcome.risk_level, outcome.evidence_basis
     profile = request.user_profile
     if level == "safe" and basis == "confirmed":
-        restrictions = restriction_names(profile, lang)
-        return SAFE_FOR[lang](restrictions) if restrictions else SAFE[lang]
+        return _sentences([_lead(CAN_EAT_FOR, CAN_EAT, restriction_names(profile, lang), lang), SAFE[lang]], lang)
     if level == "danger" and basis == "confirmed":
         present = [r for r in outcome.risk_ingredients if r.status == "present"]
         names = _named(present)
@@ -370,24 +495,26 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
             if not tags:
                 tags = {t for c in one_of for t in c.matched_tags}
             restrictions = restriction_names(profile, lang, tags)
-            if restrictions:
-                parts.append(BREAKS[lang](restrictions))
-            return _sentences(parts, lang)
+            return _sentences([_lead(CANNOT_EAT_FOR, CANNOT_EAT, restrictions, lang), *parts], lang)
     absent = owner_said_absent(request, outcome, lang)
-    lead = [_say(OWNER_SAYS_ABSENT, absent, lang)] if absent else []
+    owner = [_say(OWNER_SAYS_ABSENT, absent, lang)] if absent else []
     if level == "caution" and basis == "estimated":
-        names = _named(_without_carried(outcome.risk_ingredients))
+        items = _without_carried(outcome.risk_ingredients)
+        names = _named(items)
         # Tags matched by a menu attribute (e.g. spicy) rather than an ingredient (§2-1 5-1).
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]
         if names:
-            return _sentences([*lead, _say(STILL_TO_CHECK, names, lang)], lang)
-        return _sentences([*lead, NOT_CONFIRMED[lang]], lang)
+            tags = by_ingredient | set(outcome.matched_tags)
+            restrictions = restriction_names(profile, lang, tags)
+            lead = _lead(CHECK_BEFORE_EATING_FOR, CHECK_BEFORE_EATING, restrictions, lang)
+            return _sentences([lead, *owner, _say(MAY_CONTAIN, names, lang)], lang)
+        return _sentences([CHECK_BEFORE_EATING[lang], *owner, NOT_CONFIRMED[lang]], lang)
     # caution/unknown, and anything the policy does not produce, asks the user to check
     # with the staff: never a sentence that sounds safe.
     if request.no_information or has_no_ingredients(request):
-        return NO_INFORMATION[lang]
-    return _sentences([*lead, NOT_ENOUGH_INFORMATION[lang]], lang)
+        return _sentences([CHECK_BEFORE_EATING[lang], NO_INFORMATION[lang]], lang)
+    return _sentences([CHECK_BEFORE_EATING[lang], *owner, NOT_ENOUGH_INFORMATION[lang]], lang)
 
 
 def note_text(note: NoteChoice, check_tags: dict[str, list[str]], lang: str) -> str:
