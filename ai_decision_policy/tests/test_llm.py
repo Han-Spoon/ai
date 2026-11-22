@@ -84,6 +84,13 @@ def test_reason_check_ends_korean_sentences_with_a_period() -> None:
     )
 
 
+def test_reason_check_splits_korean_sentences_joined_by_a_comma() -> None:
+    # 2026-11-22: "…들어갈 수 있어요, 그리고 …".
+    assert check("돼지고기가 들어갈 수 있어요, 그리고 할랄 기준에 맞지 않아요.") == (
+        "돼지고기가 들어갈 수 있어요. 그리고 할랄 기준에 맞지 않아요."
+    )
+
+
 def test_reason_check_reads_yeoreo_gaji_as_kinds_not_eggplant() -> None:
     # 2026-11-22: "여러 가지" dropped two vegan reasons as naming 가지 (eggplant).
     text = "돼지고기 말고도 여러 가지 재료가 들어갈 수 있어요. 두 가지 모두 할랄 기준에 맞지 않아요."
@@ -323,8 +330,8 @@ def test_decision_tool_adds_a_checked_reason_and_keeps_the_verdict() -> None:
     assert response.model_dump(exclude={"message": {"reason"}}) == plain.model_dump(exclude={"message": {"reason"}})
     payload = llm.calls[0]["payload"]
     assert payload["verdict_code"] == {"risk_level": "caution", "evidence_basis": "estimated"}
-    # No percent since 2026-11-22: the tail sentence and the screen say it.
-    assert "how_often" not in payload["risk_ingredients"][0]
+    # Since 2026-11-22 only the groups to explain go in: no percent, no full list.
+    assert "risk_ingredients" not in payload and "explain_groups" in payload
     assert "Korean" in llm.calls[0]["instructions"]
 
 
@@ -379,9 +386,10 @@ def test_reason_payload_names_restrictions_in_the_users_language() -> None:
     llm = FakeLLM(ReasonOutput(reason="Napa cabbage kimchi may contain shrimp."))
     req = request(SHRIMP_ALLERGY, probability_results=[probability(kimchi, ["is_shrimp"], 0.86)], locale="en")
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
-    item = llm.calls[0]["payload"]["risk_ingredients"][0]
-    assert item["avoided_in_it"] == ["shrimp"]
-    assert item["name_shows_cause"] is False
+    assert llm.calls[0]["payload"]["explain_groups"] == [
+        {"avoided_in_them": ["shrimp"], "ingredients": [
+            {"name": "napa cabbage kimchi", "korean_name": "배추김치", "role": None, "hard_to_remove": False}]}
+    ]
 
 
 def test_reason_payload_keeps_what_is_avoided_apart_from_the_users_restriction() -> None:
@@ -391,10 +399,10 @@ def test_reason_payload_keeps_what_is_avoided_apart_from_the_users_restriction()
     llm = FakeLLM(ReasonOutput(reason="어묵은 생선으로 만들어서 비건 기준에 맞지 않을 수 있어요."))
     req = request(vegan, probability_results=[probability(fish_cake, ["is_fish"], 0.46)], locale="ko")
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
-    item = llm.calls[0]["payload"]["risk_ingredients"][0]
-    assert item["avoided_in_it"] == ["생선"]
+    group = llm.calls[0]["payload"]["explain_groups"][0]
+    assert group["avoided_in_them"] == ["생선"]
     # The verdict names 비건; "…비건 기준에 맞지 않아요" in the reason only added words.
-    assert "goes_against_user" not in item
+    assert "goes_against_user" not in group
 
 
 def test_reason_payload_leaves_likelihood_to_the_tail() -> None:
@@ -415,10 +423,12 @@ def test_reason_payload_leaves_likelihood_to_the_tail() -> None:
         locale="ko",
     )
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
-    rows = {i["korean_name"]: i["hard_to_remove"] for i in llm.calls[0]["payload"]["risk_ingredients"]}
-    assert rows == {"멸치액젓": True, "햄": False, "굴소스": False, "새우": False}
+    groups = llm.calls[0]["payload"]["explain_groups"]
+    rows = {i["korean_name"]: i["hard_to_remove"] for g in groups for i in g["ingredients"]}
+    # 새우 shows its cause by name, so the verdict covers it.
+    assert rows == {"멸치액젓": True, "햄": False, "굴소스": False}
     # How often and how likely are the fixed tail's, not the LLM's (2026-11-22).
-    assert all("percent" not in i and "how_often" not in i for i in llm.calls[0]["payload"]["risk_ingredients"])
+    assert all("percent" not in i and "how_often" not in i for g in groups for i in g["ingredients"])
 
 
 def test_reason_ends_with_the_fixed_tail() -> None:
@@ -498,8 +508,32 @@ def test_reason_payload_marks_names_that_already_show_the_cause() -> None:
         locale="ko",
     )
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
-    shown = {i["korean_name"]: i["name_shows_cause"] for i in llm.calls[0]["payload"]["risk_ingredients"]}
-    assert shown == {"새우": True, "해물": False}
+    names = [i["korean_name"] for g in llm.calls[0]["payload"]["explain_groups"] for i in g["ingredients"]]
+    assert names == ["해물"]
+
+
+def test_reason_groups_ingredients_by_what_is_avoided() -> None:
+    # 2026-11-22 vegan 부대찌개: one sentence per group instead of one per ingredient.
+    ham = IngredientRef(ingredient_id=None, canonical_name="햄")
+    sausage = IngredientRef(ingredient_id=None, canonical_name="소시지")
+    anchovy_sauce = IngredientRef(ingredient_id=None, canonical_name="멸치액젓")
+    sand_lance = IngredientRef(ingredient_id=None, canonical_name="까나리")
+    vegan = profile(is_vegetarian=True, vegetarian_type="vegan")
+    llm = FakeLLM(ReasonOutput(reason="햄과 소시지는 돼지고기로 만든 가공육이에요."))
+    req = request(
+        vegan,
+        probability_results=[
+            probability(ham, ["is_pork"], 0.95, role="identity"),
+            probability(anchovy_sauce, ["is_fish"], 0.87, role="hidden"),
+            probability(sausage, ["is_pork"], 0.71, role="identity"),
+            probability(sand_lance, ["is_fish"], 0.3),
+        ],
+        locale="ko",
+    )
+    asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    groups = [(g["avoided_in_them"], [i["korean_name"] for i in g["ingredients"]])
+              for g in llm.calls[0]["payload"]["explain_groups"]]
+    assert groups == [(["돼지고기"], ["햄", "소시지"]), (["생선"], ["멸치액젓", "까나리"])]
 
 
 @pytest.mark.parametrize(
