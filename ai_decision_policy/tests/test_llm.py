@@ -91,6 +91,19 @@ def test_reason_check_splits_korean_sentences_joined_by_a_comma() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # 2026-11-22 halal 떡볶이: "가공육예요".
+        ("돼지고기가 들어갈 수 있는 가공육예요.", "돼지고기가 들어갈 수 있는 가공육이에요."),
+        ("돼지고기는 고기이에요.", "돼지고기는 고기예요."),
+        ("돼지고기가 들어갈 수 있는 가공육이에요.", "돼지고기가 들어갈 수 있는 가공육이에요."),
+    ],
+)
+def test_reason_check_fixes_korean_yeyo_after_a_final_consonant(text, expected) -> None:
+    assert check(text) == expected
+
+
 def test_reason_check_reads_yeoreo_gaji_as_kinds_not_eggplant() -> None:
     # 2026-11-22: "여러 가지" dropped two vegan reasons as naming 가지 (eggplant).
     text = "돼지고기 말고도 여러 가지 재료가 들어갈 수 있어요. 두 가지 모두 할랄 기준에 맞지 않아요."
@@ -451,7 +464,7 @@ def test_reason_ends_with_the_fixed_tail() -> None:
     reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
     assert reason == (
         text
-        + " 멸치액젓, 햄은 한스푼이 수집한 레시피의 80% 이상에 들어가는 재료라서 특히 주의해야 해요."
+        + " 멸치액젓, 햄은 한스푼이 수집한 김치찌개 레시피의 80% 이상에 들어가는 재료라서 특히 주의해야 해요."
         # No ingredient names in the card step: "사골은 빼고 요청 카드로…" (2026-11-22).
         + " 빼고 요청 카드로 빼 달라고 부탁하거나, 질문 카드로 직원에게 직접 확인해 보세요."
     )
@@ -469,7 +482,7 @@ def test_reason_tail_is_not_sent_without_a_checked_reason() -> None:
 def test_reason_tail_in_every_language(locale) -> None:
     from ai_decision_policy.messages import reason_tail
 
-    text = reason_tail(["A", "B"], True, True, "80%", locale)
+    text = reason_tail(["A", "B"], True, True, "80%", "김치찌개", locale)
     assert "80%" in text and "None" not in text
     if locale != "ko":
         assert not any("가" <= ch <= "힣" for ch in text)
@@ -510,6 +523,21 @@ def test_reason_payload_marks_names_that_already_show_the_cause() -> None:
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
     names = [i["korean_name"] for g in llm.calls[0]["payload"]["explain_groups"] for i in g["ingredients"]]
     assert names == ["해물"]
+
+
+def test_reason_leaves_alcohol_named_alcohol_to_the_verdict() -> None:
+    # 2026-11-22 halal: 알코올 (from 맛술) was explained as "may contain 술".
+    alcohol = IngredientRef(ingredient_id=None, canonical_name="알코올")
+    soju = IngredientRef(ingredient_id=None, canonical_name="소주")
+    llm = FakeLLM(ReasonOutput(reason="소주는 쌀 등을 발효해 만든 술이에요."))
+    req = request(
+        HALAL,
+        probability_results=[probability(alcohol, ["is_alcohol"], 0.9, role="hidden"), probability(soju, ["is_alcohol"], 0.3)],
+        locale="ko",
+    )
+    asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
+    names = [i["korean_name"] for g in llm.calls[0]["payload"]["explain_groups"] for i in g["ingredients"]]
+    assert names == ["소주"]
 
 
 def test_reason_groups_ingredients_by_what_is_avoided() -> None:
