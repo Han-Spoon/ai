@@ -129,14 +129,6 @@ def read_menu_queries(path: Path) -> list[str]:
     return menus
 
 
-def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def read_listed_ids(path: Path) -> dict[str, list[str]]:
     """메뉴별 레시피 번호를 기존 크롤링 CSV(menu_query, recipe_url)에서 순서대로 읽는다."""
 
@@ -150,19 +142,50 @@ def read_listed_ids(path: Path) -> dict[str, list[str]]:
     return listed
 
 
-def crawl(args: argparse.Namespace) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+DATA_FIELDS = ["menu_query", "recipe_title", "recipe_url", "ingredient_name"]
+REPORT_FIELDS = ["menu_query", "recipe_count", "ingredient_row_count", "status"]
+
+
+def _append_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
+    new_file = not path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", newline="", encoding="utf-8-sig" if new_file else "utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if new_file:
+            writer.writeheader()
+        writer.writerows(rows)
+
+
+def _finished_menus(report: Path) -> set[str]:
+    if not report.exists():
+        return set()
+    with report.open(encoding="utf-8-sig", newline="") as f:
+        return {r["menu_query"] for r in csv.DictReader(f) if not r["status"].startswith("error")}
+
+
+def crawl(args: argparse.Namespace) -> tuple[int, int]:
+    """메뉴 하나가 끝날 때마다 결과를 파일에 붙인다. 중간에 멈춰도 끝난 메뉴는 남고,
+    `--resume`으로 다시 돌리면 리포트에 끝났다고 적힌 메뉴는 건너뛴다."""
+
     listed = read_listed_ids(Path(args.recipes_from)) if args.recipes_from else None
     menus = list(listed) if listed is not None else read_menu_queries(Path(args.menu_file))
     if not menus:
         raise ValueError(f"menu file is empty: {args.menu_file}")
 
+    out, report = Path(args.out), Path(args.report)
+    if args.resume:
+        done = _finished_menus(report)
+        menus = [m for m in menus if m not in done]
+    else:
+        out.unlink(missing_ok=True)
+        report.unlink(missing_ok=True)
+
     session = requests.Session()
     session.headers.update(HEADERS)
-
-    data_rows: list[dict[str, str]] = []
-    report_rows: list[dict[str, str]] = []
+    total_rows = total_recipes = 0
 
     for index, menu in enumerate(menus, start=1):
+        data_rows: list[dict[str, str]] = []
         try:
             if listed is not None:
                 ids = listed[menu]
@@ -189,22 +212,32 @@ def crawl(args: argparse.Namespace) -> tuple[list[dict[str, str]], list[dict[str
                     data_rows.append(
                         {"menu_query": menu, "recipe_title": title, "recipe_url": url, "ingredient_name": name}
                     )
-            report_rows.append(
-                {
-                    "menu_query": menu,
-                    "recipe_count": str(recipe_count),
-                    "ingredient_row_count": str(ingredient_row_count),
-                    "status": "ok" if recipe_count else "no_recipe",
-                }
+            _append_csv(out, data_rows, DATA_FIELDS)
+            _append_csv(
+                report,
+                [
+                    {
+                        "menu_query": menu,
+                        "recipe_count": str(recipe_count),
+                        "ingredient_row_count": str(ingredient_row_count),
+                        "status": "ok" if recipe_count else "no_recipe",
+                    }
+                ],
+                REPORT_FIELDS,
             )
-            print(f"[{index:02d}/{len(menus)}] {menu}: {recipe_count} recipes, {ingredient_row_count} ingredients")
+            total_rows += len(data_rows)
+            total_recipes += recipe_count
+            print(f"[{index:02d}/{len(menus)}] {menu}: {recipe_count} recipes, {ingredient_row_count} ingredients", flush=True)
         except Exception as exc:
-            report_rows.append(
-                {"menu_query": menu, "recipe_count": "0", "ingredient_row_count": "0", "status": f"error: {exc}"}
+            # 끝나지 않은 메뉴는 결과를 버리고 오류만 적는다. --resume이 다시 받는다.
+            _append_csv(
+                report,
+                [{"menu_query": menu, "recipe_count": "0", "ingredient_row_count": "0", "status": f"error: {exc}"}],
+                REPORT_FIELDS,
             )
-            print(f"[ERROR] {menu}: {exc}", file=sys.stderr)
+            print(f"[ERROR] {menu}: {exc}", file=sys.stderr, flush=True)
 
-    return data_rows, report_rows
+    return total_recipes, total_rows
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,16 +252,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="검색 대신 이 CSV(menu_query, recipe_url)에 있는 레시피만 다시 읽는다",
     )
+    parser.add_argument("--resume", action="store_true", help="리포트에 끝났다고 적힌 메뉴는 건너뛰고 이어서 받는다")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    rows, report = crawl(args)
-    write_csv(Path(args.out), rows, ["menu_query", "recipe_title", "recipe_url", "ingredient_name"])
-    write_csv(Path(args.report), report, ["menu_query", "recipe_count", "ingredient_row_count", "status"])
+    recipes, rows = crawl(args)
     print(f"\n완료: {args.out}")
-    print(f"수집 행 수: {len(rows)}")
+    print(f"이번에 받은 레시피 {recipes}개, 재료 행 {rows}개")
     print(f"리포트: {args.report}")
 
 
