@@ -22,7 +22,7 @@
 
 | 경로 | 역할 |
 |---|---|
-| [`app.py`](app.py) | FastAPI 진입점. `/v1/ocr`, `/v1/ruleengine`, `/v1/result` |
+| [`app.py`](app.py) | FastAPI 진입점. 신규 표준 `/v1/analyze/prepare`, `/v1/analyze/judge`; 레거시 `/v1/ocr`, `/v1/ruleengine`, `/v1/result` 병행 |
 | [`ai_ocr/`](ai_ocr/README.md) | 메뉴판 이미지 → 메뉴명 추출 (CLOVA OCR + GPT 후처리) |
 | [`ai_ruleengine/`](ai_ruleengine/README.md) | 메뉴명 정규화·매칭, 재료 태깅, 룰 기반 위험 판정 |
 | [`ai_result/`](ai_result/README.md) | ⑧ Decision Policy / XAI Agent. 최종 판정과 근거 메시지 생성 |

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from ai_supervisor.adapters import LegacyOcrAdapter
 from ai_supervisor.contracts.decision import DecisionResponse
-from ai_supervisor.contracts.external import PrepareRequest
+from ai_supervisor.contracts.external import JudgeRequest, PrepareRequest
 from ai_supervisor.contracts.web_search import WebCollectResponse, WebMenu
 from ai_supervisor.service import SupervisorService, SupervisorServiceDependencies
 from ai_supervisor.tests.test_judge_graph import request as judge_request
@@ -157,3 +157,78 @@ def test_supervisor_service_runs_storeless_judge_through_injected_adapters(caplo
     assert record.route_counts == {"no_information": 1}
     assert record.risk_level_counts == {"caution": 1}
     assert record.latency_ms >= 0
+
+
+def test_supervisor_service_runs_prepare_then_storeless_judge_end_to_end() -> None:
+    async def ocr_runner(image):
+        return {
+            "final": {
+                "scan_quality": {
+                    "status": "usable",
+                    "score": 95,
+                    "reasons": [],
+                    "retake_suggestions": [],
+                },
+                "menu_analyses": [
+                    {
+                        "display_order": 1,
+                        "menu_name_ko": "김치찌개",
+                        "description_ko": None,
+                        "price_text": "8,000원",
+                        "price_options": [],
+                        "ocr_confidence": 0.95,
+                        "is_spicy": False,
+                    }
+                ],
+            }
+        }
+
+    unused = UnusedAdapter()
+    service = SupervisorService(
+        SupervisorServiceDependencies(
+            ocr=LegacyOcrAdapter(ocr_runner),
+            web_collect=NoSourceWebCollect(),
+            decision=CautionDecision(),
+            high_risk_review=unused,
+            web_aggregate=unused,
+            prepare_id_factory=lambda: PREPARE_ID,
+        )
+    )
+    prepare_source = PrepareRequest(
+        schema_version="3.0",
+        trace_id=TRACE_ID,
+        scan_session_id="scan-123",
+        image={
+            "source": "upload",
+            "storage_key": "scans/menu.jpg",
+            "version_id": None,
+            "expected_etag": None,
+        },
+        locale="ko",
+    )
+
+    prepared = asyncio.run(service.prepare(prepare_source))
+    judge_payload = judge_request(count=1, store_id=None).model_dump(mode="json")
+    judge_payload.update(
+        {
+            "trace_id": str(prepared.trace_id),
+            "prepare_id": str(prepared.prepare_id),
+            "scan_session_id": prepared.scan_session_id,
+            "store_id": None,
+            "prepared_items_hash": prepared.prepared_items_hash,
+            "prepare_signals": prepared.prepare_signals.model_dump(mode="json"),
+            "prepared_items": [
+                item.model_dump(mode="json") for item in prepared.prepared_items
+            ],
+        }
+    )
+    judged = asyncio.run(service.judge(JudgeRequest.model_validate(judge_payload)))
+
+    assert "store_id" not in PrepareRequest.model_fields
+    assert judged.prepare_id == prepared.prepare_id
+    assert judged.prepared_items_hash == prepared.prepared_items_hash
+    assert judged.store_id is None
+    assert judged.items[0].item_id == prepared.prepared_items[0].item_id
+    assert judged.items[0].risk_level == "caution"
+    assert judged.items[0].owner_cards == []
+    assert judged.persistence_commands == []

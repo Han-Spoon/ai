@@ -17,6 +17,16 @@ def test_app_registers_supervisor_prepare_and_judge_routes():
     assert "/v1/analyze/judge" in paths
 
 
+def test_legacy_routes_remain_available_but_are_deprecated():
+    paths = app_module.app.openapi()["paths"]
+
+    for path in ("/v1/ocr", "/v1/ruleengine", "/v1/result"):
+        assert paths[path]["post"]["deprecated"] is True
+
+    assert paths["/v1/analyze/prepare"]["post"].get("deprecated") is not True
+    assert paths["/v1/analyze/judge"]["post"].get("deprecated") is not True
+
+
 def test_lifespan_builds_one_supervisor_service(monkeypatch):
     service = object()
     calls = []
@@ -89,11 +99,11 @@ def test_supervisor_ocr_reuses_ai_owned_pipeline(monkeypatch):
     captured = {}
     expected = {"scan_quality": {"status": "usable"}, "menu_analyses": []}
 
-    def fake_run_ocr(request):
+    def fake_execute_ocr(request):
         captured["request"] = request
         return expected
 
-    monkeypatch.setattr(app_module, "run_ocr", fake_run_ocr)
+    monkeypatch.setattr(app_module, "_execute_ocr", fake_execute_ocr)
     image = SimpleNamespace(
         source="upload",
         storage_key="scans/menu.jpg",
@@ -111,6 +121,37 @@ def test_supervisor_ocr_reuses_ai_owned_pipeline(monkeypatch):
     assert request.storage_key == "scans/menu.jpg"
     assert request.version_id == "version-1"
     assert request.expected_etag == '"etag"'
+
+
+def test_legacy_ocr_and_supervisor_prepare_share_internal_execution(monkeypatch):
+    requests = []
+
+    def fake_execute_ocr(request):
+        requests.append(request)
+        return {"scan_quality": {"status": "usable"}, "menu_analyses": []}
+
+    monkeypatch.setattr(app_module, "_execute_ocr", fake_execute_ocr)
+    legacy_request = app_module.OcrRequest(
+        store_id=42,
+        source="upload",
+        storage_key="scans/legacy/menu.jpg",
+    )
+    supervisor_image = SimpleNamespace(
+        source="upload",
+        storage_key="scans/prepare/menu.jpg",
+        image_url=None,
+        version_id=None,
+        expected_etag=None,
+    )
+
+    legacy_result = app_module.run_ocr(legacy_request)
+    prepare_result = app_module._run_supervisor_ocr(supervisor_image)
+
+    assert legacy_result == prepare_result
+    assert requests[0] is legacy_request
+    assert requests[0].store_id == 42
+    assert requests[1].store_id is None
+    assert requests[1].storage_key == "scans/prepare/menu.jpg"
 
 
 def test_health_rejects_placeholder_clova_configuration(monkeypatch):
