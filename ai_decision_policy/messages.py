@@ -223,14 +223,16 @@ NOT_ENOUGH_INFORMATION: dict[str, str] = {
 # After the LLM's reason (2026-11-22): fixed sentences the LLM kept getting wrong (it
 # wrote "80% 이상" for 어묵 at 52%, and picked the wrong card). {x} names, {last} the last
 # word, {p} the threshold ("80%"). "Hanspoon" stays in Latin letters like the app name.
-VERY_OFTEN: dict[str, Callable[[str, str, str], str]] = {
-    "ko": lambda x, last, p: f"{x}{_ko(last, '은', '는')} 한스푼이 수집한 레시피의 {p} 이상에 들어가는 재료라서 특히 주의해야 해요.",
-    "en": lambda x, last, p: f"At least {p} of the recipes Hanspoon collected for this dish use {x}, so please be especially careful.",
-    "ar": lambda x, last, p: f"تستخدم {p} على الأقل من الوصفات التي جمعها Hanspoon لهذا الطبق {x}، لذا انتبه جيدًا.",
-    "zh-CN": lambda x, last, p: f"在Hanspoon收集的这道菜的食谱中，至少{p}用到{x}，请特别注意。",
-    "zh-TW": lambda x, last, p: f"在Hanspoon收集的這道菜的食譜中，至少{p}用到{x}，請特別注意。",
-    "ja": lambda x, last, p: f"Hanspoonが集めたこの料理のレシピの{p}以上に{x}が使われているため、特に注意してください。",
-    "es": lambda x, last, p: f"Al menos el {p} de las recetas que recopiló Hanspoon para este plato llevan {x}, así que ten especial cuidado.",
+VERY_OFTEN: dict[str, Callable[[str, str, str, str], str]] = {
+    # Korean names the dish ("한스푼이 수집한 부대찌개 레시피의 80%", 2026-11-22); other
+    # languages say "this dish", as the reason does.
+    "ko": lambda x, last, p, menu: f"{x}{_ko(last, '은', '는')} 한스푼이 수집한 {menu} 레시피의 {p} 이상에 들어가는 재료라서 특히 주의해야 해요.",
+    "en": lambda x, last, p, menu: f"At least {p} of the recipes Hanspoon collected for this dish use {x}, so please be especially careful.",
+    "ar": lambda x, last, p, menu: f"تستخدم {p} على الأقل من الوصفات التي جمعها Hanspoon لهذا الطبق {x}، لذا انتبه جيدًا.",
+    "zh-CN": lambda x, last, p, menu: f"在Hanspoon收集的这道菜的食谱中，至少{p}用到{x}，请特别注意。",
+    "zh-TW": lambda x, last, p, menu: f"在Hanspoon收集的這道菜的食譜中，至少{p}用到{x}，請特別注意。",
+    "ja": lambda x, last, p, menu: f"Hanspoonが集めたこの料理のレシピの{p}以上に{x}が使われているため、特に注意してください。",
+    "es": lambda x, last, p, menu: f"Al menos el {p} de las recetas que recopiló Hanspoon para este plato llevan {x}, así que ten especial cuidado.",
 }
 # Something likely can be left out: the result screen's "빼고 요청" (Request removal)
 # card. No names: "사골은 빼고 요청 카드로…" picked one ingredient out of many (2026-11-22).
@@ -394,7 +396,7 @@ def _joined(names: list[str], lang: str) -> tuple[str, str]:
     return AND_LISTS[lang]([*shown, more]), more
 
 
-def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, lang: str) -> str:
+def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, menu: str, lang: str) -> str:
     """The fixed sentences after the LLM's reason (2026-11-22): the ingredients most
     recipes use (names), then what to do on the result screen, with no names: whether
     any ingredient goes to the remove-request card (``remove``) or the question card
@@ -402,7 +404,7 @@ def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, la
 
     parts = []
     if very_often:
-        parts.append(VERY_OFTEN[lang](*_joined(very_often, lang), percent))
+        parts.append(VERY_OFTEN[lang](*_joined(very_often, lang), percent, menu))
     if remove and ask:
         parts.append(REMOVE_OR_QUESTION_CARD_STEP[lang])
     elif remove:

@@ -33,7 +33,7 @@ from .messages import _sentences, reason_tail
 from .names import all_rows, dictionary_name, display_name, standard_rows
 from .policy import information_failed
 from .profile import forbidden_tags
-from .questions import TAG_NAMES, tag_name
+from .questions import TAG_NAMES, _has_final_consonant, tag_name
 
 # 300 until 2026-11-22, when the reason went from one or two sentences to three or four
 # (problem, then the next step on the result screen).
@@ -126,15 +126,18 @@ Write one short, friendly sentence for each group in explain_groups, in order, i
 {language}, speaking to the tourist.
 - Do not copy verdict_sentence or write a sentence that only says it again in other
   words. Your sentences must add the explanation it does not give.
-- Each sentence explains one group: name all its ingredients together, say in a few
-  words what kind of food they are (if a tourist may not know them, most Korean
-  ingredients such as fermented sauces, salted seafood or fish cake, what they are
-  made from and how), and that they may contain avoided_in_them, naming each word
-  as it is. Never put a vague phrase such as "what you avoid" in its place.
-- Only for an ingredient with hard_to_remove true, add why it may be hard to leave
-  out: it is a main ingredient of this dish (role "identity"), or it goes inside a
-  sauce or seasoning (role "hidden"). Always give that reason. Never say what part
-  any other ingredient plays.
+- Each sentence explains one group: name all its ingredients together, say what
+  kind of food they are, and so that they may contain avoided_in_them (naming each
+  word as it is). If a tourist may not know them (most Korean
+  ingredients such as fermented sauces, salted seafood or fish cake), say what they
+  are made from and how. Say "may contain" only once in the sentence. Never put a
+  vague phrase such as "what you avoid" in its place.
+- If any ingredients have hard_to_remove true, add exactly one more sentence for all
+  of them together, after the group sentences: name just those ingredients and why
+  they may be hard to leave out, joining the two reasons in that one sentence when
+  both apply: a main ingredient of this dish (role "identity"), or it goes inside a
+  sauce or seasoning (role "hidden"). Never call a hidden one a main ingredient.
+  Never say what part any other ingredient plays.
 - Explain only the ingredients in explain_groups. Say nothing about how often they
   go into this dish, and not that they go against the tourist's restriction (the
   verdict already says so).
@@ -163,12 +166,22 @@ KOREAN_STYLE = "\n- Write in polite 해요체, like ~있어요 and ~해요. Do n
 # Korean wording for the reason only; the high-risk review shares KOREAN_STYLE. Card names and the "80% 이상" sentence are templates now (messages.py
 # ``reason_tail``, 2026-11-22).
 REASON_KOREAN_STYLE = (
-    # 2026-11-22 run: "섞여 있을 수 있어서".
-    "\n- Write 들어갈 수 있어요, not 섞여 있어요."
-    # 2026-11-22: "이런 재료들은 들어가면 빼기 어려워요" gave no reason.
-    # "(부대찌개)의 주재료라서": a "(menu)" placeholder was copied with its brackets.
-    "\n- Write the hard-to-leave-out reason as 이 메뉴의 주재료라서 빼기 어려울 수 있어요"
-    " or 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요."
+    # Rules piece by piece kept slipping (2026-11-22~23): "가공육이라 돼지고기가 들어갈 수
+    # 있어요" after "돼지고기가 들어간", "소주는 술이라서 술이 들어갈 수 있어요", "가공육예요",
+    # "(부대찌개)의 주재료라서", "섞여 있을 수 있어서". Example sentences instead, Korean
+    # only: an English example in the shared rules was copied into Korean and Chinese
+    # (2026-11-17). An example name not in the input fails the name check, so a copied
+    # example is dropped, never shown.
+    "\n- Write like these examples, with this dish's own ingredients and words:"
+    "\n  햄, 소시지, 베이컨은 가공육이어서 돼지고기가 들어갈 수 있어요."
+    "\n  멸치액젓은 멸치를 소금에 절여 발효시켜 만든 액젓이어서 생선이 들어갈 수 있어요."
+    "\n  어묵은 생선 살을 갈아 반죽해 튀기거나 쪄서 만든 가공식품이어서 생선이 들어갈 수 있어요."
+    "\n  굴소스는 굴을 끓여 졸여 만든 소스여서 조개류가 들어갈 수 있어요."
+    # One sentence for every hard-to-leave-out ingredient: "멸치액젓은 … 빼기 어려울 수
+    # 있어요. 새우젓은 … 빼기 어려울 수 있어요." repeated itself (2026-11-23).
+    "\n  멸치액젓과 새우젓은 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요."
+    "\n  햄과 소시지는 이 메뉴의 주재료라서, 새우젓은 양념이나 소스 안에 들어가서 빼기"
+    " 어려울 수 있어요."
 )
 # Korean may name the dish ("이것도 김치찌개에 들어갈 수 있어요", 2026-11-22). Other
 # languages say "this dish": the Korean menu name inside them read as a slip.
@@ -184,6 +197,7 @@ _SENTENCE_RE = re.compile(r"[^.!?。！？]+[.!?。！？]*")
 _KO_KINDS_RE = re.compile(r"(?:여러|몇|한|두|세|네|다섯|모든|온갖|갖은|이런|그런|어떤)\s*가지")
 _KO_SEMICOLON_RE = re.compile(r"\s*[;；]\s*")
 _KO_COMMA_SPLICE_RE = re.compile(r"요,\s+")
+_KO_YEYO_RE = re.compile(r"([가-힣])(?:이에요|예요)")
 _PERCENT_SIGN_RE = re.compile(r"[%％٪]")
 _DIGIT_RE = re.compile(r"[0-9٠-٩０-９]")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,!?。，！？،])")
@@ -338,6 +352,8 @@ def check_reason(
         text = _KO_SEMICOLON_RE.sub(". ", text).strip()
         # "…들어갈 수 있어요, 그리고 햄과 소시지는 …" (2026-11-22): one sentence each.
         text = _KO_COMMA_SPLICE_RE.sub("요. ", text)
+        # "가공육예요" (2026-11-22): 이에요 after a final consonant.
+        text = _KO_YEYO_RE.sub(lambda m: m.group(1) + ("이에요" if _has_final_consonant(m.group(1)) else "예요"), text)
     text = _drop_lone_percent(text)
     if not text or len(text) > MAX_REASON_CHARS:
         return None
@@ -564,7 +580,8 @@ def tail_text(request: DecisionRequest, response: DecisionResponse) -> str:
     ask = any(next_step(i) == "question_card" for i in items)
     names = lambda rows: list(dict.fromkeys(i.ingredient.localized_name for i in rows))  # noqa: E731
     return reason_tail(
-        names(very_often), remove, ask, f"{round(VERY_HIGH_CHANCE * 100)}%", request.locale
+        names(very_often), remove, ask, f"{round(VERY_HIGH_CHANCE * 100)}%",
+        request.menu.normalized_menu_name, request.locale
     )
 
 
@@ -657,6 +674,9 @@ NAME_ALIASES: dict[str, tuple[str, ...]] = {
     "is_beef": ("쇠고기",),
     "is_pork": ("돼지",),
     "is_chicken": ("닭",),
+    # "알코올은 술이 들어갈 수 있어요" for every halal scan (2026-11-22): ④ expands 맛술
+    # into a hidden 알코올, whose name already says it. 소주 and the like stay explained.
+    "is_alcohol": ("알코올",),
 }
 
 
