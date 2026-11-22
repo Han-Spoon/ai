@@ -316,10 +316,17 @@ ERD 매핑:
 재촬영 판단 기준:
 
 - `scan_quality.status == "needs_retake"`: 재촬영 요청
-- `scan_quality.status == "low_confidence"`: 결과는 보여주되 사용자가 확인하도록 안내
-- `scan_quality.status == "usable"`: 정상 사용 가능
+- `scan_quality.status == "low_confidence"`: 판독 신뢰도 부족. `/v1/analyze/prepare`는 경고와 재촬영 안내만 남기고 `prepared_items: []`로 끝나며 Judge로 가지 않습니다 (10-17 회의 "흐린 사진은 분석 실패")
+- `scan_quality.status == "usable"`: 정상 사용 가능. 이 상태만 Judge로 진행합니다
 
-메뉴 후보가 없거나 OCR token이 3개 미만이면 재촬영으로 판단합니다. 낮은 해상도는 단독으로 결과를 폐기하지 않고, 가격 anchor 대비 정상 메뉴-가격 쌍 비율(`pair_coverage`)까지 낮을 때만 재촬영을 강제합니다. 흐림, 밝기, 대비, 빛 반사, 기울기는 `scan_quality.image_quality`와 `scan_quality.retake_suggestions`에 기록합니다.
+메뉴 후보가 없거나 OCR token이 3개 미만이면 재촬영으로 판단합니다. 낮은 해상도는 단독으로 결과를 폐기하지 않고, 가격 anchor 대비 정상 메뉴-가격 쌍 비율(`pair_coverage`)까지 낮을 때만 재촬영을 강제합니다.
+
+흐림, 밝기, 대비, 빛 반사, 기울기 같은 이미지 지표는 **OCR 구조가 나쁠 때만** status에 반영합니다. 흰 종이 배경이 밝기·빛 반사 판정에 잡혀 잘 읽힌 메뉴판까지 재촬영되던 문제 때문입니다.
+
+- OCR 구조 양호: 메뉴 후보 3개 이상, OCR 줄 8개 이상, 가격 anchor가 있으면 `pair_coverage` 0.5 이상, 메뉴-가격 평균 신뢰도(`mean_pair_confidence`) 0.65 이상. 줄 수와 신뢰도 값이 없으면 양호로 보지 않습니다.
+- 구조 양호: 이미지 지표는 `scan_quality.image_quality`에 관측값으로만 남고 `reasons`·`score`·`status`에는 들어가지 않습니다.
+- 구조 불량: 이미지 사유를 `reasons`에 합치고 `score`에 이미지 점수를 섞습니다. 이미지 점수가 45 미만이면 재촬영(`needs_retake`)입니다.
+- `retake_suggestions`는 `usable`이 아닐 때만 채웁니다.
 
 후속 파트가 채우는 필드:
 

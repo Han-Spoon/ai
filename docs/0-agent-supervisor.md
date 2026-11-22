@@ -482,6 +482,11 @@ Prepare 응답은 기존 OCR 응답의 촬영 품질·메뉴 추출 구조를 �
 - `prepare_id`는 Supervisor가 Prepare 요청마다 한 번 발급하는 UUID이며 재시도 추적과 Judge 연결에 사용한다. 백엔드는 값을 변경하지 않고 Prepare 결과·KnowledgeBundle과 함께 보존한다.
 - `prepared_items_hash`는 Supervisor가 `{prepared_items, prepare_signals}` 객체를 **RFC 8785 JSON Canonicalization Scheme(JCS)** 으로 직렬화한 뒤 계산한 SHA-256이다. 구현은 `rfc8785==0.1.4`의 `dumps()`가 반환하는 canonical UTF-8 bytes를 그대로 hash한다. 출력 형식은 `sha256:`과 소문자 64자리 hex를 연결한 문자열이다. 백엔드는 Judge 요청에 두 값과 hash를 그대로 돌려보내며 AI가 다시 계산해 검증한다.
 - `scan_quality.status`는 `usable | low_confidence | needs_retake`다. 수치형 품질 점수와 메뉴별 OCR confidence는 AI 내부 관측값이며 외부 계약에는 넣지 않는다.
+- status는 ①이 OCR 구조와 이미지 지표로 정한다. 메뉴 후보 0개, OCR 줄 3개 미만, 메뉴-가격 평균 신뢰도 0.45 미만이면 `needs_retake`다. 그 밖에 사유가 하나라도 있거나 점수가 70 미만이면 `low_confidence`, 아니면 `usable`이다.
+  - OCR 구조 양호(메뉴 후보 3개 이상, OCR 줄 8개 이상, 가격 anchor가 있으면 `pair_coverage` 0.5 이상, 평균 신뢰도 0.65 이상)면 흐림·밝기·대비·빛 반사·기울기 지표는 내부 관측값으로만 남기고 `reasons`·점수·status에 넣지 않는다. 흰 종이 배경이 밝기·반사 판정에 잡혀 잘 읽힌 메뉴판까지 재촬영되던 오탐을 막기 위해서다.
+  - OCR 구조가 나쁘면 이미지 사유를 `reasons`에 합치고, 이미지 점수 45 미만이면 `needs_retake`다.
+  - 해상도 600px 미만은 구조와 무관하게 사유로 남아 `usable`이 되지 않는다. 메뉴 후보 3개 미만이거나 `pair_coverage` 0.5 미만이 겹치면 `needs_retake`다.
+  - `retake_suggestions`는 `usable`이 아닐 때만 채운다.
 - `prepare_signals`는 Judge까지 보존해야 하는 Prepare 안전 신호다. `scan_quality_status`는 `scan_quality.status`와 같고, `warnings`에는 `forces_caution: true`인 warning만 넣는다. `prepared_items_hash`가 이 객체까지 보호하므로 백엔드는 값을 수정하거나 일부만 누락할 수 없다.
 - `prepared_items[]`는 기존 OCR 메뉴 필드에 `origin_text`, `foreign_text_segments`, `normalized_menu_name`, `display_name`, `options`, `residual_tokens`를 추가한 구조다.
 - `origin_text`는 메뉴명 끝에서 구조적으로 분리한 원산지 원문이며 DB 메뉴 검색에는 사용하지 않는다. 원문 전체는 `raw_menu_name`으로도 보존한다.
