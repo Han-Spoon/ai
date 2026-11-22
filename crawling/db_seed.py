@@ -32,7 +32,8 @@ RAW_TAXONOMY = {"base", "garnish"}
 
 # Tag fixes on top of the keyword dictionary (ai_ruleengine/constants.py), which tags by
 # substring and so misfires on names that only contain a keyword. Reviewed by hand
-# against all 324 seed ingredients (2026-11). Removals are only cases that are certainly
+# against all 324 seed ingredients (2026-11; 돼지감자 added 2026-11-22 with the 22 Yongsan
+# menus, 325 now). Removals are only cases that are certainly
 # wrong; anything doubtful stays tagged (FN first).
 TAG_REMOVE: dict[str, set[str]] = {
     "강낭콩": {"is_soybean"},  # kidney bean, not soybean (콩)
@@ -46,6 +47,7 @@ TAG_REMOVE: dict[str, set[str]] = {
     "성게": {"is_crab"},  # sea urchin (게)
     "밀크초콜릿": {"is_wheat"},  # 밀크 = milk (밀)
     "햄버거번": {"is_pork"},  # a bread bun (햄)
+    "돼지감자": {"is_pork"},  # Jerusalem artichoke, a root vegetable (돼지)
 }
 # Recipe bundles that are another dish. wtable's "간장게장" search returned 911 soy sauce
 # recipes (3 with crab); its "약과" bundle is one ice-cream recipe.

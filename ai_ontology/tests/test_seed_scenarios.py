@@ -86,8 +86,9 @@ def tags(response):
 
 def test_seed_matches_db_export():
     g = seed().graph
-    # 324 ingredients as loaded; 101 edges minus 9 from dish-parent rules (김밥→밥 etc.)
-    assert (len(g.ingredients), len(g.compositions)) == (324, 92)
+    # 325 ingredients (324 as first loaded + 돼지감자 from the 22 Yongsan menus, 2026-11-22);
+    # 101 edges minus 9 from dish-parent rules (김밥→밥 etc.)
+    assert (len(g.ingredients), len(g.compositions)) == (325, 92)
 
 
 def test_no_composition_hangs_under_a_dish_turned_raw_ingredient():
@@ -261,7 +262,7 @@ def test_other_dish_bundle_is_left_out(menu):
 def test_dropped_bundle_keeps_ingredient_ids():
     # ids are list positions; 아이스크림 only came from the dropped 약과 bundle
     s = seed()
-    assert "아이스크림" in s.id and len(s.id) == 324
+    assert "아이스크림" in s.id and len(s.id) == 325
 
 
 def test_sauce_name_does_not_map_to_vegetables():
