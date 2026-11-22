@@ -122,24 +122,22 @@ _ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 
 INSTRUCTIONS = """You write the short "why" line under a food safety verdict for a tourist
 at a Korean restaurant. Code already decided the verdict; you only explain it.
-Write one or two short, friendly sentences in {language}, speaking to the tourist.
+Write one short, friendly sentence for each group in explain_groups, in order, in
+{language}, speaking to the tourist.
 - Do not copy verdict_sentence or write a sentence that only says it again in other
   words. Your sentences must add the explanation it does not give.
-- Say what the problem is. Take the ingredients with name_shows_cause false (at
-  most two) and, for each:
-  1. what kind of food it is, in general words, without naming other ingredients.
-     If a tourist may not know it (most Korean ingredients, such as fermented
-     sauces, salted seafood or fish cake), say plainly what it is made from and
-     how it is made;
-  2. what may be inside it, naming each word of avoided_in_it as it is. Never put
-     a vague phrase such as "what you avoid" or "ingredients to avoid" in its place;
-  3. only if hard_to_remove is true, say why it may be hard to leave out: because
-     it is a main ingredient of this dish (role "identity"), or because it goes
-     inside a sauce or seasoning (role "hidden"). Always give that reason. Never say
-     what part any other ingredient plays.
-  Skip ingredients with name_shows_cause true. Say nothing else about them: not
-  how often they go into this dish, and not that they go against the tourist's
-  restriction (the verdict already says so).
+- Each sentence explains one group: name all its ingredients together, say in a few
+  words what kind of food they are (if a tourist may not know them, most Korean
+  ingredients such as fermented sauces, salted seafood or fish cake, what they are
+  made from and how), and that they may contain avoided_in_them, naming each word
+  as it is. Never put a vague phrase such as "what you avoid" in its place.
+- Only for an ingredient with hard_to_remove true, add why it may be hard to leave
+  out: it is a main ingredient of this dish (role "identity"), or it goes inside a
+  sauce or seasoning (role "hidden"). Always give that reason. Never say what part
+  any other ingredient plays.
+- Explain only the ingredients in explain_groups. Say nothing about how often they
+  go into this dish, and not that they go against the tourist's restriction (the
+  verdict already says so).
 - Fixed sentences are added after yours: which ingredients most of our recipes
   use, and what the tourist can do next with the cards on the screen. So never
   write a percentage or how likely anything is, never say what to do next, and
@@ -168,7 +166,8 @@ REASON_KOREAN_STYLE = (
     # 2026-11-22 run: "섞여 있을 수 있어서".
     "\n- Write 들어갈 수 있어요, not 섞여 있어요."
     # 2026-11-22: "이런 재료들은 들어가면 빼기 어려워요" gave no reason.
-    "\n- Write the hard-to-leave-out reason as (menu)의 주재료라서 빼기 어려울 수 있어요"
+    # "(부대찌개)의 주재료라서": a "(menu)" placeholder was copied with its brackets.
+    "\n- Write the hard-to-leave-out reason as 이 메뉴의 주재료라서 빼기 어려울 수 있어요"
     " or 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요."
 )
 # Korean may name the dish ("이것도 김치찌개에 들어갈 수 있어요", 2026-11-22). Other
@@ -184,6 +183,7 @@ _SENTENCE_RE = re.compile(r"[^.!?。！？]+[.!?。！？]*")
 # naming an ingredient the dish did not carry (2026-11-22, 김치찌개·떡볶이).
 _KO_KINDS_RE = re.compile(r"(?:여러|몇|한|두|세|네|다섯|모든|온갖|갖은|이런|그런|어떤)\s*가지")
 _KO_SEMICOLON_RE = re.compile(r"\s*[;；]\s*")
+_KO_COMMA_SPLICE_RE = re.compile(r"요,\s+")
 _PERCENT_SIGN_RE = re.compile(r"[%％٪]")
 _DIGIT_RE = re.compile(r"[0-9٠-٩０-９]")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,!?。，！？،])")
@@ -336,6 +336,8 @@ def check_reason(
         text = _DOUBLE_YO_RE.sub("요", text)
         # Sentences end with a period: "빼기 어려울 수 있어요; 까나리는 …" (2026-11-22).
         text = _KO_SEMICOLON_RE.sub(". ", text).strip()
+        # "…들어갈 수 있어요, 그리고 햄과 소시지는 …" (2026-11-22): one sentence each.
+        text = _KO_COMMA_SPLICE_RE.sub("요. ", text)
     text = _drop_lone_percent(text)
     if not text or len(text) > MAX_REASON_CHARS:
         return None
@@ -496,37 +498,54 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
             "evidence_basis": response.evidence_basis,
         },
         "verdict_sentence": response.message.verdict,
-        "risk_ingredients": [
-            {
-                "name": item.ingredient.localized_name,
-                "korean_name": item.ingredient.canonical_name,
-                "role": item.role,
-                # What in the ingredient the user avoids, in the user's language, not tag
-                # codes (2026-11-15). A per-item "say which restriction" rule was tried and
-                # removed (2026-11-17): the model copied its English example into Korean
-                # and Chinese ("굴소스 may contain 조개류") and listed every item; see ⑧ §8.
-                # It came back on 2026-11-22 with no example sentence and at most two
-                # ingredients. Called "matched_user_restrictions" until then, and the model
-                # wrote "생선 제한" for a vegan's 어묵.
-                # The same day, the user's restriction ("goes_against_user") and how often
-                # recipes use it ("how_often") went out again: "잡채에는 이것도 자주 들어가고,
-                # 비건 기준에 맞지 않아요" only added words. The verdict names the
-                # restriction, and the fixed tail the ingredients most recipes use.
-                "avoided_in_it": [tag_name(t, request.locale) for t in item.matched_tags],
-                # False when the name alone does not show why (해물 for shrimp), so the
-                # reason explains only those and leaves the rest to the verdict.
-                "name_shows_cause": not needs_explaining(item),
-                "status": item.status,
-                "hard_to_remove": item.role in ("identity", "hidden"),
-            }
-            for item in response.risk_ingredients
-        ],
+        "explain_groups": explain_groups(request, response),
         "other_ingredients_in_menu": sorted(
             {name(r.ingredient) for r in request.probability_results}
             | {name(r.ingredient) for r in request.confirmed_results}
         ),
         "known_limits": reason_facts(request),
     }
+
+
+# Groups of ingredients the reason explains, one sentence each (2026-11-22). "At most two
+# ingredients" left a vegan's 까나리 unexplained, and the model ignored it anyway (five
+# ingredients for 부대찌개); grouping by what is avoided keeps every cause and the
+# sentence count small.
+MAX_GROUPS = 3
+MAX_PER_GROUP = 3
+
+
+def explain_groups(request: DecisionRequest, response: DecisionResponse) -> list[dict]:
+    """Risk ingredients whose name does not show why they hit the user, grouped by what
+    in them the user avoids ("돼지고기": 햄·소시지, "생선": 멸치액젓·까나리), most likely
+    first. An ingredient whose name shows it (새우 for shrimp) is left to the verdict.
+
+    What is avoided is in the user's language, not tag codes (2026-11-15), and is never
+    the user's restriction: called "matched_user_restrictions" until 2026-11-22, it made
+    the model write "생선 제한" for a vegan's 어묵. A per-item rule with an English example
+    was removed on 2026-11-17 (the model copied "may contain" into Korean); see ⑧ §8.
+    How often and the user's restriction stay out: the fixed tail and the verdict say
+    them ("잡채에는 이것도 자주 들어가고, 비건 기준에 맞지 않아요" only added words)."""
+
+    groups: dict[tuple[str, ...], list] = {}
+    for item in _by_likelihood(response.risk_ingredients):
+        if needs_explaining(item):
+            groups.setdefault(tuple(sorted(item.matched_tags)), []).append(item)
+    return [
+        {
+            "avoided_in_them": [tag_name(t, request.locale) for t in tags],
+            "ingredients": [
+                {
+                    "name": item.ingredient.localized_name,
+                    "korean_name": item.ingredient.canonical_name,
+                    "role": item.role,
+                    "hard_to_remove": item.role in ("identity", "hidden"),
+                }
+                for item in items[:MAX_PER_GROUP]
+            ],
+        }
+        for tags, items in list(groups.items())[:MAX_GROUPS]
+    ]
 
 
 def _by_likelihood(items):
@@ -692,7 +711,7 @@ class ReasonWriter:
         except Exception:
             return None
         korean_only = untranslated(
-            [*(i["name"] for i in payload["risk_ingredients"]), *payload["other_ingredients_in_menu"]],
+            [*(i.ingredient.localized_name for i in response.risk_ingredients), *payload["other_ingredients_in_menu"]],
             request.locale,
         )
         return check_reason(
