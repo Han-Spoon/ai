@@ -25,6 +25,7 @@ from parser import build_menu_item, parse_menu_candidates  # noqa: E402
 from result_builder import (  # noqa: E402
     build_final_result,
     build_menu_analysis,
+    build_scan_quality,
     expand_slash_menu_choices,
 )
 
@@ -510,6 +511,72 @@ def test_menu_005_quality_counts_all_option_price_anchors():
     assert quality["price_anchor_count"] == 21
     assert quality["price_match_count"] == 21
     assert quality["pair_coverage"] == 1.0
+
+
+_BRIGHT_GLARE_QUALITY = {
+    "available": True,
+    "score": 30,
+    "brightness": 230.0,
+    "glare_ratio": 0.8,
+    "reasons": [
+        "이미지가 너무 밝아 글자가 날아갈 수 있습니다.",
+        "강한 빛 반사로 보이는 영역이 많습니다.",
+    ],
+    "suggestions": ["노출을 낮추거나 빛을 직접 받지 않는 각도로 촬영해주세요."],
+}
+
+
+def test_white_paper_menu_with_good_ocr_structure_is_usable(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    image = cv2.imread(str(ROOT / "images" / "menu_005.jpg"))
+    upscaled = tmp_path / "menu_005_x3.png"
+    cv2.imwrite(str(upscaled), cv2.resize(image, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC))
+    tokens = _sample_tokens("menu_005")
+
+    quality = build_scan_quality(upscaled, parse_menu_candidates(tokens), raw_lines=tokens)
+
+    assert quality["image_quality"]["glare_ratio"] >= 0.08
+    assert quality["image_quality"]["reasons"]
+    assert quality["status"] == "usable"
+    assert quality["reasons"] == []
+
+
+def test_image_warnings_with_good_ocr_structure_stay_observations_only(monkeypatch):
+    monkeypatch.setattr("result_builder.analyze_image_quality", lambda path: _BRIGHT_GLARE_QUALITY)
+    tokens = _sample_tokens("menu_001")
+
+    quality = build_scan_quality(
+        ROOT / "images" / "menu_001.jpg", parse_menu_candidates(tokens), raw_lines=tokens
+    )
+
+    assert quality["status"] == "usable"
+    assert quality["score"] >= 70
+    assert quality["reasons"] == []
+    assert quality["retake_suggestions"] == []
+    assert quality["image_quality"]["reasons"] == _BRIGHT_GLARE_QUALITY["reasons"]
+
+
+def test_blurry_image_with_poor_ocr_structure_is_not_usable(monkeypatch):
+    blur_reason = "이미지가 흐려 글자 경계가 선명하지 않습니다."
+    monkeypatch.setattr(
+        "result_builder.analyze_image_quality",
+        lambda path: {
+            "available": True,
+            "score": 40,
+            "blur_score": 20.0,
+            "reasons": [blur_reason],
+            "suggestions": ["카메라 초점을 메뉴판 글자에 맞춘 뒤 흔들리지 않게 다시 촬영해주세요."],
+        },
+    )
+    tokens = _sample_tokens("menu_001")[:6]
+
+    quality = build_scan_quality(
+        ROOT / "images" / "menu_001.jpg", parse_menu_candidates(tokens), raw_lines=tokens
+    )
+
+    assert quality["status"] in {"low_confidence", "needs_retake"}
+    assert blur_reason in quality["reasons"]
+    assert quality["retake_suggestions"]
 
 
 def test_option_prices_prevent_unnecessary_preprocessing_retry():

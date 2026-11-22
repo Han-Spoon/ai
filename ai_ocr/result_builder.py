@@ -249,6 +249,12 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         if mean_pair_confidence < 0.45:
             hard_retake = True
 
+    ocr_structure_ok = (
+        not reasons
+        and raw_line_count is not None
+        and mean_pair_confidence is not None
+    )
+
     if image_width and image_height and min(image_width, image_height) < 600:
         reasons.append("이미지 해상도가 낮아 메뉴판 판독이 어렵습니다.")
         # 낮은 해상도만으로 결과를 폐기하지 않는다. OCR 구조가 함께 나쁠 때만
@@ -256,7 +262,7 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         if menu_count < 3 or (price_anchor_count and pair_coverage < 0.5):
             hard_retake = True
 
-    if image_quality.get("available"):
+    if image_quality.get("available") and not ocr_structure_ok:
         reasons.extend(image_quality.get("reasons", []))
         if image_quality.get("score") is not None and image_quality["score"] < 45:
             hard_retake = True
@@ -267,7 +273,7 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         price_match_ratio=price_match_ratio,
         image_width=image_width,
         image_height=image_height,
-        image_quality_score=image_quality.get("score"),
+        image_quality_score=None if ocr_structure_ok else image_quality.get("score"),
     )
 
     if hard_retake:
@@ -290,7 +296,9 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         "image_width": image_width,
         "image_height": image_height,
         "image_quality": image_quality,
-        "retake_suggestions": image_quality.get("suggestions", []),
+        "retake_suggestions": (
+            [] if status == "usable" else image_quality.get("suggestions", [])
+        ),
         "reasons": dedupe(reasons),
     }
 
