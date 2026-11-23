@@ -5,13 +5,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_SERVING_RE = re.compile(r"(?:^|\s)(?P<option>\d+\s*(?:인분|인|人))\s*$", re.IGNORECASE)
+# Serving and quantity options start with a digit, so they are split even when
+# written without a space ("개성식손만두4개"). The lookbehind keeps a whole
+# number together ("삼겹살1500g" -> "1500g", not "500g").
+_SERVING_RE = re.compile(r"(?<![\d.])(?P<option>\d+\s*(?:인분|인|人))\s*$", re.IGNORECASE)
 _SIZE_RE = re.compile(
     r"(?:^|\s)(?P<option>특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|"
     r"小|中|大|특|보통|곱빼기|곱배기)\s*$"
 )
 _QUANTITY_RE = re.compile(
-    r"(?:^|\s)(?P<option>\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)"
+    r"(?<![\d.])(?P<option>\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)"
     r"(?:\s*이상)?)\s*$",
     re.IGNORECASE,
 )
