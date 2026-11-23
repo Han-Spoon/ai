@@ -1,11 +1,17 @@
 """⑧ reason sentence: written by the LLM, checked by code (docs/8-agent-xai.md §0-2, §4).
 
-The LLM gets the verdict code already decided and only writes one or two sentences in
-the user's language. Before the sentence goes out, code checks it (#174):
+Code first decides what the reason is made of (``reason_route``, 2026-11-23): nothing,
+fixed limit sentences only (no LLM), or the LLM's explanation of the ingredient groups,
+with the limit sentences added by code. The prompt is put together with only the rules
+the menu needs (``reason_instructions``). The LLM gets the verdict code already decided
+and only writes the group sentences in the user's language. Before they go out, code
+checks them (#174):
 
 - every percentage must be one the verdict already shows (never 0% or 100%),
-- no ingredient name the request did not carry (a name the request carries only in
-  Korean may come back in the LLM's own translation, which it lists alongside, §4),
+- no ingredient name other than those that hit the user (2026-11-23; until then any
+  name the request carried; a name given only in Korean may come back in the LLM's own
+  translation, which it lists alongside, §4),
+- every group named at least once (2026-11-23),
 - no "it's safe" claim on a danger or caution verdict,
 - no Hangul outside allowed names when the user's language is not Korean.
 
@@ -21,6 +27,7 @@ import asyncio
 import re
 from collections.abc import Iterable
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +35,7 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
-from .messages import _sentences, reason_tail, shown_percent
+from .messages import _sentences, limit_sentences, reason_tail, shown_percent
 from .names import all_rows, dictionary_name, display_name, standard_rows
 from .policy import information_failed
 from .profile import forbidden_tags
@@ -119,7 +126,12 @@ _PERCENT_WORD_RE = re.compile(
 # "百分之80" puts the word first; with Chinese numerals it cannot be checked at all.
 _ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 
-INSTRUCTIONS = """You write the short "why" line under a food safety verdict for a tourist
+# The reason prompt is put together per menu (2026-11-23, reason_instructions): a rule
+# or Korean example goes in only when the case needs it. One fixed prompt with every
+# rule, example and input made the model use what did not apply, e.g. a pork-allergy
+# 새우튀김 with nothing to explain got "가쓰오부시, 간장 … 돼지고기가 들어갈 수 있어요"
+# from the full ingredient list it was also given.
+REASON_HEAD = """You write the short "why" line under a food safety verdict for a tourist
 at a Korean restaurant. Code already decided the verdict; you only explain it.
 Write one short, friendly sentence for each group in explain_groups, in order, in
 {language}, speaking to the tourist.
@@ -130,31 +142,41 @@ Write one short, friendly sentence for each group in explain_groups, in order, i
   word as it is). If a tourist may not know them (most Korean
   ingredients such as fermented sauces, salted seafood or fish cake), say what they
   are made from and how. Say "may contain" only once in the sentence. Never put a
-  vague phrase such as "what you avoid" in its place.
-- If any ingredients have hard_to_remove true, add exactly one more sentence for all
+  vague phrase such as "what you avoid" in its place."""
+# hard_to_remove: only when a group ingredient has it, naming only the roles present.
+HARD_TO_REMOVE_RULE = """
+- Some ingredients have hard_to_remove true. Add exactly one more sentence for all
   of them together, after the group sentences: name just those ingredients and why
-  they may be hard to leave out, joining the two reasons in that one sentence when
-  both apply: a main ingredient of this dish (role "identity"), or it goes inside a
-  sauce or seasoning (role "hidden"). Never call a hidden one a main ingredient.
-  Never say what part any other ingredient plays.
-- Explain only the ingredients in explain_groups. Say nothing about how often they
-  go into this dish, and not that they go against the tourist's restriction (the
-  verdict already says so).
-- Fixed sentences are added after yours: which ingredients most of our recipes
-  use, and what the tourist can do next with the cards on the screen. So never
-  write a percentage or how likely anything is, never say what to do next, and
-  never mention a card.
+  they may be hard to leave out: {why}. Never say what part any other ingredient
+  plays."""
+HARD_TO_REMOVE_WHY = {
+    "identity": 'a main ingredient of this dish (role "identity")',
+    "hidden": 'it goes inside a sauce or seasoning (role "hidden"); never call it a main ingredient',
+}
+REASON_BODY = """
+- Explain only the ingredients in explain_groups and name no other ingredient. Say
+  nothing about how often they go into this dish, and not that they go against the
+  tourist's restriction (the verdict already says so).
+- Fixed sentences are added after yours: which ingredients most of our recipes use,
+  why the result may be less certain, and what the tourist can do next with the
+  cards on the screen. So never write a percentage or how likely anything is, never
+  say why the result is uncertain, never say what to do next, and never mention a
+  card.
 - Say that ingredients may go into this dish, not that they are mixed into it.
 - End every sentence with a period. Never use a semicolon.
-- Use only ingredients from the input, with the given names. Never add others.
+- Use only the ingredient names given in explain_groups."""
+# Only when a group name has no translation yet (non-Korean answers).
+TRANSLATE_RULE = """
   A name given in Korean has no translation yet: translate it into {language}, and
-  list each such name with your translation in name_translations.
+  list each such name with your translation in name_translations."""
+REASON_TAIL = """
 - State only what the input says. Do not name other dishes, broths, or serving
   styles, and do not invent examples of how it is used. Saying how an ingredient
-  itself is made is fine.
-- For evidence_basis "estimated", speak of a possibility, never a certainty.
-- If known_limits is not empty, also say in plain words why the result is less
-  certain, using only those facts.
+  itself is made is fine."""
+# Only for estimates; an owner-confirmed ingredient is in the dish.
+ESTIMATED_RULE = """
+- Speak of a possibility, never a certainty."""
+REASON_END = """
 - Never say or imply the dish is safe. Do not use the word "safe" (or its translation)
   at all, not even in "we can't say it is safe". Never soften or change the verdict.
 - Write every word in {language}. {dish}
@@ -162,26 +184,32 @@ Write one short, friendly sentence for each group in explain_groups, in order, i
 
 # Added only for Korean: told to every language, the model put "요" after Chinese.
 KOREAN_STYLE = "\n- Write in polite 해요체, like ~있어요 and ~해요. Do not add an extra 요."
-# Korean wording for the reason only; the high-risk review shares KOREAN_STYLE. Card names and the "80% 이상" sentence are templates now (messages.py
-# ``reason_tail``, 2026-11-22).
-REASON_KOREAN_STYLE = (
-    # Rules piece by piece kept slipping (2026-11-22~23): "가공육이라 돼지고기가 들어갈 수
-    # 있어요" after "돼지고기가 들어간", "소주는 술이라서 술이 들어갈 수 있어요", "가공육예요",
-    # "(부대찌개)의 주재료라서", "섞여 있을 수 있어서". Example sentences instead, Korean
-    # only: an English example in the shared rules was copied into Korean and Chinese
-    # (2026-11-17). An example name not in the input fails the name check, so a copied
-    # example is dropped, never shown.
-    "\n- Write like these examples, with this dish's own ingredients and words:"
+# Korean examples for the reason only; the high-risk review shares KOREAN_STYLE.
+# Rules piece by piece kept slipping (2026-11-22~23): "가공육이라 돼지고기가 들어갈 수
+# 있어요" after "돼지고기가 들어간", "소주는 술이라서 술이 들어갈 수 있어요", "가공육예요",
+# "(부대찌개)의 주재료라서", "섞여 있을 수 있어서". Example sentences instead, Korean
+# only: an English example in the shared rules was copied into Korean and Chinese
+# (2026-11-17). An example name not in the input fails the name check, so a copied
+# example is dropped, never shown. The hard-to-remove examples go in only with that
+# rule, and only for the roles present (2026-11-23).
+KOREAN_EXAMPLES_HEAD = "\n- Write like these examples, with this dish's own ingredients and words:"
+KOREAN_GROUP_EXAMPLES = (
     "\n  햄, 소시지, 베이컨은 가공육이어서 돼지고기가 들어갈 수 있어요."
     "\n  멸치액젓은 멸치를 소금에 절여 발효시켜 만든 액젓이어서 생선이 들어갈 수 있어요."
     "\n  어묵은 생선 살을 갈아 반죽해 튀기거나 쪄서 만든 가공식품이어서 생선이 들어갈 수 있어요."
     "\n  굴소스는 굴을 끓여 졸여 만든 소스여서 조개류가 들어갈 수 있어요."
-    # One sentence for every hard-to-leave-out ingredient: "멸치액젓은 … 빼기 어려울 수
-    # 있어요. 새우젓은 … 빼기 어려울 수 있어요." repeated itself (2026-11-23).
-    "\n  멸치액젓과 새우젓은 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요."
-    "\n  햄과 소시지는 이 메뉴의 주재료라서, 새우젓은 양념이나 소스 안에 들어가서 빼기"
-    " 어려울 수 있어요."
 )
+# One sentence for every hard-to-leave-out ingredient: "멸치액젓은 … 빼기 어려울 수
+# 있어요. 새우젓은 … 빼기 어려울 수 있어요." repeated itself (2026-11-23).
+KOREAN_HARD_TO_REMOVE_EXAMPLES: dict[frozenset[str], str] = {
+    frozenset({"identity"}): "\n  햄과 소시지는 이 메뉴의 주재료라서 빼기 어려울 수 있어요.",
+    frozenset({"hidden"}): "\n  멸치액젓과 새우젓은 양념이나 소스 안에 들어가서 빼기 어려울 수 있어요.",
+    frozenset({"identity", "hidden"}): (
+        "\n  햄과 소시지는 이 메뉴의 주재료라서, 새우젓은 양념이나 소스 안에 들어가서 빼기"
+        " 어려울 수 있어요."
+    ),
+}
+
 # Korean may name the dish ("이것도 김치찌개에 들어갈 수 있어요", 2026-11-22). Other
 # languages say "this dish": the Korean menu name inside them read as a slip.
 DISH_IN_KOREAN = "Call the dish by its menu name."
@@ -425,36 +453,38 @@ def check_reason(
     return text
 
 
-def request_names(request: DecisionRequest) -> set[str]:
-    """Korean and localized names of every ingredient this request carries."""
+def risk_names(response: DecisionResponse) -> set[str]:
+    """Korean and localized names (with translations) of the ingredients that hit the
+    user. The reason may name only these (2026-11-23): checking against every ingredient
+    the request carried let a 새우튀김 reason name 간장 and 마요네즈 as causes of pork.
 
-    localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
-    refs = [
-        *(r.ingredient for r in request.confirmed_results),
-        *(r.ingredient for r in request.probability_results),
-        *(r.ingredient for r in request.proposed_variant_ingredients),
-    ]
-    names = with_translations(ref.canonical_name for ref in refs)
-    names |= {localized[ref.ingredient_id] for ref in refs if ref.ingredient_id in localized}
+    A standard name inside one of them counts too (멸치 in 멸치액젓, 굴 in 굴소스): saying
+    what an ingredient is made from is what the reason is for, and "멸치액젓과 까나리는
+    멸치와 까나리로 만든…" was dropped for 멸치 in the first real run (2026-11-23)."""
+
+    korean = [i.ingredient.canonical_name for i in response.risk_ingredients]
+    parts = {n for n in known_names("ko") if any(n in name for name in korean)}
+    names = with_translations([*korean, *parts])
+    names |= {i.ingredient.localized_name for i in response.risk_ingredients}
     return names
 
 
-# Why the result is uncertain, as plain facts the LLM may retell (never the codes
-# themselves). Only signals the user can understand; anything else is left out.
-WARNING_FACTS: dict[str, str] = {
-    "insufficient_sources": "Only a few web recipes were found for this dish.",
-    "web_search_deadline_exceeded": "The web search ran out of time, so only some recipes were read.",
-    "web_llm_extraction_failed": "Some web recipes could not be read fully, so ingredients may be missing.",
-    "knowledge_slice_unavailable": "Some saved information about this dish could not be loaded.",
-    "unmapped_constraint_tags": "For some ingredients it is unclear which food restrictions they affect.",
-    "constraint_tags_lookup_failed": "For some ingredients it is unclear which food restrictions they affect.",
-    "max_depth_reached": "Ingredients inside sauces or bases could not be traced all the way.",
-    "store_context_missing": "No restaurant was chosen for this scan, so the owner's answers cannot be used.",
-    "cycle_detected": "Ingredients inside sauces or bases could not be traced all the way.",
+# Warning codes the user can understand, mapped to messages.py ``LIMIT_SENTENCES``.
+# Anything else is left out.
+WARNING_LIMITS: dict[str, str] = {
+    "insufficient_sources": "few_web_recipes",
+    "web_search_deadline_exceeded": "web_timeout",
+    "web_llm_extraction_failed": "web_read_failed",
+    "knowledge_slice_unavailable": "saved_info_unavailable",
+    "unmapped_constraint_tags": "unclear_restrictions",
+    "constraint_tags_lookup_failed": "unclear_restrictions",
+    "max_depth_reached": "nested_untraced",
+    "store_context_missing": "no_store",
+    "cycle_detected": "nested_untraced",
 }
-INFORMATION_FACTS: dict[str, str] = {
-    "partial": "Part of the ingredient information could not be loaded.",
-    "none": "The ingredient information could not be loaded.",
+INFORMATION_LIMITS: dict[str, str] = {
+    "partial": "partial_information",
+    "none": "no_information",
 }
 
 
@@ -463,14 +493,15 @@ INFORMATION_FACTS: dict[str, str] = {
 THIN_PRIORS = {"uninformative"}
 
 
-def reason_facts(request: DecisionRequest) -> list[str]:
-    """Plain reasons the result is less certain: warnings, ``information_status``, and
-    (2026-11-02) a restricted ingredient guessed from the menu name or estimated with no
-    recipe data at all."""
+def limit_text(request: DecisionRequest) -> list[str]:
+    """Why the result is less certain, as fixed sentences in the user's language
+    (2026-11-23; until then English facts for the LLM to retell): warnings,
+    ``information_status``, and a restricted ingredient guessed from the menu name or
+    estimated with no recipe data at all (2026-11-02)."""
 
-    facts = [WARNING_FACTS[w.code] for w in request.warnings if w.code in WARNING_FACTS]
+    codes = [WARNING_LIMITS[w.code] for w in request.warnings if w.code in WARNING_LIMITS]
     if request.information_status == "none" or information_failed(request):
-        facts.append(INFORMATION_FACTS[request.information_status])
+        codes.append(INFORMATION_LIMITS[request.information_status])
 
     forbidden = forbidden_tags(request.user_profile)
     localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
@@ -478,23 +509,25 @@ def reason_facts(request: DecisionRequest) -> list[str]:
     def name(ref) -> str:
         return display_name(ref, localized, request.locale)
 
-    for variant in request.proposed_variant_ingredients:
-        if set(variant.constraint_tags) & forbidden:
-            facts.append(f"{name(variant.ingredient)} is guessed from the menu name, not from recipes.")
-    for result in request.probability_results:
-        if result.prior_source in THIN_PRIORS and set(result.constraint_tags) & forbidden:
-            facts.append(
-                f"There is no recipe data for {name(result.ingredient)} in this dish, so its "
-                f"chance is only a rough default."
-            )
-    return list(dict.fromkeys(facts))
+    guessed = [
+        name(v.ingredient)
+        for v in request.proposed_variant_ingredients
+        if set(v.constraint_tags) & forbidden
+    ]
+    no_data = [
+        name(r.ingredient)
+        for r in request.probability_results
+        if r.prior_source in THIN_PRIORS and set(r.constraint_tags) & forbidden
+    ]
+    return limit_sentences(
+        codes, list(dict.fromkeys(guessed)), list(dict.fromkeys(no_data)), request.locale
+    )
 
 
 def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict:
-    localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
-
-    def name(ref) -> str:
-        return display_name(ref, localized, request.locale)
+    """Only what the LLM explains (2026-11-23): the groups. The menu's other
+    ingredients and the known limits went in too until then, and the model tied them
+    together as causes."""
 
     return {
         "menu": request.menu.normalized_menu_name,
@@ -504,11 +537,6 @@ def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict
         },
         "verdict_sentence": response.message.verdict,
         "explain_groups": explain_groups(request, response),
-        "other_ingredients_in_menu": sorted(
-            {name(r.ingredient) for r in request.probability_results}
-            | {name(r.ingredient) for r in request.confirmed_results}
-        ),
-        "known_limits": reason_facts(request),
     }
 
 
@@ -578,8 +606,10 @@ def tail_text(request: DecisionRequest, response: DecisionResponse) -> str:
 # seasoning"), which are also ingredient names in the tables. Without this, "굴은 양념 안에
 # 들어 있을 수 있어요" was dropped as naming a new ingredient (2026-11-22, 잡채·떡볶이).
 # 젓갈 too: "새우젓도 해산물 젓갈이라" was dropped for 부대찌개 the same way, and the reason
-# is now told to say what an unfamiliar ingredient is (2026-11-22).
-GENERIC_WORDS = ("양념", "소스", "조미료", "젓갈")
+# is now told to say what an unfamiliar ingredient is (2026-11-22). 소금 too (2026-11-23):
+# the Korean example "멸치를 소금에 절여 발효시켜" says how a sauce is made, and a reason
+# copying that wording was dropped.
+GENERIC_WORDS = ("양념", "소스", "조미료", "젓갈", "소금")
 
 
 @lru_cache(maxsize=1)
@@ -669,7 +699,14 @@ NAME_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
+# What the reason is made of, decided by code before any LLM call (2026-11-23):
+# "none" no reason; "limits_only" fixed limit sentences, no LLM; "groups" the LLM
+# explains the groups; "groups_and_limits" the LLM explains the groups and code adds the
+# limit sentences. The LLM never sees the limits.
+ReasonRoute = Literal["none", "limits_only", "groups", "groups_and_limits"]
+
+
+def reason_route(request: DecisionRequest, response: DecisionResponse) -> ReasonRoute:
     """Write a reason only when it says something the verdict sentence and notes do not
     (2026-11-02): an ingredient whose name does not show the restriction it hits, or a
     known limit (few web recipes, missing information). A menu with no information at
@@ -678,12 +715,73 @@ def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
     (2026-11-18, 공기밥 for a user with no restriction got one)."""
 
     if response.risk_level == "safe" or request.no_information:
-        return False
+        return "none"
     if not forbidden_tags(request.user_profile):
-        return False
-    return bool(reason_facts(request)) or any(
-        needs_explaining(item) for item in response.risk_ingredients
+        return "none"
+    groups = any(needs_explaining(item) for item in response.risk_ingredients)
+    limits = bool(limit_text(request))
+    if groups:
+        return "groups_and_limits" if limits else "groups"
+    return "limits_only" if limits else "none"
+
+
+def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
+    return reason_route(request, response) != "none"
+
+
+def reason_instructions(request: DecisionRequest, groups: list[dict], evidence_basis: str) -> str:
+    """The reason prompt with only the rules and Korean examples this menu needs."""
+
+    roles = frozenset(
+        item["role"] for g in groups for item in g["ingredients"]
+        if item["hard_to_remove"] and item["role"] in HARD_TO_REMOVE_WHY
     )
+    template = REASON_HEAD
+    if roles:
+        why = ", or ".join(HARD_TO_REMOVE_WHY[r] for r in ("identity", "hidden") if r in roles)
+        template += HARD_TO_REMOVE_RULE.replace("{why}", why)
+    template += REASON_BODY
+    names = [item["name"] for g in groups for item in g["ingredients"]]
+    if untranslated(names, request.locale):
+        template += TRANSLATE_RULE
+    template += REASON_TAIL
+    if evidence_basis != "confirmed":
+        template += ESTIMATED_RULE
+    template += REASON_END
+    examples = KOREAN_EXAMPLES_HEAD + KOREAN_GROUP_EXAMPLES
+    if roles:
+        examples += KOREAN_HARD_TO_REMOVE_EXAMPLES[roles]
+    return instructions(template, request.locale, korean_extra=examples)
+
+
+def _group_names(item: dict, translations: Iterable[NameTranslation]) -> set[str]:
+    names = {item["name"], item["korean_name"], *with_translations([item["korean_name"]])}
+    names |= {t.translated.strip() for t in translations if t.korean.strip() in names and t.translated.strip()}
+    return {n for n in names if n}
+
+
+def covers_groups(
+    text: str, groups: list[dict], locale: Locale, translations: Iterable[NameTranslation] = ()
+) -> bool:
+    """Every group has at least one of its ingredients named (2026-11-23). A reason
+    that skips a group explains something else, not what the verdict is about."""
+
+    translations = list(translations)
+    lowered = text.lower()
+    runs = _HANGUL_RUN_RE.findall(text)
+
+    def named(name: str) -> bool:
+        # Korean names take particles ("굴은"), so a word that starts with the name
+        # counts; the name check already stops other ingredients.
+        if _HANGUL_RUN_RE.fullmatch(name):
+            return any(run.startswith(name) for run in runs)
+        return _mentions(lowered, name.lower(), locale) if locale in _WORD_LOCALES else name.lower() in lowered
+
+    for group in groups:
+        names = set().union(*(_group_names(item, translations) for item in group["ingredients"]))
+        if not any(named(n) for n in names):
+            return False
+    return True
 
 
 class ReasonWriter:
@@ -694,23 +792,30 @@ class ReasonWriter:
         self.timeout_seconds = timeout_seconds
 
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
-        """The LLM's checked sentences, then the fixed tail. When the LLM fails or is
-        dropped, ``reason`` stays None as before (§4 "LLM 실패"): the tail goes only
-        with a reason it follows."""
+        """By route (``reason_route``): the LLM's checked sentences, then the fixed limit
+        sentences, then the fixed tail. "limits_only" calls no LLM. When the LLM fails or
+        is dropped, the limit sentences and tail still go if there are limits; with no
+        limits ``reason`` stays None as before (§4 "LLM 실패")."""
 
-        if not needs_reason(request, response):
+        route = reason_route(request, response)
+        if route == "none":
             return None
-        written = await self._write_checked(request, response)
-        if written is None:
-            return None
-        return _sentences([p for p in (written, tail_text(request, response)) if p], request.locale)
+        limits = limit_text(request)
+        written = None
+        if route in ("groups", "groups_and_limits"):
+            written = await self._write_checked(request, response)
+            if written is None and not limits:
+                return None
+        parts = [written, *limits, tail_text(request, response)]
+        return _sentences([p for p in parts if p], request.locale)
 
     async def _write_checked(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
         payload = reason_payload(request, response)
+        groups = payload["explain_groups"]
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
-                    instructions(INSTRUCTIONS, request.locale, korean_extra=REASON_KOREAN_STYLE),
+                    reason_instructions(request, groups, response.evidence_basis),
                     payload,
                     ReasonOutput,
                     MAX_OUTPUT_TOKENS,
@@ -720,10 +825,9 @@ class ReasonWriter:
         except Exception:
             return None
         korean_only = untranslated(
-            [*(i.ingredient.localized_name for i in response.risk_ingredients), *payload["other_ingredients_in_menu"]],
-            request.locale,
+            [i.ingredient.localized_name for i in response.risk_ingredients], request.locale
         )
-        return check_reason(
+        checked = check_reason(
             output.reason,
             locale=request.locale,
             risk_level=response.risk_level,
@@ -732,7 +836,7 @@ class ReasonWriter:
                 for item in response.risk_ingredients
                 if item.posterior_mean is not None
             ],
-            allowed_names=request_names(request)
+            allowed_names=risk_names(response)
             | restriction_names(forbidden_tags(request.user_profile))
             | translated_names(output.name_translations, korean_only)
             | generic_words(),
@@ -741,3 +845,6 @@ class ReasonWriter:
             evidence_basis=response.evidence_basis,
             korean_names=korean_only,
         )
+        if checked is None or not covers_groups(checked, groups, request.locale, output.name_translations):
+            return None
+        return checked

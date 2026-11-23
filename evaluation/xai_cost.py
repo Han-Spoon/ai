@@ -23,7 +23,6 @@ from ai_decision_policy.tests.test_decision_policy import (
     FISH_ALLERGY,
     FISH_SAUCE,
     HALAL,
-    PORK,
     probability,
     request,
     warning,
@@ -42,9 +41,11 @@ def reason_requests(locale: str) -> list:
             probability_results=[probability(FISH_SAUCE, ["is_fish"], 0.8, role="hidden")],
             locale=locale,
         ),
+        # A limit alone no longer calls the LLM (2026-11-23, reason_route "limits_only"),
+        # so the third menu has an ingredient to explain as well as the limit.
         request(
             HALAL,
-            probability_results=[probability(PORK, ["is_pork"], 0.62)],
+            probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62)],
             warnings=[warning("insufficient_sources")],
             locale=locale,
         ),

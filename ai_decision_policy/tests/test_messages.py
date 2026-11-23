@@ -499,3 +499,34 @@ def test_grouped_hard_to_remove_note_in_every_language(locale) -> None:
     ]
     notes = message(request(VEGAN, probability_results=results, locale=locale)).notes
     assert len(notes) == 1 and notes[0].code == "hard_to_remove"
+
+
+# --- percent in the verdict is a true lower bound (2026-11-23) --------------------
+
+
+@pytest.mark.parametrize(
+    ("posterior", "shown"),
+    [(0.045, 4), (0.29, 29), (0.999, 99), (1.0, 99), (0.01, 1), (0.005, 1)],
+)
+def test_shown_percent_rounds_down(posterior: float, shown: int) -> None:
+    # "n% 이상" must not overstate: 4.5% was shown as "5% 이상" (새우튀김, 2026-11-23).
+    assert messages.shown_percent(posterior) == shown
+
+
+def test_estimate_at_four_and_a_half_percent_says_at_least_four() -> None:
+    ko = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.045)], locale="ko")
+    assert message(ko).verdict.endswith("돼지고기가 들어갈 확률이 4% 이상이에요.")
+
+
+def test_estimate_under_one_percent_says_under_one_percent() -> None:
+    results = [probability(PORK, ["is_pork"], 0.005)]
+    ko = request(HALAL, probability_results=results, locale="ko")
+    assert message(ko).verdict.endswith("돼지고기가 들어갈 확률은 1% 미만이에요.")
+    en = request(HALAL, probability_results=results, localized_names={101: "pork"})
+    assert message(en).verdict.endswith("The chance it contains pork is under 1%.")
+
+
+@pytest.mark.parametrize("locale", LOCALES)
+def test_under_one_percent_template_exists_in_every_language(locale: str) -> None:
+    text = messages.BELOW_ONE_PERCENT[locale]("X")
+    assert "X" in text and "1" in text

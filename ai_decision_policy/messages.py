@@ -3,8 +3,8 @@
 Fixed templates, no LLM. Ingredient names come from ``localized_name`` (Korean when
 there is no translation); nothing here translates or guesses. The verdict line follows
 the result screen, but first says whether the user can eat the dish (2026-11-22), then
-who confirmed what and what is still unchecked, with no percentages (the screen shows
-them per ingredient). ``reason`` is the
+who confirmed what and what is still unchecked; an estimate also gives the highest
+chance as "n% 이상" (2026-11-23). ``reason`` is the
 LLM part (§0-2); the verdict and notes stand on their own (§4 "LLM 실패").
 """
 
@@ -123,16 +123,31 @@ AT_LEAST: dict[str, Callable[[str, int], str]] = {
     "ja": lambda x, p: f"{x}が入っている確率は{p}%以上です。",
     "es": lambda x, p: f"La probabilidad de que lleve {x} es de al menos un {p}%.",
 }
+# Under 1%: "1% 이상" would be untrue and "0%" reads as "none" (§3 확률 수치 표시).
+BELOW_ONE_PERCENT: dict[str, Callable[[str], str]] = {
+    "ko": lambda x: f"{x}{_ko(x, '이', '가')} 들어갈 확률은 1% 미만이에요.",
+    "en": lambda x: f"The chance it contains {x} is under 1%.",
+    "ar": lambda x: f"احتمال احتوائه على {x} أقل من 1%.",
+    "zh-CN": lambda x: f"含有{x}的可能性低于1%。",
+    "zh-TW": lambda x: f"含有{x}的可能性低於1%。",
+    "ja": lambda x: f"{x}が入っている確率は1%未満です。",
+    "es": lambda x: f"La probabilidad de que lleve {x} es menor del 1%.",
+}
 
 
 def shown_percent(posterior_mean: float) -> int:
-    """The whole number shown for an estimate: never 0% or 100%."""
+    """The whole number shown for an estimate, rounded down (2026-11-23): the verdict
+    says "n% 이상", so 4.5% is "4%", never "5%". Never 0% or 100%: under 1% is 1 (the
+    verdict says "1% 미만" then, ``is_below_one_percent``), and 100% is 99."""
 
-    if posterior_mean < 0.01:
+    if is_below_one_percent(posterior_mean):
         return 1
-    if posterior_mean > 0.99:
-        return 99
-    return math.floor(posterior_mean * 100 + 0.5)
+    # round() first so 0.29 * 100 = 28.999… still shows 29.
+    return min(99, math.floor(round(posterior_mean * 100, 6)))
+
+
+def is_below_one_percent(posterior_mean: float) -> bool:
+    return posterior_mean < 0.01
 
 
 # CAUTION/estimated: ingredients that may be in the dish (an estimate, never "is in").
@@ -439,6 +454,127 @@ def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, me
     return _sentences(parts, lang)
 
 
+# Why the result is less certain, as fixed sentences (2026-11-23). These went to the LLM
+# as facts to retell until then, and with nothing else to explain it tied them to other
+# ingredients: a pork-allergy 새우튀김 read "가쓰오부시, 간장, … 미성분이 확인되지 않은
+# 튀김가루와 빵가루는 … 돼지고기가 들어갈 수 있어요". Code adds them now; the LLM never
+# sees them (reason.py ``reason_route``). ko 외 6개 언어는 원어민 확인 전 초안 (#135).
+LIMIT_SENTENCES: dict[str, dict[str, str]] = {
+    "few_web_recipes": {
+        "ko": "이 메뉴는 웹에서 찾은 레시피가 적어서 결과가 덜 확실해요.",
+        "en": "Only a few web recipes were found for this dish, so the result is less certain.",
+        "ar": "لم يُعثر إلا على عدد قليل من الوصفات لهذا الطبق على الإنترنت، لذا النتيجة أقل يقينًا.",
+        "zh-CN": "网上找到的这道菜的食谱很少，所以结果不太确定。",
+        "zh-TW": "網路上找到的這道菜的食譜很少，所以結果不太確定。",
+        "ja": "この料理のウェブレシピが少ないため、結果はあまり確かではありません。",
+        "es": "Encontramos pocas recetas de este plato en internet, así que el resultado es menos seguro.",
+    },
+    "web_timeout": {
+        "ko": "웹 검색 시간이 모자라 레시피를 일부만 읽어서 결과가 덜 확실해요.",
+        "en": "The web search ran out of time and read only some recipes, so the result is less certain.",
+        "ar": "انتهى وقت البحث على الإنترنت قبل قراءة كل الوصفات، لذا النتيجة أقل يقينًا.",
+        "zh-CN": "网络搜索时间不够，只读了部分食谱，所以结果不太确定。",
+        "zh-TW": "網路搜尋時間不夠，只讀了部分食譜，所以結果不太確定。",
+        "ja": "ウェブ検索の時間が足りず一部のレシピしか読めなかったため、結果はあまり確かではありません。",
+        "es": "La búsqueda en internet se quedó sin tiempo y solo leyó algunas recetas, así que el resultado es menos seguro.",
+    },
+    "web_read_failed": {
+        "ko": "일부 웹 레시피를 끝까지 읽지 못해서 빠진 재료가 있을 수 있어요.",
+        "en": "Some web recipes could not be read fully, so some ingredients may be missing.",
+        "ar": "تعذّرت قراءة بعض الوصفات كاملة، لذا قد تكون بعض المكونات ناقصة.",
+        "zh-CN": "部分网络食谱没能完整读取，可能漏掉了一些食材。",
+        "zh-TW": "部分網路食譜沒能完整讀取，可能漏掉了一些食材。",
+        "ja": "一部のウェブレシピを最後まで読めなかったため、抜けている食材があるかもしれません。",
+        "es": "No pudimos leer completas algunas recetas, así que puede faltar algún ingrediente.",
+    },
+    "saved_info_unavailable": {
+        "ko": "이 메뉴에 저장된 정보 일부를 불러오지 못했어요.",
+        "en": "Some saved information about this dish could not be loaded.",
+        "ar": "تعذّر تحميل بعض المعلومات المحفوظة عن هذا الطبق.",
+        "zh-CN": "这道菜的部分已保存信息没能加载。",
+        "zh-TW": "這道菜的部分已儲存資訊沒能載入。",
+        "ja": "この料理について保存された情報の一部を読み込めませんでした。",
+        "es": "No se pudo cargar parte de la información guardada sobre este plato.",
+    },
+    "unclear_restrictions": {
+        "ko": "일부 재료는 어떤 식단 제한에 걸리는지 확인하지 못했어요.",
+        "en": "For some ingredients we could not tell which dietary restrictions they affect.",
+        "ar": "لم نتمكن من معرفة القيود الغذائية التي تخص بعض المكونات.",
+        "zh-CN": "有些食材无法确认会涉及哪些饮食限制。",
+        "zh-TW": "有些食材無法確認會涉及哪些飲食限制。",
+        "ja": "一部の食材は、どの食事制限に関わるか確認できませんでした。",
+        "es": "En algunos ingredientes no pudimos saber a qué restricciones afectan.",
+    },
+    "nested_untraced": {
+        "ko": "양념이나 소스 안에 든 재료를 끝까지 확인하지 못했어요.",
+        "en": "Ingredients inside sauces or seasonings could not be traced all the way.",
+        "ar": "تعذّر تتبّع كل المكونات الموجودة داخل الصلصات أو التوابل.",
+        "zh-CN": "酱料或调味料里的食材没能完全追查。",
+        "zh-TW": "醬料或調味料裡的食材沒能完全追查。",
+        "ja": "たれやソースの中の食材を最後まで確認できませんでした。",
+        "es": "No pudimos rastrear del todo los ingredientes dentro de salsas o condimentos.",
+    },
+    "no_store": {
+        "ko": "식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요.",
+        "en": "No restaurant was chosen, so this is estimated from recipes without the owner's answers.",
+        "ar": "لم يتم اختيار مطعم، لذا هذه النتيجة تقديرية من الوصفات دون إجابات صاحب المطعم.",
+        "zh-CN": "没有选择餐厅，所以只根据食谱推测，没有店主的确认。",
+        "zh-TW": "沒有選擇餐廳，所以只根據食譜推測，沒有店家的確認。",
+        "ja": "お店が選ばれていないため、店主の確認なしでレシピだけから推定しました。",
+        "es": "No se eligió un restaurante, así que es una estimación a partir de recetas, sin respuestas del dueño.",
+    },
+    "partial_information": {
+        "ko": "재료 정보 일부를 불러오지 못했어요.",
+        "en": "Part of the ingredient information could not be loaded.",
+        "ar": "تعذّر تحميل جزء من معلومات المكونات.",
+        "zh-CN": "部分食材信息没能加载。",
+        "zh-TW": "部分食材資訊沒能載入。",
+        "ja": "食材情報の一部を読み込めませんでした。",
+        "es": "No se pudo cargar parte de la información de los ingredientes.",
+    },
+    "no_information": {
+        "ko": "재료 정보를 불러오지 못했어요.",
+        "en": "The ingredient information could not be loaded.",
+        "ar": "تعذّر تحميل معلومات المكونات.",
+        "zh-CN": "食材信息没能加载。",
+        "zh-TW": "食材資訊沒能載入。",
+        "ja": "食材情報を読み込めませんでした。",
+        "es": "No se pudo cargar la información de los ingredientes.",
+    },
+}
+# Limits about named ingredients. {x} is the joined names, {last} the last word.
+GUESSED_FROM_MENU_NAME: dict[str, VerdictTemplate] = {
+    "ko": lambda x, last: f"{x}{_ko(last, '은', '는')} 레시피가 아니라 메뉴 이름으로 추정한 재료예요.",
+    "en": lambda x, last: f"We guessed {x} from the menu name, not from recipes.",
+    "ar": lambda x, last: f"استنتجنا {x} من اسم الطبق وليس من الوصفات.",
+    "zh-CN": lambda x, last: f"{x}是根据菜名推测的，不是根据食谱。",
+    "zh-TW": lambda x, last: f"{x}是根據菜名推測的，不是根據食譜。",
+    "ja": lambda x, last: f"{x}はレシピではなくメニュー名から推定した食材です。",
+    "es": lambda x, last: f"Dedujimos {x} por el nombre del plato, no por recetas.",
+}
+NO_RECIPE_DATA: dict[str, VerdictTemplate] = {
+    "ko": lambda x, last: f"{x}{_ko(last, '은', '는')} 이 메뉴의 레시피 데이터가 없어서 대략적인 기본값으로 추정했어요.",
+    "en": lambda x, last: f"There is no recipe data for {x} in this dish, so its chance is only a rough default.",
+    "ar": lambda x, last: f"لا توجد بيانات وصفات عن {x} في هذا الطبق، لذا الاحتمال تقديري فقط.",
+    "zh-CN": lambda x, last: f"这道菜没有关于{x}的食谱数据，所以只是粗略的默认估计。",
+    "zh-TW": lambda x, last: f"這道菜沒有關於{x}的食譜資料，所以只是粗略的預設估計。",
+    "ja": lambda x, last: f"この料理には{x}のレシピデータがないため、大まかな既定値で推定しました。",
+    "es": lambda x, last: f"No hay datos de recetas sobre {x} en este plato, así que es solo una estimación aproximada.",
+}
+
+
+def limit_sentences(codes: list[str], guessed: list[str], no_data: list[str], lang: str) -> list[str]:
+    """Fixed sentences for ``codes`` (keys of ``LIMIT_SENTENCES``, in order), then the
+    ingredients guessed from the menu name and those with no recipe data."""
+
+    parts = [LIMIT_SENTENCES[code][lang] for code in dict.fromkeys(codes)]
+    if guessed:
+        parts.append(GUESSED_FROM_MENU_NAME[lang](*_joined(guessed, lang)))
+    if no_data:
+        parts.append(NO_RECIPE_DATA[lang](*_joined(no_data, lang)))
+    return parts
+
+
 def _sentences(parts: list[str], lang: str) -> str:
     return ("" if lang in ("zh-CN", "zh-TW", "ja") else " ").join(parts)
 
@@ -501,6 +637,8 @@ def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str]
         return [], None
     top = max(estimated, key=lambda i: i.posterior_mean)
     subject = _tags(list(top.matched_tags), lang)
+    if is_below_one_percent(top.posterior_mean):
+        return [BELOW_ONE_PERCENT[lang](subject)], subject
     return [AT_LEAST[lang](subject, shown_percent(top.posterior_mean))], subject
 
 
