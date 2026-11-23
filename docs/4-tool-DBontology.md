@@ -211,7 +211,7 @@ flowchart TD
 3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
-   - **같은 재료가 같은 태그로 여러 번 나오면 하나로 합친다** (결정, 2026-10-26, #321·실데이터 QA). 가장 얕은 위치(`depth`가 작은 것, 같으면 먼저 나온 것)의 값을 쓴다. **태그가 다르면 합치지 않고 따로 남긴다.** 경로 태그는 그 경로에서만 성립한다: 마요네즈 안의 식초는 `is_egg`지만 그냥 식초는 아니다. 합집합으로 합치면 그냥 식초(레시피에 자주 나옴)에 `is_egg`가 붙어 확률이 부풀려진다. ⑧은 카드를 재료별로 묶으므로 같은 재료가 여러 줄이어도 태그는 빠지지 않는다. 확인 재료 제외(7번)는 합치기 전에 경로 단위로 한다
+   - **같은 재료가 같은 태그로 여러 번 나오면 하나로 합친다** (결정, 2026-10-26, #321·실데이터 QA). 가장 얕은 위치(`depth`가 작은 것, 같으면 먼저 나온 것)의 값을 쓴다. 다만 **레시피 등장 수(`observations`)는 합친 경로 중 코퍼스별로 가장 큰 값**을 쓴다 (2026-11-23). 숨은 재료가 `max(직접, 부모)`를 쓰는 것(§1-5)과 같은 이유다. 위치만 보고 고르면 확률이 순서에 따라 갈린다: 부대찌개의 새우젓은 배추김치(289개 중 238개) 아래와 김치국물(289개 중 4개) 아래에 다 있는데, 먼저 나온 김치국물 쪽을 남겨 새우 확률이 82%가 아닌 2%로 나왔다. 변형 재료(`variant_suggested`)는 원본 레시피에 관측이 없다는 규칙(§1-5) 때문에 등장 수를 올리지 않는다. **태그가 다르면 합치지 않고 따로 남긴다.** 경로 태그는 그 경로에서만 성립한다: 마요네즈 안의 식초는 `is_egg`지만 그냥 식초는 아니다. 합집합으로 합치면 그냥 식초(레시피에 자주 나옴)에 `is_egg`가 붙어 확률이 부풀려진다. ⑧은 카드를 재료별로 묶으므로 같은 재료가 여러 줄이어도 태그는 빠지지 않는다. 확인 재료 제외(7번)는 합치기 전에 경로 단위로 한다
 6. `knowledge.cache`가 없거나 리비전이 다르면 전체 확장 결과로 `menu_ingredient_cache` 저장 명령을 만들어 응답 `cache_command`에 담는다. 다음 경우는 `null`이다: 리비전이 같은 캐시가 이미 있음 / `store_id: null`(캐시 테이블이 가게 단위라 저장할 곳이 없다) / `runtime_tagged` 변형(검토 전 변형 재료가 원본 메뉴 캐시, 곧 ③의 분모에 섞이면 안 된다). Supervisor가 이 명령을 최종 응답 `persistence_commands`에 넣어 백엔드로 보낸다 (⓪ §4-3). 캐시는 `menu_revision`이 `menus.knowledge_revision`과 같을 때만 유효하다. 메뉴의 레시피·온톨로지가 바뀌면 리비전이 올라가 캐시가 자동 무효화된다. ③은 이 캐시를 메뉴의 전체 재료 목록(분모)으로 쓰므로(③ §0-1), 미확인 재료만 담은 부분 목록을 저장하면 안 된다.
 7. `unconfirmed_only: true`이면 반환 목록에서 확인 재료를 뺀다. 규칙은 아래와 같다
 
@@ -318,7 +318,7 @@ if suggested and variant_origin is None:
     variant_origin = "runtime_tagged"                                  # menu_id: null, base = 고른 후보
 
 paths = expand(seeds + suggested, graph, max_depth=5)                 # 캐시가 있어도 매번 펼침
-full  = merge_same_ingredient(paths)                                  # 같은 재료·같은 태그만 합침, 얕은 위치
+full  = merge_same_ingredient(paths)                                  # 같은 재료·같은 태그만 합침, 얕은 위치·가장 큰 등장 수
 kept  = merge_same_ingredient(drop_confirmed(paths, confirmed))       # present 하위는 남기고 absent 경로만 제외
 
 cache_command = save_cache(full) if store_id and not valid_cache and variant_origin != "runtime_tagged" else None
