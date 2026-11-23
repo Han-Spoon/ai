@@ -255,10 +255,13 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         and mean_pair_confidence is not None
     )
 
-    if image_width and image_height and min(image_width, image_height) < 600:
+    low_resolution = bool(
+        image_width and image_height and min(image_width, image_height) < 600
+    )
+    # 낮은 해상도는 다른 이미지 지표처럼 OCR 구조가 나쁠 때만 사유·점수에 넣는다.
+    # 작아도 메뉴와 가격이 잘 읽힌 사진은 usable로 넘기고, 구조까지 나쁘면 재촬영한다.
+    if low_resolution and not ocr_structure_ok:
         reasons.append("이미지 해상도가 낮아 메뉴판 판독이 어렵습니다.")
-        # 낮은 해상도만으로 결과를 폐기하지 않는다. OCR 구조가 함께 나쁠 때만
-        # 재촬영을 강제하고, 충분히 매칭되면 사용자 확인 가능한 결과를 제공한다.
         if menu_count < 3 or (price_anchor_count and pair_coverage < 0.5):
             hard_retake = True
 
@@ -271,8 +274,8 @@ def build_scan_quality(image: Path, menus, raw_lines=None):
         menu_count=menu_count,
         raw_line_count=raw_line_count,
         price_match_ratio=price_match_ratio,
-        image_width=image_width,
-        image_height=image_height,
+        image_width=None if ocr_structure_ok else image_width,
+        image_height=None if ocr_structure_ok else image_height,
         image_quality_score=None if ocr_structure_ok else image_quality.get("score"),
     )
 

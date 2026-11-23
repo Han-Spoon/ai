@@ -476,7 +476,7 @@ def test_calendar_range_and_url_are_not_prices():
     assert all("http" not in menu["rawName"].lower() for menu in menus)
 
 
-def test_low_resolution_with_complete_pairs_is_reviewable_not_hard_failure():
+def test_low_resolution_with_complete_pairs_is_usable():
     tokens = _sample_tokens("menu_003")
     menus = parse_menu_candidates(tokens)
 
@@ -489,9 +489,37 @@ def test_low_resolution_with_complete_pairs_is_reviewable_not_hard_failure():
     )
     quality = result["scan_quality"]
 
-    assert quality["status"] == "low_confidence"
+    assert min(quality["image_width"], quality["image_height"]) < 600
+    assert quality["status"] == "usable"
+    assert quality["reasons"] == []
+    assert quality["retake_suggestions"] == []
     assert quality["price_anchor_count"] == 12
     assert quality["pair_coverage"] == 1.0
+
+
+@pytest.mark.parametrize("sample_name", ["menu_004", "menu_005"])
+def test_small_samples_with_good_ocr_structure_are_usable(sample_name):
+    tokens = _sample_tokens(sample_name)
+
+    quality = build_scan_quality(
+        ROOT / "images" / f"{sample_name}.jpg", parse_menu_candidates(tokens), raw_lines=tokens
+    )
+
+    assert min(quality["image_width"], quality["image_height"]) < 600
+    assert quality["status"] == "usable"
+    assert quality["reasons"] == []
+
+
+def test_low_resolution_with_poor_ocr_structure_is_not_usable():
+    tokens = _sample_tokens("menu_003")[:6]
+
+    quality = build_scan_quality(
+        ROOT / "images" / "menu_003.jpg", parse_menu_candidates(tokens), raw_lines=tokens
+    )
+
+    assert quality["status"] in {"low_confidence", "needs_retake"}
+    assert "이미지 해상도가 낮아 메뉴판 판독이 어렵습니다." in quality["reasons"]
+    assert quality["score"] < 70
 
 
 def test_menu_005_quality_counts_all_option_price_anchors():
