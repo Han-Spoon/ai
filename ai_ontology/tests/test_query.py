@@ -288,6 +288,20 @@ def test_hidden_ingredient_inherits_parent_counts():  # §7-21
     assert shrimp.observation_basis == "inherited"
 
 
+def test_merged_hidden_ingredient_keeps_the_larger_parent_counts():  # §2-2, 2026-11-23
+    # 액젓 sits under 참치 (1/10) and 김치 (10/10) with the same tags. 참치 comes first, so
+    # its place is kept, but the counts must be 김치's: 부대찌개 새우 was 2% instead of 82%.
+    g = graph(compositions=((9, 2), (1, 2), (2, 3)),
+              composition_tags=((9, 2, "is_shellfish"), (1, 2, "is_shellfish")))
+    k = knowledge(recipe=(9, 1, 4, 5), priors=(("10000recipe", 9, 1), ("10000recipe", 1, 10)))
+    res = query_ontology(request(k=k, g=g), now=NOW)
+    for name in ("액젓", "새우"):
+        entries = [i for i in res.ingredients if i.ingredient.canonical_name == name]
+        assert len(entries) == 1
+        assert entries[0].parent_ingredient.canonical_name == ("참치" if name == "액젓" else "액젓")
+        assert {o.corpus: o.k_count for o in entries[0].observations}["10000recipe"] == 10
+
+
 def test_menu_flags_pass_through():  # §7-22
     res = query_ontology(request(), now=NOW)
     assert res.menu_ambiguity_flags == ["has_unclear_jeotgal"]

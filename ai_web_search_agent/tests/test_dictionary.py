@@ -77,7 +77,10 @@ def test_recipe_data_lines_give_names_the_dictionary_missed() -> None:
 
     # 2026-11-17 check of the priority sites: ④ maps these (오리고기·콩·빵), the dictionary
     # had no entry, so with the LLM down they were lost.
+    # Since the 2026-11-23 crawl the dictionary has 콩비지 and 꽃빵 itself, so only
+    # 오리슬라이스 is left for the line reader.
     content = "재료: 오리슬라이스 1/2팩(500g), 콩비지 1봉 (300g), 꽃빵 8~9개, 양파 1개, 소금 약간"
-    assert ingredient_line_names(content) == ["오리슬라이스", "콩비지", "꽃빵"]
+    assert ingredient_line_names(content) == ["오리슬라이스"]
+    assert find_ingredient_names(content) == ["콩비지", "꽃빵", "양파", "소금"]
     # Page text (no recipe data) is sentences, so nothing is taken from it.
     assert ingredient_line_names("오리슬라이스를 넣고 볶아요") == []

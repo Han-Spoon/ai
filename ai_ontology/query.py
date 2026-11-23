@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 
@@ -257,13 +257,42 @@ def _merge(nodes: list[_Node]) -> list[_Node]:
     식초 inside 마요네즈 carries is_egg, plain 식초 does not. Unioning them would put
     is_egg on plain 식초 with plain 식초's (high) recipe counts. ⑧ groups the entries
     per ingredient for cards, so no tag is lost.
+
+    The shallowest occurrence keeps its place (depth, parent, role), but its counts are
+    the largest of all merged occurrences per corpus, like a child's max(direct, parent)
+    (§1-5). Otherwise the place decides the probability: in 부대찌개 새우젓 sits under
+    배추김치 (238/289) and under 김치국물 (4/289), and keeping whichever came first gave
+    새우 2% instead of 82% (2026-11-23).
     """
 
     ordered = sorted(enumerate(nodes), key=lambda pair: (pair[1].depth, pair[0]))
     merged: dict[tuple[int, frozenset[str]], _Node] = {}
     for _, node in ordered:
-        merged.setdefault((node.ingredient_id, frozenset(node.tags)), node)
+        key = (node.ingredient_id, frozenset(node.tags))
+        kept = merged.setdefault(key, node)
+        if kept is not node:
+            merged[key] = _with_larger_counts(kept, node)
     return list(merged.values())
+
+
+def _with_larger_counts(kept: _Node, other: _Node) -> _Node:
+    """``kept`` with each corpus' k raised to ``other``'s when larger."""
+
+    if kept.source == "variant_suggested":
+        return kept  # base recipes never observed the variant (§1-5): stays without counts
+    counts = {o.corpus: o for o in kept.observations}
+    raised = False
+    for o in other.observations:
+        if o.k_count > (counts[o.corpus].k_count if o.corpus in counts else -1):
+            counts[o.corpus] = o
+            raised = True
+    if not raised:
+        return kept
+    return replace(
+        kept,
+        observations=[counts[c] for c in dict.fromkeys([*(o.corpus for o in kept.observations), *counts])],
+        basis=other.basis if other.basis != "none" else kept.basis,
+    )
 
 
 def _role(node: _Node, graph: _Graph, menu_name: str) -> str:
