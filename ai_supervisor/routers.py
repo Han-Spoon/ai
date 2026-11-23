@@ -42,11 +42,24 @@ def route_after_exact(
 def route_after_ontology(
     response: OntologyResponse,
 ) -> Literal["bayesian", "variant_review", "web_search"]:
-    """Route the implemented DB path without silently skipping later phases."""
+    """Recover an actually empty DB recipe through web search.
 
+    ``ingredients`` can also be empty because owner confirmations removed every
+    remaining target, so only ④'s pre-confirmation ``empty_recipe`` warning is a safe
+    signal that the registered menu has no recipe knowledge at all.
+    """
+
+    empty_recipe = any(warning.code == "empty_recipe" for warning in response.warnings)
+    # An empty base recipe must be recovered before runtime-variant handling. Otherwise
+    # a name such as "치즈 ○○" would estimate only the residual cheese token and
+    # silently miss every ingredient of the base dish.
+    if empty_recipe:
+        return "web_search"
     if response.menu.variant_origin == "runtime_tagged":
         return "variant_review"
-    if response.menu.exists_in_db or response.menu.base_menu_id is not None:
+    if (
+        response.menu.exists_in_db or response.menu.base_menu_id is not None
+    ):
         return "bayesian"
     return "web_search"
 

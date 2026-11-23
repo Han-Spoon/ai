@@ -176,6 +176,25 @@ def test_storeless_scan_keeps_tags_without_cache():
 # ── 전체 큐레이션 메뉴 ──────────────────────────────────────────
 
 
+@pytest.mark.parametrize("menu", sorted(seed().data.menus))
+def test_every_registered_menu_has_ingredients_and_probabilities(menu):
+    """Every registered menu must reach a non-empty numeric result.
+
+    Some registered menus have curated recipe rows, while others are backed only by
+    crawling priors. ④ must use either source and ⑤ must keep a numeric posterior for
+    every resulting ingredient. If the backend sends neither source, ⓪'s
+    ``empty_recipe`` fallback is covered by the Supervisor integration tests.
+    """
+
+    res = ontology(menu)
+    estimated = probabilities(res)
+
+    assert res.ingredients, f"registered menu has no usable ingredients: {menu}"
+    assert estimated, f"registered menu has no probability results: {menu}"
+    assert "empty_recipe" not in {warning.code for warning in res.warnings}
+    assert all(0 < item.posterior_mean < 1 for item in estimated)
+
+
 @pytest.mark.parametrize("menu", sorted(seed().recipe))
 def test_every_curated_menu_expands_safely(menu):
     res = ontology(menu)

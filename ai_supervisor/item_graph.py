@@ -393,7 +393,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         request = WebCollectRequest(
             context=context,
             menu=WebCollectMenu(
-                menu_id=None,
+                menu_id=(
+                    task.selection.selected_candidate.menu_id
+                    if task.selection.selected_candidate is not None
+                    else None
+                ),
                 normalized_menu_name=task.prepared_item.normalized_menu_name,
                 locale_hint=task.prepared_item.locale_hint,
             ),
@@ -494,7 +498,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         request = WebAggregateRequest(
             context=context,
             menu=WebMenu(
-                menu_id=None,
+                menu_id=(
+                    task.selection.selected_candidate.menu_id
+                    if task.selection.selected_candidate is not None
+                    else None
+                ),
                 normalized_menu_name=task.prepared_item.normalized_menu_name,
             ),
             mapped_sources=sources,
@@ -535,7 +543,11 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
         if runtime.context.store_id is None or not collect.sources:
             return {}
         menu = WebMenu(
-            menu_id=None,
+            menu_id=(
+                task.selection.selected_candidate.menu_id
+                if task.selection.selected_candidate is not None
+                else None
+            ),
             normalized_menu_name=task.prepared_item.normalized_menu_name,
         )
         signaled_evidence_ids = {
@@ -1138,7 +1150,7 @@ def _validate_web_collect_response(
 ) -> None:
     _validate_response_signals(request, response, "Web collect")
     if (
-        response.menu.menu_id is not None
+        response.menu.menu_id != request.menu.menu_id
         or response.menu.normalized_menu_name
         != request.menu.normalized_menu_name
     ):

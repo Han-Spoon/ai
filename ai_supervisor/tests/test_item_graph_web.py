@@ -133,6 +133,43 @@ class UnknownOntology:
         )
 
 
+class RegisteredEmptyOntology(UnknownOntology):
+    """A menu row exists, but the backend bundle has no usable recipe ingredients."""
+
+    async def run(self, request):
+        self.requests.append(request)
+        return OntologyResponse(
+            context=request.context,
+            menu=OntologyResultMenu(
+                menu_id=1001,
+                base_menu_id=None,
+                remain_token=None,
+                menu_category_id=11,
+                menu_category="분식",
+                exists_in_db=True,
+                is_variant=False,
+                variant_origin=None,
+            ),
+            menu_ambiguity_flags=[],
+            ingredients=[],
+            evidence=[],
+            variant_suggestion=None,
+            unmapped_tokens=[],
+            cache_command=None,
+            warnings=[
+                *request.warnings,
+                NodeWarning(
+                    code="empty_recipe",
+                    node="ontology",
+                    item_id=request.context.item_id,
+                    message="등록 메뉴에 사용할 레시피 재료가 없어요.",
+                    forces_caution=True,
+                ),
+            ],
+            errors=request.errors,
+        )
+
+
 class RecordingCollect:
     def __init__(self, sources: list[dict]) -> None:
         self.sources = sources
@@ -144,7 +181,7 @@ class RecordingCollect:
             {
                 "context": request.context.model_dump(mode="json"),
                 "menu": {
-                    "menu_id": None,
+                    "menu_id": request.menu.menu_id,
                     "normalized_menu_name": request.menu.normalized_menu_name,
                 },
                 "found": bool(self.sources),
@@ -368,11 +405,12 @@ class RecordingDbUpdate:
 def analyzer(
     sources: list[dict],
     *,
+    ontology_adapter=None,
     collect_adapter=None,
     aggregate_adapter=None,
     max_concurrent_web_searches: int = 5,
 ):
-    ontology = UnknownOntology()
+    ontology = ontology_adapter or UnknownOntology()
     collect = collect_adapter or RecordingCollect(sources)
     mapper = RecordingMapper()
     bayesian = WebBayesian()
@@ -436,6 +474,30 @@ def test_web_path_maps_aggregates_reviews_and_calculates() -> None:
     assert [item.evidence_id for item in output.evidence] == [
         "web:https://www.10000recipe.com/recipe/1"
     ]
+
+
+def test_registered_menu_without_ingredients_falls_back_to_web() -> None:
+    item_analyzer, collect, _, bayesian, _, decision, _ = analyzer(
+        [web_source()], ontology_adapter=RegisteredEmptyOntology()
+    )
+    task = item_task(exact_complete=False)
+    task = replace(
+        task,
+        user_profile=task.user_profile.model_copy(
+            update={"religion_type": "hindu"}
+        ),
+    )
+
+    output = asyncio.run(item_analyzer.run(task, context(store_id=None)))
+
+    assert output.result.route == "web_bayes"
+    assert collect.requests
+    assert collect.requests[0].menu.menu_id == 1001
+    assert bayesian.requests
+    assert bayesian.requests[0].ingredients[0].ingredient.canonical_name == "소고기"
+    assert decision.requests[0].probability_results[0].posterior_mean == 0.5
+    assert output.result.risk_ingredients[0].posterior_mean == 0.5
+    assert any(warning.code == "empty_recipe" for warning in output.result.warnings)
 
 
 def test_insufficient_web_sources_do_not_mark_information_partial() -> None:
