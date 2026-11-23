@@ -750,3 +750,45 @@ def build_message(request: DecisionRequest, outcome: DecisionOutcome) -> Decisio
         for code, body in texts
     ]
     return DecisionMessage(verdict=verdict(request, outcome, lang), reason=None, notes=notes)
+
+
+# A side item ("…사리") is something added to the main dish, not a dish of its own
+# (2026-11-24, 파사리·고기사리): say so, naming what it adds. More than one name means
+# "one of these, or the like" (고기사리: 소고기, 돼지고기, 닭고기 등).
+SIDE_ITEM_SUFFIX = "사리"
+SIDE_ITEM: dict[str, Callable[[str, str, bool], str]] = {
+    "ko": lambda menu, names, many: (
+        f"{menu}{_ko(menu, '은', '는')} 메인 메뉴에 {names}{' 등' if many else ''}"
+        f"{_ko('등' if many else names, '을', '를')} 추가해 먹는 사리예요."
+    ),
+    "en": lambda menu, names, many: f"This is an add-on for the main dish: {'such as ' if many else ''}{names}.",
+    "ar": lambda menu, names, many: f"هذه إضافة توضع في الطبق الرئيسي: {'مثل ' if many else ''}{names}.",
+    "zh-CN": lambda menu, names, many: f"这是加进主菜里的配料：{names}{'等' if many else ''}。",
+    "zh-TW": lambda menu, names, many: f"這是加進主菜裡的配料：{names}{'等' if many else ''}。",
+    "ja": lambda menu, names, many: f"メイン料理に追加して食べる具材です：{names}{'など' if many else ''}。",
+    "es": lambda menu, names, many: f"Es un complemento que se añade al plato principal: {'como ' if many else ''}{names}.",
+}
+
+
+def side_item_text(request: DecisionRequest) -> str | None:
+    """The side-item sentence for a menu whose name ends in 사리, naming its own
+    ingredients (not those hidden inside them). None for any other menu, with no
+    ingredient, or when a name has no translation (Korean must not show elsewhere)."""
+
+    menu = request.menu.normalized_menu_name
+    if not menu.endswith(SIDE_ITEM_SUFFIX) or len(menu) <= len(SIDE_ITEM_SUFFIX):
+        return None
+    lang = request.locale
+    localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
+    names = list(
+        dict.fromkeys(
+            display_name(item.ingredient, localized, lang)
+            for item in request.probability_results
+            if item.role != "hidden"
+        )
+    )
+    if not names:
+        return None
+    if lang != "ko" and any("가" <= ch <= "힣" for name in names for ch in name):
+        return None
+    return SIDE_ITEM[lang](menu, AND_LISTS[lang](names), len(names) > 1)

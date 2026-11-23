@@ -543,3 +543,60 @@ def test_korean_broth_names_say_they_are_broth() -> None:
     gomtang = IngredientRef(ingredient_id=None, canonical_name="곰탕")
     assert display_name(gomtang, {}, "ko") == "곰탕 국물"
     assert "국물" not in display_name(gomtang, {}, "en")
+
+
+def _side(menu: str, items, locale: str = "ko"):
+    req = request(NO_RESTRICTION, probability_results=items, locale=locale)
+    return req.model_copy(update={"menu": req.menu.model_copy(update={"normalized_menu_name": menu})})
+
+
+GREEN_ONION = IngredientRef(ingredient_id=None, canonical_name="대파")
+BEEF = IngredientRef(ingredient_id=None, canonical_name="소고기")
+CHICKEN = IngredientRef(ingredient_id=None, canonical_name="닭고기")
+
+
+def test_side_item_says_what_it_adds_to_the_main_dish() -> None:
+    from ai_decision_policy.messages import side_item_text
+
+    one = _side("파사리", [probability(GREEN_ONION, [], 0.6)])
+    assert side_item_text(one) == "파사리는 메인 메뉴에 대파를 추가해 먹는 사리예요."
+
+    meats = [probability(BEEF, ["is_beef"], 0.6), probability(PORK, ["is_pork"], 0.6), probability(CHICKEN, ["is_chicken"], 0.6)]
+    many = _side("고기사리", meats)
+    assert side_item_text(many) == "고기사리는 메인 메뉴에 소고기, 돼지고기, 닭고기 등을 추가해 먹는 사리예요."
+    assert side_item_text(_side("고기사리", meats, "en")) == (
+        "This is an add-on for the main dish: such as beef, pork and chicken."
+    )
+
+
+def test_side_item_names_only_its_own_ingredients() -> None:
+    from ai_decision_policy.messages import side_item_text
+
+    hidden = probability(PORK, ["is_pork"], 0.5, role="hidden")
+    req = _side("만두사리", [probability(IngredientRef(ingredient_id=None, canonical_name="만두"), [], 0.6), hidden])
+    assert side_item_text(req) == "만두사리는 메인 메뉴에 만두를 추가해 먹는 사리예요."
+
+
+@pytest.mark.parametrize("menu", ["김치찌개", "사리"])
+def test_side_item_sentence_is_only_for_side_items(menu: str) -> None:
+    from ai_decision_policy.messages import side_item_text
+
+    assert side_item_text(_side(menu, [probability(GREEN_ONION, [], 0.6)])) is None
+
+
+@pytest.mark.parametrize("locale", LOCALES)
+def test_side_item_sentence_has_every_language_and_no_korean_elsewhere(locale: str) -> None:
+    from ai_decision_policy.messages import side_item_text
+
+    text = side_item_text(_side("파사리", [probability(GREEN_ONION, [], 0.6)], locale))
+    assert text
+    if locale != "ko":
+        assert not any("가" <= ch <= "힣" for ch in text)
+
+
+def test_side_item_sentence_comes_first_without_the_llm() -> None:
+    import asyncio
+
+    req = _side("파사리", [probability(GREEN_ONION, [], 0.6)])
+    response = asyncio.run(DecisionTool(None).run(req))
+    assert response.message.reason == "파사리는 메인 메뉴에 대파를 추가해 먹는 사리예요."

@@ -6,7 +6,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .cards import build_owner_cards
 from .llm import XaiLLM
-from .messages import build_message
+from .messages import build_message, side_item_text
 from .policy import decide
 from .reason import ReasonWriter
 
@@ -48,9 +48,13 @@ class DecisionTool:
 
     async def run(self, request: DecisionRequest) -> DecisionResponse:
         response = judge(request)
-        if self.reason_writer is None:
-            return response
-        reason = await self.reason_writer.write(request, response)
+        reason = None
+        if self.reason_writer is not None:
+            reason = await self.reason_writer.write(request, response)
+        # A side item (…사리) says what it adds first, with or without the LLM (2026-11-24).
+        side = side_item_text(request)
+        if side is not None:
+            reason = side if reason is None else f"{side}\n{reason}"
         if reason is None:
             return response
         return response.model_copy(
