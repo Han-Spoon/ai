@@ -28,8 +28,7 @@ class Seed:
         self.priors = d.priors
         self.recipe = d.recipe
         self.flags = d.menu_flags
-        category_id = {c: i + 1 for i, c in enumerate(d.categories)}
-        self.menu_category = {m: category_id[c] for m, c in d.menu_category.items()}
+        self.menu_category = {m: d.category_id[c] for m, c in d.menu_category.items()}
         self.edges = d.edges
         self.edge_tags = set(d.edge_tags)
         self.ingredients = d.ingredients
