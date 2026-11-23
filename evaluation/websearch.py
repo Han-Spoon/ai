@@ -102,11 +102,18 @@ class MenuRun:
         return {tag for tag, k in counts.items() if k >= 1 and k / total >= min_share}
 
 
+SIDE_CATEGORIES = frozenset({"곁들임"})
+
+
 def load_gold(path: Path = GOLD_PATH) -> list[GoldMenu]:
     with path.open(encoding="utf-8-sig", newline="") as file:
         rows = list(csv.DictReader(file))
     menus = []
     for row in rows:
+        # 공기밥·사리 are single-ingredient side items registered in the DB so they are
+        # never web-searched (2026-11-24): not part of the web search gold set.
+        if row["카테고리"].strip() in SIDE_CATEGORIES:
+            continue
         ingredients = [name.strip() for name in row["레시피"].split(",") if name.strip()]
         menus.append(GoldMenu(row["메뉴명"].strip(), ingredients, tag_names(ingredients)))
     return menus
