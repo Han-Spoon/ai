@@ -139,7 +139,7 @@
   - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
   - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
   - `role`은 입력 값을 그대로 옮긴다 (아래).
-  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없으면 팀 번역 사전(`crawling/ingredient_translations.csv` 표준 재료 324개, `crawling/ingredient_translations_extra.csv` 표준 밖 재료 565개)에서 한국어 이름으로 찾고, 거기에도 없으면 한국어 `canonical_name`을 그대로 쓴다 (2026-11-02, `ai_decision_policy/names.py`). `ingredient_id: null`인 웹 재료도 이렇게 찾는다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274)
+  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없으면 팀 번역 사전(`crawling/ingredient_translations.csv` 표준 재료 324개, `crawling/ingredient_translations_extra.csv` 표준 밖 재료 565개)에서 한국어 이름으로 찾고, 거기에도 없으면 한국어 `canonical_name`을 그대로 쓴다 (2026-11-02, `ai_decision_policy/names.py`). `ingredient_id: null`인 웹 재료도 이렇게 찾는다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274). 예외로 `locale: ko`에서 국물 분류(`ingredient_taxonomy.csv`의 `broth`) 재료 중 이름만으로는 요리처럼 읽히는 것은 `localized_name`에 "국물"을 붙인다: `곰탕` → `곰탕 국물`, `사골` → `사골 국물`. `육수`·`멸칫국물`처럼 이미 국물임이 드러나는 이름은 그대로 둔다 (2026-11-24)
 - 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
 - `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
 - `message`는 `{verdict, reason, notes[]}` object이고, 세 칸 모두 요청 `locale` 하나로 쓴다 (§0-2, §4 "`message` 칸", ⓪ §4-7).
@@ -428,6 +428,8 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | `limits_only` | 설명할 재료는 없고 한계 사실만 있음 (위 새우튀김) | **안 부름** | 카드 안내 + 한계 한 줄 |
 | `groups` | 설명할 재료만 있음 | 부름 | 재료 묶음 줄 + 카드 안내 |
 | `groups_and_limits` | 둘 다 있음 | 부름 (재료 설명만) | 재료 묶음 줄 + 카드 안내 + 한계 한 줄 |
+
+**곁들임 사리 안내 (2026-11-24)** — 메뉴 이름이 `사리`로 끝나면(`파사리`, `고기사리`) 이유 칸 맨 앞에 "메인 메뉴에 무엇을 추가해 먹는 사리"인지 한 줄을 코드 템플릿으로 넣는다(`messages.py` `side_item_text`, `tool.py`). 위 경우 구분과 상관없이, LLM이 없어도 붙는다. 이름은 그 메뉴의 재료 중 숨은 재료(`role: hidden`)를 뺀 것이고, 여럿이면 "등"을 붙인다. 예: `파사리는 메인 메뉴에 대파를 추가해 먹는 사리예요.`, `고기사리는 메인 메뉴에 소고기, 돼지고기, 닭고기 등을 추가해 먹는 사리예요.` 7개 언어 템플릿이 있고, 한국어가 아닌 화면에서 번역 이름이 없는 재료가 있으면 문장을 넣지 않는다. 안내일 뿐 판정에는 쓰지 않는다. 사리 메뉴는 DB 시드의 `곁들임` 분류로 재료를 등록한다(`ai_ruleengine/data/menus.csv`). 고기사리는 어떤 고기인지 몰라 소고기·돼지고기·닭고기를 모두 넣는다(FN 우선).
 
 **가독성 정리 (같은 날, 교수님 피드백 "이유 문장이 잘 안 읽힌다")** — 비건 부대찌개 이유가 6문장·약 250자 한 덩어리였고, 같은 재료 이름이 판정·설명·빼기 어려움·"80% 이상" 문장에 네 번 나왔으며, 판정(95% 이상)과 이유(80% 이상)에 숫자가 둘이었다. 그래서 이유 칸은 "왜 걸렸는지"만 말하고 나머지는 원래 화면 자리에 맡긴다.
 - **한 줄에 한 묶음**: LLM은 묶음마다 짧은 구(句) 하나만 쓰고(`phrases`, 문장 끝맺음·마침표 없음), 코드가 묶음의 재료 이름을 앞에 붙여 "• 멸치액젓·까나리: 생선으로 만든 젓갈"처럼 만든다. 줄은 `\n`으로 나눈다. 순서: 재료 묶음 줄 → 카드 안내 → 한계 한 줄.

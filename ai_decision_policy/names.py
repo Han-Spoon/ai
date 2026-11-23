@@ -24,7 +24,30 @@ from ai_supervisor.contracts.common import IngredientRef
 CRAWLING = Path(__file__).resolve().parent.parent / "crawling"
 STANDARD_PATH = CRAWLING / "ingredient_translations.csv"
 EXTRA_PATH = CRAWLING / "ingredient_translations_extra.csv"
+TAXONOMY_PATH = CRAWLING / "ingredient_taxonomy.csv"
 LOCALES = ("en", "ar", "zh-CN", "zh-TW", "ja", "es")
+
+
+@lru_cache(maxsize=1)
+def taxonomy_categories() -> dict[str, str]:
+    """Standard ingredient → ``taxonomy_category`` (base, processed, fermented, sauce …)."""
+
+    with TAXONOMY_PATH.open(encoding="utf-8-sig", newline="") as f:
+        return {row["name_ko"].strip(): row["taxonomy_category"].strip() for row in csv.DictReader(f)}
+
+
+# Broth ingredients named after a dish or a bone read as the dish itself in a list of
+# ingredients: "닭고기, 곰탕, 라면" (2026-11-24). Korean screens say they are the broth.
+# Names that already say it (육수, 멸칫국물, 다시물, 면수) stay as they are.
+_BROTH_WORDS = ("국물", "물", "수")
+
+
+def korean_display_name(korean_name: str) -> str:
+    """``곰탕`` → ``곰탕 국물``, ``사골`` → ``사골 국물``; any other name as is."""
+
+    if taxonomy_categories().get(korean_name) == "broth" and not korean_name.endswith(_BROTH_WORDS):
+        return f"{korean_name} 국물"
+    return korean_name
 
 
 def _read(path: Path) -> list[dict[str, str]]:
@@ -67,8 +90,13 @@ def dictionary_name(korean_name: str, locale: str) -> str | None:
 
 
 def display_name(ingredient: IngredientRef, localized: dict[int | None, str], locale: str) -> str:
-    """The name shown to the user: ``localized_names`` first, then the tables, else Korean."""
+    """The name shown to the user: ``localized_names`` first, then the tables, else Korean.
+    A Korean name is shown with what it is when the bare name reads as a dish (곰탕 국물)."""
 
     if ingredient.ingredient_id is not None and ingredient.ingredient_id in localized:
-        return localized[ingredient.ingredient_id]
-    return dictionary_name(ingredient.canonical_name, locale) or ingredient.canonical_name
+        name = localized[ingredient.ingredient_id]
+    else:
+        name = dictionary_name(ingredient.canonical_name, locale) or ingredient.canonical_name
+    if locale == "ko" and name == ingredient.canonical_name:
+        return korean_display_name(name)
+    return name
