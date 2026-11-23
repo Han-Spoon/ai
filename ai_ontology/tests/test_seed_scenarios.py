@@ -128,8 +128,8 @@ def test_doenjang_jjigae_soybean_is_near_certain():
 def test_galbi_garlic_matches_crawling_counts():  # ⑤ §7-1
     res = ontology("갈비구이")
     garlic = entries(res, "마늘")[0]
-    # 2026-11-22: 갈비구이 10000recipe grew from 57 to 210 recipes (crawling/README.md)
-    assert ("10000recipe", 182, 210) in [(o.corpus, o.k_count, o.n_total) for o in garlic.observations]
+    # 2026-11-23: 갈비구이 10000recipe grew from 57 to 208 recipes (crawling/README.md)
+    assert ("10000recipe", 180, 208) in [(o.corpus, o.k_count, o.n_total) for o in garlic.observations]
 
 
 def test_samgyeopsal_pork_for_halal():
