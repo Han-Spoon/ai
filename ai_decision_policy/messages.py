@@ -260,20 +260,6 @@ NOT_ENOUGH_INFORMATION: dict[str, str] = {
     "es": "Hay información de este plato que aún no está confirmada.",
 }
 
-# After the LLM's reason (2026-11-22): fixed sentences the LLM kept getting wrong (it
-# wrote "80% 이상" for 어묵 at 52%, and picked the wrong card). {x} names, {last} the last
-# word, {p} the threshold ("80%"). "Hanspoon" stays in Latin letters like the app name.
-VERY_OFTEN: dict[str, Callable[[str, str, str, str], str]] = {
-    # Korean names the dish ("한스푼이 수집한 부대찌개 레시피의 80%", 2026-11-22); other
-    # languages say "this dish", as the reason does.
-    "ko": lambda x, last, p, menu: f"{x}{_ko(last, '은', '는')} 한스푼이 수집한 {menu} 레시피의 {p} 이상에 들어가는 재료라서 특히 주의해야 해요.",
-    "en": lambda x, last, p, menu: f"At least {p} of the recipes Hanspoon collected for this dish use {x}, so please be especially careful.",
-    "ar": lambda x, last, p, menu: f"تستخدم {p} على الأقل من الوصفات التي جمعها Hanspoon لهذا الطبق {x}، لذا انتبه جيدًا.",
-    "zh-CN": lambda x, last, p, menu: f"在Hanspoon收集的这道菜的食谱中，至少{p}用到{x}，请特别注意。",
-    "zh-TW": lambda x, last, p, menu: f"在Hanspoon收集的這道菜的食譜中，至少{p}用到{x}，請特別注意。",
-    "ja": lambda x, last, p, menu: f"Hanspoonが集めたこの料理のレシピの{p}以上に{x}が使われているため、特に注意してください。",
-    "es": lambda x, last, p, menu: f"Al menos el {p} de las recetas que recopiló Hanspoon para este plato llevan {x}, así que ten especial cuidado.",
-}
 # Something likely can be left out: the result screen's "빼고 요청" (Request removal)
 # card. No names: "사골은 빼고 요청 카드로…" picked one ingredient out of many (2026-11-22).
 REMOVE_CARD_STEP: dict[str, str] = {
@@ -436,22 +422,19 @@ def _joined(names: list[str], lang: str) -> tuple[str, str]:
     return AND_LISTS[lang]([*shown, more]), more
 
 
-def reason_tail(very_often: list[str], remove: bool, ask: bool, percent: str, menu: str, lang: str) -> str:
-    """The fixed sentences after the LLM's reason (2026-11-22): the ingredients most
-    recipes use (names), then what to do on the result screen, with no names: whether
-    any ingredient goes to the remove-request card (``remove``) or the question card
-    (``ask``)."""
+def card_step(remove: bool, ask: bool, lang: str) -> str:
+    """What to do on the result screen, with no names (2026-11-22): whether any ingredient
+    goes to the remove-request card (``remove``) or the question card (``ask``). The
+    "80% 이상" sentence before it was dropped on 2026-11-23: the verdict already gives a
+    percent, and two different numbers made the reason hard to read."""
 
-    parts = []
-    if very_often:
-        parts.append(VERY_OFTEN[lang](*_joined(very_often, lang), percent, menu))
     if remove and ask:
-        parts.append(REMOVE_OR_QUESTION_CARD_STEP[lang])
-    elif remove:
-        parts.append(REMOVE_CARD_STEP[lang])
-    elif ask:
-        parts.append(QUESTION_CARD_STEP[lang])
-    return _sentences(parts, lang)
+        return REMOVE_OR_QUESTION_CARD_STEP[lang]
+    if remove:
+        return REMOVE_CARD_STEP[lang]
+    if ask:
+        return QUESTION_CARD_STEP[lang]
+    return ""
 
 
 # Why the result is less certain, as fixed sentences (2026-11-23). These went to the LLM
@@ -563,16 +546,34 @@ NO_RECIPE_DATA: dict[str, VerdictTemplate] = {
 }
 
 
-def limit_sentences(codes: list[str], guessed: list[str], no_data: list[str], lang: str) -> list[str]:
-    """Fixed sentences for ``codes`` (keys of ``LIMIT_SENTENCES``, in order), then the
-    ingredients guessed from the menu name and those with no recipe data."""
+# Most serious first. The reason shows only the first one, as its last line (2026-11-23:
+# several limit sentences made the reason long and hard to read).
+LIMIT_PRIORITY = (
+    "no_information",
+    "partial_information",
+    "saved_info_unavailable",
+    "unclear_restrictions",
+    "nested_untraced",
+    "web_read_failed",
+    "web_timeout",
+    "few_web_recipes",
+    "guessed_from_menu_name",
+    "no_recipe_data",
+    "no_store",
+)
 
-    parts = [LIMIT_SENTENCES[code][lang] for code in dict.fromkeys(codes)]
+
+def limit_sentences(codes: list[str], guessed: list[str], no_data: list[str], lang: str) -> list[str]:
+    """Fixed sentences for ``codes`` (keys of ``LIMIT_SENTENCES``) and the ingredients
+    guessed from the menu name or with no recipe data, most serious first
+    (``LIMIT_PRIORITY``)."""
+
+    found: dict[str, str] = {code: LIMIT_SENTENCES[code][lang] for code in codes}
     if guessed:
-        parts.append(GUESSED_FROM_MENU_NAME[lang](*_joined(guessed, lang)))
+        found["guessed_from_menu_name"] = GUESSED_FROM_MENU_NAME[lang](*_joined(guessed, lang))
     if no_data:
-        parts.append(NO_RECIPE_DATA[lang](*_joined(no_data, lang)))
-    return parts
+        found["no_recipe_data"] = NO_RECIPE_DATA[lang](*_joined(no_data, lang))
+    return [found[code] for code in LIMIT_PRIORITY if code in found]
 
 
 def _sentences(parts: list[str], lang: str) -> str:
