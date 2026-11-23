@@ -15,7 +15,12 @@ class FakeClient:
     async def _parse(self, **kwargs):
         schema = kwargs["text_format"]
         return SimpleNamespace(
-            output_parsed=schema(reason="이 메뉴는 확인이 필요해요."),
+            # The reason answers one phrase per group (2026-11-23); the review a reason.
+            output_parsed=(
+                schema(phrases=["돼지고기로 만든 가공육"])
+                if "phrases" in schema.model_fields
+                else schema(reason="이 메뉴는 확인이 필요해요.")
+            ),
             usage=SimpleNamespace(input_tokens=500, output_tokens=40),
         )
 
