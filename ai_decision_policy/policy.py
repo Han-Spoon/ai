@@ -99,6 +99,21 @@ def merge_same_ingredient(items: list[DecisionRiskIngredient]) -> list[DecisionR
     return list(merged.values())
 
 
+def sort_by_risk(items: list[DecisionRiskIngredient]) -> list[DecisionRiskIngredient]:
+    """Owner "present" first, then the higher probability, then rows with no number
+    (variant guesses) last; ties keep their order (2026-11-23, §1-2). The screen lists
+    ``risk_ingredients`` as sent, so the likeliest cause comes first."""
+
+    return sorted(
+        items,
+        key=lambda i: (
+            i.status != "present",
+            i.posterior_mean is None,
+            -(i.posterior_mean or 0.0),
+        ),
+    )
+
+
 def is_hard_evidence(result: ConfirmedResult) -> bool:
     """Every present/absent owner answer counts; ``unknown`` never means "absent" (§1-1).
 
@@ -208,7 +223,9 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
         + [risk(p, "unknown") for p in probabilities]
         + [risk(v, "unknown") for v in variants]
     )
-    risk_ingredients = merge_same_ingredient([r for r in candidates if r is not None])
+    risk_ingredients = sort_by_risk(
+        merge_same_ingredient([r for r in candidates if r is not None])
+    )
 
     observed = [o for o in request.risk_tag_observations if o.tag in forbidden]
     flag_checks = [

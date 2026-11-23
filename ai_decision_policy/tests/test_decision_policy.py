@@ -494,7 +494,8 @@ def test_localized_name_falls_back_to_korean() -> None:
             localized_names={101: "pork"},
         )
     )
-    assert [r.ingredient.localized_name for r in outcome.risk_ingredients] == ["pork", "액젓", "돼지 육수"]
+    # Highest probability first (0.6, 0.4, 0.2).
+    assert [r.ingredient.localized_name for r in outcome.risk_ingredients] == ["pork", "돼지 육수", "액젓"]
 
 
 # §2-3 high-risk review signals
@@ -602,3 +603,42 @@ def test_a_known_probability_beats_a_variant_guess_for_the_same_ingredient() -> 
     [item] = outcome.risk_ingredients
     assert item.posterior_mean == 0.15
     assert item.evidence_refs == ["recipe:120", "variant:120"]
+
+
+# --- order of risk_ingredients (2026-11-23) ---------------------------------------
+
+
+def test_risk_ingredients_are_sent_highest_probability_first() -> None:
+    # The screen lists risk_ingredients as sent, so the likeliest cause comes first.
+    variant = ProposedVariantIngredient(
+        ingredient=BEEF,
+        constraint_tags=["is_beef"],
+        role="identity",
+        source="variant_suggested",
+        evidence_refs=["variant:120"],
+    )
+    outcome = decide(
+        request(
+            VEGAN,
+            probability_results=[
+                probability(TUNA, ["is_fish"], 0.09),
+                probability(FISH_SAUCE, ["is_fish"], 0.95),
+                probability(MILK, ["is_milk"], 0.22),
+            ],
+            variants=[variant],
+        )
+    )
+    assert [i.ingredient.canonical_name for i in outcome.risk_ingredients] == [
+        "액젓", "우유", "참치", "소고기",
+    ]
+
+
+def test_owner_present_answer_comes_before_any_probability() -> None:
+    outcome = decide(
+        request(
+            HALAL,
+            confirmed_results=[confirmed(PORK, ["is_pork"], "present")],
+            probability_results=[probability(BEEF, ["is_pork"], 0.99)],
+        )
+    )
+    assert [i.ingredient.canonical_name for i in outcome.risk_ingredients] == ["돼지고기", "소고기"]
