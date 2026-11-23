@@ -25,7 +25,14 @@ sys.path[:0] = [str(ROOT), str(ROOT / "crawling")]
 
 from ai_result.rules.hidden_rules_data import HIDDEN_RULES  # noqa: E402
 from ai_ruleengine.constants import ALL_TAGS, VARIANT_INGREDIENTS  # noqa: E402
-from normalize_ingredients import CATEGORY_RULES, EXACT_MAP, canonicalize, clean_text, is_tool_leak  # noqa: E402
+from normalize_ingredients import (  # noqa: E402
+    CATEGORY_RULES,
+    EXACT_MAP,
+    canonicalize,
+    clean_text,
+    compact_name,
+    is_tool_leak,
+)
 
 SITES = ("semie", "wtable", "10000recipe")
 RAW_TAXONOMY = {"base", "garnish"}
@@ -111,7 +118,15 @@ def build() -> SeedData:
     raw_priors = {s: _rows(ROOT / f"crawling/{s}_prior.csv") for s in SITES}
     # ingredient ids are positions in the sorted name list: list names from every bundle,
     # dropped ones too, so a dropped bundle never shifts the ids the backend stored
-    priors = {s: [r for r in rows if (s, r["menu_name"]) not in CORPUS_DROP] for s, rows in raw_priors.items()}
+    priors = {
+        s: [
+            r
+            for r in rows
+            if (s, r["menu_name"]) not in CORPUS_DROP
+            and compact_name(r["menu_name"]) != compact_name(r["ingredient_canonical"])
+        ]
+        for s, rows in raw_priors.items()
+    }
     curated = _rows(ROOT / "ai_ruleengine/data/menus.csv")
     taxonomy_rows = {r["name_ko"]: r["taxonomy_category"] for r in _rows(ROOT / "crawling/ingredient_taxonomy.csv")}
 
@@ -144,6 +159,10 @@ def build() -> SeedData:
 
     names = {r["ingredient_canonical"] for rows in raw_priors.values() for r in rows}
     names = {n for n in names if n in known}
+    # Keep the reviewed master stable even when recipe filtering removes the last
+    # observation of an ingredient. Ingredient ids are sorted-name positions and must
+    # not shift merely because an irrelevant recipe bundle was cleaned up.
+    names |= set(taxonomy_rows)
     names |= {i for items in recipe.values() for i in items}
     names |= endpoints
     ingredients = sorted(names)

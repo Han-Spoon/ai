@@ -40,11 +40,25 @@ python crawling/wtable_crawler.py --exact-title-only
 
 세 사이트(semie, wtable, 10000recipe)를 같은 `normalize_ingredients.py`로 정규화한 결과를 사이트별로 둡니다. 백엔드 적재(`menu_recipe_corpora.corpus` 단위)는 사이트별 `<사이트>_prior.csv`를 사용합니다.
 
+정규화할 때 `recipe_relation.py`가 레시피 제목을 `exact`(동일 메뉴), `variant`(변형), `other_dish`(다른 음식), `derivative`(완제품 활용), `unrelated`, `ambiguous`로 분류합니다. **기본 메뉴 prior에는 `exact`만 넣습니다.** 동일 메뉴의 다른 이름(달걀찜→계란찜, 닭도리탕→닭볶음탕 등)은 `recipe_relation.py`의 `SAME_MENU_ALIASES`에 명시한 별칭만 허용합니다. 제목에 검색 메뉴명이 들어 있어도 불고기김밥·잡채볶음밥·오징어순대처럼 더 구체적인 다른 메뉴, 다른 요리 형태, 재료 수식어가 붙으면 기본 메뉴 통계에서 제외합니다.
+
+불확실한 레시피를 `재료가 없었던 레시피`로 세지 않습니다. 레시피 전체를 분모 `n_total`에서도 빼기 때문에 불확실한 자료가 알레르겐 확률을 낮추지 않습니다. 제외된 자료는 삭제하지 않고 사이트별 `<사이트>_recipe_audit.csv`에 제목·URL·관계·사유를 한 레시피당 한 행으로 남깁니다. 예를 들어 불고기 검색에 섞인 불고기김밥의 김과, 순대 검색에 섞인 까르보순대의 생크림은 prior에 들어가지 않지만 감사 파일에서는 출처를 확인할 수 있습니다.
+
 | 사이트 | 원본 | 정규화 결과 | prior |
 |---|---|---|---|
 | 세미 (semie) | `semie_recipes_raw.csv` | `semie_normalized.csv` | `semie_prior.csv` |
 | 우리의식탁 (wtable) | `wtable_recipes_raw.csv` | `wtable_normalized.csv` | `wtable_prior.csv` |
 | 만개의레시피 (10000recipe) | `10000recipe_recipes_raw.csv` | `10000recipe_normalized.csv` | `10000recipe_prior.csv` |
+
+메뉴 하나를 직접 확인할 때는 다음처럼 prior와 감사 파일을 함께 봅니다.
+
+```bash
+rg '^순대,' crawling/merged_prior.csv
+rg '^순대,' crawling/merged_recipe_audit.csv
+rg '^불고기,' crawling/merged_recipe_audit.csv | rg ',(variant|other_dish|derivative|ambiguous),'
+```
+
+감사 파일의 `included_in_base_prior=true`만 해당 기본 메뉴의 확률 집계에 들어갑니다. `variant`는 `base_menu_name`과 `remain_token`을 남기지만 자동으로 기본 메뉴에 합치지 않습니다. 서비스에서 실제 변형 메뉴가 들어오면 기존 확정 구조대로 `menus.base_menu_id`/`remain_token`을 우선 사용하고, 미등록 변형은 ④의 런타임 변형 경로와 검토 절차를 사용합니다.
 
 `10000recipe_recipes_raw.csv`의 처음 76개 메뉴는 크롤러 출력이 아니라, 이전에 정규화된 파일(`recipe_ingredients_all76_60_normalized.csv`)의 `ingredient_raw`를 원문으로 되돌려 만든 것입니다. 2026-11-22에 추가한 22개 메뉴는 `recipe10000_crawler.py`로 모아 같은 파일 뒤에 붙였습니다. 이 크롤러는 검색 결과 순서대로 메뉴당 60개(기본값)를 읽고, 본문 재료 목록의 이름만 저장합니다. 재료 목록 아래의 "조리도구" 칸(도마·찜기 등)은 읽지 않습니다. 22개 메뉴는 메뉴당 300개까지 읽었습니다. 이 22개를 처음 모을 때는 크롤러가 조리도구 칸까지 읽어서, 붙이기 전에 손으로 정리했습니다. 정규화 뒤에도 남는 도구 이름(볼·요리집게·면기·찜기·지퍼백·명주실 등 약 120개)을 지우고, "소금 숟가락"·"꿀 국자"·"낫도에너젠 계량컵 기준"처럼 재료 뒤에 계량 도구가 붙어 정규화가 통째로 지우던 19개 이름은 재료 이름(소금·꿀·낫또 등)으로 고쳐 살렸습니다.
 
@@ -63,7 +77,7 @@ python crawling/recipe10000_crawler.py --recipes-from <기존 CSV> --out <출력
 
 ### 제목 필터 (`filter_titles.py`)
 
-검색이 느슨하면 다른 요리가 섞입니다. 우리의식탁에서 "닭한마리"를 검색하면 1,186개가 나오지만 제목이 맞는 것은 1개였고, 만개의레시피도 300위까지 읽으면 "떡갈비"에 떡볶이가 섞입니다. 그래서 22개 메뉴는 세 사이트 모두, 다시 읽은 처음 76개 메뉴는 만개의레시피에서 레시피 제목에 메뉴 키워드가 있는 것만 남긴 뒤 원본에 붙였습니다. 표기 차이(달걀찜, 주꾸미, 닭도리탕, 육계장, 알타리김치, 김치찌게, 깻잎짱아찌 등)는 `TITLE_KEYWORDS`에 적습니다. 김치 메뉴는 김치로 만든 다른 요리(갓김치볶음밥, 총각김치지짐, 열무김치국수 등)를 `KIMCHI_DISH`로 뺍니다. 갓김치는 194개 중 103개가 이런 요리였습니다. 제목이 우연히 걸리는 진짜 김치 레시피("김장김치전에 담그는…")도 메뉴당 1~3개 빠집니다.
+검색이 느슨하면 다른 요리가 섞입니다. 우리의식탁에서 "닭한마리"를 검색하면 1,186개가 나오지만 제목이 맞는 것은 1개였고, 만개의레시피도 300위까지 읽으면 "떡갈비"에 떡볶이가 섞입니다. 최종 필터는 검색어 포함 여부가 아니라 `recipe_relation.py`의 관계 분류를 사용합니다. 표기 차이(달걀찜, 주꾸미, 닭도리탕, 육계장, 알타리김치, 김치찌게, 깻잎짱아찌 등)는 `SAME_MENU_ALIASES`에 명시한 것만 같은 메뉴로 허용합니다. 다른 알려진 메뉴·다른 요리 형태·재료 수식어가 잡히거나 판별이 애매하면 기본 prior에서 제외하고 감사 CSV에 남깁니다.
 
 ```bash
 python crawling/filter_titles.py <크롤링 원본 CSV> --out <걸러낸 CSV>
@@ -76,11 +90,11 @@ python crawling/merge_corpora.py
 python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-prefix merged
 ```
 
-정규화 규칙을 바꾸면 사이트별 결과와 합친 결과를 모두 다시 만들어야 합니다.
+정규화·제목 관계 규칙을 바꾸면 사이트별 `normalized`/`prior`/`recipe_audit`과 합친 결과를 모두 다시 만들어야 합니다.
 
 ## DB 시드 재생성
 
-정규화 규칙(`normalize_ingredients.py`)이나 태그 사전(`ai_ruleengine/constants.py`)을 바꾸면 DB 시드도 다시 만들어 백엔드에 적재해야 합니다. 그대로 두면 룰엔진과 DB의 태그·재료 이름이 달라집니다 (④ §2-6).
+정규화 규칙(`normalize_ingredients.py`·`recipe_relation.py`)이나 태그 사전(`ai_ruleengine/constants.py`)을 바꾸면 DB 시드도 다시 만들어 백엔드에 적재해야 합니다. 그대로 두면 서비스 DB는 이전 prior를 계속 사용합니다 (④ §2-6).
 
 ```bash
 python crawling/db_seed.py --out <폴더>   # 테이블마다 CSV 하나
@@ -101,3 +115,5 @@ python crawling/db_seed.py --out <폴더>   # 테이블마다 CSV 하나
 | `knowledge_import_batches` | 원천별 1행, `source_version`은 시드를 만든 커밋 SHA |
 
 적재 순서는 외래키 때문에 위 표의 위에서 아래 순서입니다(`menu_categories` → `menus` → `ingredients` → 태그·레시피·구성 → 배치 → 코퍼스 → 관측값). 적재 뒤에는 영향받은 메뉴의 `knowledge_revision`을 올려 ④ 캐시를 무효화합니다.
+
+`merged_prior.csv`만 손으로 고쳐서는 서비스에 반영되지 않습니다. 사이트별 prior 재생성 → `db_seed.py` 실행 → 백엔드 import batch 적재 → 영향 메뉴 `knowledge_revision` 증가 순서가 모두 필요합니다. `ingredient_risk_scores`는 이 전역 크롤링 prior와 다른 가게별 증거 테이블이므로 직접 수정하지 않습니다.

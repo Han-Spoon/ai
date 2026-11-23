@@ -140,28 +140,34 @@ def merge_names(rule_names: list[str], llm_names: list[str], text: str) -> list[
 
 
 def drop_dish_name(names: list[str], text: str, menu_name: str) -> list[str]:
-    """Drop a name that is only the dish itself (2026-11-07).
+    """Drop names that identify the dish rather than a component (2026-11-23).
 
     The text includes the title, so 백김치 gave 김치; ④ then mapped it to 배추김치 and every
     white-kimchi recipe "contained" napa-cabbage kimchi. A name the menu name ends with,
     after something in front (백김치 → 김치, 후라이드치킨 → 치킨), is the kind of dish, so
     it counts only when it also shows up outside the menu name, e.g. a "김치 1/4포기"
-    line. A menu that is the name itself (곰탕, 순대) keeps it: 순대 carries pork. A name
-    at the front (김치찌개 → 김치) is an ingredient and stays.
+    line. The exact menu itself is also removed (곰탕→곰탕, 순대→순대); its real
+    components must come from the recipe or ontology instead. A name at the front
+    (김치찌개 → 김치) is an ingredient and stays.
     """
 
     menu = _compact(menu_name)
+    same = {name for name in names if _compact(name) == menu}
     heads = {
         name for name in names
         if menu.endswith(_compact(name)) and len(menu) > len(_compact(name))
     }
     if not heads:
-        return names
+        return [name for name in names if name not in same]
     rest = text
     for spelling in {menu_name, menu}:
         rest = rest.replace(spelling, " ")
     still_there = heads & set(find_ingredient_names(rest))
-    return [name for name in names if name not in heads or name in still_there]
+    return [
+        name
+        for name in names
+        if name not in same and (name not in heads or name in still_there)
+    ]
 
 
 def to_web_source(result: SearchResult, names: list[str]) -> WebSource:

@@ -1,0 +1,263 @@
+﻿menu_query,recipe_title,recipe_url,relation,resolved_menu_name,base_menu_name,remain_token,included_in_base_prior,reason,ingredient_count
+닭갈비,매콤 닭갈비,https://semie.cooking/recipe-lab/archive/very-spicy-stir-fried-chicken,exact,닭갈비,,,true,same_menu_alias:닭갈비,18
+닭갈비,몸튼튼 맵지 않은 닭갈비,https://semie.cooking/recipe-lab/archive/spicy-stir-fried-chicken,exact,닭갈비,,,true,same_menu_alias:닭갈비,7
+닭갈비,크리스마스엔 닭갈비 🐓,https://semie.cooking/cooking/id/4580,exact,닭갈비,,,true,same_menu_alias:닭갈비,11
+불고기,초간단 조선불고기,https://semie.cooking/recipe-lab/archive/super-simple-korean-bulgogi,ambiguous,,,조선,false,unknown_attached_text:조선,3
+불고기,불고기부리또,https://semie.cooking/recipe-lab/archive/bulgogi-burrito,ambiguous,,,부리또,false,unknown_attached_text:부리또,9
+불고기,자작자작 서울식 소불고기,https://semie.cooking/recipe-lab/archive/seoul-bulgogi,exact,불고기,,,true,same_menu_alias:소불고기,13
+불고기,버섯불고기솥밥,https://semie.cooking/recipe-lab/archive/beoseot-bulgogi-sotbap,variant,버섯 불고기,불고기,버섯,false,ingredient_modifier:버섯,14
+불고기,불고기 사워크림 프라이,https://semie.cooking/recipe-lab/archive/bulgogi-sour-cream-fries,other_dish,프라이,,,false,different_dish_form:프라이,13
+불고기,[즐요클럽_양식] 불고기 사워크림 프라이,https://semie.cooking/cooking/id/5986,other_dish,프라이,,,false,different_dish_form:프라이,13
+불고기,즐요클럽_양식 불고기 사워크림 프라이,https://semie.cooking/cooking/id/5936,other_dish,프라이,,,false,different_dish_form:프라이,11
+불고기,즐요클럽(한식)- 요린이의 연두과 함께한 소불고기,https://semie.cooking/cooking/id/5906,exact,불고기,,,true,same_menu_alias:소불고기,12
+불고기,소불고기,https://semie.cooking/cooking/id/5300,exact,불고기,,,true,same_menu_alias:소불고기,14
+삼겹살,초간단 삼겹살조림,https://semie.cooking/recipe-lab/archive/super-easy-braised-pork-belly,derivative,,삼겹살,,false,finished_dish_used_as_ingredient,4
+삼겹살,대패삼겹살 세발나물 된장덮밥,https://semie.cooking/recipe-lab/archive/namul-doenjang-ricebowl,other_dish,덮밥,,,false,different_dish_form:덮밥,8
+삼겹살,초간단 삼겹살조림(목살버전),https://semie.cooking/cooking/id/7558,other_dish,조림,,,false,different_dish_form:조림,5
+삼겹살,장조림소스 활용한 초간단 닭다리살조림(삼겹살조림 레시피 활용),https://semie.cooking/cooking/id/7522,other_dish,장조림,,,false,different_known_menu:장조림,3
+삼겹살,[새미즈4] 미션03. 초간단 삼겹살조림,https://semie.cooking/cooking/id/7491,other_dish,조림,,,false,different_dish_form:조림,7
+삼겹살,단짠단짠 목살(삼겹살)조림,https://semie.cooking/cooking/id/7412,other_dish,조림,,,false,different_dish_form:조림,4
+삼겹살,식감이 살아있는 양배추 대패삼겹살 두루치기,https://semie.cooking/cooking/id/6215,other_dish,두루치기,,,false,different_dish_form:두루치기,5
+삼겹살,고추기름비빔면🌶️과 삼겹살구이🍖,https://semie.cooking/cooking/id/4751,ambiguous,,,구이,false,unknown_attached_text:구이,10
+삼겹살,삼겹살수육,https://semie.cooking/cooking/id/4525,derivative,,삼겹살,,false,finished_dish_used_as_ingredient,6
+육개장,깊은맛 진짜 육개장,https://semie.cooking/recipe-lab/archive/rich-flavor-genuine-yukgaejang,exact,육개장,,,true,same_menu_alias:육개장,10
+미역국,밥솥 미역국,https://semie.cooking/recipe-lab/archive/sot-miyeokguk,exact,미역국,,,true,same_menu_alias:미역국,4
+미역국,오독오독 미역귀 미역국,https://semie.cooking/recipe-lab/archive/miyeokguk-with-miyeokgwi,exact,미역국,,,true,same_menu_alias:미역국,6
+미역국,초간단 3STEP 미역국,https://semie.cooking/recipe-lab/archive/miyeokguk,exact,미역국,,,true,same_menu_alias:미역국,7
+미역국,소고기 미역국 끓이기,https://semie.cooking/cooking/id/8043,variant,소고기 미역국,미역국,소고기,false,spaced_ingredient_modifier:소고기,5
+미역국,"아이용, 어른용 미역국 동시에 끓이기! ❤️",https://semie.cooking/cooking/id/8007,exact,미역국,,,true,same_menu_alias:미역국,5
+미역국,[새미즈 4기] 완전 간단한 미역국!!!,https://semie.cooking/cooking/id/7472,exact,미역국,,,true,same_menu_alias:미역국,8
+미역국,(새미즈4기)초가단 연두 미역국,https://semie.cooking/cooking/id/7467,variant,연두 미역국,미역국,연두,false,spaced_ingredient_modifier:연두,3
+미역국,[새미즈 4기] 미션3-2. 초간단 미역국 만들기,https://semie.cooking/cooking/id/7460,exact,미역국,,,true,same_menu_alias:미역국,7
+미역국,[새미즈4] 미션3-2 초간단 미역국 만들기,https://semie.cooking/cooking/id/7441,exact,미역국,,,true,same_menu_alias:미역국,4
+미역국,[새미즈 4기] 미션 3-4 초간단 3STEP 미역국,https://semie.cooking/cooking/id/7428,exact,미역국,,,true,same_menu_alias:미역국,7
+미역국,참치미역국 끓이기,https://semie.cooking/cooking/id/5737,variant,참치 미역국,미역국,참치,false,ingredient_modifier:참치,6
+미역국,[요리해] 데구르르 메추리알 장조림 &amp; 초간단 3STEP 미역국 따라해봤어요!,https://semie.cooking/cooking/id/5434,other_dish,장조림,,,false,different_known_menu:장조림,4
+미역국,[새미즈]3단계로 끝나는 미역국 끓이기!!,https://semie.cooking/cooking/id/4991,exact,미역국,,,true,same_menu_alias:미역국,7
+미역국,초간닼 3STEP 미역국 따라하기,https://semie.cooking/cooking/id/4963,exact,미역국,,,true,same_menu_alias:미역국,4
+미역국,소고기미역국 끓이기,https://semie.cooking/cooking/id/4906,variant,소고기 미역국,미역국,소고기,false,ingredient_modifier:소고기,6
+콩나물국,전주식 콩나물국밥,https://semie.cooking/recipe-lab/archive/jeonju-style-rice-soup-with-soybean-sprouts,other_dish,밥,,,false,attached_dish_suffix:밥,9
+콩나물국,얼칼 김치콩나물국,https://semie.cooking/recipe-lab/archive/spicy-and-tangy-kimchi-and-bean-sprout-soup,variant,김치 콩나물국,콩나물국,김치,false,ingredient_modifier:김치,6
+콩나물국,초간단 콩나물국,https://semie.cooking/recipe-lab/archive/bean-sprout-soup,exact,콩나물국,,,true,same_menu_alias:콩나물국,4
+콩나물국,콩나물국 실패 없는 초간단 레시피! 꼭 해보세요!,https://semie.cooking/cooking/id/7889,exact,콩나물국,,,true,same_menu_alias:콩나물국,3
+콩나물국,초간단 콩나물국 끓이기! 연두링만 있으면 따로 육수 안내도 엄청 맛있어요~~,https://semie.cooking/cooking/id/7879,exact,콩나물국,,,true,same_menu_alias:콩나물국,4
+콩나물국,요즘처럼 추울 때! 칼칼한 콩나물국 추천 ❤️‍🔥,https://semie.cooking/cooking/id/7832,exact,콩나물국,,,true,same_menu_alias:콩나물국,7
+콩나물국,[새미즈2기] 콩나물국 도전,https://semie.cooking/cooking/id/5585,exact,콩나물국,,,true,same_menu_alias:콩나물국,4
+콩나물국,감기기운 있을 땐 얼큰 콩나물국!!!,https://semie.cooking/cooking/id/4988,exact,콩나물국,,,true,same_menu_alias:콩나물국,7
+곰탕,"따뜻한 국물 한 그릇, 곰탕",https://semie.cooking/recipe-lab/archive/gomtang,exact,곰탕,,,true,same_menu_alias:곰탕,9
+양념치킨,양념치킨소스,https://semie.cooking/recipe-lab/archive/sweet-and-spicy-korean-fried-chicken-sauce,ambiguous,,,소스,false,unknown_attached_text:소스,6
+깍두기,초간단 깍두기,https://semie.cooking/recipe-lab/archive/kkakdugi,exact,깍두기,,,true,same_menu_alias:깍두기,4
+깍두기,깍두기볶음밥,https://semie.cooking/recipe-lab/archive/kkakdugi-bokkeumbap,derivative,,깍두기,,false,finished_dish_used_as_ingredient,7
+무생채,새콤 무생채,https://semie.cooking/recipe-lab/archive/julienne-radish-fresh-salad,exact,무생채,,,true,same_menu_alias:무생채,9
+무생채,맛있는 무생채 만들기!,https://semie.cooking/cooking/id/7816,exact,무생채,,,true,same_menu_alias:무생채,4
+부추김치,즐요클럽(한식)- 요린이의 새미네부엌 부추파김치 양념과 함께한 부추김치,https://semie.cooking/cooking/id/5851,other_dish,파김치,,,false,different_known_menu:파김치,4
+부추김치,초간단 부추 김치 만들기,https://semie.cooking/cooking/id/5621,exact,부추김치,,,true,same_menu_alias:부추김치,5
+부추김치,"[새미즈 2기 미션] 엄마없이 파김치, 부추김치를 10분만에..?",https://semie.cooking/cooking/id/5577,other_dish,파김치,,,false,different_known_menu:파김치,6
+열무김치,매콤새콤 열무 김치말이국수,https://semie.cooking/recipe-lab/archive/yeoul-mu-kimchi-noodles,derivative,,열무김치,,false,finished_dish_used_as_ingredient,6
+오이소박이,초간단 오이소박이,https://semie.cooking/recipe-lab/archive/real-cucumber-kimchi,exact,오이소박이,,,true,same_menu_alias:오이소박이,3
+오이소박이,퉁퉁탕탕 오이소박이,https://semie.cooking/recipe-lab/archive/cucumber-kimchi,exact,오이소박이,,,true,same_menu_alias:오이소박이,3
+오이소박이,새미즈 - 오이소박이,https://semie.cooking/cooking/id/4915,exact,오이소박이,,,true,same_menu_alias:오이소박이,3
+파김치,초간단 파김치,https://semie.cooking/recipe-lab/archive/pa-kimchi,exact,파김치,,,true,same_menu_alias:파김치,4
+파김치,🍃 #즐요클럽 대파김치 만들기 이렇게 맛있다고?,https://semie.cooking/cooking/id/5969,ambiguous,,,대,false,unknown_attached_text:대,5
+파김치,(즐요클럽-한식) 쪽파김치,https://semie.cooking/cooking/id/5859,ambiguous,,,쪽,false,unknown_attached_text:쪽,3
+파김치,즐요클럽(한식)- 요린이의 새미네부엌 부추파김치 양념과 함께한 부추김치,https://semie.cooking/cooking/id/5851,other_dish,부추김치,,,false,different_known_menu:부추김치,4
+파김치,새미와 함께 즐겁게 요리해요)즐요클럽~파김치(feat.부추파김치양념),https://semie.cooking/cooking/id/5761,variant,부추 파김치,파김치,부추,false,ingredient_modifier:부추,3
+파김치,대파김치 만들기,https://semie.cooking/cooking/id/5738,ambiguous,,,대,false,unknown_attached_text:대,4
+파김치,"[새미즈 2기 미션] 엄마없이 파김치, 부추김치를 10분만에..?",https://semie.cooking/cooking/id/5577,other_dish,부추김치,,,false,different_known_menu:부추김치,6
+시금치나물,새미즈 - 반찬만들기 2.시금치나물,https://semie.cooking/cooking/id/4899,exact,시금치나물,,,true,same_menu_alias:시금치나물,6
+시금치나물,새미즈-시금치나물 도전기,https://semie.cooking/cooking/id/4840,exact,시금치나물,,,true,same_menu_alias:시금치나물,5
+시금치나물,시금치나물,https://semie.cooking/cooking/id/4531,exact,시금치나물,,,true,same_menu_alias:시금치나물,5
+송편,"송편의 재탄생, 송편피자",https://semie.cooking/recipe-lab/archive/songpyeon-pizza,derivative,,송편,,false,finished_dish_used_as_ingredient,6
+송편,어른도 아이도 우리맛송편,https://semie.cooking/recipe-lab/archive/songpyeon-with-chickpeas,ambiguous,,,우리맛,false,unknown_attached_text:우리맛,6
+만두,육즙가득 떠먹는 컵만두,https://semie.cooking/recipe-lab/archive/spoonable-cup-dumplings,derivative,,만두,,false,finished_dish_used_as_ingredient,7
+만두,비빔만두,https://semie.cooking/recipe-lab/archive/bibim-mandu,derivative,,만두,,false,finished_dish_used_as_ingredient,12
+만두,시원칼칼 만두전골,https://semie.cooking/recipe-lab/archive/mandoo-hotpot,derivative,,만두,,false,finished_dish_used_as_ingredient,9
+만두,직접 만들어 쫄깃한 만두피,https://semie.cooking/recipe-lab/archive/mandu-wrappers,variant,피 만두,만두,피,false,ingredient_modifier:피,5
+만두,김치꽃만두,https://semie.cooking/recipe-lab/archive/kimchiflowermandu,derivative,,만두,,false,finished_dish_used_as_ingredient,9
+만두,속 편한 배추새우만두,https://semie.cooking/recipe-lab/archive/baechu-shrimp-mandu,variant,새우 만두,만두,새우,false,ingredient_modifier:새우,5
+만두,부담없이 더 가볍게! 채소만두,https://semie.cooking/recipe-lab/archive/vegetable-buchu-mandu,derivative,,만두,,false,finished_dish_used_as_ingredient,6
+만두,만두활용 전자레인지 리조또 만들기,https://semie.cooking/cooking/id/7580,derivative,,만두,,false,finished_dish_used_as_ingredient,4
+만두,(새미즈 4기) 4-2 만두전골,https://semie.cooking/cooking/id/7579,derivative,,만두,,false,finished_dish_used_as_ingredient,6
+만두,예쁜깐풍만두앞에서 아들과 꿍딱꾸리!,https://semie.cooking/cooking/id/6351,derivative,,만두,,false,finished_dish_used_as_ingredient,3
+만두,김치만두 만들었어요,https://semie.cooking/cooking/id/6217,derivative,,만두,,false,finished_dish_used_as_ingredient,7
+만두,(즐요클럽_한식) 속 편한 배추새우만두,https://semie.cooking/cooking/id/5913,variant,새우 만두,만두,새우,false,ingredient_modifier:새우,5
+만두,돌돌말아 배추새우만두!,https://semie.cooking/cooking/id/5012,variant,새우 만두,만두,새우,false,ingredient_modifier:새우,2
+물냉면,여름별미  열무물냉면 만들기,https://semie.cooking/cooking/id/7173,variant,열무 물냉면,물냉면,열무,false,ingredient_modifier:열무,8
+칼국수,간편 팥칼국수,https://semie.cooking/recipe-lab/archive/quick-red-bean-noodle-soup,variant,팥 칼국수,칼국수,팥,false,ingredient_modifier:팥,3
+칼국수,후루룩- 칼국수,https://semie.cooking/recipe-lab/archive/kalguksu,exact,칼국수,,,true,same_menu_alias:칼국수,8
+칼국수,"비 오는 바다 앞, 장칼국수",https://semie.cooking/recipe-lab/archive/jang-kalguksu,ambiguous,,,장,false,unknown_attached_text:장,13
+칼국수,난생 처음 끓여본 칼국수! 의외로 간단하네요?,https://semie.cooking/cooking/id/7835,exact,칼국수,,,true,same_menu_alias:칼국수,7
+칼국수,등촌칼국수 맛 얼큰 배추찜!!,https://semie.cooking/cooking/id/5026,ambiguous,,,등촌,false,unknown_attached_text:등촌,13
+잔치국수,포장마차맛 잔치국수,https://semie.cooking/recipe-lab/archive/banquet-noodles,exact,잔치국수,,,true,same_menu_alias:잔치국수,6
+김밥,재료듬뿍 삼각김밥,https://semie.cooking/recipe-lab/archive/onigiri-with-plenty-of-ingredients,ambiguous,,,삼각,false,unknown_attached_text:삼각,11
+김밥,진미채 꼬마김밥,https://semie.cooking/recipe-lab/archive/jinmichae-baby-gimbab,ambiguous,,,꼬마,false,unknown_attached_text:꼬마,8
+김밥,"프레쉬함 가득, 묵사발 김밥",https://semie.cooking/recipe-lab/archive/muksabal-gimbap,exact,김밥,,,true,same_menu_alias:김밥,10
+김밥,고소새콤 김치김밥,https://semie.cooking/recipe-lab/archive/kimchi-gimbap,variant,김치 김밥,김밥,김치,false,ingredient_modifier:김치,8
+김밥,계란말이김밥,https://semie.cooking/recipe-lab/archive/gyeranmari-gimbap,other_dish,계란말이,,,false,different_known_menu:계란말이,11
+김밥,매콤어묵김밥,https://semie.cooking/recipe-lab/archive/spicy-eomukbokkeum-gimbap,variant,어묵 김밥,김밥,어묵,false,ingredient_modifier:어묵,12
+김밥,김밥의 정석,https://semie.cooking/recipe-lab/archive/basic-of-gimbap,ambiguous,,,의,false,unknown_attached_text:의,13
+김밥,"맥시멀리스트 김밥, 후토마끼",https://semie.cooking/recipe-lab/archive/maximalist-gimbap,exact,김밥,,,true,same_menu_alias:김밥,16
+김밥,해산물 풍미 가득 냉이김밥,https://semie.cooking/recipe-lab/archive/naengi-gimbap,variant,냉이 김밥,김밥,냉이,false,ingredient_modifier:냉이,7
+김밥,바삭바삭 미역튀각김밥,https://semie.cooking/recipe-lab/archive/fried-miyeok-gimbab,ambiguous,,,미역튀각,false,unknown_attached_text:미역튀각,12
+김밥,밥보다 가볍게 메밀김밥,https://semie.cooking/recipe-lab/archive/buckwheat-gimbap,variant,밀 김밥,김밥,밀,false,ingredient_modifier:밀,6
+김밥,한 입 쏙- 오이김밥,https://semie.cooking/recipe-lab/archive/cucumber-kimbap,variant,오이 김밥,김밥,오이,false,ingredient_modifier:오이,6
+김밥,이건 그냥 대충 김밥! 그래도 맛난 김밥,https://semie.cooking/cooking/id/7939,other_dish,김밥,,,false,different_dish_form:김밥,7
+김밥,[새미즈 4기] 감격스토리.. 계란말이 성공!!!! 오늘또 김밥[계란말이김밥],https://semie.cooking/cooking/id/7403,other_dish,계란말이,,,false,different_known_menu:계란말이,9
+김밥,[새미즈 4기] 미션2-1 계란말이김밥을 만들어요,https://semie.cooking/cooking/id/7392,other_dish,계란말이,,,false,different_known_menu:계란말이,10
+김치볶음밥,김치볶음밥 부리또,https://semie.cooking/recipe-lab/archive/kimchibokkeumbap-burrito,exact,김치볶음밥,,,true,same_menu_alias:김치볶음밥,8
+김치볶음밥,국민 음식 김치볶음밥,https://semie.cooking/recipe-lab/archive/kimchi-friedrice,exact,김치볶음밥,,,true,same_menu_alias:김치볶음밥,6
+김치볶음밥,[새미즈] 새미네부엌 레시피 보고 맛있는 국민 음식 김치 볶음밥 만들기~,https://semie.cooking/cooking/id/4916,exact,김치볶음밥,,,true,same_menu_alias:김치볶음밥,6
+김치볶음밥,자취요리 / 차돌 김치 볶음밥 만들기,https://semie.cooking/cooking/id/4613,exact,김치볶음밥,,,true,same_menu_alias:김치볶음밥,8
+비빔밥,전자레인지 애호박새송이비빔밥,https://semie.cooking/recipe-lab/archive/microwaved-bibimbap-with-zucchini-and-mushrooms,ambiguous,,,애호박새송이,false,unknown_attached_text:애호박새송이,9
+비빔밥,건강 품은 찜채소비빔밥,https://semie.cooking/recipe-lab/archive/steamed-vegetable-bibimbap,variant,채소 비빔밥,비빔밥,채소,false,ingredient_modifier:채소,16
+비빔밥,조화의 미학 채소비빔밥,https://semie.cooking/recipe-lab/archive/bibimbap,variant,채소 비빔밥,비빔밥,채소,false,ingredient_modifier:채소,11
+비빔밥,쫄깃탱글 꼬막보리비빔밥,https://semie.cooking/recipe-lab/archive/kkomak-barley-bibimbap,ambiguous,,,꼬막보리,false,unknown_attached_text:꼬막보리,12
+비빔밥,한 그릇 뚝딱 부추명란비빔밥,https://semie.cooking/recipe-lab/archive/buchu-myeongnan-bibimbap,ambiguous,,,부추명란,false,unknown_attached_text:부추명란,10
+비빔밥,두쫀쿠 가고 봄동비빔밥이 온다길래! ㅎㅎ,https://semie.cooking/cooking/id/7932,variant,봄동 비빔밥,비빔밥,봄동,false,ingredient_modifier:봄동,2
+비빔밥,냉장고 속 장조림으로 한그릇 요리 뚝딱! 장조림버터비빔밥 만들기 💛,https://semie.cooking/cooking/id/7852,other_dish,장조림,,,false,different_known_menu:장조림,5
+비빔밥,채소비빔밥,https://semie.cooking/cooking/id/6936,variant,채소 비빔밥,비빔밥,채소,false,ingredient_modifier:채소,3
+비빔밥,"최강 밥도둑, [꼬막비빔밥]",https://semie.cooking/cooking/id/5332,variant,꼬막 비빔밥,비빔밥,꼬막,false,ingredient_modifier:꼬막,11
+잡채,두부면 버섯 잡채,https://semie.cooking/recipe-lab/archive/tofunoodle-mushroom-japchae,variant,버섯 잡채,잡채,버섯,false,spaced_ingredient_modifier:버섯,10
+잡채,잡채볶음밥,https://semie.cooking/recipe-lab/archive/japchae-fried-rice,derivative,,잡채,,false,finished_dish_used_as_ingredient,5
+잡채,타이베이 스타일 고추잡채,https://semie.cooking/recipe-lab/archive/chaochai-gochu-japchae,variant,고추 잡채,잡채,고추,false,ingredient_modifier:고추,5
+잡채,알록달록 고추없는 고추잡채,https://semie.cooking/recipe-lab/archive/gochu-japchae,variant,고추 잡채,잡채,고추,false,ingredient_modifier:고추,6
+잡채,콩나물 잡채,https://semie.cooking/recipe-lab/archive/bean-sprout-japchae,variant,콩나물 잡채,잡채,콩나물,false,spaced_ingredient_modifier:콩나물,7
+잡채,초간단 잡채,https://semie.cooking/recipe-lab/archive/family-japchae,exact,잡채,,,true,same_menu_alias:잡채,9
+잡채,[새미즈 3기] MISSION 3. 집밥 요리 챌린지 (두부면 버섯 잡채),https://semie.cooking/cooking/id/6777,variant,버섯 잡채,잡채,버섯,false,spaced_ingredient_modifier:버섯,10
+잡채,[새미즈3기] 미션3)잡채 만들기,https://semie.cooking/cooking/id/6759,exact,잡채,,,true,same_menu_alias:잡채,10
+잡채,[새미즈3기] 미션6. 인생 첫 잡채 만들기 도전!,https://semie.cooking/cooking/id/6740,exact,잡채,,,true,same_menu_alias:잡채,3
+잡채,생일에 고추잡채!! 촵촵!,https://semie.cooking/cooking/id/6286,variant,고추 잡채,잡채,고추,false,ingredient_modifier:고추,5
+잡채,꽃빵이 필요한 고추잡채,https://semie.cooking/cooking/id/6051,variant,고추 잡채,잡채,고추,false,ingredient_modifier:고추,4
+잡채,즐요클럽 고추잡채 파스타,https://semie.cooking/cooking/id/6050,other_dish,파스타,,,false,different_dish_form:파스타,5
+잡채,엄마랑 함께 명절 잡채 만들기,https://semie.cooking/cooking/id/5982,exact,잡채,,,true,same_menu_alias:잡채,8
+잡채,"🍃 #즐요클럽 간단하고 맛있는 , 불지않는 돼지고기 잡채만들기(w.잡채양념장)",https://semie.cooking/cooking/id/5947,variant,양념장 잡채,잡채,양념장,false,ingredient_modifier:양념장,5
+잡채,💕즐요클럽-한식💚잡채,https://semie.cooking/cooking/id/5945,exact,잡채,,,true,same_menu_alias:잡채,9
+콩나물무침,아삭함 가득 콩나물 무침,https://semie.cooking/recipe-lab/archive/kongnamulmuchim,exact,콩나물무침,,,true,same_menu_alias:콩나물무침,8
+콩나물무침,[새미즈 4기] 냄비 없이 찜기로 콩나물 무침!,https://semie.cooking/cooking/id/7483,exact,콩나물무침,,,true,same_menu_alias:콩나물무침,7
+콩나물무침,새미즈 - 콩나물무침,https://semie.cooking/cooking/id/4960,exact,콩나물무침,,,true,same_menu_alias:콩나물무침,4
+콩나물무침,새미즈 - 반찬만들기 1.빨간 콩나물무침,https://semie.cooking/cooking/id/4897,exact,콩나물무침,,,true,same_menu_alias:콩나물무침,6
+콩나물무침,[새미즈] 솔루션&amp;레시피 참고를 통한 콩나물 무침 만들기,https://semie.cooking/cooking/id/4826,exact,콩나물무침,,,true,same_menu_alias:콩나물무침,3
+떡볶이,짜장떡볶이,https://semie.cooking/recipe-lab/archive/jjajang-tteokbokki,ambiguous,,,짜장,false,unknown_attached_text:짜장,6
+떡볶이,추억의 분식집 떡볶이,https://semie.cooking/recipe-lab/archive/tteokbokki,exact,떡볶이,,,true,same_menu_alias:떡볶이,10
+떡볶이,알싸함과 고소함 달래떡볶이,https://semie.cooking/recipe-lab/archive/dallae-tteokbokki,variant,달래 떡볶이,떡볶이,달래,false,ingredient_modifier:달래,4
+떡볶이,"떡볶이계의 샛별, 시금치크림떡볶이",https://semie.cooking/recipe-lab/archive/spinach-cream-tteokbokki,ambiguous,,,시금치크림,false,unknown_attached_text:시금치크림,11
+떡볶이,새미즈 - 매콤달콤 떡볶이,https://semie.cooking/cooking/id/4979,exact,떡볶이,,,true,same_menu_alias:떡볶이,8
+떡볶이,[새미즈]매콤 달달한 국물 떡볶이,https://semie.cooking/cooking/id/4947,exact,떡볶이,,,true,same_menu_alias:떡볶이,9
+떡볶이,분식집 이제 안녕~꾸덕 떡볶이,https://semie.cooking/cooking/id/4873,exact,떡볶이,,,true,same_menu_alias:떡볶이,10
+떡볶이,엽떡 러버가 만들어 본 떡볶이,https://semie.cooking/cooking/id/4720,exact,떡볶이,,,true,same_menu_alias:떡볶이,14
+떡볶이,로제떡볶이 + 쫄면,https://semie.cooking/cooking/id/4556,ambiguous,,,로제,false,unknown_attached_text:로제,4
+순대,순대볶음,https://semie.cooking/cooking/id/5244,derivative,,순대,,false,finished_dish_used_as_ingredient,13
+보쌈,초간단 수육보쌈,https://semie.cooking/recipe-lab/archive/suyuk-bosam,other_dish,수육,,,false,different_known_menu:수육,2
+보쌈,무말랭이 보쌈김치,https://semie.cooking/recipe-lab/archive/mumalengi-bosam-kimchi,variant,김치 보쌈,보쌈,김치,false,ingredient_modifier:김치,4
+보쌈,요리초보도 이렇게 하면 수육 보쌈 식은 죽 먹기에요!,https://semie.cooking/cooking/id/7851,other_dish,수육,,,false,different_known_menu:수육,1
+보쌈,[새미즈 4기] 미션 4-2 초간단수육보쌈,https://semie.cooking/cooking/id/7648,other_dish,수육,,,false,different_known_menu:수육,2
+보쌈,"[새미즈 4기] 4-2 김장은 안했지만, 굴보쌈!",https://semie.cooking/cooking/id/7629,variant,굴 보쌈,보쌈,굴,false,ingredient_modifier:굴,6
+보쌈,[새미즈4] 미션4-2 겨울맞이 보쌈과 보쌈김치 만들기!,https://semie.cooking/cooking/id/7514,variant,김치 보쌈,보쌈,김치,false,ingredient_modifier:김치,5
+보쌈,[새미즈 3기] MISSION 3. 집밥 요리 챌린지 (초간단 수육보쌈),https://semie.cooking/cooking/id/6776,other_dish,수육,,,false,different_known_menu:수육,2
+식혜,2가지맛 식혜만들기,https://semie.cooking/recipe-lab/archive/sikhye-and-danhobaksikhye,exact,식혜,,,true,same_menu_alias:식혜,4
+감자전,쫀득쫀득 감자전,https://semie.cooking/recipe-lab/archive/chewy-potato-pancake,exact,감자전,,,true,same_menu_alias:감자전,4
+감자전,바삭바삭한 라이스페이퍼 감자전!,https://semie.cooking/cooking/id/4894,variant,라이스페이퍼 감자전,감자전,라이스페이퍼,false,spaced_ingredient_modifier:라이스페이퍼,4
+계란말이,계란말이김밥,https://semie.cooking/recipe-lab/archive/gyeranmari-gimbap,other_dish,김밥,,,false,different_known_menu:김밥,11
+계란말이,계란말이 쉽게 하는 법,https://semie.cooking/recipe-lab/archive/gyeranmari,exact,계란말이,,,true,same_menu_alias:계란말이,6
+계란말이,중학생되면 계란말이 가능!,https://semie.cooking/cooking/id/7905,exact,계란말이,,,true,same_menu_alias:계란말이,3
+계란말이,"사각팬 하나 있으면, 계란말이 참 쉽죵? 🍳",https://semie.cooking/cooking/id/7838,exact,계란말이,,,true,same_menu_alias:계란말이,3
+계란말이,[새미즈 4기] 감격스토리.. 계란말이 성공!!!! 오늘또 김밥[계란말이김밥],https://semie.cooking/cooking/id/7403,other_dish,김밥,,,false,different_known_menu:김밥,9
+계란말이,[새미즈 4기] 미션2-1 계란말이김밥을 만들어요,https://semie.cooking/cooking/id/7392,other_dish,김밥,,,false,different_known_menu:김밥,10
+계란말이,[새미즈4기]미션2-1. 계란말이,https://semie.cooking/cooking/id/7369,exact,계란말이,,,true,same_menu_alias:계란말이,5
+계란말이,즐요클럽(한식) “계란말이”,https://semie.cooking/cooking/id/6011,exact,계란말이,,,true,same_menu_alias:계란말이,5
+계란말이,💕즐요클럽-한식💚계란말이,https://semie.cooking/cooking/id/5992,exact,계란말이,,,true,same_menu_alias:계란말이,5
+계란말이,즐요클럽(한식)- 요린이의 연두와 함께한 계란말이,https://semie.cooking/cooking/id/5740,exact,계란말이,,,true,same_menu_alias:계란말이,2
+계란말이,[새미즈 2기] 계란말이김밥을 응용한 참치김밥 만들기!,https://semie.cooking/cooking/id/5416,other_dish,김밥,,,false,different_known_menu:김밥,13
+계란말이,새미즈 - 봄을 보는 듯한 계란말이 김밥 만들기,https://semie.cooking/cooking/id/4965,other_dish,김밥,,,false,different_known_menu:김밥,15
+계란말이,새미즈 - 야채 계란말이,https://semie.cooking/cooking/id/4851,variant,야채 계란말이,계란말이,야채,false,spaced_ingredient_modifier:야채,3
+계란말이,쉽고 맛있는 계란말이 만들기,https://semie.cooking/cooking/id/4633,exact,계란말이,,,true,same_menu_alias:계란말이,7
+계란말이,계란말이,https://semie.cooking/cooking/id/4517,exact,계란말이,,,true,same_menu_alias:계란말이,3
+김치전,그냥김치전이 아니라 고구마순 김치전,https://semie.cooking/cooking/id/6477,ambiguous,,,그냥 이,false,unknown_attached_text:그냥 이,3
+애호박전,"입안 가득, 반달애호박전",https://semie.cooking/recipe-lab/archive/half-moon-shaped-aehobakjeon,ambiguous,,,반달,false,unknown_attached_text:반달,14
+파전,해물파전,https://semie.cooking/recipe-lab/archive/haemul-pajeon,other_dish,해물파전,,,false,different_known_menu:해물파전,7
+장조림,원팬 장조림,https://semie.cooking/recipe-lab/archive/jangjorim,exact,장조림,,,true,same_menu_alias:장조림,5
+장조림,3step 장조림전,https://semie.cooking/recipe-lab/archive/jangjorim-jeon,other_dish,전,,,false,attached_dish_suffix:전,7
+장조림,데구르르 메추리알 장조림,https://semie.cooking/recipe-lab/archive/quail-eggs-jangjorim,variant,메추리알 장조림,장조림,메추리알,false,spaced_ingredient_modifier:메추리알,4
+장조림,냉장고 속 장조림으로 한그릇 요리 뚝딱! 장조림버터비빔밥 만들기 💛,https://semie.cooking/cooking/id/7852,other_dish,비빔밥,,,false,different_known_menu:비빔밥,5
+장조림,장조림소스 활용한 초간단 닭다리살조림(삼겹살조림 레시피 활용),https://semie.cooking/cooking/id/7522,other_dish,삼겹살,,,false,different_known_menu:삼겹살,3
+장조림,[새미즈4기] 간단한 원팬장조림 !,https://semie.cooking/cooking/id/7481,ambiguous,,,원팬,false,unknown_attached_text:원팬,5
+장조림,(새미즈4기)사태계란장조림,https://semie.cooking/cooking/id/7468,variant,계란 장조림,장조림,계란,false,ingredient_modifier:계란,4
+장조림,[새미즈4기]미션3-2) 메추리알장조림,https://semie.cooking/cooking/id/7456,variant,메추리알 장조림,장조림,메추리알,false,ingredient_modifier:메추리알,4
+장조림,(새미즈 4기) 3-1 장조림소스 이용한 달걀장,https://semie.cooking/cooking/id/7453,ambiguous,,,소스,false,unknown_attached_text:소스,3
+장조림,새미즈 4기 미션3-2 [삼겹간장조림],https://semie.cooking/cooking/id/7451,ambiguous,,,삼겹간,false,unknown_attached_text:삼겹간,5
+장조림,새미즈 4기 미션3-1 [장조림],https://semie.cooking/cooking/id/7447,exact,장조림,,,true,same_menu_alias:장조림,5
+장조림,[새미즈 2기] 장조림 소스를 이용한 계란장 만들기!,https://semie.cooking/cooking/id/5579,exact,장조림,,,true,same_menu_alias:장조림,2
+장조림,[새미즈 2기] 돼지고기로 만드는 장조림 with 새미네부엌 계란쇠고기 장조림 소스🫧,https://semie.cooking/cooking/id/5557,other_dish,조림,,,false,different_dish_form:조림,4
+장조림,[요리해] 데구르르 메추리알 장조림 &amp; 초간단 3STEP 미역국 따라해봤어요!,https://semie.cooking/cooking/id/5434,other_dish,미역국,,,false,different_known_menu:미역국,4
+장조림,소고기 다짐육을 이용한 장조림! 강추합니다,https://semie.cooking/cooking/id/5075,exact,장조림,,,true,same_menu_alias:장조림,8
+김치찌개,돼지고기김치찌개,https://semie.cooking/recipe-lab/archive/dwaejigogikimchijjigae,variant,돼지고기 김치찌개,김치찌개,돼지고기,false,ingredient_modifier:돼지고기,11
+김치찌개,김치찌개 100% 성공 레시피!,https://semie.cooking/cooking/id/7877,exact,김치찌개,,,true,same_menu_alias:김치찌개,3
+김치찌개,새미즈 - 돼지고기 김치찌개,https://semie.cooking/cooking/id/4981,variant,돼지고기 김치찌개,김치찌개,돼지고기,false,spaced_ingredient_modifier:돼지고기,11
+된장찌개,된장찌개,https://semie.cooking/recipe-lab/archive/doenjangjjigae,exact,된장찌개,,,true,same_menu_alias:된장찌개,10
+된장찌개,냉이 된장찌개,https://semie.cooking/recipe-lab/archive/naengi-doenjang-soup,variant,냉이 된장찌개,된장찌개,냉이,false,spaced_ingredient_modifier:냉이,9
+된장찌개,보글보글 된장찌개 맛있게 끓이는 법🥘,https://semie.cooking/cooking/id/7920,exact,된장찌개,,,true,same_menu_alias:된장찌개,2
+된장찌개,🍃 #즐요클럽 샘표 토장으로 구수한 된장찌개 끓이기,https://semie.cooking/cooking/id/6068,exact,된장찌개,,,true,same_menu_alias:된장찌개,5
+된장찌개,💕즐요클럽-한식💚된장찌개,https://semie.cooking/cooking/id/6033,exact,된장찌개,,,true,same_menu_alias:된장찌개,9
+된장찌개,즐요클럽(한식)“된장찌개“,https://semie.cooking/cooking/id/5933,exact,된장찌개,,,true,same_menu_alias:된장찌개,8
+된장찌개,즐요클럽(한식)- 요린이의 토장과 함께한 된장찌개,https://semie.cooking/cooking/id/5902,exact,된장찌개,,,true,same_menu_alias:된장찌개,7
+된장찌개,"□ 즐요클럽 : 한식 □  토장 된장찌개  [feat.토장,연두링,연두 활용요리]",https://semie.cooking/cooking/id/5846,exact,된장찌개,,,true,same_menu_alias:된장찌개,10
+된장찌개,새미와 함께 즐겁게 요리해요)즐요클럽~된장찌개(feat.토장),https://semie.cooking/cooking/id/5700,exact,된장찌개,,,true,same_menu_alias:된장찌개,3
+된장찌개,가리비로 끓이는 고급진😀된장찌개,https://semie.cooking/cooking/id/5123,exact,된장찌개,,,true,same_menu_alias:된장찌개,6
+된장찌개,새미즈_야채손질&amp;된장찌개끓이기,https://semie.cooking/cooking/id/4837,ambiguous,,,끓이기,false,unknown_attached_text:끓이기,8
+순두부찌개,기본 순두부찌개,https://semie.cooking/recipe-lab/archive/basic-soft-tofu-stew,exact,순두부찌개,,,true,same_menu_alias:순두부찌개,11
+순두부찌개,얼큰 돼지고기 순두부찌개,https://semie.cooking/recipe-lab/archive/sundubujjigae,variant,돼지고기 순두부찌개,순두부찌개,돼지고기,false,spaced_ingredient_modifier:돼지고기,14
+순두부찌개,추운 겨울에는~! 보들보들 순두부 찌개 🍲,https://semie.cooking/cooking/id/6411,exact,순두부찌개,,,true,same_menu_alias:순두부찌개,6
+순두부찌개,[새미즈] 칼질솔루션을 통한 양파손질후 순두부찌개 만들기!,https://semie.cooking/cooking/id/4821,exact,순두부찌개,,,true,same_menu_alias:순두부찌개,3
+부대찌개,보글보글 부대찌개,https://semie.cooking/recipe-lab/archive/budaejjigae,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
+부대찌개,초초초간단 부대찌개,https://semie.cooking/cooking/id/5183,exact,부대찌개,,,true,same_menu_alias:부대찌개,9
+갈비찜,밥솥 갈비찜,https://semie.cooking/recipe-lab/archive/rice-cooker-short-ribs,exact,갈비찜,,,true,same_menu_alias:갈비찜,7
+갈비찜,메인요리 끝판왕 갈비찜,https://semie.cooking/recipe-lab/archive/sogalbijjim,exact,갈비찜,,,true,same_menu_alias:갈비찜,11
+갈비찜,엄마스타일 갈비찜 만들기,https://semie.cooking/cooking/id/7836,exact,갈비찜,,,true,same_menu_alias:갈비찜,12
+족발,"족발의 색다른 변신, 카오카무",https://semie.cooking/recipe-lab/archive/kao-kha-moo,derivative,,족발,,false,finished_dish_used_as_ingredient,11
+족발,배달시키고 남은 족발로 5분만에 불족발 만들기!! 초초초간단😌,https://semie.cooking/cooking/id/4709,derivative,,족발,,false,finished_dish_used_as_ingredient,11
+갈비탕,LA갈비로 만든 라-갈비탕,https://semie.cooking/recipe-lab/archive/la-galbitang,other_dish,갈비구이,,,false,different_known_menu:갈비구이,5
+삼계탕,초간단 백숙삼계탕,https://semie.cooking/recipe-lab/archive/super-easy-baeksuk-samgyetang,ambiguous,,,백숙,false,unknown_attached_text:백숙,3
+삼계탕,삼계탕 끓이는 법,https://semie.cooking/recipe-lab/archive/samgyetang,exact,삼계탕,,,true,same_menu_alias:삼계탕,12
+삼계탕,으슬으슬 할 땐 백숙 삼계탕!,https://semie.cooking/cooking/id/7417,exact,삼계탕,,,true,same_menu_alias:삼계탕,4
+삼계탕,🐓복날엔 새미네부엌 백숙 삼계탕 육수를 활용한 찐~한 삼계탕!,https://semie.cooking/cooking/id/7216,exact,삼계탕,,,true,same_menu_alias:삼계탕,7
+삼계탕,초복맞이 삼계탕,https://semie.cooking/cooking/id/7158,exact,삼계탕,,,true,same_menu_alias:삼계탕,6
+새우튀김,"바삭함 가득, 새우튀김",https://semie.cooking/recipe-lab/archive/fried-shrimp,exact,새우튀김,,,true,same_menu_alias:새우튀김,5
+호떡,부들쫀떡 감자호떡,https://semie.cooking/recipe-lab/archive/gamja-hotteok,variant,감자 호떡,호떡,감자,false,ingredient_modifier:감자,9
+호떡,집에 있는 재료로 초간단호떡,https://semie.cooking/recipe-lab/archive/hotteok,exact,호떡,,,true,same_menu_alias:호떡,4
+호떡,홈메이드 호떡 도저언~!🧑‍🍳🧑‍🍳🧑‍🍳,https://semie.cooking/cooking/id/4653,exact,호떡,,,true,same_menu_alias:호떡,1
+육회,"30분만에, 육회",https://semie.cooking/recipe-lab/archive/yukhoe,exact,육회,,,true,same_menu_alias:육회,9
+수육,마늘소스 항정살수육,https://semie.cooking/recipe-lab/archive/braised-pork-jowl-with-garlic-sauce,ambiguous,,,항정살,false,unknown_attached_text:항정살,8
+수육,밥솥 수육,https://semie.cooking/recipe-lab/archive/sot-suyuk-bosam,exact,수육,,,true,same_menu_alias:수육,2
+수육,초간단 수육보쌈,https://semie.cooking/recipe-lab/archive/suyuk-bosam,other_dish,보쌈,,,false,different_known_menu:보쌈,2
+수육,취향따라 2가지 수육,https://semie.cooking/recipe-lab/archive/suyuk-with-kimchi,exact,수육,,,true,same_menu_alias:수육,9
+수육,요리초보도 이렇게 하면 수육 보쌈 식은 죽 먹기에요!,https://semie.cooking/cooking/id/7851,other_dish,보쌈,,,false,different_known_menu:보쌈,1
+수육,[새미즈 4기] 미션 4-2 초간단수육보쌈,https://semie.cooking/cooking/id/7648,other_dish,보쌈,,,false,different_known_menu:보쌈,2
+수육,(새미즈 4기) 잡내 노! 부드러운 수육 만들기,https://semie.cooking/cooking/id/7576,exact,수육,,,true,same_menu_alias:수육,2
+수육,[새미즈 4기] 초간단 밥솥수육,https://semie.cooking/cooking/id/7573,ambiguous,,,밥솥,false,unknown_attached_text:밥솥,1
+수육,[새미즈4기] 미션 4-2_(양배추 마늘 소스를 곁들인) 초간단 통삼겹&amp;앞다리살 수육,https://semie.cooking/cooking/id/7572,exact,수육,,,true,same_menu_alias:수육,8
+수육,(새미즈4기)간단하게 휘리릭 수육,https://semie.cooking/cooking/id/7569,exact,수육,,,true,same_menu_alias:수육,1
+수육,[새미즈 4기] 미션 4-2 밥솥수육,https://semie.cooking/cooking/id/7566,ambiguous,,,밥솥,false,unknown_attached_text:밥솥,2
+수육,새미즈 4기 미션 4-2 한식 대접 요리[밥솥 수육],https://semie.cooking/cooking/id/7560,exact,수육,,,true,same_menu_alias:수육,7
+수육,[새미즈 4기] 4-2 쪽득 촉촉 수육 만들기,https://semie.cooking/cooking/id/7554,exact,수육,,,true,same_menu_alias:수육,4
+수육,삽겹 앞다리살 반반 수육,https://semie.cooking/cooking/id/7423,exact,수육,,,true,same_menu_alias:수육,2
+수육,[새미즈 3기] MISSION 3. 집밥 요리 챌린지 (초간단 수육보쌈),https://semie.cooking/cooking/id/6776,other_dish,보쌈,,,false,different_known_menu:보쌈,2
+돼지국밥,초간단 돼지국밥,https://semie.cooking/recipe-lab/archive/super-simple-dwaeji-gukbap,exact,돼지국밥,,,true,same_menu_alias:돼지국밥,8
+제육볶음,초간단 깔끔 제육볶음,https://semie.cooking/recipe-lab/archive/very-simple-jeyug,exact,제육볶음,,,true,same_menu_alias:제육볶음,13
+제육볶음,제육볶음 많이 만들어 냉동실에 쏙쏙!,https://semie.cooking/cooking/id/6528,exact,제육볶음,,,true,same_menu_alias:제육볶음,8
+제육볶음,제육볶음,https://semie.cooking/cooking/id/5274,exact,제육볶음,,,true,same_menu_alias:제육볶음,11
+제육볶음,새미즈 - 제육볶음,https://semie.cooking/cooking/id/4984,exact,제육볶음,,,true,same_menu_alias:제육볶음,8
+조개탕,캬- 속 시원한 모시조개탕,https://semie.cooking/recipe-lab/archive/clam-soup,ambiguous,,,모시,false,unknown_attached_text:모시,4
+낙지볶음,힘이 반짝! 보양식 낙지볶음,https://semie.cooking/recipe-lab/archive/spicy-stir-fried-octopus,exact,낙지볶음,,,true,same_menu_alias:낙지볶음,15
+낙지볶음,맛있는 낙지볶음 후다닥!,https://semie.cooking/cooking/id/8081,exact,낙지볶음,,,true,same_menu_alias:낙지볶음,11
+계란찜,매콤 계란찜,https://semie.cooking/recipe-lab/archive/spicy-steamed-egg,exact,계란찜,,,true,same_menu_alias:계란찜,6
+계란찜,몽글몽글 계란찜,https://semie.cooking/recipe-lab/archive/gyeranjjim,exact,계란찜,,,true,same_menu_alias:계란찜,4
+계란찜,계란찜과 당근라페,https://semie.cooking/recipe-lab/archive/steamed-egg-and-carrotes-rapees,ambiguous,,,과,false,unknown_attached_text:과,9
+계란찜,요리연구소레시피/계란찜 만들었어요^^,https://semie.cooking/cooking/id/5299,exact,계란찜,,,true,same_menu_alias:계란찜,4
+계란찜,새미즈 - 간단한 전자레인지요리 순두부계란찜,https://semie.cooking/cooking/id/4818,variant,두부 계란찜,계란찜,두부,false,ingredient_modifier:두부,5
+닭볶음탕,묵은지 닭볶음탕,https://semie.cooking/recipe-lab/archive/kimchi-chicken-stew,exact,닭볶음탕,,,true,same_menu_alias:닭볶음탕,14
+닭볶음탕,닭볶음탕,https://semie.cooking/recipe-lab/archive/dakbokkeumtang,exact,닭볶음탕,,,true,same_menu_alias:닭볶음탕,16
+닭볶음탕,닭볶음탕 만들기,https://semie.cooking/cooking/id/5873,exact,닭볶음탕,,,true,same_menu_alias:닭볶음탕,3
+닭볶음탕,새미와 함께 즐겁게 요리해요)즐요클럽~닭볶음탕(feat.조선고추장),https://semie.cooking/cooking/id/5729,exact,닭볶음탕,,,true,same_menu_alias:닭볶음탕,3
+닭볶음탕,불닭소스 넣어 매콤한 불닭볶음탕!!,https://semie.cooking/cooking/id/5610,ambiguous,,,불,false,unknown_attached_text:불,10
+닭볶음탕,닭볶음탕,https://semie.cooking/cooking/id/4476,exact,닭볶음탕,,,true,same_menu_alias:닭볶음탕,5
+콩국수,"두유와 두부로, 콩국수",https://semie.cooking/recipe-lab/archive/soybean-noodles,exact,콩국수,,,true,same_menu_alias:콩국수,8

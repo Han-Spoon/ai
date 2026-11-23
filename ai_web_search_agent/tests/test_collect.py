@@ -15,6 +15,7 @@ from ai_web_search_agent import (
     UnconfiguredSearchProvider,
     WebCollectAgent,
 )
+from ai_web_search_agent.collect import drop_dish_name
 
 QUERY = "김치찌개 레시피"
 FETCHED_AT = datetime(2026, 10, 25, 3, 0, tzinfo=timezone.utc)
@@ -237,12 +238,14 @@ def test_dish_name_counts_when_the_recipe_lists_it_apart() -> None:
     assert "김치" in names
 
 
-def test_menu_that_is_the_name_itself_keeps_it() -> None:
-    # 순대 carries pork; a 순대 menu must not lose it.
-    req = request().model_copy(update={"menu": request().menu.model_copy(update={"normalized_menu_name": "순대"})})
-    search = StaticSearchProvider({"순대 레시피": [result(0, content="재료: 당면, 대파", title="순대 만들기")]})
-    names = [i.canonical_name for i in run(WebCollectAgent(search, Reader()), req).sources[0].ingredients]
-    assert "순대" in names
+def test_menu_that_is_the_name_itself_is_not_an_ingredient() -> None:
+    # The dish itself is not a leaf ingredient; its actual components stay.
+    names = drop_dish_name(
+        ["순대", "돼지고기", "당면"],
+        "순대 만들기 재료: 돼지고기 200g, 당면 100g",
+        "순대",
+    )
+    assert "순대" not in names and "돼지고기" in names
 
 
 def test_ingredient_at_the_front_of_the_menu_name_stays() -> None:

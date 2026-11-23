@@ -128,14 +128,14 @@ def test_doenjang_jjigae_soybean_is_near_certain():
 def test_galbi_garlic_matches_crawling_counts():  # ⑤ §7-1
     res = ontology("갈비구이")
     garlic = entries(res, "마늘")[0]
-    # 2026-11-23: 갈비구이 10000recipe grew from 57 to 208 recipes (crawling/README.md)
-    assert ("10000recipe", 180, 208) in [(o.corpus, o.k_count, o.n_total) for o in garlic.observations]
+    # Irrelevant titles and recipes using the finished dish are removed before counting.
+    assert ("10000recipe", 33, 37) in [(o.corpus, o.k_count, o.n_total) for o in garlic.observations]
 
 
 def test_samgyeopsal_pork_for_halal():
     res = ontology("삼겹살")
     pork = next(p for p in probabilities(res) if p.ingredient.canonical_name == "돼지고기")
-    assert pork.role == "identity" and pork.posterior_mean > 0.9
+    assert pork.role == "identity" and pork.posterior_mean > 0.7
 
 
 def test_chadol_variant_maps_to_beef_without_alias_rows():
@@ -146,6 +146,15 @@ def test_chadol_variant_maps_to_beef_without_alias_rows():
     assert res.cache_command is None
 
 
+def test_recipe_outliers_and_self_references_are_filtered():
+    sundae = ontology("순대")
+    assert not entries(sundae, "순대")
+    assert not entries(sundae, "생크림")
+    assert not entries(sundae, "곰탕")
+
+    assert not entries(ontology("불고기"), "새우")
+
+
 def test_cheese_option_token_is_added():
     res = ontology("김치찌개", residual=["치즈"])
     assert any(i.source == "variant_suggested" for i in entries(res, "치즈"))
@@ -153,8 +162,8 @@ def test_cheese_option_token_is_added():
 
 
 def test_path_tag_does_not_leak_onto_plain_ingredient():
-    # 삼겹살 corpus has plain 식초 and 마요네즈 -> 식초 / 계란: vinegar never gets the egg
-    res = ontology("삼겹살")
+    # 김밥 corpus has plain 식초 and 마요네즈 -> 식초 / 계란: vinegar never gets the egg
+    res = ontology("김밥")
     assert all("is_egg" not in i.constraint_tags for i in entries(res, "식초"))
     assert any("is_egg" in i.constraint_tags for i in entries(res, "마요네즈"))
 
