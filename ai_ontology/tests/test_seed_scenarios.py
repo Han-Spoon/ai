@@ -310,3 +310,42 @@ def test_without_absent_answers_the_parent_keeps_sub_ingredient_tags():
     from ai_ontology import lookup_tags
 
     assert "is_shrimp" in lookup_tags([s.id["배추김치"]], s.graph, "x").tags[s.id["배추김치"]]
+
+
+def test_every_seed_name_has_a_fixed_id():
+    # a new menu or ingredient must be registered (python crawling/db_seed.py --register-ids)
+    # in the same PR, or its id would depend on what else gets added later
+    import db_seed
+
+    d, fixed = seed().data, db_seed.load_ids()
+    assert not [m for m in d.menu_id if m not in fixed["menu"]]
+    assert not [n for n in d.ingredient_id if n not in fixed["ingredient"]]
+    assert not [c for c in d.category_id if c not in fixed["menu_category"]]
+
+
+def test_fixed_ids_are_used_and_never_shared():
+    import db_seed
+
+    d, fixed = seed().data, db_seed.load_ids()
+    for kind, ids in (("menu", d.menu_id), ("ingredient", d.ingredient_id), ("menu_category", d.category_id)):
+        assert all(ids[n] == fixed[kind][n] for n in ids if n in fixed[kind]), kind
+        assert len(set(fixed[kind].values())) == len(fixed[kind]), kind
+
+
+@pytest.mark.parametrize(
+    "kind, name, expected",
+    # ids as first loaded (before #393): adding 22 Yongsan menus and 돼지감자 shifted them
+    [("menu", "김치찌개", 16), ("menu", "후라이드치킨", 77), ("ingredient", "돼지고기", 77), ("ingredient", "된장", 78)],
+)
+def test_first_loaded_ids_stay(kind, name, expected):
+    d = seed().data
+    assert {"menu": d.menu_id, "ingredient": d.ingredient_id}[kind][name] == expected
+
+
+def test_new_name_takes_the_next_id(tmp_path):
+    import db_seed
+
+    path = tmp_path / "ids.csv"
+    path.write_text("kind,name_ko,id\ningredient,가,1\ningredient,다,2\n", encoding="utf-8")
+    fixed = db_seed.load_ids(path)["ingredient"]
+    assert db_seed._assign(["가", "나", "다"], fixed) == {"가": 1, "다": 2, "나": 3}

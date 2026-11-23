@@ -1,6 +1,7 @@
 """Build the AI knowledge DB seed from repo sources (crawling/README.md "DB 시드 재생성").
 
     python crawling/db_seed.py --out <dir>      # writes one CSV per table
+    python crawling/db_seed.py --register-ids   # adds ids for new menus/ingredients
 
 Same rules as the seed the backend loaded (2026-10), plus one fix (2026-11):
 hidden-ingredient rules whose parent is a dish are not composition edges. Seeding maps
@@ -70,6 +71,51 @@ TAG_ADD: dict[str, set[str]] = {
 }
 
 
+# Fixed ids (kind, name_ko, id). Ids used to be sorted-name positions, so one new name
+# shifted every id after it (#393: 68 menu ids, 248 ingredient ids), and the backend's
+# stored references (store menu links, owner answers, caches) would point at other rows.
+# Rows here never change or get reused; a new name takes the next id after the largest
+# (``register_new_ids``). Base: the seed before #393, as first loaded.
+SEED_IDS = ROOT / "crawling/seed_ids.csv"
+ID_KINDS = ("menu_category", "menu", "ingredient")
+
+
+def load_ids(path: Path = SEED_IDS) -> dict[str, dict[str, int]]:
+    ids: dict[str, dict[str, int]] = {k: {} for k in ID_KINDS}
+    if path.is_file():
+        for r in _rows(path):
+            ids[r["kind"]][r["name_ko"]] = int(r["id"])
+    return ids
+
+
+def _assign(names: list[str], fixed: dict[str, int]) -> dict[str, int]:
+    """Fixed id for known names; new names (sorted) get ids after the largest ever used."""
+
+    ids = {n: fixed[n] for n in names if n in fixed}
+    nxt = max(fixed.values(), default=0) + 1
+    for n in sorted(set(names) - set(ids)):
+        ids[n] = nxt
+        nxt += 1
+    return ids
+
+
+def register_new_ids(path: Path = SEED_IDS) -> list[tuple[str, str, int]]:
+    """Append ids for names the seed has but the file lacks. Run it in the PR that adds them."""
+
+    d = build()
+    fixed = load_ids(path)
+    current = {"menu_category": d.category_id, "menu": d.menu_id, "ingredient": d.ingredient_id}
+    new = [(k, n, i) for k in ID_KINDS for n, i in sorted(current[k].items(), key=lambda t: t[1]) if n not in fixed[k]]
+    if new:
+        write_header = not path.is_file()
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(["kind", "name_ko", "id"])
+            w.writerows(new)
+    return new
+
+
 def _rows(path: Path) -> list[dict]:
     with open(path, encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
@@ -88,6 +134,7 @@ class SeedData:
     menu_id: dict[str, int]
     menu_category: dict[str, str]
     categories: list[str]
+    category_id: dict[str, int]
     menu_flags: dict[str, list[str]]
     recipe: dict[str, list[str]]
     ingredients: list[str]
@@ -175,15 +222,18 @@ def build() -> SeedData:
         for n in ingredients
     }
     menus = sorted({r["menu_name"] for rows in priors.values() for r in rows} | set(recipe))
+    fixed = load_ids()
+    categories = sorted(set(menu_category.values()))
     return SeedData(
         menus=menus,
-        menu_id={m: i + 1 for i, m in enumerate(menus)},
+        menu_id=_assign(menus, fixed["menu"]),
         menu_category=menu_category,
-        categories=sorted(set(menu_category.values())),
+        categories=categories,
+        category_id=_assign(categories, fixed["menu_category"]),
         menu_flags=menu_flags,
         recipe=recipe,
         ingredients=ingredients,
-        ingredient_id={n: i + 1 for i, n in enumerate(ingredients)},
+        ingredient_id=_assign(ingredients, fixed["ingredient"]),
         taxonomy={n: taxonomy_rows.get(n) or "unknown" for n in ingredients},
         tags=tags,
         edges=edges,
@@ -205,7 +255,7 @@ def export(out: Path) -> None:
     d = build()
     out.mkdir(parents=True, exist_ok=True)
     iid, mid = d.ingredient_id, d.menu_id
-    cid = {c: i + 1 for i, c in enumerate(d.categories)}
+    cid = d.category_id
     _write(out, "menu_categories", ["id", "name_ko"], [{"id": cid[c], "name_ko": c} for c in d.categories])
     _write(out, "menus", ["id", "name_ko", "category_id", "base_menu_id", "remain_token", "ambiguity_flags", "source", "needs_review"], [
         {"id": mid[m], "name_ko": m, "category_id": cid.get(d.menu_category.get(m), ""), "base_menu_id": "", "remain_token": "",
@@ -248,5 +298,11 @@ def export(out: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export the AI knowledge DB seed CSVs")
-    parser.add_argument("--out", required=True, help="output directory")
-    export(Path(parser.parse_args().out))
+    parser.add_argument("--out", help="output directory")
+    parser.add_argument("--register-ids", action="store_true", help="append ids for new names to seed_ids.csv")
+    args = parser.parse_args()
+    if args.register_ids:
+        for kind, name, i in register_new_ids():
+            print(f"{kind} {name} -> {i}")
+    if args.out:
+        export(Path(args.out))
