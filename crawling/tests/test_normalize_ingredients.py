@@ -1,4 +1,11 @@
-from crawling.normalize_ingredients import classify_recipe_groups, filter_irrelevant_recipes
+import csv
+import sys
+
+from crawling.normalize_ingredients import (
+    classify_recipe_groups,
+    filter_irrelevant_recipes,
+    main as normalize_main,
+)
 from crawling.recipe_relation import classify_recipe_title
 
 
@@ -95,3 +102,69 @@ def test_raw_ingredient_alias_is_not_mistaken_for_finished_dish():
     assert {item["ingredient_canonical"] for item in kept} == {"막창", "소금"}
     assert not reasons
     assert audit[0]["relation"] == "exact"
+
+
+def test_normalized_vocabulary_is_kept_while_prior_uses_only_exact_recipes(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "recipes.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["menu_query", "recipe_title", "recipe_url", "ingredient_name"],
+        )
+        writer.writeheader()
+        writer.writerows(
+            [
+                {
+                    "menu_query": "순대",
+                    "recipe_title": "순대 만드는 법",
+                    "recipe_url": "base",
+                    "ingredient_name": "돼지고기",
+                },
+                {
+                    "menu_query": "순대",
+                    "recipe_title": "까르보순대",
+                    "recipe_url": "derived",
+                    "ingredient_name": "순대",
+                },
+                {
+                    "menu_query": "순대",
+                    "recipe_title": "까르보순대",
+                    "recipe_url": "derived",
+                    "ingredient_name": "생크림",
+                },
+            ]
+        )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "normalize_ingredients.py",
+            str(source),
+            "--out-prefix",
+            "result",
+            "--out-dir",
+            str(tmp_path),
+        ],
+    )
+    normalize_main()
+
+    with (tmp_path / "result_normalized.csv").open(encoding="utf-8-sig") as f:
+        normalized = list(csv.DictReader(f))
+    with (tmp_path / "result_prior.csv").open(encoding="utf-8-sig") as f:
+        prior = list(csv.DictReader(f))
+    with (tmp_path / "result_recipe_audit.csv").open(encoding="utf-8-sig") as f:
+        audit = list(csv.DictReader(f))
+
+    assert {row["ingredient_canonical"] for row in normalized} == {
+        "돼지고기",
+        "순대",
+        "생크림",
+    }
+    assert [(row["ingredient_canonical"], row["n_total"], row["k_count"]) for row in prior] == [
+        ("돼지고기", "1", "1")
+    ]
+    rejected = next(row for row in audit if row["recipe_url"] == "derived")
+    assert rejected["included_in_base_prior"] == "false"

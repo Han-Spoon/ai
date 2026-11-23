@@ -42,7 +42,7 @@ python crawling/wtable_crawler.py --exact-title-only
 
 정규화할 때 `recipe_relation.py`가 레시피 제목을 `exact`(동일 메뉴), `variant`(변형), `other_dish`(다른 음식), `derivative`(완제품 활용), `unrelated`, `ambiguous`로 분류합니다. **기본 메뉴 prior에는 `exact`만 넣습니다.** 동일 메뉴의 다른 이름(달걀찜→계란찜, 닭도리탕→닭볶음탕 등)은 `recipe_relation.py`의 `SAME_MENU_ALIASES`에 명시한 별칭만 허용합니다. 제목에 검색 메뉴명이 들어 있어도 불고기김밥·잡채볶음밥·오징어순대처럼 더 구체적인 다른 메뉴, 다른 요리 형태, 재료 수식어가 붙으면 기본 메뉴 통계에서 제외합니다.
 
-불확실한 레시피를 `재료가 없었던 레시피`로 세지 않습니다. 레시피 전체를 분모 `n_total`에서도 빼기 때문에 불확실한 자료가 알레르겐 확률을 낮추지 않습니다. 제외된 자료는 삭제하지 않고 사이트별 `<사이트>_recipe_audit.csv`에 제목·URL·관계·사유를 한 레시피당 한 행으로 남깁니다. 예를 들어 불고기 검색에 섞인 불고기김밥의 김과, 순대 검색에 섞인 까르보순대의 생크림은 prior에 들어가지 않지만 감사 파일에서는 출처를 확인할 수 있습니다.
+불확실한 레시피를 `재료가 없었던 레시피`로 세지 않습니다. 레시피 전체를 분모 `n_total`에서도 빼기 때문에 불확실한 자료가 알레르겐 확률을 낮추지 않습니다. `<사이트>_normalized.csv`에는 웹검색 재료 사전을 만들 때 필요한 정제된 전체 어휘를 유지하지만, `<사이트>_prior.csv` 계산에는 `exact` 행만 사용합니다. 제외된 자료는 사이트별 `<사이트>_recipe_audit.csv`에 제목·URL·관계·사유를 한 레시피당 한 행으로 남깁니다. 예를 들어 불고기 검색에 섞인 불고기김밥의 김과, 순대 검색에 섞인 까르보순대의 생크림은 normalized와 감사 파일에서는 확인할 수 있지만 prior에는 들어가지 않습니다.
 
 | 사이트 | 원본 | 정규화 결과 | prior |
 |---|---|---|---|
@@ -90,7 +90,7 @@ python crawling/merge_corpora.py
 python crawling/normalize_ingredients.py crawling/merged_recipes_raw.csv --out-prefix merged
 ```
 
-정규화·제목 관계 규칙을 바꾸면 사이트별 `normalized`/`prior`/`recipe_audit`과 합친 결과를 모두 다시 만들어야 합니다.
+정규화·제목 관계 규칙을 바꾸면 사이트별 `normalized`/`prior`/`recipe_audit`과 합친 결과를 모두 다시 만들어야 합니다. 그 뒤 `python -m ai_web_search_agent.build_dictionary`를 실행해 웹검색 재료 사전이 normalized 코퍼스와 일치하는지도 확인합니다.
 
 ## DB 시드 재생성
 

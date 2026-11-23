@@ -647,12 +647,11 @@ def main():
             "ingredient_canonical": canon,
         })
 
-    tidy_rows, filtered_recipes, recipe_audit = classify_recipe_groups(tidy_rows)
-    unmatched_counter = Counter(
-        row["ingredient_raw"]
-        for row in tidy_rows
-        if not canonicalize(clean_text(row["ingredient_raw"]))[1]
-    )
+    # Keep the normalized corpus as the complete cleaned ingredient vocabulary.
+    # ⑥ rebuilds its rule-extraction dictionary from this file, so dropping aliases
+    # merely because their recipe is not an exact base-menu match would create FNs.
+    # Only the rows used to calculate the base-menu prior are relation-filtered.
+    prior_tidy_rows, filtered_recipes, recipe_audit = classify_recipe_groups(tidy_rows)
 
     with open(out_tidy, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=[
@@ -692,7 +691,7 @@ def main():
 
     menu_recipe_count = defaultdict(set)
     pair_recipe_set = defaultdict(set)
-    for r in tidy_rows:
+    for r in prior_tidy_rows:
         menu_recipe_count[r["menu_query"]].add(r["recipe_url"])
         pair_recipe_set[(r["menu_query"], r["ingredient_canonical"])].add(r["recipe_url"])
 
