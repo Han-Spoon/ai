@@ -92,6 +92,12 @@ _TRAILING_ORIGIN_RE = re.compile(
     rf"\s*[\(\[]?\s*(?:{'|'.join(map(re.escape, _ORIGIN_LABELS))})"
     rf"(?:\s*(?:{'|'.join(map(re.escape, _ORIGIN_QUALIFIERS))}))?\s*[\)\]]?\s*$"
 )
+# OCR leftovers at the end of a name: a lone Hangul jamo (never part of a real word)
+# and, next to it, standalone single Latin letters ("매운김치갈비찜 ᄎ W", 2026-11-24).
+# A single letter alone is kept ("점심특선 A" may be set A): the run needs a jamo.
+_JAMO = r"[ᄀ-ᇿㄱ-ㆎ]"
+_TRAILING_OCR_NOISE_RE = re.compile(rf"(?:\s*{_JAMO}|\s+[A-Za-z])+\s*$")
+_JAMO_RE = re.compile(_JAMO)
 LOW_OCR_CONFIDENCE_THRESHOLD = 0.65
 
 
@@ -130,6 +136,7 @@ def clean_menu_name(raw_menu_name: str) -> CleaningOutcome:
     display = _LEADING_PROMOTION_RE.sub("", display).strip()
     display = _TRAILING_PRICE_RE.sub("", display).strip()
     display = _strip_trailing_origin(display)
+    display = _strip_trailing_ocr_noise(display)
     if not display:
         warning = "price_only" if _PRICE_ONLY_RE.fullmatch(canonical) else "empty_menu_name"
         return _invalid("", warning)
@@ -200,6 +207,14 @@ def _matching_bilingual_alias(alias_key: str) -> str | None:
         if alias_key in {f"{latin}{korean_key}", f"{korean_key}{latin}"}:
             return korean
     return None
+
+
+def _strip_trailing_ocr_noise(text: str) -> str:
+    match = _TRAILING_OCR_NOISE_RE.search(text)
+    if match is None or not _JAMO_RE.search(match.group()):
+        return text
+    prefix = text[: match.start()].rstrip()
+    return prefix or text
 
 
 def _strip_trailing_origin(text: str) -> str:

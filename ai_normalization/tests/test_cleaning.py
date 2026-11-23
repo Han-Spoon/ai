@@ -598,3 +598,22 @@ def test_beverage_warning_replaces_low_ocr_warning_for_excluded_item() -> None:
     assert response.items[0].display_name == "참이슬 360ml"
     assert [warning.code for warning in response.warnings] == ["beverage_item"]
     assert response.warnings[0].forces_caution is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "normalized"),
+    [
+        ("매운김치갈비찜 ᄎ W", "매운김치갈비찜"),
+        ("매운김치갈비찜 ㅊ", "매운김치갈비찜"),
+        ("갈비찜ᄎ", "갈비찜"),
+        ("점심특선 A", "점심특선a"),
+        ("Bulgogi B", "bulgogib"),
+    ],
+)
+def test_trailing_ocr_jamo_noise_is_removed(raw: str, normalized: str) -> None:
+    assert clean_menu_name(raw).normalized_menu_name == normalized
+
+
+def test_alternative_spelling_of_rice_bowl() -> None:
+    assert clean_menu_name("공깃밥").normalized_menu_name == "공기밥"
+    assert clean_menu_name("공깃 밥").normalized_menu_name == "공기밥"
