@@ -208,7 +208,7 @@ flowchart TD
 1. `context.store_id` 검증 → 양의 정수 또는 `null`이 아니면 즉시 에러 (다른 가게 데이터가 섞이는 것 방지). `null`이면 가게 없는 스캔이라 캐시를 쓰지 않는다
 2. `knowledge.menu`를 쓴다. 메뉴 후보 조회는 백엔드가 묶음을 만들 때 했고 ②-B가 골랐다 (§0-0). ②-B가 후보를 고르지 못했으면(`menu.menu_id: null`) `fallback_ontology`가 와도 쓰지 않고 `exists_in_db: false`로 끝낸다 → Supervisor가 ⑥ 웹 검색으로 보낸다 (§2-2 (C))
    - **캐시가 있어도 다시 펼친다** (결정, 2026-10-26, #321). 재료 그래프가 작아(시드 324개) 다시 펼쳐도 비용이 거의 없고, 캐시에는 경로가 없어 `absent` 재료를 거친 경로만 정확히 뺄 수 없다(아래 7번 표). 캐시는 ③의 분모용으로만 쓰이고, 유효한 캐시가 있으면 저장 명령만 만들지 않는다 (6번)
-3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스(`menu_ingredient_priors`)에 나온 재료의 합집합이다** (결정, 2026-10-10). 큐레이션 목록에만 기대면 크롤링에 자주 나오는 재료가 빠져 FN이 생긴다. 반대로 크롤링에만 기대면 사람이 정리한 대표 재료가 빠질 수 있다
+3. **시작 재료(depth 0)는 큐레이션 레시피(`recipe_ingredients`)와 크롤링 코퍼스 재료의 합집합이다** (결정, 2026-10-10, 2026-11-23 자기참조 필터 보완). 선택 메뉴와 이름이 완전히 같은 재료만 제외한다. 희귀 후보도 안전 근거와 화면 위험 재료에 유지하며, 관계없는 메뉴·레시피에서 들어온 후보는 크롤링 정제 단계에서 제외한다
 4. `ingredient_graph.compositions`로 `part-of` 재귀 확장, cycle detection 적용. **확인 여부와 무관하게 전체를 먼저 확장한다**
 5. 전 노드에 `depth`, `parent_ingredient_id`, `observations` 기록. 하위 재료의 관측값은 상위 재료에서 물려받는다 (§1-5)
    - **같은 재료가 같은 태그로 여러 번 나오면 하나로 합친다** (결정, 2026-10-26, #321·실데이터 QA). 가장 얕은 위치(`depth`가 작은 것, 같으면 먼저 나온 것)의 값을 쓴다. 다만 **레시피 등장 수(`observations`)는 합친 경로 중 코퍼스별로 가장 큰 값**을 쓴다 (2026-11-23). 숨은 재료가 `max(직접, 부모)`를 쓰는 것(§1-5)과 같은 이유다. 위치만 보고 고르면 확률이 순서에 따라 갈린다: 부대찌개의 새우젓은 배추김치(289개 중 238개) 아래와 김치국물(289개 중 4개) 아래에 다 있는데, 먼저 나온 김치국물 쪽을 남겨 새우 확률이 82%가 아닌 2%로 나왔다. 변형 재료(`variant_suggested`)는 원본 레시피에 관측이 없다는 규칙(§1-5) 때문에 등장 수를 올리지 않는다. **태그가 다르면 합치지 않고 따로 남긴다.** 경로 태그는 그 경로에서만 성립한다: 마요네즈 안의 식초는 `is_egg`지만 그냥 식초는 아니다. 합집합으로 합치면 그냥 식초(레시피에 자주 나옴)에 `is_egg`가 붙어 확률이 부풀려진다. ⑧은 카드를 재료별로 묶으므로 같은 재료가 여러 줄이어도 태그는 빠지지 않는다. 확인 재료 제외(7번)는 합치기 전에 경로 단위로 한다
@@ -307,7 +307,7 @@ menu = knowledge.menu                     # ②-B가 고른 후보의 슬라이�
 if request.menu.menu_id is None or menu is None:
     return OntologyResult(exists_in_db=False, ingredients=[])          # §2-2 (C): 웹 검색으로
 
-seeds = recipe_ingredients ∪ corpus_ingredients                       # 합집합 (§2-1 3번)
+seeds = recipe_ingredients ∪ corpus_ingredients                       # 자기참조만 제외 (§2-1 3번)
 if menu.base_menu_id and menu.remain_token:                           # (A) DB 등록 변형
     variant_origin = "db_registered"; tokens = residual_tokens
 else:                                                                 # (B) 후보 이름을 뺀 나머지
@@ -609,7 +609,7 @@ graph TB
 - [x] **`max_depth` 상한값** — 5단계 (2026-10-10). 현재 숨은 재료 데이터의 최대 깊이는 2라 여유를 둔 값이다. 닿으면 확장을 멈추고 `max_depth_reached` 경고를 붙여 CAUTION 이상을 유지한다. 깊이 4 이상 경로가 생기면 다시 본다
 - [x] **`menu_category` 전체 목록** — `ai_ruleengine/data/menus.csv`의 25개 분류를 `menu_categories`로 시드했다 (2026-10-10, #223)
 - [x] **`menu_ingredient_cache` 무효화 시점** — `menus.knowledge_revision`과 캐시의 `menu_revision`이 다르면 무효 (2026-10-10, 백엔드 ERD V10)
-- [x] **시작 재료 범위** — 큐레이션 레시피와 크롤링 코퍼스 재료의 합집합 (2026-10-10, §2-1)
+- [x] **시작 재료 범위** — 큐레이션 레시피와 크롤링 코퍼스 재료의 합집합, 선택 메뉴 자기참조는 제외 (2026-10-10, 2026-11-23, §2-1)
 - [x] **관측값 형식** — 출처별 `observations` 목록 (2026-10-10, §1-5)
 - [x] **분류 관계(is-a) 저장 위치** — `ingredients.taxonomy_category` 컬럼에 둔다 (2026-10-10, #49와 같은 결정). `ingredient_compositions`는 구성 관계(`part_of`)만 담는다. 분류를 구성 간선에 섞으면 재귀 확장이 "갑각류" 같은 분류 이름을 재료처럼 펼친다. 백엔드에 `relation_type`을 `part_of`로 한정해 달라고 요청한다
 - [x] **⑥ Web Search Agent 출력 필드 정합** — ⑥ 출력이 `source: web_search`, `depth: 0`, 사이트별 `observations`를 채운다 (⑥ §1-2, 2026-10-12 확인)

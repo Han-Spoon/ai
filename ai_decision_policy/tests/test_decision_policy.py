@@ -230,6 +230,15 @@ def test_02_probability_only_is_caution_with_number() -> None:
     assert outcome.risk_ingredients[0].posterior_mean == 0.3
 
 
+def test_low_probability_candidate_is_kept_as_a_risk_ingredient() -> None:
+    outcome = decide(
+        request(SHRIMP_ALLERGY, probability_results=[probability(TUNA, ["is_shrimp"], 0.012)])
+    )
+    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
+    assert outcome.risk_ingredients[0].posterior_mean == 0.012
+    assert outcome.matched_tags == ["is_shrimp"]
+
+
 def test_03_no_information_is_caution() -> None:
     outcome = decide(request(HALAL, no_information=True))
     assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "unknown")

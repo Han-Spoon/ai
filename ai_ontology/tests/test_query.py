@@ -330,6 +330,18 @@ def test_empty_recipe_warns():  # §7-18
     assert "empty_recipe" in codes(res)
 
 
+def test_selected_dish_is_not_returned_as_its_own_ingredient():
+    k = knowledge(
+        recipe=(1, 4),
+        corpora=(("10000recipe", 10),),
+        priors=(("10000recipe", 1, 8), ("10000recipe", 4, 7)),
+    )
+    names = set(by_name(query_ontology(
+        request(name="김치", candidate_name="김치", k=k), now=NOW
+    )))
+    assert "김치" not in names and "돼지고기" in names
+
+
 def test_tool_keeps_context_and_input_warnings():  # §7-17
     upstream = NodeWarning(
         code="store_context_missing", node="supervisor", item_id=ITEM_ID,

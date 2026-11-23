@@ -4,8 +4,8 @@
 
 검색이 느슨한 사이트는 다른 요리를 함께 돌려준다. 2026-11-22에 추가한 22개 메뉴를
 우리의식탁에서 검색하니 "닭한마리" 1,186개 중 제목이 맞는 것은 1개였다(닭가슴살 김밥,
-파스타 등). 그래서 레시피 제목(공백 제거)에 메뉴의 키워드가 하나라도 있어야 남긴다.
-`TITLE_KEYWORDS`에 없는 메뉴는 메뉴명 자체를 키워드로 쓴다.
+파스타 등). 공통 관계 분류기로 동일 메뉴(`exact`)만 남기며, 명시한 별칭은
+허용하지만 변형·다른 음식·애매한 제목은 기본 메뉴 자료에서 제외한다.
 
 실행:
     python crawling/filter_titles.py <원본 CSV> --out <걸러낸 CSV>
@@ -17,6 +17,11 @@ import csv
 import re
 from collections import Counter
 from pathlib import Path
+
+try:  # package import / direct script import both work
+    from .recipe_relation import classify_recipe_title
+except ImportError:  # pragma: no cover
+    from recipe_relation import classify_recipe_title
 
 # 메뉴명 → 제목에 하나라도 있어야 하는 키워드 (표기 차이·같은 요리의 다른 이름).
 # 튜플 키워드는 그 말이 모두 있어야 한다: ("낙지", "볶")은 "낙지 간장볶음"도 남긴다.
@@ -89,15 +94,15 @@ def compact(text: str) -> str:
     return re.sub(r"\s+", "", text).lower()  # "la갈비"도 "LA갈비"로 본다
 
 
-def keeps(menu: str, title: str) -> bool:
-    t = compact(title)
-    if any(word in t for word in TITLE_EXCLUDE.get(menu, ())):
-        return False
-    for keyword in TITLE_KEYWORDS.get(menu, (menu,)):
-        words = (keyword,) if isinstance(keyword, str) else keyword
-        if all(compact(word) in t for word in words):
-            return True
-    return False
+def keeps(menu: str, title: str, known_menus: set[str] | None = None) -> bool:
+    """동일 메뉴 또는 허용한 별칭의 레시피만 남긴다.
+
+    메뉴명이 제목 어딘가에 있다는 이유만으로 파생 메뉴를 통과시키던 이전 규칙과
+    달리, 공통 관계 분류기의 ``exact``만 허용한다.
+    """
+
+    relation = classify_recipe_title(menu, title, known_menus or {menu})
+    return relation.included_in_base_prior
 
 
 def main() -> None:
@@ -111,7 +116,8 @@ def main() -> None:
         fields = reader.fieldnames
         rows = list(reader)
 
-    kept = [r for r in rows if keeps(r["menu_query"], r["recipe_title"])]
+    known_menus = {r["menu_query"] for r in rows}
+    kept = [r for r in rows if keeps(r["menu_query"], r["recipe_title"], known_menus)]
     before = Counter((r["menu_query"], r["recipe_url"]) for r in rows)
     after = Counter((r["menu_query"], r["recipe_url"]) for r in kept)
     for menu in dict.fromkeys(r["menu_query"] for r in rows):

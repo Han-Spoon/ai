@@ -337,7 +337,7 @@ posterior_mean = alpha / (alpha + beta)
 | `k_count` | 그 메뉴의 레시피 중 해당 재료가 등장한 횟수 |
 | `n_total` | 그 메뉴의 전체 레시피 수 |
 
-**검증 예시**: 갈비구이-마늘 `n_total=57, k_count=53` → `α=54, β=5` → `posterior_mean ≈ 0.915`
+**검증 예시**: 동일 메뉴로 확정된 만개의레시피 갈비구이-마늘 `n_total=37, k_count=33` → `α=34, β=5` → `posterior_mean ≈ 0.872`
 
 > 이 공식은 baseline 모델(`predict_ingredients`), train/test 재계산(`compute_prior_from`), store 계층 구조의 global prior까지 전 구간에서 동일하게 사용된다.
 > **doc2의 `α=5/β=1` 초기화 규칙은 폐기됨** (팀 확정).
@@ -458,7 +458,7 @@ PPT 9쪽은 출처별 신뢰도를 EM으로 추적해 가중치를 주는 방식
 
 | # | 입력 | 기대 동작 | 검증 포인트 |
 |---|---|---|---|
-| 1 | 갈비구이-마늘 `k=53, n=57` | `α=54, β=5`, mean ≈ 0.915 | `normalize_ingredients.py`와 동일 결과 |
+| 1 | 갈비구이-마늘 `k=33, n=37` | `α=34, β=5`, mean ≈ 0.872 | 동일 메뉴 필터 적용 후 `normalize_ingredients.py`와 동일 결과 |
 | 2 | store prior 존재 재료 | `prior_source: store` | 전역 prior 섞이지 않을 것 |
 | 3 | 신규 가게 (store prior 없음) | `cluster` fallback | `global`로 바로 떨어지지 않을 것 |
 | 4 | 전역 prior도 없음 | `uninformative` + `low` | **SAFE 쪽 기본값으로 가지 않을 것** |

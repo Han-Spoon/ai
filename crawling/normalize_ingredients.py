@@ -26,6 +26,7 @@
                                  k_count, freq, alpha_prior, beta_prior
     <prefix>_review.csv       - 규칙에 안 걸려서 원문 그대로 쓰인 재료명 중
                                  3회 이상 등장한 것 (검토용)
+    <prefix>_recipe_audit.csv - 레시피별 동일 메뉴/변형/다른 음식 판정과 제외 사유
 
 주의: 이 규칙 자체가 계속 업데이트되고 있습니다. 최신 버전을 다 같이 맞춰서
       쓰는 게 중요합니다. review.csv에서 자주 나오는 미매칭 재료를 발견하면
@@ -36,6 +37,11 @@ import csv
 import os
 import re
 from collections import Counter, defaultdict
+
+try:  # package import / direct script import both work
+    from .recipe_relation import RecipeRelation, classify_recipe_title, finished_dish_ingredient
+except ImportError:  # pragma: no cover - direct ``python crawling/...`` execution
+    from recipe_relation import RecipeRelation, classify_recipe_title, finished_dish_ingredient
 
 # ── 0) 도구/측정용구 잔류 안전망 (조리도구나 "종이컵"(계량용) 같은 게 섞인 경우) ──
 TOOL_SUBSTR = [
@@ -521,6 +527,87 @@ def is_tool_leak(cleaned: str) -> bool:
     return any(t in cleaned for t in TOOL_SUBSTR)
 
 
+def compact_name(text: str) -> str:
+    """메뉴·제목·표준 재료를 비교할 때 쓰는 공백 없는 키."""
+
+    return re.sub(r"\s+", "", text).casefold()
+
+
+def recipe_relation(
+    rows: list[dict[str, str]], known_menus: set[str]
+) -> RecipeRelation:
+    """레시피 묶음을 기본 메뉴 prior에 넣을 수 있는지 판정한다."""
+
+    first = rows[0]
+    menu = first["menu_query"]
+    relation = classify_recipe_title(menu, first["recipe_title"], known_menus)
+    if any(
+        finished_dish_ingredient(menu, row["ingredient_raw"], row["ingredient_canonical"])
+        for row in rows
+    ):
+        return RecipeRelation(
+            relation="derivative",
+            resolved_menu_name=None,
+            base_menu_name=menu,
+            remain_token=None,
+            reason="finished_dish_used_as_ingredient",
+        )
+    if relation.relation != "exact":
+        return relation
+    return relation
+
+
+def classify_recipe_groups(
+    rows: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], Counter, list[dict[str, str]]]:
+    """URL 단위로 분류하고 prior 입력과 사람이 볼 감사 행을 함께 만든다."""
+
+    recipes: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        recipes[(row["menu_query"], row["recipe_url"])].append(row)
+
+    known_menus = {menu for menu, _ in recipes}
+    kept: list[dict[str, str]] = []
+    reasons: Counter = Counter()
+    audit: list[dict[str, str]] = []
+    for recipe_rows in recipes.values():
+        first = recipe_rows[0]
+        relation = recipe_relation(recipe_rows, known_menus)
+        included = relation.included_in_base_prior
+        if included:
+            kept.extend(recipe_rows)
+        else:
+            reasons[relation.relation] += 1
+        audit.append(
+            {
+                "menu_query": first["menu_query"],
+                "recipe_title": first["recipe_title"],
+                "recipe_url": first["recipe_url"],
+                "relation": relation.relation,
+                "resolved_menu_name": relation.resolved_menu_name or "",
+                "base_menu_name": relation.base_menu_name or "",
+                "remain_token": relation.remain_token or "",
+                "included_in_base_prior": str(included).lower(),
+                "reason": relation.reason,
+                "ingredient_count": len({row["ingredient_canonical"] for row in recipe_rows}),
+            }
+        )
+    return kept, reasons, audit
+
+
+def filter_irrelevant_recipes(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], Counter]:
+    """같은 URL의 재료 행을 함께 유지하거나 함께 제외한다."""
+
+    kept, reasons, _ = classify_recipe_groups(rows)
+    # 이전 테스트·호출부에서 쓰던 이유 이름은 호환성을 유지한다.
+    compatible = Counter(reasons)
+    if compatible.pop("unrelated", 0):
+        compatible["title_mismatch"] += reasons["unrelated"]
+    if compatible.pop("derivative", 0):
+        compatible["self_ingredient"] += reasons["derivative"]
+    return kept, compatible
+
+
 def main():
     parser = argparse.ArgumentParser(description="재료명 정규화 스크립트")
     parser.add_argument("input_csv", help="크롤링 결과 CSV (menu_query, recipe_title, recipe_url, ingredient_name 컬럼 필요)")
@@ -535,6 +622,7 @@ def main():
     out_tidy = os.path.join(out_dir, f"{prefix}_normalized.csv")
     out_prior = os.path.join(out_dir, f"{prefix}_prior.csv")
     out_review = os.path.join(out_dir, f"{prefix}_review.csv")
+    out_recipe_audit = os.path.join(out_dir, f"{prefix}_recipe_audit.csv")
 
     with open(in_path, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
@@ -559,6 +647,12 @@ def main():
             "ingredient_canonical": canon,
         })
 
+    # Keep the normalized corpus as the complete cleaned ingredient vocabulary.
+    # ⑥ rebuilds its rule-extraction dictionary from this file, so dropping aliases
+    # merely because their recipe is not an exact base-menu match would create FNs.
+    # Only the rows used to calculate the base-menu prior are relation-filtered.
+    prior_tidy_rows, filtered_recipes, recipe_audit = classify_recipe_groups(tidy_rows)
+
     with open(out_tidy, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=[
             "menu_query", "recipe_title", "recipe_url", "ingredient_raw", "ingredient_canonical"
@@ -566,19 +660,38 @@ def main():
         w.writeheader()
         w.writerows(tidy_rows)
 
+    with open(out_recipe_audit, "w", newline="", encoding="utf-8-sig") as f:
+        fields = [
+            "menu_query",
+            "recipe_title",
+            "recipe_url",
+            "relation",
+            "resolved_menu_name",
+            "base_menu_name",
+            "remain_token",
+            "included_in_base_prior",
+            "reason",
+            "ingredient_count",
+        ]
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(recipe_audit)
+
     raw_counter = Counter(r["ingredient_raw"] for r in tidy_rows)
     canon_counter = Counter(r["ingredient_canonical"] for r in tidy_rows)
     total = len(tidy_rows)
     unmatched_total = sum(unmatched_counter.values())
 
-    print(f"총 행: {len(rows)} -> 도구잔류/빈값 제거 후: {total} (제거 {dropped_tools}건)")
+    print(f"총 행: {len(rows)} -> 필터 후: {total} (도구/빈값 제거 {dropped_tools}건)")
+    print("레시피 관계: " + ", ".join(f"{key} {value}건" for key, value in sorted(filtered_recipes.items())))
     print(f"원본 고유 재료명: {len(raw_counter)} -> 정규화 후 고유 재료명: {len(canon_counter)}")
-    print(f"사전/규칙에 매칭된 행 비율: {(total-unmatched_total)/total*100:.1f}% "
+    matched_rate = (total - unmatched_total) / total * 100 if total else 0.0
+    print(f"사전/규칙에 매칭된 행 비율: {matched_rate:.1f}% "
           f"(매칭 {total-unmatched_total}건 / 미매칭 {unmatched_total}건)")
 
     menu_recipe_count = defaultdict(set)
     pair_recipe_set = defaultdict(set)
-    for r in tidy_rows:
+    for r in prior_tidy_rows:
         menu_recipe_count[r["menu_query"]].add(r["recipe_url"])
         pair_recipe_set[(r["menu_query"], r["ingredient_canonical"])].add(r["recipe_url"])
 
@@ -622,7 +735,7 @@ def main():
     for n, c in review[:30]:
         print(f"  {c:4d}  {n}")
 
-    print(f"\n완료:\n  {out_tidy}\n  {out_prior}\n  {out_review}")
+    print(f"\n완료:\n  {out_tidy}\n  {out_prior}\n  {out_review}\n  {out_recipe_audit}")
 
 
 if __name__ == "__main__":

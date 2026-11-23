@@ -133,7 +133,7 @@
 
 - `context`·`menu`는 입력 값을 그대로 반환한다.
 - `risk_level`·`evidence_basis`·`information_status`는 §2·§3 규칙으로 정한다. `information_status`가 `complete`가 아니면 `risk_level`은 `safe`가 될 수 없다. `evidence_basis`는 판정 근거 종류다: `confirmed`(사장님 확인값) / `estimated`(확률 추정) / `unknown`(근거 부족).
-- `risk_ingredients[]`: 금지 태그와 겹친 재료. **재료마다 하나만 넣는다** (2026-11-02). ④는 같은 재료라도 태그 묶음이 다르면 따로 보낸다 (④ #327: 액젓 자체 `is_fish`, 김치 속 액젓 `is_fish`+`is_shellfish`). ⑧은 이를 한 줄로 합친다. 사장님 "있음" 확인값 → 확률이 있는 줄 → 확률이 높은 줄 순서로 남길 줄을 고르고, 합친 줄의 `constraint_tags`·`matched_tags`·`evidence_refs`는 모든 줄을 합친다. 걸린 태그가 하나도 빠지지 않게 하기 위해서다 (판정 한 줄이 확률 높은 쪽을 쓰는 것과 같음, §4).
+- `risk_ingredients[]`: 금지 태그와 겹친 재료. **재료마다 하나만 넣는다** (2026-11-02). 낮은 확률도 안전하지 않다는 뜻은 아니므로 확률값으로 화면 재료를 숨기지 않는다. 불고기→새우처럼 관계없는 후보는 표시 단계의 확률 기준이 아니라 앞 단계의 메뉴·레시피 관계 검증에서 제외한다. ④는 같은 재료라도 태그 묶음이 다르면 따로 보낸다 (④ #327: 액젓 자체 `is_fish`, 김치 속 액젓 `is_fish`+`is_shellfish`). ⑧은 이를 한 줄로 합친다. 사장님 "있음" 확인값 → 확률이 있는 줄 → 확률이 높은 줄 순서로 남길 줄을 고르고, 합친 줄의 `constraint_tags`·`matched_tags`·`evidence_refs`는 모든 줄을 합친다. 걸린 태그가 하나도 빠지지 않게 하기 위해서다 (판정 한 줄이 확률 높은 쪽을 쓰는 것과 같음, §4).
   - `constraint_tags`는 재료의 전체 제한 태그, `matched_tags`는 그중 이 사용자와 실제로 겹친 태그다.
   - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
   - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
@@ -225,7 +225,7 @@ flowchart TD
 3-1. (지움, 2026-11-18) **anomaly_locked 강제** — 10/27 회의로 이상 답변 잠금이 없어져 `anomaly_locked: true`가 오지 않고, ⓪ 계약에서도 선택 칸이 됐다(#385). ⑧은 이 칸을 읽지도 넘기지도 않는다.
 3-2. **정보 부족 시 SAFE 금지**: `information_status`가 `partial` 또는 `none`이면 확률이 낮게 나와도 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계 조회·계산이 일부 실패한 상태에서 남은 재료만 보고 SAFE를 내면 빠진 재료를 놓친다 (FN).
 3-3. **앞 단계 경고 시 SAFE 금지**: 입력 `warnings` 중 `forces_caution: true`가 하나라도 있으면 `safe`를 내지 않고 `caution` 이상으로 둔다. 앞 단계가 문제를 발견했다는 신호다 (예: ④ 태그 조회 실패 `constraint_tags_lookup_failed`, ④ 순환 참조 `cycle_detected`, ④ 웹 재료 매핑 실패 `unmapped_constraint_tags`). 예를 들어 Supervisor가 ③ 확인값의 태그를 ④에 조회했는데 실패해 돼지고기에 `is_pork`가 안 붙으면, 이 단계가 없을 때 할랄 사용자에게 SAFE가 나갈 수 있다 (FN).
-4. **확정값이 없는 재료는 CAUTION**: `probability_results`나 `proposed_variant_ingredients`에 재료가 하나라도 있으면(사장님 확인값이 아닌 근거에 기대는 재료) `risk_level: caution`, `evidence_basis: estimated`로 둔다. 확률이 아무리 높거나 낮아도 확률만으로 DANGER/SAFE를 내지 않는다 (§3, PPT 8쪽 6). 금지 태그와 겹치는 재료는 `risk_ingredients`에 `posterior_mean`(확률 수치)과 함께 담아 사용자에게 보여준다.
+4. **확정값이 없는 재료는 CAUTION**: `probability_results`나 `proposed_variant_ingredients`에 재료가 하나라도 있으면(사장님 확인값이 아닌 근거에 기대는 재료) `risk_level: caution`, `evidence_basis: estimated`로 둔다. 확률이 아무리 높거나 낮아도 확률만으로 DANGER/SAFE를 내지 않는다 (§3, PPT 8쪽 6). 금지 태그와 겹치는 확률 재료는 확률값과 관계없이 `risk_ingredients`에 담아 보여준다.
 4-1. **SAFE는 사장님 확인값으로만**: 판정에 쓴 재료가 모두 사장님 확인값(`present`/`absent`)이고, 금지 태그와 겹치는 `present` 재료가 없고, §2-2의 SAFE 금지 조건에 하나도 해당하지 않을 때만 `risk_level: safe`, `evidence_basis: confirmed`다.
 4-2. **확인값은 다 있는데 SAFE가 막힌 경우의 `evidence_basis`** (결정, 2026-10-12): 판정에 쓴 재료가 모두 사장님 확인값인데 §2-2의 다른 조건 때문에 SAFE가 막히면, 막힌 이유에 따라 정한다.
    - 정보가 빠져서 막혔으면 → `unknown` ("정보가 부족해요"). 예: `information_status`가 `partial`/`none`, 태그 조회·매핑 실패 같은 `forces_caution` 경고, 관련 있는 메뉴 애매함 플래그(5-2단계)
@@ -240,7 +240,7 @@ flowchart TD
    - 재료가 아니므로 `risk_ingredients`에는 넣지 않는다. 플래그만으로(사장님 답 없이) DANGER를 내지 않는다.
 6. **메시지 생성**: `evidence_basis`에 따라 확정형/추정형 판정 한 줄 템플릿을 골라 `message.verdict`에 넣고, 필요하면 LLM 이유 설명을 `message.reason`에 넣는다 (§4).
 6-1. **빼기 어려움 안내**: 판정에 걸린 재료의 `role`이 `identity`나 `hidden`이면 `message.notes`에 `hard_to_remove` 안내를 넣는다 (§4-1). 판정은 바꾸지 않는다.
-7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 태그와 겹치는데 사장님 답(`present`/`absent`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 이미 답한 재료는 이상 답변 표시가 있어도 다시 묻지 않는다 (10/26 회의, §1-3). 확률이 높든 낮든 숫자 기준으로 걸러내지 않는다 (결정, 2026-10-12). 이런 재료는 모두 CAUTION의 원인이고, 사장님이 답하면 확정값으로 바뀌기 때문이다. 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`). 같은 재료는 한 장만 만든다. 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
+7. **사장님 질문 생성**: `owner_interaction_allowed: false`(가게 없는 스캔)면 이 단계를 건너뛰고 `owner_cards: []`다. 정보 없는 메뉴의 화면 표시용 카드도 만들지 않는다 (⓪ §4-7, #281). 그 밖에는 사용자 금지 태그와 겹치고 사장님 답(`present`/`absent`)이 없는 재료마다 `owner_cards`에 카드를 한 장씩 만든다. 확률 숫자는 질문 카드를 거르는 기준으로 쓰지 않는다. 이미 답한 재료는 이상 답변 표시가 있어도 다시 묻지 않는다 (10/26 회의, §1-3). 고위험 재검증이 찾은 재료도 카드로 더한다 (§2-3). 5-2단계에서 풀리지 않은 메뉴 애매함 플래그도 플래그마다 한 장씩 만든다 (이유 `ambiguous_menu`). 같은 재료는 한 장만 만든다. 카드 순서는 §1-3 `reason_codes` 아래 규칙을 따른다. 정보 없는 메뉴는 메뉴 전체를 묻는 화면 표시용 카드 한 장만 만든다 (§1-3).
 
 ### 2-2. SAFE 금지 조건 (⓪ §4-7과 동일)
 
@@ -345,7 +345,7 @@ PPT 8쪽 6·10쪽: **정보 부족·충돌 케이스만(전체의 5~10%) 고가 
 | 가게 없는 스캔 (`owner_interaction_allowed: false`) | `caution` (SAFE·DANGER 없음) | 확률 근거면 `estimated`, 정보가 없으면 `unknown`. 사장님 확인값이 없으므로 `confirmed`는 나오지 않는다 (#281) |
 | 재료는 모두 사장님 확인값인데 SAFE가 막힘 (§2-1 4-2) | `caution` | 정보가 빠진 이유면 `unknown`, 추정 근거 때문이면 `estimated` |
 
-- **확률(`posterior_mean`)은 판정 기준선이 아니다.** 확률이 0.95여도 DANGER가 아니고, 0.01이어도 SAFE가 아니다. 확률은 사용자에게 보여줄 수치와 사장님 질문(`owner_cards`) 우선순위에 쓴다.
+- **확률(`posterior_mean`)은 판정이나 표시의 기준선이 아니다.** 확률이 0.95여도 DANGER가 아니고, 0.01이어도 SAFE가 아니다. 사용자 금지 태그와 겹치는 추정 재료는 낮은 확률도 `risk_ingredients`와 질문 카드에 유지한다. 관계없는 메뉴·재료 후보는 앞 단계의 데이터 정제에서 제외한다.
 - 따라서 확률을 DANGER/CAUTION/SAFE로 나누는 컷오프(F2 최적화)는 `risk_level` 판정에 쓰지 않는다.
 
 ---

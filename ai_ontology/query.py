@@ -420,9 +420,25 @@ def query_ontology(request: OntologyRequest, *, now: datetime | None = None) -> 
     priors = {(row.corpus, row.ingredient_id): row.k_count for row in knowledge.menu_ingredient_priors}
     curated = [row.ingredient_id for row in knowledge.recipe_ingredients]
 
-    # §2-1 step 3: seeds = curated recipe ∪ corpus ingredients
-    seed_ids = list(dict.fromkeys(curated))
-    seed_ids += sorted({i for _, i in priors} - set(seed_ids))
+    selected_names = {menu_name}
+    selected_names.update(
+        normalize(candidate.canonical_name)
+        for candidate in request.menu.match_candidates
+        if candidate.menu_id == request.menu.menu_id
+    )
+
+    def is_self_ingredient(ingredient_id: int) -> bool:
+        return normalize(graph.names.get(ingredient_id, "")) in selected_names
+
+    # §2-1 step 3: seeds = curated recipe ∪ corpus ingredients. Never expose the
+    # selected dish as its own ingredient; low-probability display noise is handled by
+    # ⑧ without deleting safety evidence here.
+    seed_ids = list(dict.fromkeys(i for i in curated if not is_self_ingredient(i)))
+    seed_ids += sorted(
+        i
+        for i in {ingredient_id for _, ingredient_id in priors} - set(seed_ids)
+        if not is_self_ingredient(i)
+    )
     if not seed_ids:
         warnings.add("empty_recipe", f"menu {menu_row.menu_id} has no recipe ingredients")
 
