@@ -20,6 +20,7 @@ from ai_supervisor.contracts.external import (
     PreparedItem,
     SourceReliability,
     UserProfile,
+    WebSearchCache,
 )
 from ai_supervisor.contracts.ontology import (
     OntologyIngredient,
@@ -183,10 +184,10 @@ def item_task(*, exact_complete: bool, flagged_anomaly: bool = False) -> ItemTas
             item_id=prepared.item_id,
             selected=selected,
             fallback_ontology=selected.ontology,
-            web_search_cache={
-                "status": "not_found",
-                "cached_sources": [],
-            },
+            web_search_cache=WebSearchCache(
+                status="not_found",
+                cached_sources=[],
+            ),
         ),
         ingredient_graph=graph,
         source_reliability=SourceReliability(
