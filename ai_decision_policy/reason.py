@@ -24,11 +24,9 @@ notes are templates and go out unchanged.
 from __future__ import annotations
 
 import asyncio
-import csv
 import re
 from collections.abc import Iterable
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -38,7 +36,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
 from .messages import card_step, limit_sentences, shown_percent
-from .names import all_rows, dictionary_name, display_name, standard_rows
+from .names import all_rows, dictionary_name, display_name, standard_rows, taxonomy_categories
 from .policy import information_failed
 from .profile import forbidden_tags
 from .questions import TAG_NAMES, _has_final_consonant, tag_name
@@ -611,15 +609,6 @@ def next_step(item) -> str:
     return "question_card"
 
 
-TAXONOMY_PATH = Path(__file__).resolve().parent.parent / "crawling" / "ingredient_taxonomy.csv"
-
-
-@lru_cache(maxsize=1)
-def taxonomy_categories() -> dict[str, str]:
-    """Standard ingredient → ``taxonomy_category`` (base, processed, fermented, sauce …)."""
-
-    with TAXONOMY_PATH.open(encoding="utf-8-sig", newline="") as f:
-        return {row["name_ko"].strip(): row["taxonomy_category"].strip() for row in csv.DictReader(f)}
 
 
 def needs_explaining(item) -> bool:

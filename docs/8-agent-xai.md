@@ -139,7 +139,7 @@
   - `status`는 확인값이면 3값 그대로, 확률 근거면 `unknown`.
   - `posterior_mean`·`confidence`·`prior_source`는 ⑤ 확률 근거면 그대로 옮기고, 사장님 확인값이면 `null`.
   - `role`은 입력 값을 그대로 옮긴다 (아래).
-  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없으면 팀 번역 사전(`crawling/ingredient_translations.csv` 표준 재료 324개, `crawling/ingredient_translations_extra.csv` 표준 밖 재료 565개)에서 한국어 이름으로 찾고, 거기에도 없으면 한국어 `canonical_name`을 그대로 쓴다 (2026-11-02, `ai_decision_policy/names.py`). `ingredient_id: null`인 웹 재료도 이렇게 찾는다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274)
+  - `ingredient.localized_name`은 사용자 언어(`locale`)로 된 재료 이름이다. 입력 `localized_names`에서 가져오고 LLM으로 번역하지 않는다 (§4). 목록에 없으면 팀 번역 사전(`crawling/ingredient_translations.csv` 표준 재료 324개, `crawling/ingredient_translations_extra.csv` 표준 밖 재료 565개)에서 한국어 이름으로 찾고, 거기에도 없으면 한국어 `canonical_name`을 그대로 쓴다 (2026-11-02, `ai_decision_policy/names.py`). `ingredient_id: null`인 웹 재료도 이렇게 찾는다. `canonical_name`은 한국어 표준명 그대로 둔다. `locale: ko`면 두 값이 같다 (⓪ §4-7, #274). 예외로 `locale: ko`에서 국물 분류(`ingredient_taxonomy.csv`의 `broth`) 재료 중 이름만으로는 요리처럼 읽히는 것은 `localized_name`에 "국물"을 붙인다: `곰탕` → `곰탕 국물`, `사골` → `사골 국물`. `육수`·`멸칫국물`처럼 이미 국물임이 드러나는 이름은 그대로 둔다 (2026-11-24)
 - 최상위 `matched_tags`는 모든 위험 재료와 `risk_tag_observations`에서 겹친 태그를 중복 제거한 목록이다 (예전 이름 `hits`).
 - `evidence_refs`는 판정에 쓴 근거 ID 전체를 중복 제거한 목록이다. 위험 재료가 없는 SAFE 판정도 "없음" 확인 근거가 있으면 남긴다.
 - `message`는 `{verdict, reason, notes[]}` object이고, 세 칸 모두 요청 `locale` 하나로 쓴다 (§0-2, §4 "`message` 칸", ⓪ §4-7).

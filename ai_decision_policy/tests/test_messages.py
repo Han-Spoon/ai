@@ -530,3 +530,16 @@ def test_estimate_under_one_percent_says_under_one_percent() -> None:
 def test_under_one_percent_template_exists_in_every_language(locale: str) -> None:
     text = messages.BELOW_ONE_PERCENT[locale]("X")
     assert "X" in text and "1" in text
+
+
+def test_korean_broth_names_say_they_are_broth() -> None:
+    from ai_decision_policy.names import display_name, korean_display_name
+
+    assert korean_display_name("곰탕") == "곰탕 국물"
+    assert korean_display_name("사골") == "사골 국물"
+    assert korean_display_name("육수") == "육수"
+    assert korean_display_name("멸칫국물") == "멸칫국물"
+    assert korean_display_name("라면") == "라면"
+    gomtang = IngredientRef(ingredient_id=None, canonical_name="곰탕")
+    assert display_name(gomtang, {}, "ko") == "곰탕 국물"
+    assert "국물" not in display_name(gomtang, {}, "en")
