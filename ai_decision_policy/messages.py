@@ -10,6 +10,7 @@ LLM part (§0-2); the verdict and notes stand on their own (§4 "LLM 실패").
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from ai_supervisor.contracts.common import Locale, UserProfile
@@ -110,6 +111,30 @@ OWNER_SAYS_ABSENT: dict[str, VerdictTemplate] = {
     "ja": lambda x, last: f"店主が、{x}は入れないと確認しました。",
     "es": lambda x, last: f"El dueño confirmó que no lleva {x}.",
 }
+# CAUTION/estimated: how likely the most likely restricted thing is (2026-11-23, the
+# verdict shows a percent again). The highest ingredient estimate is a lower bound of
+# the chance that anything restricted is in the dish, so "at least", never "at most".
+AT_LEAST: dict[str, Callable[[str, int], str]] = {
+    "ko": lambda x, p: f"{x}{_ko(x, '이', '가')} 들어갈 확률이 {p}% 이상이에요.",
+    "en": lambda x, p: f"The chance it contains {x} is at least {p}%.",
+    "ar": lambda x, p: f"احتمال احتوائه على {x} لا يقل عن {p}%.",
+    "zh-CN": lambda x, p: f"含有{x}的可能性至少为{p}%。",
+    "zh-TW": lambda x, p: f"含有{x}的可能性至少為{p}%。",
+    "ja": lambda x, p: f"{x}が入っている確率は{p}%以上です。",
+    "es": lambda x, p: f"La probabilidad de que lleve {x} es de al menos un {p}%.",
+}
+
+
+def shown_percent(posterior_mean: float) -> int:
+    """The whole number shown for an estimate: never 0% or 100%."""
+
+    if posterior_mean < 0.01:
+        return 1
+    if posterior_mean > 0.99:
+        return 99
+    return math.floor(posterior_mean * 100 + 0.5)
+
+
 # CAUTION/estimated: ingredients that may be in the dish (an estimate, never "is in").
 MAY_CONTAIN: dict[str, VerdictTemplate] = {
     "ko": lambda x, last: f"{x}{_ko(last, '이', '가')} 들어 있을 수 있어요.",
@@ -466,6 +491,19 @@ def _lead(table_for: dict[str, Callable[[str], str]], table: dict[str, str], res
     return table_for[lang](restrictions) if restrictions else table[lang]
 
 
+def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str], str | None]:
+    """"밀이 들어갈 확률이 85% 이상이에요" from the most likely ingredient, named by what
+    the user avoids in it (밀, not 라면사리), and that name. Empty when no ingredient has
+    an estimate."""
+
+    estimated = [i for i in items if i.posterior_mean is not None and i.matched_tags]
+    if not estimated:
+        return [], None
+    top = max(estimated, key=lambda i: i.posterior_mean)
+    subject = _tags(list(top.matched_tags), lang)
+    return [AT_LEAST[lang](subject, shown_percent(top.posterior_mean))], subject
+
+
 def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> str:
     """Whether the user can eat it first, then why (2026-11-22)."""
 
@@ -510,7 +548,11 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
             tags = by_ingredient | set(outcome.matched_tags)
             restrictions = restriction_names(profile, lang, tags)
             lead = _lead(CHECK_BEFORE_EATING_FOR, CHECK_BEFORE_EATING, restrictions, lang)
-            return _sentences([lead, *owner, _say(MAY_CONTAIN, names, lang)], lang)
+            at_least, subject = _at_least(items, lang)
+            # "돼지고기가 들어갈 확률이 62% 이상이에요. 돼지고기가 들어 있을 수 있어요." says it
+            # twice: the list goes when it only names what the percent already does.
+            may_contain = [] if names == [subject] else [_say(MAY_CONTAIN, names, lang)]
+            return _sentences([lead, *owner, *at_least, *may_contain], lang)
         return _sentences([CHECK_BEFORE_EATING[lang], *owner, NOT_CONFIRMED[lang]], lang)
     # caution/unknown, and anything the policy does not produce, asks the user to check
     # with the staff: never a sentence that sounds safe.

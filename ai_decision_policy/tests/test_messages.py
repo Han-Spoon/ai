@@ -61,14 +61,30 @@ def test_danger_names_only_the_restriction_it_breaks() -> None:
     assert message(shrimp).verdict.startswith("비건 · 새우 알레르기 기준으로는 드시기 어려워요.")
 
 
-def test_2_and_11_estimate_asks_to_check_without_percent() -> None:
+def test_2_and_11_estimate_asks_to_check_with_the_highest_percent() -> None:
+    # 2026-11-23: the verdict shows a percent again, "at least" the highest estimate.
     results = [probability(PORK, ["is_pork"], 0.62)]
     ko = request(HALAL, probability_results=results, locale="ko")
-    assert message(ko).verdict == "할랄 기준으로는 드시기 전에 직원 확인이 필요해요. 돼지고기가 들어 있을 수 있어요."
+    assert message(ko).verdict == "할랄 기준으로는 드시기 전에 직원 확인이 필요해요. 돼지고기가 들어갈 확률이 62% 이상이에요."
     en = request(HALAL, probability_results=results, localized_names={101: "pork"})
     assert message(en).verdict == (
         "With your dietary needs (halal), please check with the staff before eating this dish. "
-        "It may contain pork."
+        "The chance it contains pork is at least 62%."
+    )
+
+
+def test_verdict_percent_names_what_is_avoided_in_the_most_likely_ingredient() -> None:
+    # 밀 알레르기 부대찌개: "밀이 들어갈 확률이 85% 이상이에요", not 라면사리.
+    noodles = IngredientRef(ingredient_id=None, canonical_name="라면사리")
+    soy = IngredientRef(ingredient_id=None, canonical_name="간장")
+    req = request(
+        profile(allergies=["is_wheat"]),
+        probability_results=[probability(soy, ["is_wheat"], 0.4), probability(noodles, ["is_wheat"], 0.851)],
+        locale="ko",
+    )
+    assert message(req).verdict == (
+        "밀 알레르기 기준으로는 드시기 전에 직원 확인이 필요해요. 밀이 들어갈 확률이 85% 이상이에요. "
+        "라면사리, 간장이 들어 있을 수 있어요."
     )
 
 
@@ -82,7 +98,8 @@ def test_caution_says_what_the_owner_ruled_out_first() -> None:
     )
     assert message(req).verdict == (
         "비건 기준으로는 드시기 전에 직원 확인이 필요해요. "
-        "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 어묵이 들어 있을 수 있어요."
+        "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 생선이 들어갈 확률이 46% 이상이에요. "
+        "어묵이 들어 있을 수 있어요."
     )
     zh = req.model_copy(update={"locale": "zh-CN"})
     # Chinese sentences join without a space (the untranslated name keeps its own).
@@ -174,7 +191,7 @@ def test_21_flag_answer_danger_names_the_tag() -> None:
 def test_missing_localized_name_falls_back_to_the_team_tables() -> None:
     # No localized_names from the backend: the standard table still names 돼지고기 (names.py).
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.3)], locale="ja")
-    assert message(req).verdict == "食事制限（ハラール）があるため、食べる前にスタッフに確認してください。豚肉が入っている可能性があります。"
+    assert message(req).verdict == "食事制限（ハラール）があるため、食べる前にスタッフに確認してください。豚肉が入っている確率は30%以上です。"
 
 
 def test_unmapped_web_ingredient_is_named_from_the_extra_table() -> None:
@@ -321,7 +338,7 @@ def test_judge_wraps_verdict_message_and_cards() -> None:
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.8)], localized_names={101: "pork"})
     response = judge(req)
     assert (response.risk_level, response.evidence_basis) == ("caution", "estimated")
-    assert response.message.verdict.endswith("It may contain pork.")
+    assert response.message.verdict.endswith("The chance it contains pork is at least 80%.")
     assert [card.ingredient.canonical_name for card in response.owner_cards] == ["돼지고기"]
     assert response.risk_ingredients[0].ingredient.localized_name == "pork"
 
