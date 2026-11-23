@@ -5,22 +5,23 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_SERVING_RE = re.compile(r"(?:^|\s)(?P<option>\d+\s*(?:인분|인|人))\s*$", re.IGNORECASE)
-_SIZE_RE = re.compile(
-    r"(?:^|\s)(?P<option>특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|"
-    r"小|中|大|특|보통|곱빼기|곱배기)\s*$"
-)
-_QUANTITY_RE = re.compile(
-    r"(?:^|\s)(?P<option>\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)"
-    r"(?:\s*이상)?)\s*$",
-    re.IGNORECASE,
-)
+# Serving and quantity options start with a digit, so they are split even when
+# written without a space ("개성식손만두4개"). A range ("2~3인") is one option.
+# The lookbehind keeps a whole number or range together ("삼겹살1500g" ->
+# "1500g", not "500g"; "닭한마리2~3인" -> "2~3인", not "3인").
+_RANGE_SEP = r"[~\-–〜～]"
+_INT = r"\d+(?:\s*" + _RANGE_SEP + r"\s*\d+)?"
+_NUM = r"\d+(?:\.\d+)?(?:\s*" + _RANGE_SEP + r"\s*\d+(?:\.\d+)?)?"
+_NOT_IN_NUMBER = r"(?<![\d.~\-–〜～])"
+_SERVING = _INT + r"\s*(?:인분|인|人)"
+_QUANTITY = _NUM + r"\s*(?:kg|g|그램|개|마리|접시|판|팩)(?:\s*이상)?"
+_SIZES = r"특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|小|中|大|특|보통|곱빼기|곱배기"
+
+_SERVING_RE = re.compile(_NOT_IN_NUMBER + r"(?P<option>" + _SERVING + r")\s*$", re.IGNORECASE)
+_SIZE_RE = re.compile(r"(?:^|\s)(?P<option>" + _SIZES + r")\s*$")
+_QUANTITY_RE = re.compile(_NOT_IN_NUMBER + r"(?P<option>" + _QUANTITY + r")\s*$", re.IGNORECASE)
 _BRACKETED_TERMINAL_RE = re.compile(
-    r"\s*[\(\[【]\s*(?P<option>"
-    r"\d+\s*(?:인분|인|人)|"
-    r"특대|소자|중자|대자|소짜|중짜|대짜|소|중|대|小|中|大|특|보통|곱빼기|곱배기|"
-    r"\d+(?:\.\d+)?\s*(?:kg|g|그램|개|마리|접시|판|팩)(?:\s*이상)?"
-    r")\s*[\)\]】]\s*$",
+    r"\s*[\(\[【]\s*(?P<option>" + _SERVING + "|" + _SIZES + "|" + _QUANTITY + r")\s*[\)\]】]\s*$",
     re.IGNORECASE,
 )
 
@@ -70,6 +71,7 @@ def extract_options(text: str) -> OptionExtraction:
         if not prefix:
             break
         option = re.sub(r"\s+", "", match.group("option"))
+        option = re.sub(_RANGE_SEP, "~", option)
         option = _OPTION_NORMALIZATIONS.get(option, option)
         if option.endswith("개이상"):
             option = f"{option[:-2]} 이상"

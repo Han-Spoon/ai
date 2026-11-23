@@ -9,12 +9,13 @@ from .beverages import (
 )
 
 
-DICTIONARY_VERSION = "2026-11-v3"
+DICTIONARY_VERSION = "2026-11-v4"
 
 # Entries may correct spelling, but must not remove ingredient or variant meaning.
 NORMALIZATION_REPLACEMENTS = MappingProxyType(
     {
         "가재미탕": "가자미탕",
+        "공깃밥": "공기밥",  # both spellings are on menus; the DB menu is 공기밥
         "돈까스": "돈가스",
         "찌게": "찌개",
     }

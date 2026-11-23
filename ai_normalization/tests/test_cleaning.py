@@ -53,6 +53,16 @@ def item(index: int, name: str, *, locale: str | None = "ko") -> dict:
         ("냉면 곱배기", "냉면", "냉면", ["곱빼기"]),
         ("삼겹살 500g", "삼겹살", "삼겹살", ["500g"]),
         ("볶음밥 2개이상", "볶음밥", "볶음밥", ["2개 이상"]),
+        ("개성식손만두4개", "개성식손만두", "개성식손만두", ["4개"]),
+        ("개성식손만두6개", "개성식손만두", "개성식손만두", ["6개"]),
+        ("부대찌개2인", "부대찌개", "부대찌개", ["2인"]),
+        ("삼겹살1500g", "삼겹살", "삼겹살", ["1500g"]),
+        ("통닭1마리", "통닭", "통닭", ["1마리"]),
+        ("닭한마리(2~3인)", "닭한마리", "닭한마리", ["2~3인"]),
+        ("닭한마리 (2-3인)", "닭한마리", "닭한마리", ["2~3인"]),
+        ("닭한마리 2~3인", "닭한마리", "닭한마리", ["2~3인"]),
+        ("닭한마리2~3인분", "닭한마리", "닭한마리", ["2~3인분"]),
+        ("만두 4~5개", "만두", "만두", ["4~5개"]),
         ("김치찌개8000원", "김치찌개", "김치찌개", []),
         ("김치찌개(8,O00원)", "김치찌개", "김치찌개", []),
         ("소고기국밥 호주산", "소고기국밥", "소고기국밥", []),
@@ -588,3 +598,22 @@ def test_beverage_warning_replaces_low_ocr_warning_for_excluded_item() -> None:
     assert response.items[0].display_name == "참이슬 360ml"
     assert [warning.code for warning in response.warnings] == ["beverage_item"]
     assert response.warnings[0].forces_caution is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "normalized"),
+    [
+        ("매운김치갈비찜 ᄎ W", "매운김치갈비찜"),
+        ("매운김치갈비찜 ㅊ", "매운김치갈비찜"),
+        ("갈비찜ᄎ", "갈비찜"),
+        ("점심특선 A", "점심특선a"),
+        ("Bulgogi B", "bulgogib"),
+    ],
+)
+def test_trailing_ocr_jamo_noise_is_removed(raw: str, normalized: str) -> None:
+    assert clean_menu_name(raw).normalized_menu_name == normalized
+
+
+def test_alternative_spelling_of_rice_bowl() -> None:
+    assert clean_menu_name("공깃밥").normalized_menu_name == "공기밥"
+    assert clean_menu_name("공깃 밥").normalized_menu_name == "공기밥"
