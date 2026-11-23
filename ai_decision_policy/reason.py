@@ -18,7 +18,6 @@ notes are templates and go out unchanged.
 from __future__ import annotations
 
 import asyncio
-import math
 import re
 from collections.abc import Iterable
 from functools import lru_cache
@@ -29,7 +28,7 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
-from .messages import _sentences, reason_tail
+from .messages import _sentences, reason_tail, shown_percent
 from .names import all_rows, dictionary_name, display_name, standard_rows
 from .policy import information_failed
 from .profile import forbidden_tags
@@ -243,16 +242,6 @@ def translated_names(pairs: Iterable[NameTranslation], korean_names: Iterable[st
 
     wanted = set(korean_names)
     return {p.translated.strip() for p in pairs if p.korean.strip() in wanted and p.translated.strip()}
-
-
-def shown_percent(posterior_mean: float) -> int:
-    """The whole number the verdict template shows (messages.percent)."""
-
-    if posterior_mean < 0.01:
-        return 1
-    if posterior_mean > 0.99:
-        return 99
-    return math.floor(posterior_mean * 100 + 0.5)
 
 
 def _translation_rows() -> list[dict[str, str]]:
