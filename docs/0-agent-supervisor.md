@@ -999,7 +999,7 @@ flowchart TD
 
 ①과 ②-A는 Prepare Graph에서 메뉴판 1장 단위로 실행한다. ②-B는 Judge Graph 진입 시 후보가 포함된 메뉴 목록을 배치로 해석한다. ③④⑤⑧은 메뉴별 호출을 기본으로 하되, 구현에서 같은 타입의 호출을 배치로 최적화할 수 있다.
 
-웹서치(⑥)는 DB에 없는 메뉴에만 호출한다. OCR 결과 전체에 대해 무조건 웹서치를 돌리지 않는다.
+웹서치(⑥)는 DB에 없는 메뉴와, DB 메뉴 행은 있지만 ④가 원본 레시피 재료 0개를 뜻하는 `empty_recipe`를 낸 메뉴에만 호출한다. 사장님 확인값을 제외한 뒤 `ingredients`가 빈 경우와 구분해, 실제 `empty_recipe`인 등록 메뉴만 빈 `db_bayes` 결과로 끝내지 않고 웹 근거로 복구한다. 기본 레시피가 빈 런타임 변형 메뉴도 변형 토큰만 계산하지 않고 `empty_recipe` 복구를 먼저 적용한다. OCR 결과 전체에 대해 무조건 웹서치를 돌리지는 않는다 (2026-11-23).
 
 ⑥을 동시에 실행하는 메뉴는 **서비스 프로세스 하나의 모든 Judge 요청을 합쳐 최대 5개**로 제한한다. 6번째 메뉴부터는 어느 스캔에서 왔는지와 관계없이 앞선 웹서치가 끝나는 순서대로 실행한다. 이 제한은 설정값 `max_concurrent_web_searches`로 두되 기본값과 상한은 모두 5다. Judge 단계 전체 제한 시간은 아직 정해지지 않아 슬롯 대기 자체에는 별도 timeout이 없다(§8). 프로세스가 여러 개인 배포에서는 프로세스마다 5칸이 생기므로, BAZE 계정 전체 제한이 필요해지면 별도의 분산 rate limiter를 둬야 한다.
 
@@ -1194,7 +1194,7 @@ Router는 외부 호출이나 LLM 호출이 없는 순수 함수다.
 
 `variant_review`와 `web_review`는 ⑦을 호출하지 않고 원인별 operation만 state에 모은다. Judge Graph의 `db_update`가 고위험 재검증 뒤 최종 사장님 카드의 operation까지 합쳐 ⑦ adapter를 한 번만 호출한다 (§2-10). 재검증이 카드를 더하거나 질문을 다듬을 수 있으므로, 카드가 모두 확정된 뒤에 저장 명령을 만들어야 화면 카드와 질문 행이 어긋나지 않는다. `decision_no_information`은 같은 ⑧ adapter에 `no_information: true`를 보내는 node다.
 
-현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 런타임 변형의 `variant_review` operation 수집 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴의 ⑥ 웹 경로다. 런타임 변형은 ④의 `variant_suggestion`을 바꾸지 않고 `create_review_item(review_origin: variant_suggestion)` operation으로 모은 뒤 ⑤·⑧ 분석을 계속한다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 `web_review`가 관리자 검토와 캐시 저장 operation을 모으고, `store_id: null`이면 두 검토 경로 모두 분석만 수행하며 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다.
+현재 구현된 경로는 가게가 있는 선택 메뉴의 ③ exact-first 경로, ④가 반환한 DB 등록 메뉴·DB 등록 변형의 ⑤ 확률 경로, 런타임 변형의 `variant_review` operation 수집 경로, 가게 없는 선택 메뉴의 ④→⑤ 경로, 미등록 메뉴와 `empty_recipe`인 등록 메뉴의 ⑥ 웹 경로다. 런타임 변형은 ④의 `variant_suggestion`을 바꾸지 않고 `create_review_item(review_origin: variant_suggestion)` operation으로 모은 뒤 ⑤·⑧ 분석을 계속한다. 웹 경로는 신규 출처와 같은 `item_id`의 캐시를 합쳐 ④ `map_ingredients`와 ⑥ 집계를 거친 뒤 ⑤·⑧로 보낸다. 신규 출처가 있고 `store_id`가 있으면 `web_review`가 관리자 검토와 캐시 저장 operation을 모으고, `store_id: null`이면 두 검토 경로 모두 분석만 수행하며 ⑦과 모든 저장 명령을 건너뛴다. 신규·캐시 출처가 모두 없으면 `no_information: true`로 ⑧을 호출한다. ③은 `KnowledgeBundle`의 선택 후보 slice를 읽는 `ExactFeedbackTool`에 연결되어 있고, ④·⑤·⑥·⑦·⑧은 canonical `NodeAdapter`로 주입한다.
 
 ### 2-9. 메뉴 fan-out과 collect
 
@@ -3024,8 +3024,9 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 | 모든 관련 재료가 exact로 확인됨 | `exact_only` | ③ → ④ tag lookup → ⑧ |
 | DB 메뉴 + 미확인 재료 있음 | `db_bayes` | ③ → ④ → ⑤ → ④ tag lookup → ⑧ |
 | DB 등록/런타임 변형 메뉴 | `db_variant_bayes` | ③ → ④ → ⑤ → ④ tag lookup → ⑧ |
+| DB 메뉴지만 ④가 `empty_recipe`를 반환하고 웹서치 성공 | `web_bayes` | ③ → ④ → ⑥ 수집 → ④ 매핑 → ⑥ 집계 → ⑤ → ④ tag lookup → ⑧ |
 | DB에 없고 웹서치 성공 | `web_bayes` | ④ → ⑥ 수집 → ④ 매핑 → ⑥ 집계 → ⑤ → ④ tag lookup → ⑧ |
-| DB에도 없고 웹서치 실패 | `no_information` | ④ → ⑥ → ⑧ |
+| DB 재료가 없거나 메뉴가 없고 웹서치도 실패 | `no_information` | ④ → ⑥ → ⑧ |
 
 `no_information` 경로에서는 SAFE 판정을 허용하지 않는다. ⑧이 CAUTION 이상을 유지하도록 `no_information: true`를 반드시 전달한다.
 
