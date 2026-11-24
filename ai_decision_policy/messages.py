@@ -111,24 +111,35 @@ OWNER_SAYS_ABSENT: dict[str, VerdictTemplate] = {
 # CAUTION/estimated: how likely the most likely restricted thing is (2026-11-23, the
 # verdict shows a percent again). The highest ingredient estimate is a lower bound of
 # the chance that anything restricted is in the dish, so "at least", never "at most".
-AT_LEAST: dict[str, Callable[[str, int], str]] = {
-    "ko": lambda x, p: f"{x}{_ko(x, '이', '가')} 들어갈 확률이 {p}% 이상이에요.",
-    "en": lambda x, p: f"The chance it contains {x} is at least {p}%.",
-    "ar": lambda x, p: f"احتمال احتوائه على {x} لا يقل عن {p}%.",
-    "zh-CN": lambda x, p: f"含有{x}的可能性至少为{p}%。",
-    "zh-TW": lambda x, p: f"含有{x}的可能性至少為{p}%。",
-    "ja": lambda x, p: f"{x}が入っている確率は{p}%以上です。",
-    "es": lambda x, p: f"La probabilidad de que lleve {x} es de al menos un {p}%.",
+AT_LEAST: dict[str, Callable[[str, int, str], str]] = {
+    "ko": lambda x, p, of: f"{x}{of}{_ko(x, '이', '가')} 들어갈 확률이 {p}% 이상이에요.",
+    "en": lambda x, p, of: f"The chance it contains {x}{of} is at least {p}%.",
+    "ar": lambda x, p, of: f"احتمال احتوائه على {x}{of} لا يقل عن {p}%.",
+    "zh-CN": lambda x, p, of: f"含有{x}{of}的可能性至少为{p}%。",
+    "zh-TW": lambda x, p, of: f"含有{x}{of}的可能性至少為{p}%。",
+    "ja": lambda x, p, of: f"{x}{of}が入っている確率は{p}%以上です。",
+    "es": lambda x, p, of: f"La probabilidad de que lleve {x}{of} es de al menos un {p}%.",
 }
 # Under 1%: "1% 이상" would be untrue and "0%" reads as "none" (§3 확률 수치 표시).
-BELOW_ONE_PERCENT: dict[str, Callable[[str], str]] = {
-    "ko": lambda x: f"{x}{_ko(x, '이', '가')} 들어갈 확률은 1% 미만이에요.",
-    "en": lambda x: f"The chance it contains {x} is under 1%.",
-    "ar": lambda x: f"احتمال احتوائه على {x} أقل من 1%.",
-    "zh-CN": lambda x: f"含有{x}的可能性低于1%。",
-    "zh-TW": lambda x: f"含有{x}的可能性低於1%。",
-    "ja": lambda x: f"{x}が入っている確率は1%未満です。",
-    "es": lambda x: f"La probabilidad de que lleve {x} es menor del 1%.",
+BELOW_ONE_PERCENT: dict[str, Callable[[str, str], str]] = {
+    "ko": lambda x, of: f"{x}{of}{_ko(x, '이', '가')} 들어갈 확률은 1% 미만이에요.",
+    "en": lambda x, of: f"The chance it contains {x}{of} is under 1%.",
+    "ar": lambda x, of: f"احتمال احتوائه على {x}{of} أقل من 1%.",
+    "zh-CN": lambda x, of: f"含有{x}{of}的可能性低于1%。",
+    "zh-TW": lambda x, of: f"含有{x}{of}的可能性低於1%。",
+    "ja": lambda x, of: f"{x}{of}が入っている確率は1%未満です。",
+    "es": lambda x, of: f"La probabilidad de que lleve {x}{of} es menor del 1%.",
+}
+# Which ingredient the percent belongs to, after the restricted name: "생선(멸치)".
+# Korean particles follow the word before the brackets (생선(멸치)이).
+FROM_INGREDIENT: dict[str, Callable[[str], str]] = {
+    "ko": lambda n: f"({n})",
+    "en": lambda n: f" ({n})",
+    "ar": lambda n: f" ({n})",
+    "zh-CN": lambda n: f"（{n}）",
+    "zh-TW": lambda n: f"（{n}）",
+    "ja": lambda n: f"（{n}）",
+    "es": lambda n: f" ({n})",
 }
 
 
@@ -510,19 +521,26 @@ def owner_said_absent(request: DecisionRequest, outcome: DecisionOutcome, lang: 
     ))
 
 
-def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str], str | None]:
-    """"밀이 들어갈 확률이 85% 이상이에요" from the most likely ingredient, named by what
-    the user avoids in it (밀, not 라면사리), and that name. Empty when no ingredient has
-    an estimate."""
+def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str], list[str]]:
+    """"생선(멸치)이 들어갈 확률이 97% 이상이에요" from the most likely ingredient: named by
+    what the user avoids in it (밀, not 라면사리), then the ingredient the percent belongs
+    to when its name differs (2026-11-24). Without it 김치찌개 read "생선 97%" next to a
+    screen row "생선 2.2%"; the bracket ties the number to the "멸치 97%" row. Returns the
+    sentence and the names it already says (restricted name, ingredient). Empty when no
+    ingredient has an estimate."""
 
     estimated = [i for i in items if i.posterior_mean is not None and i.matched_tags]
     if not estimated:
-        return [], None
+        return [], []
     top = max(estimated, key=lambda i: i.posterior_mean)
     subject = _tags(list(top.matched_tags), lang)
+    name = top.ingredient.localized_name
+    # No bracket when it would repeat a name: "돼지고기", "생선이나 새우(새우)".
+    restricted = {subject, *(tag_name(tag, lang) for tag in top.matched_tags)}
+    of = FROM_INGREDIENT[lang](name) if name and name not in restricted else ""
     if is_below_one_percent(top.posterior_mean):
-        return [BELOW_ONE_PERCENT[lang](subject)], subject
-    return [AT_LEAST[lang](subject, shown_percent(top.posterior_mean))], subject
+        return [BELOW_ONE_PERCENT[lang](subject, of)], [subject, name]
+    return [AT_LEAST[lang](subject, shown_percent(top.posterior_mean), of)], [subject, name]
 
 
 def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> str:
@@ -563,10 +581,11 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]
         if names:
-            at_least, subject = _at_least(items, lang)
+            at_least, said = _at_least(items, lang)
             # "돼지고기가 들어갈 확률이 62% 이상이에요. 돼지고기가 들어 있을 수 있어요." says it
-            # twice: the list goes when it only names what the percent already does.
-            may_contain = [] if names == [subject] else [_say(MAY_CONTAIN, names, lang)]
+            # twice: the list goes when it only names what the percent already does
+            # ("생선(어묵)이 …" and "어묵이 …", 2026-11-24).
+            may_contain = [] if len(names) == 1 and names[0] in said else [_say(MAY_CONTAIN, names, lang)]
             return _sentences([*owner, *at_least, *may_contain], lang)
         return _sentences([*owner, NOT_CONFIRMED[lang]], lang)
     # caution/unknown, and anything the policy does not produce: never a sentence that

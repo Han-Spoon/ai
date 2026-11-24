@@ -289,8 +289,9 @@ def test_hidden_ingredient_inherits_parent_counts():  # §7-21
 
 
 def test_merged_hidden_ingredient_keeps_the_larger_parent_counts():  # §2-2, 2026-11-23
-    # 액젓 sits under 참치 (1/10) and 김치 (10/10) with the same tags. 참치 comes first, so
-    # its place is kept, but the counts must be 김치's: 부대찌개 새우 was 2% instead of 82%.
+    # 액젓 sits under 참치 (1/10) and 김치 (10/10) with the same tags. 참치 comes first, but
+    # the counts must be 김치's (부대찌개 새우 was 2% instead of 82%), and so is the place:
+    # the row says where the number comes from (2026-11-24).
     g = graph(compositions=((9, 2), (1, 2), (2, 3)),
               composition_tags=((9, 2, "is_shellfish"), (1, 2, "is_shellfish")))
     k = knowledge(recipe=(9, 1, 4, 5), priors=(("10000recipe", 9, 1), ("10000recipe", 1, 10)))
@@ -298,7 +299,7 @@ def test_merged_hidden_ingredient_keeps_the_larger_parent_counts():  # §2-2, 20
     for name in ("액젓", "새우"):
         entries = [i for i in res.ingredients if i.ingredient.canonical_name == name]
         assert len(entries) == 1
-        assert entries[0].parent_ingredient.canonical_name == ("참치" if name == "액젓" else "액젓")
+        assert entries[0].parent_ingredient.canonical_name == ("김치" if name == "액젓" else "액젓")
         assert {o.corpus: o.k_count for o in entries[0].observations}["10000recipe"] == 10
 
 
@@ -364,7 +365,30 @@ def test_path_tag_stays_on_its_path():  # §7-27
 
 
 def test_same_ingredient_same_tags_is_merged():
-    k = knowledge(recipe=(1, 2))
+    # 액젓 is listed directly in 2 recipes and comes inside 김치 in all 10: one row, placed
+    # inside 김치 where its number comes from, so ⑧ does not call it a main ingredient
+    # (김치찌개 멸치 97% "주재료", 2026-11-24).
+    k = knowledge(recipe=(1, 2), priors=(("10000recipe", 1, 10), ("10000recipe", 2, 2)))
+    g = graph(composition_tags=())
+    rows = [i for i in query_ontology(request(k=k, g=g), now=NOW).ingredients if i.ingredient.ingredient_id == 2]
+    assert [(r.depth, r.source, r.role) for r in rows] == [(1, "expanded", "hidden")]
+    assert rows[0].parent_ingredient.canonical_name == "김치"
+    assert {o.corpus: o.k_count for o in rows[0].observations}["10000recipe"] == 10
+
+
+def test_merge_keeps_the_direct_place_when_it_has_more_appearances():
+    k = knowledge(recipe=(1, 2), priors=(("10000recipe", 1, 3), ("10000recipe", 2, 8)))
     g = graph(composition_tags=())
     rows = [i for i in query_ontology(request(k=k, g=g), now=NOW).ingredients if i.ingredient.ingredient_id == 2]
     assert [(r.depth, r.source) for r in rows] == [(0, "recipe")]
+    assert {o.corpus: o.k_count for o in rows[0].observations}["10000recipe"] == 8
+
+
+def test_merge_keeps_the_place_of_an_ingredient_the_menu_is_named_after():
+    # 액젓 inside 김치 is in all 10 recipes, but "액젓찌개" is made of 액젓 itself.
+    k = knowledge(recipe=(1, 2), priors=(("10000recipe", 1, 10), ("10000recipe", 2, 2)))
+    g = graph(composition_tags=())
+    res = query_ontology(request(name="액젓찌개", candidate_name="액젓찌개", k=k, g=g), now=NOW)
+    rows = [i for i in res.ingredients if i.ingredient.ingredient_id == 2]
+    assert [(r.depth, r.role) for r in rows] == [(0, "identity")]
+    assert {o.corpus: o.k_count for o in rows[0].observations}["10000recipe"] == 10
