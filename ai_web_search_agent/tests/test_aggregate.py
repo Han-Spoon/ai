@@ -11,6 +11,8 @@ TOFU = {"ingredient_id": 130, "canonical_name": "두부"}
 ONION = {"ingredient_id": 140, "canonical_name": "양파"}
 PEANUT = {"ingredient_id": 150, "canonical_name": "땅콩"}
 MALA_SAUCE = {"ingredient_id": None, "canonical_name": "마라소스"}
+DUMPLING = {"ingredient_id": 160, "canonical_name": "만두"}
+PORK = {"ingredient_id": 161, "canonical_name": "돼지고기"}
 TAGS = {120: ["is_beef"], 150: ["is_peanut"]}
 SITE_URL = {
     "10000recipe": "https://www.10000recipe.com/recipe/",
@@ -113,6 +115,29 @@ def test_recipe_without_ingredients_is_not_counted() -> None:
 def test_nothing_found_is_found_false() -> None:
     outcome = aggregate_sources(request([source(0, "10000recipe", [])]))
     assert (outcome.found, outcome.ingredients) == (False, [])
+
+
+def test_branded_dish_identity_is_not_counted_from_new_or_cached_sources() -> None:
+    sources = [
+        source(0, "10000recipe", [DUMPLING, PORK], title="손만두 만들기"),
+        source(1, "web_search", [DUMPLING, PORK], title="개성식 손만두", origin="cache"),
+    ]
+
+    outcome = aggregate_sources(request(sources, menu="개성식손만두"))
+
+    assert names(outcome) == {"돼지고기"}
+    assert not any(signal.code == "title_mismatch" for signal in outcome.recipe_signals)
+
+
+def test_dumpling_stays_an_ingredient_of_dumpling_soup() -> None:
+    outcome = aggregate_sources(
+        request(
+            [source(0, "10000recipe", [DUMPLING, PORK], title="떡만두국")],
+            menu="떡만두국",
+        )
+    )
+
+    assert names(outcome) == {"만두", "돼지고기"}
 
 
 def test_unmapped_ingredient_is_kept_and_flagged() -> None:

@@ -21,6 +21,8 @@ from ai_supervisor.contracts.web_search import (
     WebAggregateResponse,
 )
 
+from .menu_identity import dish_identity_suffix, web_search_menu_names
+
 MIN_SOURCES = 10
 PRIORITY_DOMAINS = ("10000recipe.com", "wtable.co.kr", "semie.cooking")
 # "다른 음식 의심" (§5): this recipe lacks at least this share of the ingredients that
@@ -88,6 +90,32 @@ def is_valid_source(source: MappedSource) -> bool:
     """A recipe with no extracted ingredient is not counted at all (§3-2)."""
 
     return bool(source.ingredients)
+
+
+def drop_menu_identity_ingredients(
+    menu_name: str, sources: list[MappedSource]
+) -> list[MappedSource]:
+    """Do not count a completed dish as an ingredient of itself.
+
+    This runs after ④ mapping, so aliases such as 손만두 have already become 만두.  It
+    also sanitizes old cached sources.  Only the longest dish suffix is removed:
+    개성식손만두/김치만두 drop 만두, while 떡만두국 and 만두전골 keep 만두 because
+    their own dish identity is not 만두.
+    """
+
+    identity = _compact(dish_identity_suffix(menu_name))
+    return [
+        source.model_copy(
+            update={
+                "ingredients": [
+                    item
+                    for item in source.ingredients
+                    if _compact(item.ingredient.canonical_name) != identity
+                ]
+            }
+        )
+        for source in sources
+    ]
 
 
 def count_ingredients(sources: list[MappedSource]) -> list[BayesianIngredient]:
@@ -180,7 +208,12 @@ def drop_rare_ingredients(
     ]
 
 
-def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[RecipeSignal]:
+def recipe_signals(
+    menu_name: str,
+    new_sources: list[MappedSource],
+    *,
+    title_menu_names: tuple[str, ...] | None = None,
+) -> list[RecipeSignal]:
     """Per new recipe, the three signals that send it to the operator (§5, 2026-11-02).
 
     A recipe with no signal counts as passed. Only this batch of new recipes is compared:
@@ -190,6 +223,7 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
     recipes = [s for s in new_sources if is_valid_source(s)]
     keys = {s.evidence_id: set(_unique_ingredients(s)) for s in recipes}
     menu = _compact(menu_name)
+    title_menus = tuple(_compact(name) for name in (title_menu_names or (menu_name,)))
     signals: list[RecipeSignal] = []
     for source in recipes:
         others = [keys[o.evidence_id] for o in recipes if o is not source]
@@ -206,7 +240,7 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
                     code="other_dish_suspected",
                     message=f"다른 레시피에 자주 나오는 재료 {len(common)}개 중 {len(missing)}개가 없어요",
                 ))
-        if menu not in _compact(source.title):
+        if not any(name in _compact(source.title) for name in title_menus):
             signals.append(RecipeSignal(
                 evidence_id=source.evidence_id,
                 code="title_mismatch",
@@ -241,10 +275,13 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
 def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
     """Core of ⑥ stage 2. Input warnings are kept by the caller; only new ones are returned."""
 
-    ingredients = drop_rare_ingredients(
-        count_ingredients(request.mapped_sources), request.mapped_sources
+    sources = drop_menu_identity_ingredients(
+        request.menu.normalized_menu_name, request.mapped_sources
     )
-    valid_count = sum(1 for s in request.mapped_sources if is_valid_source(s))
+    ingredients = drop_rare_ingredients(
+        count_ingredients(sources), sources
+    )
+    valid_count = sum(1 for s in sources if is_valid_source(s))
     warnings: list[NodeWarning] = []
     if ingredients and valid_count < MIN_SOURCES:
         warnings.append(NodeWarning(
@@ -254,12 +291,16 @@ def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
             message=f"유효 레시피가 {valid_count}개로 기준 {MIN_SOURCES}개보다 적어요",
             forces_caution=True,
         ))
-    new_sources = [s for s in request.mapped_sources if s.source_origin == "new"]
+    new_sources = [s for s in sources if s.source_origin == "new"]
     return AggregateOutcome(
         found=bool(ingredients),
         ingredients=ingredients,
         warnings=warnings,
-        recipe_signals=recipe_signals(request.menu.normalized_menu_name, new_sources),
+        recipe_signals=recipe_signals(
+            request.menu.normalized_menu_name,
+            new_sources,
+            title_menu_names=web_search_menu_names(request.menu.normalized_menu_name),
+        ),
     )
 
 
