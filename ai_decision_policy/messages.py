@@ -16,6 +16,7 @@ from collections.abc import Callable
 from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionRiskIngredient
 from ai_supervisor.contracts.external import DecisionMessage, MessageNote
+from ai_web_search_agent.menu_identity import set_meal_main
 
 from .names import display_name
 from .notes import NoteChoice, select_notes
@@ -702,6 +703,55 @@ def _korean_side_item(menu: str, suffix: str, names: list[str]) -> str:
         detail = f"({AND_LISTS['ko'](names)}{' 등' if many else ''})"
     noun = SIDE_ITEM_SUFFIXES[suffix]
     return f"{menu}{_ko(menu, '은', '는')} 메인 메뉴에 {stem}{detail}{_ko(stem, '을', '를')} 추가해 먹는 {noun}예요."
+
+
+# A set meal (2026-11-25, ⑥ ``set_meal_main``). Contents that change daily (오늘의 찌개,
+# 백반, 가정식백반) are not searched, so the menu has no information: say why and send the
+# user to the staff. A set named after its main dish (된장찌개백반) is judged as that dish,
+# and the rice and side dishes that come with it are not: say they need checking. Only
+# Korean can name the main dish; the other languages say "the main dish".
+DAILY_MENU: dict[str, str] = {
+    "ko": "그날그날 구성이 바뀌는 메뉴라 들어가는 재료를 미리 알 수 없어요. 직원에게 확인해 주세요.",
+    "en": "What this menu includes changes from day to day, so its ingredients cannot be known in advance. Please check with the staff.",
+    "ar": "يتغير محتوى هذه الوجبة من يوم لآخر، لذا لا يمكن معرفة مكوناتها مسبقًا. يُرجى التحقق من الموظفين.",
+    "zh-CN": "这道菜的内容每天都会变化，无法事先知道用了哪些食材。请向店员确认。",
+    "zh-TW": "這道菜的內容每天都會變化，無法事先知道用了哪些食材。請向店員確認。",
+    "ja": "日によって内容が変わるメニューのため、使われる食材を事前に知ることができません。店員に確認してください。",
+    "es": "El contenido de este plato cambia cada día, así que no se pueden saber sus ingredientes de antemano. Consulte con el personal.",
+}
+SET_MEAL: dict[str, Callable[[str, str], str]] = {
+    "ko": lambda menu, main: (
+        f"{menu}{_ko(menu, '은', '는')} {main}에 밥과 반찬이 함께 나오는 메뉴예요. "
+        "반찬은 그날그날 바뀔 수 있어 확인이 필요해요."
+    ),
+    "en": lambda menu, main: (
+        "This set comes with rice and side dishes besides the main dish. "
+        "The side dishes can change from day to day, so please check them."
+    ),
+    "ar": lambda menu, main: (
+        "تُقدَّم هذه الوجبة مع الأرز وأطباق جانبية إلى جانب الطبق الرئيسي. "
+        "قد تتغير الأطباق الجانبية من يوم لآخر، لذا يلزم التحقق منها."
+    ),
+    "zh-CN": lambda menu, main: "这是主菜配米饭和小菜的套餐。小菜每天可能不同，需要确认。",
+    "zh-TW": lambda menu, main: "這是主菜配白飯和小菜的套餐。小菜每天可能不同，需要確認。",
+    "ja": lambda menu, main: "メイン料理にご飯とおかずが付くセットです。おかずは日によって変わることがあるため、確認が必要です。",
+    "es": lambda menu, main: (
+        "Este menú incluye arroz y guarniciones además del plato principal. "
+        "Las guarniciones pueden cambiar cada día, así que conviene consultarlas."
+    ),
+}
+
+
+def set_meal_text(request: DecisionRequest) -> str | None:
+    """The set-meal sentence (``DAILY_MENU`` or ``SET_MEAL``), or None for any other menu."""
+
+    menu = request.menu.normalized_menu_name
+    is_set, main = set_meal_main(menu)
+    if not is_set:
+        return None
+    if main is None:
+        return DAILY_MENU[request.locale]
+    return SET_MEAL[request.locale](menu, main)
 
 
 # The reason reads as plain sentences (2026-11-24): the result screen shows it in one
