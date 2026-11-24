@@ -75,7 +75,10 @@ class Result:
 
     def item(self, name: str):
         names = {p.item_id: p.display_name for p in self.prepare.prepared_items}
-        return next(i for i in self.judge.items if names[i.item_id] == name)
+        target = normalize(name)
+        return next(
+            i for i in self.judge.items if normalize(names[i.item_id]) == target
+        )
 
     def commands(self, action: str | None = None) -> list:
         cmds = self.judge.persistence_commands

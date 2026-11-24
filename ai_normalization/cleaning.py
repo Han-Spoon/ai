@@ -104,6 +104,7 @@ _TRAILING_ORIGIN_RE = re.compile(
 _JAMO = r"[ᄀ-ᇿㄱ-ㆎ]"
 _TRAILING_OCR_NOISE_RE = re.compile(rf"(?:\s*{_JAMO}|\s+[A-Za-z])+\s*$")
 _JAMO_RE = re.compile(_JAMO)
+_HANGUL_SPACING_RE = re.compile(r"(?<=[가-힣])\s+(?=[가-힣])")
 LOW_OCR_CONFIDENCE_THRESHOLD = 0.65
 
 
@@ -161,6 +162,7 @@ def clean_menu_name(raw_menu_name: str) -> CleaningOutcome:
     if is_beverage_item(display):
         return _invalid(display, "beverage_item")
 
+    display = _remove_hangul_spacing(display)
     search_name = _compact(display).casefold()
     dictionary_hit = False
     multilingual_hit = False
@@ -363,6 +365,10 @@ def _canonicalize_text(text: str) -> str:
 
 def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text)
+
+
+def _remove_hangul_spacing(text: str) -> str:
+    return _HANGUL_SPACING_RE.sub("", text)
 
 
 def _is_non_menu_text(text: str) -> bool:
