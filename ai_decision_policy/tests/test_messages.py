@@ -76,7 +76,8 @@ def test_2_and_11_estimate_asks_to_check_with_the_highest_percent() -> None:
 
 
 def test_verdict_percent_names_what_is_avoided_in_the_most_likely_ingredient() -> None:
-    # 밀 알레르기 부대찌개: "밀이 들어갈 확률이 85% 이상이에요", not 라면사리.
+    # 밀 알레르기 부대찌개: "밀이 들어갈 확률이 85% 이상이에요", not 라면사리, with the
+    # ingredient the percent belongs to in brackets (2026-11-24).
     noodles = IngredientRef(ingredient_id=None, canonical_name="라면사리")
     soy = IngredientRef(ingredient_id=None, canonical_name="간장")
     req = request(
@@ -85,7 +86,7 @@ def test_verdict_percent_names_what_is_avoided_in_the_most_likely_ingredient() -
         locale="ko",
     )
     assert message(req).verdict == (
-        "밀이 들어갈 확률이 85% 이상이에요. "
+        "밀(라면사리)이 들어갈 확률이 85% 이상이에요. "
         "라면사리, 간장이 들어 있을 수 있어요."
     )
 
@@ -99,8 +100,7 @@ def test_caution_says_what_the_owner_ruled_out_first() -> None:
         locale="ko",
     )
     assert message(req).verdict == (
-        "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 생선이 들어갈 확률이 46% 이상이에요. "
-        "어묵이 들어 있을 수 있어요."
+        "사장님이 달걀 지단은 넣지 않는다고 확인했어요. 생선(어묵)이 들어갈 확률이 46% 이상이에요."
     )
     zh = req.model_copy(update={"locale": "zh-CN"})
     # Chinese sentences join without a space (the untranslated name keeps its own).
@@ -194,13 +194,13 @@ def test_unmapped_web_ingredient_is_named_from_the_extra_table() -> None:
     # ④ could not map 삼치 (ingredient_id null); the extra table has it (2026-11-02).
     mackerel = IngredientRef(ingredient_id=None, canonical_name="삼치")
     req = request(SEAFOOD_ALLERGY, probability_results=[probability(mackerel, ["is_fish"], 0.4)], locale="en")
-    assert message(req).verdict .endswith("It may contain Spanish mackerel.")
+    assert message(req).verdict .endswith("The chance it contains fish (Spanish mackerel) is at least 40%.")
 
 
 def test_name_in_no_table_keeps_korean() -> None:
     sauce = IngredientRef(ingredient_id=None, canonical_name="까나리액젓")
     req = request(SEAFOOD_ALLERGY, probability_results=[probability(sauce, ["is_fish"], 0.3)], locale="ja")
-    assert message(req).verdict .endswith("까나리액젓が入っている可能性があります。")
+    assert message(req).verdict .endswith("魚（까나리액젓）が入っている確率は30%以上です。")
 
 
 def test_same_ingredient_twice_is_named_once_with_higher_probability() -> None:
@@ -210,7 +210,8 @@ def test_same_ingredient_twice_is_named_once_with_higher_probability() -> None:
         probability_results=[probability(SHRIMP, ["is_shrimp"], 0.2), probability(SHRIMP, ["is_fish"], 0.7)],
         locale="ko",
     )
-    assert message(req).verdict .endswith("새우가 들어 있을 수 있어요.")
+    # The percent already names 새우, so the list is dropped and 새우 is said once.
+    assert message(req).verdict .endswith("생선이나 새우가 들어갈 확률이 70% 이상이에요.")
 
 
 def test_several_ingredients_highest_probability_first() -> None:
@@ -513,8 +514,21 @@ def test_estimate_under_one_percent_says_under_one_percent() -> None:
 
 @pytest.mark.parametrize("locale", LOCALES)
 def test_under_one_percent_template_exists_in_every_language(locale: str) -> None:
-    text = messages.BELOW_ONE_PERCENT[locale]("X")
-    assert "X" in text and "1" in text
+    text = messages.BELOW_ONE_PERCENT[locale]("X", messages.FROM_INGREDIENT[locale]("Y"))
+    assert "X" in text and "Y" in text and "1" in text
+
+
+def test_percent_names_the_ingredient_it_belongs_to() -> None:
+    # 비건 김치찌개: "생선 97%" next to a screen row "생선 2.2%" (2026-11-24). The bracket
+    # ties the number to the 멸치 row; the particle follows the word before it.
+    anchovy = IngredientRef(ingredient_id=None, canonical_name="멸치")
+    fish = IngredientRef(ingredient_id=None, canonical_name="생선")
+    req = request(
+        VEGAN,
+        probability_results=[probability(fish, ["is_fish"], 0.022), probability(anchovy, ["is_fish"], 0.97)],
+        locale="ko",
+    )
+    assert message(req).verdict == "생선(멸치)이 들어갈 확률이 97% 이상이에요. 멸치, 생선이 들어 있을 수 있어요."
 
 
 def test_korean_broth_names_say_they_are_broth() -> None:
