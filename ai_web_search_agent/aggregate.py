@@ -38,6 +38,13 @@ GENERIC_UNMAPPED_NAMES = frozenset({
 # "고기" next to a mapped 돼지고기 / 소고기 / 닭고기 ... is that meat again ("고기를 재운다").
 # In the second 2026-11-12 run it alone sent 돼지불백 recipes to review (14 of 55).
 VAGUE_MEAT = "고기"
+# A web ingredient reaches ⑤·⑧ only when at least this share of the valid recipes has it
+# (§2-2-1, 초기값 2026-11-24). One odd recipe put 카레가루 in 야채김밥. On the saved
+# 77-menu run, cutting allergens at 20% gave the best F2 (0.637 → 0.735, recall 91.7% →
+# 86.7%). A rare ingredient still stays when its constraint tag is common across the
+# recipes and no kept ingredient carries it, so an allergen spread over many names is
+# not lost.
+MIN_INGREDIENT_SHARE = 0.2
 
 IngredientKey = tuple[str, int | str]
 
@@ -137,6 +144,42 @@ def count_ingredients(sources: list[MappedSource]) -> list[BayesianIngredient]:
     ]
 
 
+def drop_rare_ingredients(
+    ingredients: list[BayesianIngredient], sources: list[MappedSource]
+) -> list[BayesianIngredient]:
+    """Keep the ingredients common enough across the recipes (§2-2-1).
+
+    Counts and observations are not changed; a dropped ingredient is only left out of
+    this judgment. The recipes themselves are still cached and reviewed whole.
+    """
+
+    valid = [s for s in sources if is_valid_source(s)]
+    n = len(valid)
+    if not n:
+        return ingredients
+
+    def common(k: int) -> bool:
+        return k / n >= MIN_INGREDIENT_SHARE
+
+    kept = [i for i in ingredients if common(sum(o.k_count for o in i.observations))]
+    if not kept:
+        # The recipes share nothing; leave them all rather than report nothing found.
+        return ingredients
+    covered = {tag for i in kept for tag in i.constraint_tags}
+    tag_recipes: dict[str, int] = {}
+    for source in valid:
+        for tag in {t for item in source.ingredients for t in item.constraint_tags}:
+            tag_recipes[tag] = tag_recipes.get(tag, 0) + 1
+    rescued = {
+        tag for tag, k in tag_recipes.items() if tag not in covered and common(k)
+    }
+    kept_ids = {id(i) for i in kept}
+    return [
+        i for i in ingredients
+        if id(i) in kept_ids or rescued.intersection(i.constraint_tags)
+    ]
+
+
 def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[RecipeSignal]:
     """Per new recipe, the three signals that send it to the operator (§5, 2026-11-02).
 
@@ -198,7 +241,9 @@ def recipe_signals(menu_name: str, new_sources: list[MappedSource]) -> list[Reci
 def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
     """Core of ⑥ stage 2. Input warnings are kept by the caller; only new ones are returned."""
 
-    ingredients = count_ingredients(request.mapped_sources)
+    ingredients = drop_rare_ingredients(
+        count_ingredients(request.mapped_sources), request.mapped_sources
+    )
     valid_count = sum(1 for s in request.mapped_sources if is_valid_source(s))
     warnings: list[NodeWarning] = []
     if ingredients and valid_count < MIN_SOURCES:
