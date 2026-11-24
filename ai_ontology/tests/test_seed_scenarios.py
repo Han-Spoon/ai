@@ -86,9 +86,10 @@ def tags(response):
 
 def test_seed_matches_db_export():
     g = seed().graph
-    # 325 ingredients (324 as first loaded + 돼지감자 from the 22 Yongsan menus, 2026-11-22);
-    # 101 edges minus 9 from dish-parent rules (김밥→밥 etc.)
-    assert (len(g.ingredients), len(g.compositions)) == (325, 92)
+    # 326 ingredients (324 as first loaded + 돼지감자 from the 22 Yongsan menus, 2026-11-22,
+    # + 라면사리 split from 라면, 2026-11-24); 101 edges minus 9 from dish-parent rules
+    # (김밥→밥 etc.)
+    assert (len(g.ingredients), len(g.compositions)) == (326, 92)
 
 
 def test_no_composition_hangs_under_a_dish_turned_raw_ingredient():
@@ -291,7 +292,18 @@ def test_other_dish_bundle_is_left_out(menu):
 def test_dropped_bundle_keeps_ingredient_ids():
     # ids are list positions; 아이스크림 only came from the dropped 약과 bundle
     s = seed()
-    assert "아이스크림" in s.id and len(s.id) == 325
+    assert "아이스크림" in s.id and len(s.id) == 326
+
+
+def test_ramen_noodles_are_wheat_without_the_soup():
+    # 라면사리 in a stew is the noodles only; the soup (beef extract) stays under 라면 (2026-11-24)
+    s = seed()
+    from ai_ontology import lookup_tags
+    out = map_ingredients(["라면사리", "라면 사리", "라면스프", "신라면"], s.graph, "x")
+    assert [r.ingredient.canonical_name for r in out.results] == ["라면사리", "라면사리", "라면", "라면"]
+    tags = lookup_tags([s.id["라면사리"]], s.graph, "x").tags[s.id["라면사리"]]
+    assert set(tags) == {"is_wheat"}
+    assert ("라면사리", "라면") not in s.edges
 
 
 def test_sauce_name_does_not_map_to_vegetables():
