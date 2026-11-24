@@ -7846,7 +7846,7 @@
 비빔밥,연두부 부추비빔밥,https://www.10000recipe.com/recipe/5107953,variant,부추 비빔밥,비빔밥,부추,false,ingredient_modifier:부추,11
 비빔밥,나 그릇폐소공포증 있단말야~ ♥ 버섯비빔밥,https://www.10000recipe.com/recipe/6892783,variant,버섯 비빔밥,비빔밥,버섯,false,ingredient_modifier:버섯,18
 비빔밥,아보카도와 낫또의 만남 아보카도 낫또 비빔밥 만들기,https://www.10000recipe.com/recipe/6900629,exact,비빔밥,,,true,same_menu_alias:비빔밥,7
-비빔밥,해초 비빔밥 해초 참치 비빔밥 만드는 법,https://www.10000recipe.com/recipe/7067892,variant,참치 비빔밥,비빔밥,참치,false,spaced_ingredient_modifier:참치,7
+비빔밥,해초 비빔밥 해초 참치 비빔밥 만드는 법,https://www.10000recipe.com/recipe/7067892,variant,해초 비빔밥,비빔밥,해초,false,spaced_ingredient_modifier:해초,7
 비빔밥,꼬막 비빔밥보다 더 맛있는 바지락 비빔밥.,https://www.10000recipe.com/recipe/6964703,ambiguous,,,보다,false,unknown_attached_text:보다,14
 비빔밥,수미네반찬 돌나물무침 그리고 새콤달콤 돌나물비빔밥까지,https://www.10000recipe.com/recipe/6911238,other_dish,무침,,,false,different_dish_form:무침,11
 비빔밥,무생채무침 / 무채 / 비빔밥에 넣어 먹어도 맛좋은 새콤달콤 아삭한 밑반찬,https://www.10000recipe.com/recipe/6972366,other_dish,무생채,,,false,different_known_menu:무생채,5
@@ -18258,7 +18258,7 @@
 조개탕,백합조개탕 레시피 백합 버터없이 삶는 방법,https://www.10000recipe.com/recipe/7072099,ambiguous,,,백합,false,unknown_attached_text:백합,7
 조개탕,시원한 동죽조개탕과 물총칼국수 만들기,https://www.10000recipe.com/recipe/6970151,other_dish,칼국수,,,false,different_known_menu:칼국수,10
 조개탕,불맛나는 쭈꾸미볶음과 모시조개탕,https://www.10000recipe.com/recipe/6802585,other_dish,쭈꾸미볶음,,,false,different_known_menu:쭈꾸미볶음,9
-조개탕,저칼로리 요리 곤약 해초 조개탕 (충남/태안),https://www.10000recipe.com/recipe/6920096,exact,조개탕,,,true,same_menu_alias:조개탕,9
+조개탕,저칼로리 요리 곤약 해초 조개탕 (충남/태안),https://www.10000recipe.com/recipe/6920096,variant,해초 조개탕,조개탕,해초,false,spaced_ingredient_modifier:해초,9
 조개탕,동죽조개탕 술안주 국물요리 준비,https://www.10000recipe.com/recipe/6994365,ambiguous,,,동죽,false,unknown_attached_text:동죽,8
 조개탕,동죽조개탕 시원한 국물요리 동죽 해감,https://www.10000recipe.com/recipe/7013751,ambiguous,,,동죽,false,unknown_attached_text:동죽,9
 조개탕,해감 없이 맑고 시원한 가리비 조개탕 끓이는법,https://www.10000recipe.com/recipe/7086552,variant,가리비 조개탕,조개탕,가리비,false,spaced_ingredient_modifier:가리비,8
