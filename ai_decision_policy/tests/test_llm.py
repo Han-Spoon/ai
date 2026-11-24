@@ -26,6 +26,7 @@ from ai_supervisor.contracts.decision import HighRiskReviewRequest
 SHRIMP = IngredientRef(ingredient_id=130, canonical_name="새우")
 PEANUT = IngredientRef(ingredient_id=150, canonical_name="땅콩")
 TOFU = IngredientRef(ingredient_id=160, canonical_name="두부")
+KIMCHI_REF = IngredientRef(ingredient_id=None, canonical_name="김치")
 
 
 def one_phrase(text: str) -> ReasonOutput:
@@ -49,6 +50,13 @@ class FakeLLM:
         if isinstance(self.output, Exception):
             raise self.output
         return self.output
+
+
+def asked_no_groups(llm: FakeLLM) -> bool:
+    """The LLM was asked for the menu description only, no group sentence (every menu
+    gets a description since 2026-11-24, so the call itself no longer says much)."""
+
+    return all(call["payload"]["explain_groups"] == [] for call in llm.calls)
 
 
 def check(text, *, locale="ko", risk_level="caution", percents=(62,), names=("돼지고기",)):
@@ -270,7 +278,7 @@ def test_reason_may_name_the_users_restriction() -> None:
                       localized_names={110: "fish sauce"} if locale == "en" else None, locale=locale)
         reason = asyncio.run(DecisionTool(ReasonWriter(FakeLLM(one_phrase(phrase)))).run(req)).message.reason
         # One sentence per group, then the card step (2026-11-24; bullet lines until then).
-        assert reason.split("\n")[0] == line
+        assert reason.startswith(line + " ")
 
 
 def test_reason_may_translate_a_name_given_only_in_korean() -> None:
@@ -282,7 +290,7 @@ def test_reason_may_translate_a_name_given_only_in_korean() -> None:
     told = ReasonOutput(name_translations=[{"korean": "까나리액젓", "translated": "sand lance fish sauce"}], phrases=[phrase])
     llm = FakeLLM(told)
     reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
-    assert reason.split("\n")[0] == f"Sand lance fish sauce is {phrase}."
+    assert reason.startswith(f"Sand lance fish sauce is {phrase}. ")
     assert "name_translations" in llm.calls[0]["instructions"]
     # Without the translation the line would start in Korean, so it is dropped.
     silent = FakeLLM(one_phrase(phrase))
@@ -301,14 +309,23 @@ def test_reason_check_trims_a_doubled_korean_ending() -> None:
     assert check(text) == "추정 결과라서 단정할 수 없어요. 레시피도 몇 개뿐이라 덜 확실해요."
 
 
-def prompt(locale: str, groups: list[dict] | None = None) -> str:
-    return reason_instructions(request(HALAL, locale=locale), groups or [])
+SAMPLE_GROUPS = [{"avoided_in_them": ["pork"], "ingredients": [{"name": "ham", "korean_name": "햄"}]}]
+
+
+def prompt(locale: str, groups: list[dict] | None = None, main: list[dict] | None = None) -> str:
+    return reason_instructions(request(HALAL, locale=locale), SAMPLE_GROUPS if groups is None else groups, main)
 
 
 def test_korean_examples_go_only_to_korean() -> None:
     # An English example in the shared rules was copied into Korean and Chinese (2026-11-17).
     assert "만두: 돼지고기와 채소로" in prompt("ko")
     assert "만두: 돼지고기와 채소로" not in prompt("zh-TW")
+    # Description examples only with the description task, group examples only with groups.
+    assert "떡볶이: 떡을" in prompt("ko", main=[]) and "떡볶이: 떡을" not in prompt("ko")
+    assert "만두: 돼지고기와 채소로" not in prompt("ko", groups=[], main=[])
+    assert "떡볶이: 떡을" not in prompt("en", main=[])
+    # No example that names a meat many restaurants swap (김치찌개 with pork or tuna).
+    assert "돼지고기를 넣고 끓인" not in prompt("ko", main=[]) and "even one this" in prompt("ko", main=[])
     assert "Traditional Chinese" in prompt("zh-TW")
     # Phrases have no sentence ending, so no 해요체 rule (2026-11-23).
     assert "해요체" not in prompt("ko")
@@ -330,8 +347,8 @@ def estimated_pork(locale="ko"):
     return request(HALAL, probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62)], locale=locale)
 
 
-# Card step, then the limit as the last line (2026-11-23).
-LIMITED_PORK_REASON = "빼고 요청 카드로 빼 달라고 부탁할 수 있어요.\n이 메뉴는 웹에서 찾은 레시피가 적어서 결과가 덜 확실해요."
+# Card step, then the limit as the last sentence (2026-11-23), one space apart (2026-11-24).
+LIMITED_PORK_REASON = "빼고 요청 카드로 빼 달라고 부탁할 수 있어요. 이 메뉴는 웹에서 찾은 레시피가 적어서 결과가 덜 확실해요."
 
 
 def test_no_reason_when_the_name_already_says_why() -> None:
@@ -339,14 +356,14 @@ def test_no_reason_when_the_name_already_says_why() -> None:
     llm = FakeLLM(one_phrase("unused"))
     req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], locale="ko")
     assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
-    assert llm.calls == []
+    assert asked_no_groups(llm)
     # The same menu with a known limit gets the fixed limit sentence, still without
     # the LLM (2026-11-23).
     limited = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62)], locale="ko",
                       warnings=[warning("insufficient_sources")])
     reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(limited)).message.reason
     assert reason == LIMITED_PORK_REASON
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_decision_tool_adds_a_checked_reason_and_keeps_the_verdict() -> None:
@@ -354,10 +371,10 @@ def test_decision_tool_adds_a_checked_reason_and_keeps_the_verdict() -> None:
     req = estimated_pork()
     response = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
     plain = judge(req)
-    assert response.message.reason == "삼겹살은 돼지의 뱃살 부위예요.\n빼고 요청 카드로 빼 달라고 부탁할 수 있어요."
+    assert response.message.reason == "삼겹살은 돼지의 뱃살 부위예요. 빼고 요청 카드로 빼 달라고 부탁할 수 있어요."
     assert response.model_dump(exclude={"message": {"reason"}}) == plain.model_dump(exclude={"message": {"reason"}})
     # Only the groups to explain go in: no percent, no full list, no verdict (2026-11-23).
-    assert set(llm.calls[0]["payload"]) == {"menu", "explain_groups"}
+    assert set(llm.calls[0]["payload"]) == {"menu", "main_ingredients", "explain_groups"}
     assert "Korean" in llm.calls[0]["instructions"]
 
 
@@ -387,7 +404,7 @@ def test_decision_tool_skips_the_llm_when_nothing_drives_the_verdict() -> None:
     no_info = request(HALAL, no_information=True, locale="ko")
     for req in (safe, no_info):
         assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_known_limits_are_fixed_sentences_without_the_llm() -> None:
@@ -405,7 +422,7 @@ def test_known_limits_are_fixed_sentences_without_the_llm() -> None:
     # partial here comes from the web warning, which says what happened itself; "could
     # not be loaded" would be untrue (2026-11-17). Duplicates and unknown codes drop.
     assert reason == LIMITED_PORK_REASON
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_groups_and_limits_send_only_the_groups_to_the_llm() -> None:
@@ -417,10 +434,10 @@ def test_groups_and_limits_send_only_the_groups_to_the_llm() -> None:
         locale="ko",
     )
     reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
-    assert "두부" not in str(llm.calls[0]["payload"])
+    assert "두부" not in str(llm.calls[0]["payload"]["explain_groups"])
     assert reason == (
-        "삼겹살은 돼지의 뱃살 부위예요.\n빼고 요청 카드로 빼 달라고 부탁할 수 있어요."
-        "\n식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
+        "삼겹살은 돼지의 뱃살 부위예요. 빼고 요청 카드로 빼 달라고 부탁할 수 있어요."
+        " 식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
     )
 
 
@@ -455,11 +472,11 @@ def test_each_group_gets_its_own_line() -> None:
                                               probability(fish_cake, ["is_fish"], 0.4)], locale="ko")
     llm = FakeLLM(ReasonOutput(phrases=["돼지의 뱃살 부위", "생선 살을 갈아 만든 가공식품"]))
     reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
-    assert reason.split("\n")[:2] == ["삼겹살은 돼지의 뱃살 부위예요.", "어묵은 생선 살을 갈아 만든 가공식품이에요."]
+    assert reason.startswith("삼겹살은 돼지의 뱃살 부위예요. 어묵은 생선 살을 갈아 만든 가공식품이에요. ")
     # A phrase that fails the check drops its line only.
     one_bad = FakeLLM(ReasonOutput(phrases=["돼지의 뱃살 부위", "간장으로 만든 가공식품"]))
     reason = asyncio.run(DecisionTool(ReasonWriter(one_bad)).run(req)).message.reason
-    assert reason.split("\n")[0] == "삼겹살은 돼지의 뱃살 부위예요." and "어묵" not in reason
+    assert reason.startswith("삼겹살은 돼지의 뱃살 부위예요. ") and "어묵" not in reason
 
 
 def test_prompt_has_only_the_rules_the_menu_needs() -> None:
@@ -470,6 +487,7 @@ def test_prompt_has_only_the_rules_the_menu_needs() -> None:
     # The hard-to-remove sentence went on 2026-11-23 (the notes say it).
     assert "hard_to_remove" not in prompt("ko", english) and "빼기 어려울" not in prompt("ko", english)
     assert "At most 30" in prompt("ko") and "At most 70" in prompt("en")
+    assert "At most 40" in prompt("ko", main=[]) and "At most 40" not in prompt("ko")
 
 
 def test_reason_payload_names_restrictions_in_the_users_language() -> None:
@@ -519,8 +537,8 @@ def test_reason_payload_keeps_the_two_likeliest_groups() -> None:
     assert all(set(i) == {"name", "korean_name"} for g in groups for i in g["ingredients"])
     # No "80% 이상" sentence any more (2026-11-23).
     assert reason == (
-        "멸치액젓은 멸치를 발효시킨 액젓이에요.\n만두는 돼지고기 소를 넣어 빚은 음식이에요."
-        "\n빼고 요청 카드로 빼 달라고 부탁하거나, 질문 카드로 직원에게 직접 확인해 보세요."
+        "멸치액젓은 멸치를 발효시킨 액젓이에요. 만두는 돼지고기 소를 넣어 빚은 음식이에요."
+        " 빼고 요청 카드로 빼 달라고 부탁하거나, 질문 카드로 직원에게 직접 확인해 보세요."
     )
 
 
@@ -601,7 +619,7 @@ def test_reason_leaves_alcohol_named_alcohol_to_the_verdict() -> None:
     )
     asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
     # 소주 is a well-known alcohol too (2026-11-23), so nothing is left to explain.
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_reason_groups_ingredients_by_what_is_avoided() -> None:
@@ -668,7 +686,7 @@ def test_known_limits_alone_are_worth_a_reason() -> None:
     safe = request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, locale="ko")
     for req in (no_info, safe):
         assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_without_api_key_everything_stays_rule_only(monkeypatch) -> None:
@@ -906,7 +924,7 @@ def test_no_reason_for_a_user_with_no_restriction() -> None:
     )
     llm = FakeLLM(one_phrase("이 음식은 확인된 자료가 적어요."))
     assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
-    assert llm.calls == []
+    assert asked_no_groups(llm)
 
 
 def test_shrimp_tempura_with_only_pork_gets_no_llm_story() -> None:
@@ -921,9 +939,9 @@ def test_shrimp_tempura_with_only_pork_gets_no_llm_story() -> None:
     )
     llm = FakeLLM(one_phrase("unused"))
     response = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req))
-    assert llm.calls == []
+    assert asked_no_groups(llm)
     assert response.message.reason == (
-        "질문 카드로 직원에게 직접 확인해 보세요.\n식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
+        "질문 카드로 직원에게 직접 확인해 보세요. 식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
     )
     assert response.message.verdict.endswith("돼지고기가 들어갈 확률이 4% 이상이에요.")
 
@@ -951,3 +969,177 @@ def test_reason_may_name_what_a_flagged_ingredient_is_made_from() -> None:
     req = request(vegan, probability_results=[probability(anchovy_sauce, ["is_fish"], 0.6)], locale="ko")
     reason = asyncio.run(DecisionTool(ReasonWriter(FakeLLM(one_phrase(phrase)))).run(req)).message.reason
     assert reason.startswith(f"멸치액젓은 {phrase}이에요.")
+
+
+# --- menu description (2026-11-24) -----------------------------------------------
+
+
+def described(text: str, *phrases: str, **kwargs) -> ReasonOutput:
+    return ReasonOutput(menu_description=text, phrases=list(phrases), **kwargs)
+
+
+def test_every_menu_starts_with_a_description() -> None:
+    # Safe, no restriction or a name that says why: no reason until 2026-11-24, now the
+    # description alone.
+    from ai_decision_policy.tests.test_decision_policy import NO_RESTRICTION
+
+    safe = request(HALAL, confirmed_results=KIMCHI_STEW_CONFIRMED, locale="ko")
+    free = request(NO_RESTRICTION, probability_results=[probability(PORK, ["is_pork"], 0.9, role="identity")], locale="ko")
+    # 등 follows a listed ingredient only: 김치 is listed for the safe menu (owner said
+    # present), not for the other one, where it is only in the menu name.
+    for req, text in ((safe, "김치 등을"), (free, "김치를")):
+        llm = FakeLLM(described("김치를 넣고 끓인 찌개"))
+        assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == f"김치찌개는 {text} 넣고 끓인 찌개예요."
+        assert asked_no_groups(llm) and "menu_description" in llm.calls[0]["instructions"]
+
+
+def test_description_comes_first_and_sentences_join_with_a_space() -> None:
+    req = request(HALAL, probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62, role="identity")],
+                  warnings=[warning("insufficient_sources")], locale="ko")
+    llm = FakeLLM(described("삼겹살과 김치를 넣고 끓인 찌개", "돼지의 뱃살 부위"))
+    reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
+    assert reason == (
+        "김치찌개는 삼겹살과 김치 등을 넣고 끓인 찌개예요. 삼겹살은 돼지의 뱃살 부위예요."
+        " 질문 카드로 직원에게 직접 확인해 보세요. 이 메뉴는 웹에서 찾은 레시피가 적어서 결과가 덜 확실해요."
+    )
+    assert "\n" not in reason
+
+
+def test_description_names_only_the_main_ingredients() -> None:
+    # 김치 is inside the menu name; 두부 was not given, so the description goes, and the
+    # rest stays.
+    req = request(HALAL, probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62, role="identity")], locale="ko")
+    llm = FakeLLM(described("김치와 두부를 넣고 끓인 찌개", "돼지의 뱃살 부위"))
+    reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
+    assert reason == "삼겹살은 돼지의 뱃살 부위예요. 질문 카드로 직원에게 직접 확인해 보세요."
+    # No percent and nothing that sounds safe either.
+    for text in ("돼지고기가 62% 들어간 찌개", "누구나 먹어도 괜찮은 찌개"):
+        llm = FakeLLM(described(text))
+        safe = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.62, role="identity")], locale="ko")
+        assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(safe)).message.reason is None
+
+
+def test_description_main_ingredients_are_the_sure_ones() -> None:
+    from ai_decision_policy.reason import menu_ingredients
+
+    names = {n: IngredientRef(ingredient_id=None, canonical_name=n) for n in ("두부", "애호박", "양파", "멸치", "고추")}
+    from ai_decision_policy.tests.test_decision_policy import confirmed
+
+    req = request(
+        HALAL,
+        confirmed_results=[confirmed(names["고추"], [], "absent")],
+        probability_results=[
+            probability(names["양파"], [], 0.9, role="component"),
+            probability(KIMCHI_REF, [], 0.7, role="identity"),
+            probability(names["두부"], [], 0.95, role="component"),
+            probability(names["애호박"], [], 0.4, role="component"),
+            probability(names["멸치"], ["is_fish"], 0.99, role="hidden"),
+            probability(names["고추"], [], 0.9, role="component"),
+            probability(PORK, ["is_pork"], 0.8, role="component"),
+        ],
+        locale="ko",
+    )
+    # Sure ones first (main, then likeliest), then common ones from 30% of recipes; none
+    # hidden or said absent.
+    assert [i["korean_name"] for i in menu_ingredients(req)] == ["김치", "두부", "양파", "돼지고기", "애호박"]
+
+
+def test_description_in_another_language_says_this_dish() -> None:
+    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.9, role="identity")],
+                  localized_names={PORK.ingredient_id: "pork"}, locale="en")
+    llm = FakeLLM(described("a spicy stew of kimchi and pork"))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == (
+        "This dish is a spicy stew of kimchi and pork."
+    )
+    # The Korean menu name inside it is the wrong language.
+    llm = FakeLLM(described("a spicy 김치찌개 with pork"))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason is None
+
+
+def test_side_item_has_no_llm_description() -> None:
+    # A 사리 menu has its own template sentence (2026-11-24), so no description call.
+    green_onion = IngredientRef(ingredient_id=None, canonical_name="대파")
+    req = request(HALAL, probability_results=[probability(green_onion, [], 0.9)], locale="ko")
+    req = req.model_copy(update={"menu": req.menu.model_copy(update={"normalized_menu_name": "파사리"})})
+    llm = FakeLLM(described("파를 썬 사리"))
+    reason = asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason
+    assert reason == "파사리는 메인 메뉴에 파를 추가해 먹는 사리예요."
+    assert llm.calls == []
+
+
+def test_description_lets_the_llm_pick_from_the_sure_ingredients() -> None:
+    # First real run (2026-11-24): code took the top three and 김치찌개 read "배추김치와
+    # 대파, 마늘을 넣어 끓인 찌개". The LLM now picks from every sure ingredient (up to 8);
+    # an extra must be in 80% of recipes (pork at 65% may be tuna).
+    from ai_decision_policy.reason import MAX_MENU_CANDIDATES, menu_ingredients
+
+    def p(name, mean, role="component"):
+        return probability(IngredientRef(ingredient_id=None, canonical_name=name), [], mean, role=role)
+
+    req = request(HALAL, probability_results=[
+        p("배추김치", 0.99, "identity"), p("대파", 0.81), p("마늘", 0.73), p("고춧가루", 0.9),
+        probability(PORK, ["is_pork"], 0.65),
+    ], locale="ko")
+    # Pork at 65% is common but may be tuna: meat and seafood only when sure.
+    assert [i["korean_name"] for i in menu_ingredients(req)] == ["배추김치", "고춧가루", "대파", "마늘"]
+    # 부대찌개's noodles (44%) are offered, so "햄과 소시지, 라면 등" can be said.
+    stew = request(HALAL, probability_results=[
+        probability(IngredientRef(ingredient_id=None, canonical_name="햄"), ["is_pork"], 0.93, role="identity"),
+        p("라면", 0.44), probability(IngredientRef(ingredient_id=None, canonical_name="사골"), ["is_beef"], 0.44),
+        p("떡", 0.2),
+    ], locale="ko")
+    assert [i["korean_name"] for i in menu_ingredients(stew)] == ["햄", "라면"]
+    many = request(HALAL, probability_results=[p(f"재료{n}", 0.9) for n in range(12)], locale="ko")
+    assert len(menu_ingredients(many)) == MAX_MENU_CANDIDATES
+    # A main ingredient counts from half the recipes up.
+    assert [i["korean_name"] for i in menu_ingredients(request(HALAL, probability_results=[p("고추", 0.6, "identity")]))] == ["고추"]
+    rule = prompt("ko", main=[])
+    assert "3 that best show" in rule and "leave out seasonings" in rule and "and so on" in rule
+
+
+def test_description_may_name_any_sure_ingredient() -> None:
+    req = request(profile(), probability_results=[
+        probability(IngredientRef(ingredient_id=None, canonical_name="떡"), [], 0.95, role="identity"),
+        probability(IngredientRef(ingredient_id=None, canonical_name="고추장"), [], 0.9),
+    ], locale="ko")
+    llm = FakeLLM(described("떡을 고추장 양념에 볶은 음식"))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(req)).message.reason == "김치찌개는 떡 등을 고추장 양념에 볶은 음식이에요."
+    assert [i["korean_name"] for i in llm.calls[0]["payload"]["main_ingredients"]] == ["떡", "고추장"]
+
+
+def test_english_and_spanish_phrases_start_with_an_article() -> None:
+    # "This dish is spicy mixed stew with ham" (2026-11-24 real run).
+    assert 'with "a" or "an"' in prompt("en", main=[]) and 'with "un" or "una"' in prompt("es", main=[])
+    assert '"a" or "an"' not in prompt("ko", main=[]) and '"a" or "an"' not in prompt("ja", main=[])
+
+
+@pytest.mark.parametrize(("phrase", "expected"), [
+    # Real run (2026-11-24): the model left 등 out though told to.
+    ("배추김치와 두부를 넣고 얼큰하게 끓인 찌개", "배추김치와 두부 등을 넣고 얼큰하게 끓인 찌개"),
+    ("떡이 들어간 음식", "떡 등이 들어간 음식"),
+    ("당면과 양파로 만든 음식", "당면과 양파 등으로 만든 음식"),
+    # The list goes on past the last name: 등 closes the list.
+    ("당면과 여러 채소를 볶은 음식", "당면과 여러 채소 등을 볶은 음식"),
+    # Already said, a name inside a longer word, or no name: unchanged.
+    ("햄과 소시지, 라면 등을 넣고 얼큰하게 끓인 찌개", "햄과 소시지, 라면 등을 넣고 얼큰하게 끓인 찌개"),
+    ("두부조림 같은 음식", "두부조림 같은 음식"),
+    ("매콤한 국물 요리", "매콤한 국물 요리"),
+    ("두부와 함께 끓인 찌개", "두부와 함께 끓인 찌개"),
+])
+def test_korean_description_ends_its_ingredients_with_etc(phrase, expected) -> None:
+    from ai_decision_policy.reason import with_etc
+
+    assert with_etc(phrase, ["배추김치", "두부", "떡", "햄", "소시지", "라면", "당면", "양파"]) == expected
+
+
+def test_etc_goes_into_the_korean_description_only() -> None:
+    kimchi = probability(IngredientRef(ingredient_id=None, canonical_name="배추김치"), [], 0.99, role="identity")
+    tofu = probability(TOFU, ["is_soybean"], 0.9)
+    ko = request(HALAL, probability_results=[kimchi, tofu], locale="ko")
+    llm = FakeLLM(described("배추김치와 두부를 넣고 얼큰하게 끓인 찌개"))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(ko)).message.reason == (
+        "김치찌개는 배추김치와 두부 등을 넣고 얼큰하게 끓인 찌개예요."
+    )
+    en = request(HALAL, probability_results=[kimchi, tofu], localized_names={TOFU.ingredient_id: "tofu"}, locale="en")
+    llm = FakeLLM(described("a spicy stew of kimchi and tofu"))
+    assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(en)).message.reason == "This dish is a spicy stew of kimchi and tofu."

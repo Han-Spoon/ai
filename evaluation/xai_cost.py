@@ -9,8 +9,10 @@ default run is 8 calls. The per-call tokens then give a per-scan estimate:
 
     scan = menus × reason_share × (one reason call) + reviews × (one review call)
 
-``--menus``, ``--reason-share`` and ``--reviews`` set that scan (default 10 menus, half
-of them with a reason, 3 reviews: the most a scan reviews, §2-3).
+``--menus``, ``--reason-share`` and ``--reviews`` set that scan (default 10 menus, all
+of them with a reason call since every menu gets a description (2026-11-24; half until
+then), 3 reviews: the most a scan reviews, §2-3). A side item (…사리) with nothing to
+explain makes no call, so the real share is a little under 1.
 """
 
 from __future__ import annotations
@@ -41,8 +43,9 @@ def reason_requests(locale: str) -> list:
             probability_results=[probability(FISH_SAUCE, ["is_fish"], 0.8, role="hidden")],
             locale=locale,
         ),
-        # A limit alone no longer calls the LLM (2026-11-23, reason_route "limits_only"),
-        # so the third menu has an ingredient to explain as well as the limit.
+        # The third menu has an ingredient to explain as well as the limit (2026-11-23).
+        # Every menu calls the LLM for its description now (2026-11-24); these three also
+        # carry groups, the longest calls.
         request(
             HALAL,
             probability_results=[probability(PORK_BELLY, ["is_pork"], 0.62)],
@@ -90,7 +93,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--locales", nargs="+", default=["ko", "en"])
     parser.add_argument("--menus", type=int, default=10, help="한 스캔의 메뉴 수")
-    parser.add_argument("--reason-share", type=float, default=0.5, help="이유 문장을 쓰는 메뉴 비율")
+    parser.add_argument("--reason-share", type=float, default=1.0, help="이유 LLM을 부르는 메뉴 비율 (11/24부터 메뉴 설명 때문에 거의 전부)")
     parser.add_argument("--reviews", type=int, default=3, help="한 스캔의 고위험 재검증 수 (최대 3)")
     parser.add_argument("--price-in", type=float, help="입력 1M 토큰당 가격 (BAZE 대시보드 값)")
     parser.add_argument("--price-out", type=float, help="출력 1M 토큰당 가격")
