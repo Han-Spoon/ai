@@ -123,7 +123,7 @@ def test_prepare_graph_runs_ocr_then_name_cleaning() -> None:
 
     assert response.prepare_id == PREPARE_ID
     assert response.prepared_items[0].item_id == "scan-123:0"
-    assert response.prepared_items[0].display_name == "김치찌개"
+    assert response.prepared_items[0].display_name == "김치 찌개"
     assert response.prepared_items[0].normalized_menu_name == "김치찌개"
     assert response.prepared_items[0].options == ["2인"]
     assert "store_id" not in ocr.requests[0].context.model_fields_set

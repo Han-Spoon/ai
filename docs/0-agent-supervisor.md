@@ -978,7 +978,7 @@ flowchart TD
 3. ① 결과에 안정적인 `item_id = {scan_session_id}:{source_index}`를 한 번만 부여한다.
 4. `scan_quality.status: needs_retake`면 ②~⑧을 호출하지 않고 재촬영 결과로 종료한다.
 5. `low_confidence`면 경고·재촬영 안내를 보존하고 `prepared_items: []`로 종료한다. ②-A와 Judge는 `usable` OCR 결과에서만 실행한다.
-6. ②-A는 OCR 노이즈, 띄어쓰기, 인원·크기 옵션, 다국어 표기를 정리한다. `display_name`에는 원래 철자를 보존하되 한글 음절 사이 공백과 인분·크기 옵션을 제거하고, `normalized_menu_name`은 DB 후보 검색용 표기로 만든다. 이 단계에서는 DB 후보가 없으므로 `menu_id`를 확정하지 않는다.
+6. ②-A는 OCR 노이즈, 띄어쓰기, 인원·크기 옵션, 다국어 표기를 정리한다. `display_name`에는 메뉴판의 원래 공백과 철자를 보존하고 인분·크기 옵션을 제거하되, 메뉴명 끝에 독립된 `탕`만 앞말과 붙인다. `normalized_menu_name`은 공백을 제거한 DB 후보 검색용 표기로 만든다. 이 단계에서는 DB 후보가 없으므로 `menu_id`를 확정하지 않는다.
 7. §1-3의 `PrepareResponse`로 `scan_quality`와 `prepared_items`를 OCR 순서대로 반환한다. 백엔드는 `prepare_id`와 함께 저장하고 메뉴 후보·KnowledgeBundle을 조회한다.
 
 **Judge Graph**
