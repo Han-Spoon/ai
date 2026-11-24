@@ -311,6 +311,18 @@ def _role(node: _Node, graph: _Graph, menu_name: str) -> str:
     return "component"
 
 
+def _in_menu_name(node: _Node, graph: _Graph, menu_name: str, curated: set[int]) -> bool:
+    """A curated ingredient whose name overlaps the menu name either way: 칼국수 → 칼국수면,
+    만두사리 → 만두, 생선전 → 생선. The dish is made of it, so ⑤ floors its probability
+    instead of letting crawl spelling variants (생면, 면) pull it down to 68%."""
+
+    if node.depth != 0 or node.ingredient_id not in curated or not menu_name:
+        return False
+    names = [normalize(graph.names.get(node.ingredient_id, ""))]
+    names += [key for key, value in graph.lookup.items() if value == node.ingredient_id]
+    return any(name and (name in menu_name or menu_name in name) for name in names)
+
+
 def _ref(ingredient_id: int, graph: _Graph) -> IngredientRef:
     return IngredientRef(
         ingredient_id=ingredient_id,
@@ -328,6 +340,7 @@ def _to_wire(node: _Node, graph: _Graph, menu_name: str, curated: set[int]) -> O
         parent_ingredient=_ref(node.parent_id, graph) if node.parent_id is not None else None,
         source=node.source,
         curated=node.ingredient_id in curated,
+        in_menu_name=_in_menu_name(node, graph, menu_name, curated),
         observation_basis=node.basis,
         observations=node.observations,
         evidence_refs=node.evidence_refs,

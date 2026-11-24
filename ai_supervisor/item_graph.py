@@ -634,6 +634,7 @@ def build_item_graph(dependencies: ItemGraphDependencies) -> Any:
                     source=ingredient.source,
                     depth=ingredient.depth,
                     curated=ingredient.curated,
+                    in_menu_name=ingredient.in_menu_name,
                     observation_basis=ingredient.observation_basis,
                     observations=ingredient.observations,
                     anomaly_locked=ingredient.anomaly_locked,

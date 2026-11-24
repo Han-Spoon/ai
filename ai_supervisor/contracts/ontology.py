@@ -115,6 +115,8 @@ class OntologyIngredient(StrictModel):
     parent_ingredient: IngredientRef | None = None
     source: IngredientSource
     curated: StrictBool
+    # curated and its name overlaps the menu name (칼국수 → 칼국수면): ⑤ floors its probability
+    in_menu_name: StrictBool = False
     observation_basis: ObservationBasis
     observations: list[IngredientObservation]
     anomaly_locked: StrictBool = Field(default=False, exclude=True)

@@ -225,3 +225,23 @@ def test_tool_keeps_context_and_warnings():  # §7-16
     res = asyncio.run(BayesianTool().run(req))
     assert res.context == req.context
     assert [w.code for w in res.warnings] == ["store_context_missing"]
+
+
+def test_ingredient_the_menu_is_named_after_is_floored():
+    # 칼국수 → 칼국수면: crawl spelling variants (생면, 면) left it at 68% (2026-11-24)
+    ing = {**ingredient(obs=(("10000recipe", 204, 300),), curated=True), "in_menu_name": True}
+    p = one(ing)
+    assert p.posterior_mean == pytest.approx(0.95)
+    assert p.beta_post == 97  # only α grows
+
+
+def test_floor_needs_both_curated_and_menu_name():
+    base = ingredient(obs=(("10000recipe", 204, 300),), curated=True)
+    assert one(base).posterior_mean < 0.7  # curated only: 1 extra observation
+    named_only = {**ingredient(obs=(("10000recipe", 204, 300),)), "in_menu_name": True}
+    assert one(named_only).posterior_mean < 0.7
+
+
+def test_floor_never_lowers_a_higher_estimate():
+    ing = {**ingredient(obs=(("10000recipe", 299, 300),), curated=True), "in_menu_name": True}
+    assert one(ing).posterior_mean > 0.99

@@ -22,6 +22,7 @@ A0, B0 = 1.0, 1.0  # Beta(1,1) Laplace smoothing, same as crawling/normalize_ing
 UNKNOWN_SOURCE_WEIGHT = 0.5  # (0+1)/(0+2) for a source never compared yet (⑦ §3-1)
 VARIANT_SCALE = 0.5
 DEPTH_SCALE_FLOOR = 0.125
+MENU_INGREDIENT_FLOOR = 0.95  # curated ingredient the menu is named after (§3-3)
 
 
 def beta_binomial_update(
@@ -92,6 +93,12 @@ def _estimate(
         prior_source = "global"  # cluster is deferred (#200)
     else:
         prior_source = "uninformative"
+
+    # 4) a curated ingredient the menu is named after (칼국수면 in 칼국수) is in the dish:
+    #    raise α so the mean is at least MENU_INGREDIENT_FLOOR. Crawl recipes spell it many
+    #    ways (생면, 면), which otherwise reads as "68% chance of wheat" (2026-11-24)
+    if ingredient.curated and ingredient.in_menu_name:
+        alpha = max(alpha, MENU_INGREDIENT_FLOOR / (1 - MENU_INGREDIENT_FLOOR) * beta)
 
     scale = source_scale(ingredient)
     alpha, beta = alpha * scale, beta * scale
