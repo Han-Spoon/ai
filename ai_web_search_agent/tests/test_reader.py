@@ -6,7 +6,16 @@ from types import SimpleNamespace
 import pytest
 
 from ai_web_search_agent import OpenAIRecipeReader, StaticSearchProvider, WebCollectAgent
-from ai_web_search_agent.reader import INSTRUCTIONS, MAX_TEXT_CHARS, _Reading, _Readings, excerpt
+from ai_web_search_agent.collect import LLM_SECONDS
+from ai_web_search_agent.reader import (
+    CHECK_INSTRUCTIONS,
+    INSTRUCTIONS,
+    MAX_TEXT_CHARS,
+    _Checked,
+    _Reading,
+    _Readings,
+    excerpt,
+)
 from ai_web_search_agent.tests.test_collect import QUERY, request, result
 
 REVIEW = "강남 김치찌개 맛집 후기. 국물이 진하고 친절해요."
@@ -92,7 +101,7 @@ def test_from_env(monkeypatch) -> None:
     seen = {}
     reader = OpenAIRecipeReader.from_env_if_configured(client_factory=lambda **kw: seen.update(kw) or "c")
     assert (reader.client, reader.model) == ("c", "gpt-5.4-nano")
-    assert seen == {"api_key": "test-key", "timeout": 3.0, "max_retries": 0}
+    assert seen == {"api_key": "test-key", "timeout": LLM_SECONDS, "max_retries": 0}
 
 
 def test_excerpt_keeps_the_start_and_the_ingredient_list():
@@ -113,3 +122,24 @@ def test_reader_sends_only_the_excerpt():
     asyncio.run(OpenAIRecipeReader(client).read("김치찌개", [result(1, long_text)]))
     sent = client.calls[0]["input"][1]["content"]
     assert "재료: 묵은지" in sent and len(sent) < 1200
+
+
+def test_check_sends_the_menu_and_names_and_returns_the_flagged_ones():
+    client = FakeClient(_Checked(not_ingredients=[" 만두 ", ""]))
+    out = asyncio.run(OpenAIRecipeReader(client).check_ingredients("칼국수", ["밀가루", "애호박", "만두"]))
+    assert out == ["만두"]
+    sent = client.calls[0]
+    assert sent["input"][0]["content"] == CHECK_INSTRUCTIONS
+    assert "칼국수" in sent["input"][1]["content"] and "애호박" in sent["input"][1]["content"]
+
+
+def test_check_prompt_keeps_unsure_names_and_the_menu_name():
+    # A wrongly dropped allergen is a miss (FN), so unsure means keep (§3 step 2-3).
+    assert "If unsure, keep it." in CHECK_INSTRUCTIONS
+    assert "part of the menu name" in CHECK_INSTRUCTIONS
+
+
+@pytest.mark.parametrize("parsed", [None, RuntimeError("gateway down")])
+def test_check_raises_on_a_bad_answer(parsed):
+    with pytest.raises(Exception):
+        asyncio.run(OpenAIRecipeReader(FakeClient(parsed)).check_ingredients("칼국수", ["만두"]))

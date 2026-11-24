@@ -1,5 +1,6 @@
 """⑥ stage 1 LLM: which search results are this menu's recipes, and their ingredients
-(docs/6-agent-websearch.md §2-1 step 2, §3-0).
+(docs/6-agent-websearch.md §2-1 step 2, §3-0), then one check of all kept names per menu
+(§3 step 2-3).
 
 One call per group of results (``collect.py`` sends three at a time, side by side). Code
 still does the rest: ``collect.py`` keeps every result
@@ -41,6 +42,25 @@ For every result, by its index:
   "양파"). Do not translate, normalize, or add ingredients that are not written there.
 Return one entry for every index you were given."""
 
+# Per-menu check of the kept names (§3 step 2-3, 2026-11-24). 손칼국수 recipes gave 만두 from
+# posts that served it on the side, 순두부 gave 라면 from 순두부 열라면 posts: each recipe
+# is fine on its own, so the per-result reading above keeps them.
+CHECK_INSTRUCTIONS = """You check ingredient names collected from Korean web recipes for one
+restaurant menu. Some posts were variants or also talked about other food, so a few names
+may not belong to the menu.
+Put in not_ingredients only names that are clearly not an ingredient of this menu as it is
+usually made:
+- another dish or side menu served with it or mentioned in the post (for 칼국수: 만두,
+  김치전; for 김밥: 라면, 떡볶이)
+- a product from a fusion or variant recipe that turns it into another dish (for 순두부:
+  라면, 열라면, 짜파게티)
+Keep everything that can go into this dish, even if only some recipes use it: main
+ingredients, seasonings, sauces, broth, garnishes and common add-ins (for 순두부: 바지락,
+계란, 돼지고기; for 칼국수: 애호박, 김가루; for 부대찌개: 라면사리).
+Keep any name that is part of the menu name (for 만두칼국수: 만두).
+If unsure, keep it. Copy names exactly as given. An empty list is a normal answer."""
+CHECK_MAX_OUTPUT_TOKENS = 1000
+
 
 def excerpt(text: str, limit: int = MAX_TEXT_CHARS) -> str:
     """At most ``limit`` characters for the LLM: the start (what the post is about) and,
@@ -68,9 +88,14 @@ class _Readings(BaseModel):
     readings: list[_Reading]
 
 
+class _Checked(BaseModel):
+    not_ingredients: list[str] = Field(default_factory=list)
+
+
 class OpenAIRecipeReader:
-    """``RecipeReader`` backed by the OpenAI Responses API. Raises on any bad answer;
-    ``WebCollectAgent`` then keeps every result and adds ``web_llm_extraction_failed``."""
+    """``RecipeReader`` and ``IngredientChecker`` backed by the OpenAI Responses API.
+    Raises on any bad answer; ``WebCollectAgent`` then keeps every result and adds
+    ``web_llm_extraction_failed``, or for the check drops nothing."""
 
     def __init__(self, client: Any, *, model: str = DEFAULT_WEB_SEARCH_OPENAI_MODEL) -> None:
         self.client = client
@@ -129,6 +154,24 @@ class OpenAIRecipeReader:
             )
             for i in range(len(results))
         ]
+
+    async def check_ingredients(self, menu_name: str, names: list[str]) -> list[str]:
+        payload = {"menu": menu_name, "ingredients": names}
+        response = await self.client.responses.parse(
+            model=self.model,
+            input=[
+                {"role": "developer", "content": CHECK_INSTRUCTIONS},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            text_format=_Checked,
+            max_output_tokens=CHECK_MAX_OUTPUT_TOKENS,
+        )
+        parsed = getattr(response, "output_parsed", None)
+        if parsed is None:
+            raise ValueError("OpenAI returned no parsed ingredient check")
+        if not isinstance(parsed, _Checked):
+            parsed = _Checked.model_validate(parsed)
+        return [name.strip() for name in parsed.not_ingredients if name.strip()]
 
 
 def _async_openai_client(**kwargs: Any) -> Any:
