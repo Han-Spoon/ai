@@ -788,3 +788,95 @@ def test_one_letter_llm_name_needs_the_dictionary_to_read_it_as_a_word() -> None
     # "게" is inside 맛있게, so a text check alone would keep it (2026-11-12 second run).
     assert merge_names([], ["게", "대파"], "맛있게 끓인 대파 국") == ["대파"]
     assert merge_names(["게"], ["게"], "게 2마리") == ["게"]
+
+
+class Checker:
+    """Fake per-menu check (§3 step 2-3): flags ``flag``, or raises / waits."""
+
+    def __init__(self, flag=(), *, error: Exception | None = None, delay: float = 0) -> None:
+        self.flag = list(flag)
+        self.error = error
+        self.delay = delay
+        self.calls: list[tuple[str, list[str]]] = []
+
+    async def check_ingredients(self, menu_name, names):
+        self.calls.append((menu_name, list(names)))
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.error:
+            raise self.error
+        return self.flag
+
+
+SIDE_DISH = "재료: 돼지고기, 두부, 양파, 대파. 같이 먹은 만두도 맛있어요"
+
+
+def side_dish_results() -> list[SearchResult]:
+    return [result(i, SIDE_DISH if i < 3 else RECIPE_TEXT) for i in range(9)] + [
+        result(9, "만두", title="만두"),
+    ]
+
+
+def names_of(response) -> list[list[str]]:
+    return [[i.canonical_name for i in s.ingredients] for s in response.sources]
+
+
+def test_check_drops_names_foreign_to_the_menu_from_every_recipe() -> None:
+    # 만두 came from posts that served it on the side (손칼국수, 2026-11-24). A recipe
+    # left with no name was another dish and is no longer counted.
+    checker = Checker(["만두", "설탕"])
+    agent = WebCollectAgent(provider(side_dish_results()), Reader(), checker=checker)
+
+    response = run(agent, request())
+
+    assert checker.calls[0][0] == "김치찌개"
+    assert "만두" in checker.calls[0][1] and "설탕" not in checker.calls[0][1]
+    assert len(response.sources) == 9
+    assert not any("만두" in names for names in names_of(response))
+    assert names_of(response)[0] == ["김치", "돼지고기", "두부", "양파", "대파"]
+
+
+@pytest.mark.parametrize(
+    "checker",
+    [
+        Checker(error=RuntimeError("llm down")),
+        Checker(["만두"], delay=1),
+        Checker(["김치", "돼지고기", "두부", "만두"]),  # more than half: not trusted
+    ],
+)
+def test_check_that_fails_or_overreaches_drops_nothing(checker) -> None:
+    agent = WebCollectAgent(
+        provider(side_dish_results()), Reader(), checker=checker, check_seconds=0.05
+    )
+
+    response = run(agent, request())
+
+    assert len(response.sources) == 10
+    assert sum("만두" in names for names in names_of(response)) == 4
+    assert response.warnings == [] and response.errors == []
+
+
+def test_check_has_its_own_time_after_the_search_deadline() -> None:
+    # Reading the recipes used up the 7 s on the first real run, so the check gets its
+    # own 2 s after it (§2-5, 2026-11-24).
+    checker = Checker(["만두"], delay=0.2)
+    agent = WebCollectAgent(
+        provider(side_dish_results()), SlowReader(), checker=checker,
+        total_seconds=0.3, llm_seconds=0.2, llm_min_seconds=0, check_seconds=1,
+    )
+
+    response = run(agent, request())
+
+    assert len(checker.calls) == 1
+    assert not any("만두" in names for names in names_of(response))
+
+
+def test_a_reader_that_can_check_is_used_as_the_checker() -> None:
+    class CheckingReader(Reader):
+        async def check_ingredients(self, menu_name, names):
+            return ["만두"]
+
+    response = run(WebCollectAgent(provider(side_dish_results()), CheckingReader()), request())
+
+    assert not any("만두" in names for names in names_of(response))
+    assert WebCollectAgent(provider([]), Reader()).checker is None

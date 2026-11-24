@@ -14,6 +14,11 @@ search rank is stored or passed around (10/27 meeting, §2-4).
 The LLM sits behind ``RecipeReader`` (OpenAI version in ``reader.py``). Without a reader,
 or when it fails, every result is kept and only dictionary names are used, with
 ``web_llm_extraction_failed``.
+
+Once the recipes are chosen, one more LLM call per menu looks at all their ingredient
+names together and drops those that are another dish or a variant's product, such as
+만두 for 칼국수 or 라면 for 순두부 (``IngredientChecker``, 2026-11-24). Without it, or
+when it fails, nothing is dropped.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 from ai_supervisor.contracts.common import (
@@ -46,12 +51,19 @@ NODE = "web_search"
 TOTAL_SECONDS = 7.0
 SEARCH_SECONDS = 3.0
 PAGE_SECONDS = 1.5
-LLM_SECONDS = 3.0
-# Median LLM call was 1.98 s (2026-10-29): with less time left the call nearly always
-# times out, and a timed-out call is still paid for (§6-3).
-LLM_MIN_SECONDS = 2.0
+# Reading calls took 3.2-4.15 s on 2026-11-24 (median 1.98 s on 10-29), so 3 s cancelled
+# every call. The 7 s total still bounds it: pages end near 1.8 s, the reading near 6.2 s.
+LLM_SECONDS = 4.5
+# With less time left the call nearly always times out, and a timed-out call is still
+# paid for (§6-3). Calls took 3 s or more on 2026-11-24.
+LLM_MIN_SECONDS = 3.0
 LLM_BATCH_SIZE = 3
 READ_AHEAD = 2
+# The per-menu ingredient check has its own 3 s after the 7 s, so ⑥ takes at most 10 s
+# (2026-11-24). Inside the 7 s it was called with 1.07 s left and cancelled on the first
+# real run (손칼국수), since recipe reading uses up the time on a slow gateway day. It
+# took 2.36 s for 132 names (참치회덮밥), so 2 s was too short.
+CHECK_SECONDS = 3.0
 
 # Recipe pages of each priority site (§2-3-1). Profiles, counseling, lists and pages of
 # other domains that ``site:`` lets through are dropped before anything is read.
@@ -103,6 +115,17 @@ class RecipeReader(Protocol):
 
         Drop only reviews, ads, shop pages and recipes that are clearly another dish;
         keep anything unsure (§2-1 step 2).
+        """
+        ...
+
+
+@runtime_checkable
+class IngredientChecker(Protocol):
+    async def check_ingredients(self, menu_name: str, names: list[str]) -> list[str]:
+        """Names from ``names`` that are clearly not an ingredient of ``menu_name``.
+
+        Another dish served or mentioned with it (만두 for 칼국수) or a variant's product
+        (라면 for 순두부). Anything unsure is kept (§3 step 2-3).
         """
         ...
 
@@ -226,6 +249,17 @@ class _Collection:
         used = sum(s.source_url in self.unread_urls for s in self.sources)
         self.llm_failed = used > 0 and 2 * used >= len(self.sources)
 
+    def drop_names(self, names: set[str]) -> None:
+        """Remove ``names`` from every source; a source left with none is not a recipe of
+        this menu and is no longer counted (§2-3)."""
+
+        kept = []
+        for source in self.sources:
+            ingredients = [i for i in source.ingredients if i.canonical_name not in names]
+            if ingredients:
+                kept.append(source.model_copy(update={"ingredients": ingredients}))
+        self.sources = kept
+
 
 class WebCollectAgent:
     """⑥ stage 1 node, matching the Supervisor ``NodeAdapter`` shape."""
@@ -236,15 +270,22 @@ class WebCollectAgent:
         reader: RecipeReader | None = None,
         *,
         pages: PageFetcher | None = None,
+        checker: IngredientChecker | None = None,
         total_seconds: float = TOTAL_SECONDS,
         search_seconds: float = SEARCH_SECONDS,
         page_seconds: float = PAGE_SECONDS,
         llm_seconds: float = LLM_SECONDS,
         llm_min_seconds: float = LLM_MIN_SECONDS,
+        check_seconds: float = CHECK_SECONDS,
     ) -> None:
         self.provider = provider
         self.reader = reader
         self.pages = pages
+        # The OpenAI reader checks too, so ⓪ needs no new argument to turn it on.
+        if checker is None and isinstance(reader, IngredientChecker):
+            checker = reader
+        self.checker = checker
+        self.check_seconds = check_seconds
         self.total_seconds = total_seconds
         self.search_seconds = search_seconds
         self.page_seconds = page_seconds
@@ -443,7 +484,31 @@ class WebCollectAgent:
             if search_index + 1 < len(search_names):
                 search_index += 1
         collection.keep_read_first(request.max_sources, search_names)
+        await self._check(search_names[0], collection)
         return collection
+
+    async def _check(self, menu_name: str, collection: _Collection) -> None:
+        """Drop names the LLM finds clearly foreign to the menu, all recipes at once (§3
+        step 2-3). It runs after the 7 s with its own ``check_seconds`` (§2-5). Only
+        names it was given can go. Without a checker nothing happens, and a failed or
+        late call or an answer dropping more than half of the names changes nothing: a
+        wrongly dropped allergen is a miss (FN), a kept stray name only one more CAUTION
+        reason."""
+
+        names = list(dict.fromkeys(
+            i.canonical_name for source in collection.sources for i in source.ingredients
+        ))
+        if self.checker is None or not names:
+            return
+        try:
+            flagged = await asyncio.wait_for(
+                self.checker.check_ingredients(menu_name, names), self.check_seconds
+            )
+        except Exception:
+            return
+        drop = set(flagged) & set(names)
+        if drop and 2 * len(drop) <= len(names):
+            collection.drop_names(drop)
 
     async def _fetch_pages(
         self, results: list[SearchResult], deadline: float
