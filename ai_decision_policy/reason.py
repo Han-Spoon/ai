@@ -932,7 +932,7 @@ class ReasonWriter:
         the LLM explained and code checked, the card step, then the most serious limit.
 
         The description goes on every menu (2026-11-24), so every menu with a writer
-        calls the LLM once, except a side item (…사리), which has its own template
+        calls the LLM once, except a side item (…사리, …추가), which has its own template
         sentence (``tool.py``) and calls it only for groups. ``reason_route`` still decides
         the rest: groups, card and limit only when it is not "none", the card and limit
         only with a group sentence or a limit to go with. With nothing left, ``reason``

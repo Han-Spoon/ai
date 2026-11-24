@@ -51,7 +51,7 @@ class DecisionTool:
         reason = None
         if self.reason_writer is not None:
             reason = await self.reason_writer.write(request, response)
-        # A side item (…사리) says what it adds first, with or without the LLM (2026-11-24),
+        # A side item (…사리, …추가) says what it adds first, with or without the LLM (2026-11-24),
         # in place of the menu description (``ReasonWriter`` skips it for a side item).
         # One space between sentences: the result screen shows the reason as one paragraph.
         side = side_item_text(request)
