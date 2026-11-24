@@ -579,6 +579,45 @@ def test_phone_and_business_hours_are_invalid(raw: str) -> None:
     assert response.warnings[0].code == "invalid_menu_text"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    ["SINCE 1975", "Since: 2001", "EST. 1988", "Established 2020", "창업 1995년"],
+)
+def test_establishment_year_line_is_invalid(raw: str) -> None:
+    result = clean_menu_name(raw)
+
+    assert result.status == "invalid"
+    assert result.warning_code == "invalid_menu_text"
+
+
+def test_establishment_year_split_into_name_and_price_is_invalid() -> None:
+    source = item(0, "Since")
+    source["price_text"] = "₩1,975"
+    payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
+
+    response = asyncio.run(
+        NameCleaningAgent().run(NameCleaningRequest.model_validate(payload))
+    )
+
+    assert response.items[0].cleaning_status == "invalid"
+    assert response.items[0].normalized_menu_name is None
+    assert [warning.code for warning in response.warnings] == ["invalid_menu_text"]
+
+
+@pytest.mark.parametrize("menu_name", ["공기밥", "Since Burger"])
+def test_real_menu_with_year_shaped_price_is_kept(menu_name: str) -> None:
+    source = item(0, menu_name)
+    source["price_text"] = "1,975원"
+    payload = {"context": context(), "items": [source], "warnings": [], "errors": []}
+
+    response = asyncio.run(
+        NameCleaningAgent().run(NameCleaningRequest.model_validate(payload))
+    )
+
+    assert response.items[0].cleaning_status != "invalid"
+    assert response.items[0].normalized_menu_name is not None
+
+
 def test_low_ocr_warning_is_not_created_for_excluded_invalid_item() -> None:
     source = item(0, "식사류")
     source["ocr_confidence"] = 0.1

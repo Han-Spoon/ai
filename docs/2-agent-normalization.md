@@ -400,10 +400,10 @@ Resolver가 있을 때는 사전에 적중하지 않은 유효 이름에 Latin·
 - 정제 후 빈 문자열
 - 가격만 남은 문자열
 - `식사류`, `주류`, `추천 메뉴`처럼 버전 관리된 섹션 헤더와 정확히 일치
-- 전화번호·영업시간처럼 메뉴가 아님을 규칙으로 확정할 수 있는 문자열
+- 전화번호·영업시간·개업 연도처럼 메뉴가 아님을 규칙으로 확정할 수 있는 문자열
 - `참이슬 360ml`, `카스 병`, `서울장수막걸리`, `제로콜라`, `식혜`처럼 전체 항목이 음료·주류임을 버전 관리 규칙으로 확정할 수 있는 문자열
 
-전화번호는 번호 묶음을 하이픈 또는 공백으로 구분한 `지역/휴대전화 식별 번호-중간 번호-끝 번호` 형태, 영업시간은 `HH:MM~HH:MM` 형태(`~`, `-`, `–` 구분자)와 앞의 `전화`, `Tel.`, `영업시간` 라벨을 허용해 정확히 일치할 때만 invalid로 만든다. 이 경우 warning code는 `invalid_menu_text`다. 일부 문자열이 비슷하다는 이유만으로 메뉴를 invalid로 만들지 않는다.
+전화번호는 번호 묶음을 하이픈 또는 공백으로 구분한 `지역/휴대전화 식별 번호-중간 번호-끝 번호` 형태, 영업시간은 `HH:MM~HH:MM` 형태(`~`, `-`, `–` 구분자)와 앞의 `전화`, `Tel.`, `영업시간` 라벨을 허용해 정확히 일치할 때만 invalid로 만든다. 개업 연도는 `SINCE`, `EST`, `Established`, `Founded`, `창업`, `개업`, `설립` 라벨과 1800~2099년의 4자리 연도가 정확히 결합한 경우에만 제외한다. OCR이 `SINCE 1975`를 메뉴명 `Since`와 가격 `₩1,975`로 분리한 경우도 같은 규칙을 적용한다. 이 경우 warning code는 `invalid_menu_text`다. 일부 문자열이 비슷하다는 이유만으로 메뉴를 invalid로 만들지 않는다.
 
 한 글자, 낯선 외국어, 처음 보는 메뉴라는 이유만으로 invalid로 만들지 않는다. 이런 값은 유효한 이름으로 Prepare에 남겨 백엔드 조회 후 `unmatched` 경로를 허용한다.
 
@@ -631,7 +631,7 @@ Resolver가 없거나 호출이 실패하면 규칙 결과를 유지한다. 후�
 | `empty_menu_name` | 정제 후 빈 문자열 | `invalid`, Prepare 외부 목록에서 제외 | false |
 | `price_only` | 가격만 존재 | `invalid`, 제외 | false |
 | `section_header` | 확정된 메뉴판 헤더 | `invalid`, 제외 | false |
-| `invalid_menu_text` | 전화번호·영업시간과 정확히 일치 | `invalid`, 제외 | false |
+| `invalid_menu_text` | 전화번호·영업시간·개업 연도 규칙과 정확히 일치 | `invalid`, 제외 | false |
 | `beverage_item` | 전체 항목이 분석 범위 밖 음료·주류로 확정됨 | `invalid`, 제외 | false |
 | `low_ocr_confidence` | 유효 메뉴의 `ocr_confidence < 0.65` | 이름은 보존하고 계속 진행 | true |
 | `name_llm_failed` | ②-A 다국어 해석 실패 | 정제된 원문 fallback | false |
@@ -677,6 +677,7 @@ Prepare의 context는 `store_id` 필드 자체를 포함하면 안 되며 명시
 | 20 | ②-B 선택 후보 | `selected_candidate`가 입력 후보와 값까지 동일 |
 | 21 | 유효 메뉴의 OCR confidence 0.64 | `low_ocr_confidence`, `forces_caution: true` |
 | 22 | `02-123-4567`, `영업시간 09:00~21:00` | `invalid_menu_text`, `invalid` |
+| 22-a | `SINCE 1975` 또는 메뉴명 `Since` + 가격 `₩1,975` | `invalid_menu_text`, `invalid` |
 | 23 | Prepare context에 `store_id: null` | schema 거부 |
 | 24 | Judge context에서 `store_id` 누락 | schema 거부 |
 | 25 | LLM reason과 실제 문맥 필드 불일치 | 결과 폐기, `invalid_llm_candidate` |
