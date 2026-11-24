@@ -269,6 +269,65 @@ def test_low_tag_bundle_does_not_add_its_tags_to_the_shown_row() -> None:
     assert outcome.low_chance_tags == ("is_shellfish",)
 
 
+BROTH = IngredientRef(ingredient_id=233, canonical_name="육수")
+SEASONING = IngredientRef(ingredient_id=201, canonical_name="양념")
+SOY_SAUCE = IngredientRef(ingredient_id=11, canonical_name="간장")
+WHEAT_ALLERGY = profile(allergies=["is_wheat"])
+
+
+def test_vague_broth_is_not_shown_but_its_tags_stay_named() -> None:
+    # 2026-11-25: "육수 — 소고기·생선 64%" leaves nothing to act on. The row goes; the
+    # tags stay for the verdict (not low-chance tags) and the menu stays CAUTION.
+    outcome = decide(
+        request(VEGAN, probability_results=[probability(BROTH, ["is_beef", "is_fish"], 0.64)])
+    )
+    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
+    assert outcome.risk_ingredients == []
+    assert outcome.matched_tags == ["is_beef", "is_fish"]
+    assert outcome.low_chance_tags == ()
+
+
+def test_vague_seasoning_next_to_soy_sauce_leaves_only_soy_sauce() -> None:
+    outcome = decide(
+        request(
+            WHEAT_ALLERGY,
+            probability_results=[
+                probability(SEASONING, ["is_soybean", "is_wheat"], 0.43),
+                probability(SOY_SAUCE, ["is_soybean", "is_wheat"], 0.36),
+            ],
+        )
+    )
+    assert [r.ingredient.canonical_name for r in outcome.risk_ingredients] == ["간장"]
+    assert outcome.matched_tags == ["is_wheat"]
+
+
+def test_vague_name_under_five_percent_is_a_low_chance_tag() -> None:
+    outcome = decide(request(VEGAN, probability_results=[probability(BROTH, ["is_beef"], 0.03)]))
+    assert outcome.risk_ingredients == []
+    assert outcome.low_chance_tags == ("is_beef",)
+
+
+def test_vague_variant_guess_is_not_shown() -> None:
+    variant = ProposedVariantIngredient(
+        ingredient=BROTH,
+        constraint_tags=["is_beef"],
+        role=None,
+        source="variant_suggested",
+        evidence_refs=["runtime:variant:0"],
+    )
+    outcome = decide(request(VEGAN, variants=[variant]))
+    assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
+    assert outcome.risk_ingredients == []
+    assert outcome.matched_tags == ["is_beef"]
+
+
+def test_owner_confirmed_broth_is_still_shown() -> None:
+    # Only estimates are hidden: an owner answer is what the owner said.
+    outcome = decide(request(VEGAN, confirmed_results=[confirmed(BROTH, ["is_beef"], "present")]))
+    assert outcome.risk_level == "danger"
+    assert [r.ingredient.canonical_name for r in outcome.risk_ingredients] == ["육수"]
+
+
 def test_03_no_information_is_caution() -> None:
     outcome = decide(request(HALAL, no_information=True))
     assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "unknown")

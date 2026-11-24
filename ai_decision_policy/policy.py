@@ -49,11 +49,37 @@ WEB_SHORTAGE_WARNINGS = frozenset(
 SHOWN_MIN_CHANCE = 0.05
 
 
-def is_low_chance(item: DecisionProbabilityResult | FoundIngredient) -> bool:
-    """An estimate under ``SHOWN_MIN_CHANCE``. A found ingredient with no number (an
-    owner answer or a variant guess also named it) never is."""
+def is_low_chance(
+    item: DecisionProbabilityResult | ProposedVariantIngredient | FoundIngredient,
+) -> bool:
+    """An estimate under ``SHOWN_MIN_CHANCE``. A variant guess or a found ingredient with
+    no number (an owner answer or a variant guess also named it) never is."""
 
-    return item.posterior_mean is not None and item.posterior_mean < SHOWN_MIN_CHANCE
+    mean = getattr(item, "posterior_mean", None)
+    return mean is not None and mean < SHOWN_MIN_CHANCE
+
+
+# Names that only say where something is, not what (2026-11-25, ⑧ 담당). "양념 — 밀 43%"
+# or "육수 — 소고기·생선 64%" leaves the tourist nothing to act on, the remove-request
+# card asked to leave out the broth, and the owner card "이 메뉴에 육수가 들어가나요?"
+# gets a yes that confirms every tag ④ put on 육수. Estimates under these names are
+# hidden like those under 5%, but their tags are still named in the verdict ("소고기,
+# 생선이 들어 있을 수 있어요"): the chance is real, only the name says nothing. 다시물 and
+# 멸칫국물 stay: their name says what is in them.
+VAGUE_NAMES = frozenset({"양념", "양념장", "육수", "국물", "소스"})
+
+
+def is_vague(ingredient: IngredientRef) -> bool:
+    return ingredient.canonical_name in VAGUE_NAMES
+
+
+def is_hidden(
+    item: DecisionProbabilityResult | ProposedVariantIngredient | FoundIngredient,
+) -> bool:
+    """Not on the result screen: an estimate under 5% or a vague name (``VAGUE_NAMES``).
+    Owner answers are never hidden."""
+
+    return is_vague(item.ingredient) or is_low_chance(item)
 
 
 @dataclass(frozen=True)
@@ -237,14 +263,21 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
 
     # Rows under 5% are dropped before rows of the same ingredient are merged, so a 3%
     # tag bundle (김치 속 액젓의 새우) does not ride on the 60% row's number.
-    shown = [p for p in probabilities if not is_low_chance(p)]
+    shown = [p for p in probabilities if not is_hidden(p)]
     hidden_tags = {
         t for p in probabilities if is_low_chance(p) for t in set(p.constraint_tags) & forbidden
+    }
+    # Tags of the vague names at 5% or more: named in the verdict, not as a row.
+    vague_tags = {
+        t
+        for item in [*probabilities, *variants]
+        if is_vague(item.ingredient) and not is_low_chance(item)
+        for t in set(item.constraint_tags) & forbidden
     }
     candidates = (
         [risk(c, c.status) for c in hard if c.status == "present"]
         + [risk(p, "unknown") for p in shown]
-        + [risk(v, "unknown") for v in variants]
+        + [risk(v, "unknown") for v in variants if not is_hidden(v)]
     )
     risk_ingredients = sort_by_risk(
         merge_same_ingredient([r for r in candidates if r is not None])
@@ -264,8 +297,8 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
         | {t for f in danger_flags for t in f.matched_tags}
     )
     # Hidden estimates stay in the detected tags; only the screen leaves them out.
-    matched_tags = sorted(shown_tags | hidden_tags)
-    low_chance_tags = tuple(sorted(hidden_tags - shown_tags))
+    matched_tags = sorted(shown_tags | hidden_tags | vague_tags)
+    low_chance_tags = tuple(sorted(hidden_tags - shown_tags - vague_tags))
     evidence_refs = _dedupe(
         [ref for c in hard for ref in c.evidence_refs]
         + [ref for p in probabilities for ref in p.evidence_refs]

@@ -851,6 +851,39 @@ def test_found_ingredient_with_no_number_is_never_hidden() -> None:
     assert not is_low_chance(FoundIngredient(ingredient=TOFU, constraint_tags=[], posterior_mean=0.05))
 
 
+def _with_broth(req: HighRiskReviewRequest) -> HighRiskReviewRequest:
+    broth = IngredientRef(ingredient_id=233, canonical_name="육수")
+    found = [
+        {"ingredient": TOFU, "constraint_tags": [], "posterior_mean": 0.8},
+        {"ingredient": broth, "constraint_tags": ["is_shrimp"], "posterior_mean": 0.6},
+    ]
+    return req.model_copy(update={"found_ingredients": [FoundIngredient(**f) for f in found]})
+
+
+def test_review_does_not_see_or_name_a_vague_broth() -> None:
+    # 2026-11-25: 육수 is hidden on the screen (``VAGUE_NAMES``), so the review neither
+    # sees it nor may name it.
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="육수를 확인해 보세요."))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(_with_broth(review_request())))
+    assert [f["name"] for f in llm.calls[0]["payload"]["found_ingredients"]] == ["두부"]
+    assert response.reason == "이 메뉴의 재료 정보가 부족해요."
+
+
+def test_review_may_still_say_seasoning_as_a_place() -> None:
+    # 양념 is hidden as an ingredient but stays usable as a word for where one hides.
+    seasoning = IngredientRef(ingredient_id=201, canonical_name="양념")
+    found = [
+        {"ingredient": TOFU, "constraint_tags": [], "posterior_mean": 0.8},
+        {"ingredient": seasoning, "constraint_tags": ["is_shrimp"], "posterior_mean": 0.4},
+    ]
+    req = review_request().model_copy(
+        update={"found_ingredients": [FoundIngredient(**f) for f in found]}
+    )
+    reason = "두부 요리지만 양념 안에 재료가 더 있을 수 있어요."
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason=reason))
+    assert asyncio.run(HighRiskReviewAgent(llm).run(req)).reason == reason
+
+
 def test_review_keeps_the_old_reason_when_the_new_one_fails_the_check() -> None:
     llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="새우는 없어서 안전해요."))
     response = asyncio.run(HighRiskReviewAgent(llm).run(review_request()))
