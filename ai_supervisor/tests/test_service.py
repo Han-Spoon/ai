@@ -111,7 +111,7 @@ def test_supervisor_service_runs_prepare_with_compiled_dependencies(caplog) -> N
         response = asyncio.run(service.prepare(request))
 
     assert response.prepare_id == PREPARE_ID
-    assert response.prepared_items[0].display_name == "김치 찌개"
+    assert response.prepared_items[0].display_name == "김치찌개"
     assert response.prepared_items[0].normalized_menu_name == "김치찌개"
     assert response.prepared_items[0].price_text == "8,000원"
     assert {"ocr", "clean_names", "finalize_prepared"} <= set(
