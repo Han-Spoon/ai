@@ -117,10 +117,64 @@ def test_nothing_found_is_found_false() -> None:
 
 def test_unmapped_ingredient_is_kept_and_flagged() -> None:
     sources = ten_kimchi_stew_recipes()
-    sources[0]["ingredients"].append(mapped(MALA_SAUCE))
+    for recipe in sources[:2]:
+        recipe["ingredients"].append(mapped(MALA_SAUCE))
     outcome = aggregate_sources(request(sources))
     sauce = next(i for i in outcome.ingredients if i.ingredient.canonical_name == "마라소스")
     assert sauce.ingredient.ingredient_id is None
+
+
+# --- rare ingredients left out of the judgment (§2-2-1, 2026-11-24) ------------
+
+
+def names(outcome) -> set[str]:
+    return {i.ingredient.canonical_name for i in outcome.ingredients}
+
+
+def test_ingredient_in_one_of_ten_recipes_is_dropped() -> None:
+    sources = ten_kimchi_stew_recipes()
+    sources[0]["ingredients"].append(mapped(PEANUT))
+    assert names(aggregate_sources(request(sources))) == {"김치", "두부", "양파"}
+
+
+def test_ingredient_in_two_of_ten_recipes_is_kept_with_its_counts() -> None:
+    sources = ten_kimchi_stew_recipes()
+    for recipe in sources[:2]:
+        recipe["ingredients"].append(mapped(PEANUT))
+    outcome = aggregate_sources(request(sources))
+    assert observations(outcome, PEANUT) == {"10000recipe": (2, 10)}
+
+
+def test_rare_ingredients_stay_when_their_tag_is_common_but_uncovered() -> None:
+    # Peanut appears in 3 of 10 recipes, each time under a different name.
+    peanut_names = [
+        {"ingredient_id": 151 + n, "canonical_name": name}
+        for n, name in enumerate(["땅콩버터", "땅콩가루", "볶은땅콩"])
+    ]
+    sources = ten_kimchi_stew_recipes()
+    for recipe, peanut in zip(sources, peanut_names):
+        recipe["ingredients"].append(
+            {"ingredient": peanut, "constraint_tags": ["is_peanut"], "role": None}
+        )
+    assert {"땅콩버터", "땅콩가루", "볶은땅콩"} <= names(aggregate_sources(request(sources)))
+
+
+def test_rare_ingredient_is_dropped_when_a_common_one_carries_its_tag() -> None:
+    sources = ten_kimchi_stew_recipes()
+    for recipe in sources[:5]:
+        recipe["ingredients"].append(mapped(PEANUT))
+    sources[9]["ingredients"].append(
+        {"ingredient": {"ingredient_id": 160, "canonical_name": "땅콩버터"}, "constraint_tags": ["is_peanut"], "role": None}
+    )
+    assert "땅콩버터" not in names(aggregate_sources(request(sources)))
+
+
+def test_recipes_sharing_nothing_keep_every_ingredient() -> None:
+    picks = [KIMCHI, TOFU, ONION, BEEF, PEANUT, MALA_SAUCE]
+    sources = [source(i, "10000recipe", [picks[i]]) for i in range(6)]
+    outcome = aggregate_sources(request(sources))
+    assert outcome.found is True
+    assert len(outcome.ingredients) == 6
 
 
 def test_17_cache_counts_but_notes_cover_new_recipes_only() -> None:
