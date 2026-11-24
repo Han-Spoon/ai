@@ -518,6 +518,15 @@ def test_only_estimates_under_five_percent_read_like_nothing_found() -> None:
     assert message(en).verdict == messages.NOT_CONFIRMED["en"]
 
 
+def test_vague_broth_names_its_tags_not_the_broth() -> None:
+    # 2026-11-25: the 육수 row is hidden; what may be in it is still said.
+    broth = IngredientRef(ingredient_id=233, canonical_name="육수")
+    results = [probability(broth, ["is_beef", "is_fish"], 0.64)]
+    verdict = message(request(VEGAN, probability_results=results, locale="ko")).verdict
+    assert "육수" not in verdict
+    assert "소고기" in verdict and "생선" in verdict
+
+
 def test_hidden_low_estimate_is_not_named_next_to_a_shown_one() -> None:
     ham = IngredientRef(ingredient_id=None, canonical_name="햄")
     results = [probability(PORK, ["is_pork"], 0.62), probability(ham, ["is_pork"], 0.03)]

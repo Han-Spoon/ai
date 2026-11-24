@@ -40,6 +40,26 @@ def cards(req):
     return build_owner_cards(req, decide(req))
 
 
+BROTH = IngredientRef(ingredient_id=233, canonical_name="육수")
+
+
+def test_vague_broth_gets_no_card() -> None:
+    # 2026-11-25: "이 메뉴에 육수가 들어가나요?" gets a yes that confirms every tag on 육수.
+    req = request(
+        VEGAN,
+        probability_results=[
+            probability(BROTH, ["is_beef", "is_fish"], 0.64),
+            probability(BEEF, ["is_beef"], 0.5),
+        ],
+    )
+    assert [c.ingredient for c in cards(req)] == [BEEF]
+
+
+def test_vague_broth_with_unknown_answer_gets_no_card() -> None:
+    req = request(VEGAN, confirmed_results=[confirmed(BROTH, ["is_beef"], "unknown")])
+    assert cards(req) == []
+
+
 def legacy_ineligible(ingredient: IngredientRef, tags: list[str]) -> ConfirmedResult:
     """An "absent" answer with the legacy ``override_eligible: false`` (no longer sent, ⓪ #368)."""
 

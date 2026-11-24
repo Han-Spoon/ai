@@ -25,12 +25,13 @@ from ai_supervisor.contracts.decision import HighRiskReviewRequest, HighRiskRevi
 from ai_supervisor.contracts.external import OwnerCard
 
 from .llm import XaiLLM
-from .policy import is_low_chance
+from .policy import is_hidden
 from .profile import forbidden_tags
 from .questions import ingredient_question
 from .reason import (
     NameTranslation,
     check_reason,
+    generic_words,
     instructions,
     localized_name,
     restriction_names,
@@ -158,11 +159,12 @@ class HighRiskReviewAgent:
         # Only ingredients that can hit this user are worth naming: the rest would not
         # make a card or change the explanation, and the prompt stays small.
         choices = [c for c in request.ingredient_choices if set(c.constraint_tags) & forbidden]
-        # An estimate under 5% is not on the result screen, so the review neither sees it
-        # nor may name it (2026-11-25, ``SHOWN_MIN_CHANCE``). It is still not a choice:
-        # ⓪ leaves every found ingredient out of ``ingredient_choices``.
-        found = [i for i in request.found_ingredients if not is_low_chance(i)]
-        hidden = [i for i in request.found_ingredients if is_low_chance(i)]
+        # An estimate under 5% or a vague name (양념, 육수) is not on the result screen, so
+        # the review neither sees it nor may name it (2026-11-25, ``SHOWN_MIN_CHANCE``,
+        # ``VAGUE_NAMES``). It is still not a choice: ⓪ leaves every found ingredient out
+        # of ``ingredient_choices``.
+        found = [i for i in request.found_ingredients if not is_hidden(i)]
+        hidden = [i for i in request.found_ingredients if is_hidden(i)]
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
@@ -230,8 +232,12 @@ class HighRiskReviewAgent:
             c.localized_name for c in dropped if c.localized_name
         }
         # Hidden estimates may not be named either, unless a shown ingredient has the name.
+        # "양념" and "소스" stay usable as words for where an ingredient hides, as in the
+        # reason (``generic_words``).
         shown_names = with_translations(i.ingredient.canonical_name for i in found)
-        dropped_names |= with_translations(i.ingredient.canonical_name for i in hidden) - shown_names
+        hidden_names = with_translations(i.ingredient.canonical_name for i in hidden)
+        names |= hidden_names & generic_words()
+        dropped_names |= hidden_names - shown_names - generic_words()
         reason = check_reason(
             output.reason,
             locale=request.locale,

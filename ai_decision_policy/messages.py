@@ -19,7 +19,7 @@ from ai_supervisor.contracts.external import DecisionMessage, MessageNote
 
 from .names import display_name
 from .notes import NoteChoice, select_notes
-from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence, is_low_chance
+from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence, is_hidden
 from .questions import FLAG_PLACES, LISTS, _has_final_consonant, _tags, tag_name
 
 
@@ -562,6 +562,7 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
         names = _named(items)
         # Tags matched by a menu attribute (e.g. spicy) rather than an ingredient (§2-1 5-1).
         # Tags only an estimate under 5% carries are not an attribute and are not shown.
+        # Tags only a vague name carries (육수 → 소고기) are named this way (2026-11-25).
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
         by_ingredient |= set(outcome.low_chance_tags)
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]
@@ -651,8 +652,8 @@ SIDE_ITEM: dict[str, Callable[[str, str, bool], str]] = {
 
 def side_item_text(request: DecisionRequest) -> str | None:
     """The side-item sentence for a menu whose name ends in 사리, naming its own
-    ingredients (not those hidden inside them nor estimates under 5%, which the screen
-    does not show). None for any other menu, with no
+    ingredients (not those hidden inside them, estimates under 5% nor vague names, which
+    the screen does not show). None for any other menu, with no
     ingredient, or when a name has no translation (Korean must not show elsewhere)."""
 
     menu = request.menu.normalized_menu_name
@@ -664,7 +665,7 @@ def side_item_text(request: DecisionRequest) -> str | None:
         dict.fromkeys(
             display_name(item.ingredient, localized, lang)
             for item in request.probability_results
-            if item.role != "hidden" and not is_low_chance(item)
+            if item.role != "hidden" and not is_hidden(item)
         )
     )
     if not names:

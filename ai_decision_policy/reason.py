@@ -37,7 +37,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 from .llm import XaiLLM
 from .messages import EXPLAIN_SENTENCE, card_step, limit_sentences, shown_percent, side_item_text
 from .names import all_rows, dictionary_name, display_name, standard_rows, taxonomy_categories
-from .policy import information_failed, is_low_chance
+from .policy import information_failed, is_hidden, is_vague
 from .profile import forbidden_tags
 from .questions import TAG_NAMES, _has_final_consonant, tag_name
 
@@ -544,15 +544,15 @@ def limit_text(request: DecisionRequest) -> list[str]:
     guessed = [
         name(v.ingredient)
         for v in request.proposed_variant_ingredients
-        if set(v.constraint_tags) & forbidden
+        if set(v.constraint_tags) & forbidden and not is_hidden(v)
     ]
-    # Not an estimate under 5%: the screen does not show it (2026-11-25).
+    # Not an estimate under 5% nor a vague name: the screen does not show it (2026-11-25).
     no_data = [
         name(r.ingredient)
         for r in request.probability_results
         if r.prior_source in THIN_PRIORS
         and set(r.constraint_tags) & forbidden
-        and not is_low_chance(r)
+        and not is_hidden(r)
     ]
     return limit_sentences(
         codes, list(dict.fromkeys(guessed)), list(dict.fromkeys(no_data)), request.locale
@@ -607,14 +607,18 @@ def menu_ingredients(request: DecisionRequest) -> list[dict]:
     ingredient (``role: identity``) at ``HIGH_CHANCE`` or more, others at ``SURE_CHANCE``
     or more; main ingredients first, then most likely), then common ones at
     ``COMMON_CHANCE`` or more that are not meat or seafood (``SWAPPABLE_TAGS``), most
-    likely first. Not those hidden inside another ingredient (a sauce's 멸치) nor any the
-    owner said is not in it."""
+    likely first. Not those hidden inside another ingredient (a sauce's 멸치), nor any the
+    owner said is not in it, nor a vague name (양념, 육수, 2026-11-25)."""
 
     absent = {c.ingredient.canonical_name for c in request.confirmed_results if c.status == "absent"}
-    sure = [(c.role, 1.0, c.ingredient) for c in request.confirmed_results if c.status == "present"]
+    sure = [
+        (c.role, 1.0, c.ingredient)
+        for c in request.confirmed_results
+        if c.status == "present" and not is_vague(c.ingredient)
+    ]
     common = []
     for r in request.probability_results:
-        if r.ingredient.canonical_name in absent:
+        if r.ingredient.canonical_name in absent or is_vague(r.ingredient):
             continue
         if r.posterior_mean >= (HIGH_CHANCE if r.role == "identity" else SURE_CHANCE):
             sure.append((r.role, r.posterior_mean, r.ingredient))
