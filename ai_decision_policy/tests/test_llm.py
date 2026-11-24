@@ -21,7 +21,7 @@ from ai_decision_policy.tests.test_decision_policy import (
     request,
 )
 from ai_supervisor.contracts.common import IngredientRef
-from ai_supervisor.contracts.decision import HighRiskReviewRequest
+from ai_supervisor.contracts.decision import FoundIngredient, HighRiskReviewRequest
 
 SHRIMP = IngredientRef(ingredient_id=130, canonical_name="새우")
 PEANUT = IngredientRef(ingredient_id=150, canonical_name="땅콩")
@@ -817,6 +817,40 @@ def test_review_gives_found_ingredients_in_the_users_language() -> None:
     assert "translate it into English" in llm.calls[0]["instructions"]
 
 
+def _with_hidden_jeotgal(req: HighRiskReviewRequest) -> HighRiskReviewRequest:
+    jeotgal = IngredientRef(ingredient_id=None, canonical_name="새우젓")
+    found = [
+        {"ingredient": TOFU, "constraint_tags": [], "posterior_mean": 0.8},
+        {"ingredient": jeotgal, "constraint_tags": ["is_shrimp"], "posterior_mean": 0.03},
+    ]
+    return req.model_copy(update={"found_ingredients": [FoundIngredient(**f) for f in found]})
+
+
+def test_review_does_not_see_an_estimate_under_five_percent() -> None:
+    # 2026-11-25: the result screen hides it, so the review is not shown it either.
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="두부 요리라 재료를 확인해 보세요."))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(_with_hidden_jeotgal(review_request())))
+    assert [f["name"] for f in llm.calls[0]["payload"]["found_ingredients"]] == ["두부"]
+    assert response.reason == "두부 요리라 재료를 확인해 보세요."
+
+
+def test_review_reason_may_not_name_an_estimate_under_five_percent() -> None:
+    # The hidden 새우젓 may not be named.
+    # (새우 alone is already barred here: it is a choice the review did not pick.)
+    llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="두부와 새우젓을 확인해 보세요."))
+    response = asyncio.run(HighRiskReviewAgent(llm).run(_with_hidden_jeotgal(review_request())))
+    assert response.reason == "이 메뉴의 재료 정보가 부족해요."
+
+
+def test_found_ingredient_with_no_number_is_never_hidden() -> None:
+    # An owner answer or variant guess also named it: ⓪ sends no number.
+    from ai_decision_policy.policy import is_low_chance
+
+    assert not is_low_chance(FoundIngredient(ingredient=TOFU, constraint_tags=[]))
+    assert is_low_chance(FoundIngredient(ingredient=TOFU, constraint_tags=[], posterior_mean=0.049))
+    assert not is_low_chance(FoundIngredient(ingredient=TOFU, constraint_tags=[], posterior_mean=0.05))
+
+
 def test_review_keeps_the_old_reason_when_the_new_one_fails_the_check() -> None:
     llm = FakeLLM(ReviewOutput(missed_ingredients=[], reason="새우는 없어서 안전해요."))
     response = asyncio.run(HighRiskReviewAgent(llm).run(review_request()))
@@ -1153,3 +1187,13 @@ def test_etc_goes_into_the_korean_description_only() -> None:
     en = request(HALAL, probability_results=[kimchi, tofu], localized_names={TOFU.ingredient_id: "tofu"}, locale="en")
     llm = FakeLLM(described("a spicy stew of kimchi and tofu"))
     assert asyncio.run(DecisionTool(ReasonWriter(llm)).run(en)).message.reason == "This dish is a spicy stew of kimchi and tofu."
+
+
+def test_dropped_name_is_caught_even_with_an_allowed_name_inside_it() -> None:
+    # 2026-11-25: blanking the allowed restriction 새우 first cut a dropped 새우젓 to "젓".
+    from ai_decision_policy.reason import check_reason
+
+    kwargs = dict(locale="ko", risk_level="caution", percents=[], evidence_basis="estimated")
+    text = "새우젓 때문에 확인이 필요해요."
+    assert check_reason(text, allowed_names={"새우"}, dropped_names={"새우젓"}, **kwargs) is None
+    assert check_reason("새우가 들어갈 수 있어요.", allowed_names={"새우"}, dropped_names={"새우젓"}, **kwargs)

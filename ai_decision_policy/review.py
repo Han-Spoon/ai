@@ -25,6 +25,7 @@ from ai_supervisor.contracts.decision import HighRiskReviewRequest, HighRiskRevi
 from ai_supervisor.contracts.external import OwnerCard
 
 from .llm import XaiLLM
+from .policy import is_low_chance
 from .profile import forbidden_tags
 from .questions import ingredient_question
 from .reason import (
@@ -89,7 +90,9 @@ def _card_id(item_id: str, ingredient_id: int) -> str:
     return f"card:{item_id}:ingredient-{ingredient_id}"
 
 
-def _payload(request: HighRiskReviewRequest, choices: list, forbidden: frozenset[str]) -> dict:
+def _payload(
+    request: HighRiskReviewRequest, found: list, choices: list, forbidden: frozenset[str]
+) -> dict:
     return {
         "menu": {
             "name": request.menu.normalized_menu_name,
@@ -110,7 +113,7 @@ def _payload(request: HighRiskReviewRequest, choices: list, forbidden: frozenset
                 "localized_name": localized_name(item.ingredient.canonical_name, request.locale),
                 "tags": item.constraint_tags,
             }
-            for item in request.found_ingredients
+            for item in found
         ],
         "ingredient_choices": [
             {
@@ -155,11 +158,16 @@ class HighRiskReviewAgent:
         # Only ingredients that can hit this user are worth naming: the rest would not
         # make a card or change the explanation, and the prompt stays small.
         choices = [c for c in request.ingredient_choices if set(c.constraint_tags) & forbidden]
+        # An estimate under 5% is not on the result screen, so the review neither sees it
+        # nor may name it (2026-11-25, ``SHOWN_MIN_CHANCE``). It is still not a choice:
+        # ⓪ leaves every found ingredient out of ``ingredient_choices``.
+        found = [i for i in request.found_ingredients if not is_low_chance(i)]
+        hidden = [i for i in request.found_ingredients if is_low_chance(i)]
         try:
             output = await asyncio.wait_for(
                 self.llm.parse(
                     instructions(INSTRUCTIONS, request.locale),
-                    _payload(request, choices, forbidden),
+                    _payload(request, found, choices, forbidden),
                     ReviewOutput,
                     MAX_OUTPUT_TOKENS,
                 ),
@@ -197,12 +205,12 @@ class HighRiskReviewAgent:
         ]
 
         message = request.decision.message
-        names = with_translations(i.ingredient.canonical_name for i in request.found_ingredients)
+        names = with_translations(i.ingredient.canonical_name for i in found)
         names |= with_translations(c.canonical_name for c in missed)
         names |= {c.localized_name for c in missed} | restriction_names(forbidden)
         korean_only = untranslated(
             [
-                *(localized_name(i.ingredient.canonical_name, request.locale) for i in request.found_ingredients),
+                *(localized_name(i.ingredient.canonical_name, request.locale) for i in found),
                 *(c.localized_name for c in missed),
             ],
             request.locale,
@@ -211,7 +219,7 @@ class HighRiskReviewAgent:
         # Choices the model judged rare, or did not pick, must not show up in the reason
         # as "may be in some versions": they made no card (2026-11-12, 제육볶음 땅콩·잣·호두).
         kept = {c.ingredient_id for c in missed} | {
-            i.ingredient.ingredient_id for i in request.found_ingredients
+            i.ingredient.ingredient_id for i in found
         }
         dropped = [
             c
@@ -221,6 +229,9 @@ class HighRiskReviewAgent:
         dropped_names = with_translations(c.canonical_name for c in dropped) | {
             c.localized_name for c in dropped if c.localized_name
         }
+        # Hidden estimates may not be named either, unless a shown ingredient has the name.
+        shown_names = with_translations(i.ingredient.canonical_name for i in found)
+        dropped_names |= with_translations(i.ingredient.canonical_name for i in hidden) - shown_names
         reason = check_reason(
             output.reason,
             locale=request.locale,

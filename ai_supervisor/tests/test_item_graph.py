@@ -722,3 +722,40 @@ def test_item_graph_compiles_with_documented_db_nodes() -> None:
         "decision",
         "finish_item",
     } <= set(item_analyzer.graph.get_graph().nodes)
+
+
+def test_review_candidate_carries_the_chance_of_estimate_only_ingredients() -> None:
+    # 2026-11-25: ⑧ hides an estimate under 5% from the result screen and from the
+    # high-risk review, so the review needs each found ingredient's number.
+    from ai_decision_policy import judge
+    from ai_decision_policy.tests.test_decision_policy import (
+        VEGAN,
+        confirmed,
+        probability,
+        request,
+    )
+    from ai_supervisor.contracts.common import IngredientRef
+    from ai_supervisor.contracts.decision import HighRiskReview
+    from ai_supervisor.item_graph import _review_candidate
+
+    jeotgal = IngredientRef(ingredient_id=None, canonical_name="새우젓")
+    anchovy = IngredientRef(ingredient_id=None, canonical_name="멸치")
+    pork = IngredientRef(ingredient_id=101, canonical_name="돼지고기")
+    req = request(
+        VEGAN,
+        confirmed_results=[confirmed(pork, ["is_pork"], "unknown")],
+        probability_results=[
+            probability(jeotgal, ["is_shrimp"], 0.03),
+            probability(jeotgal, ["is_shrimp"], 0.04),
+            probability(anchovy, ["is_fish"], 0.6),
+            probability(pork, ["is_pork"], 0.02),
+        ],
+    )
+    response = judge(req).model_copy(
+        update={"high_risk_review": HighRiskReview(required=True, reason_code="partial_information")}
+    )
+    candidate = _review_candidate(req, response)
+    assert candidate is not None
+    chances = {f.ingredient.canonical_name: f.posterior_mean for f in candidate.found_ingredients}
+    # Highest estimate per ingredient; none when an owner record also names it.
+    assert chances == {"돼지고기": None, "새우젓": 0.04, "멸치": 0.6}

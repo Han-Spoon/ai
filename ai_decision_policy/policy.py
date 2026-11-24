@@ -19,6 +19,7 @@ from ai_supervisor.contracts.decision import (
     DecisionRequest,
     DecisionRiskIngredient,
     EvidenceBasis,
+    FoundIngredient,
     HighRiskReview,
     InformationStatus,
     ProposedVariantIngredient,
@@ -48,8 +49,11 @@ WEB_SHORTAGE_WARNINGS = frozenset(
 SHOWN_MIN_CHANCE = 0.05
 
 
-def is_low_chance(item: DecisionProbabilityResult) -> bool:
-    return item.posterior_mean < SHOWN_MIN_CHANCE
+def is_low_chance(item: DecisionProbabilityResult | FoundIngredient) -> bool:
+    """An estimate under ``SHOWN_MIN_CHANCE``. A found ingredient with no number (an
+    owner answer or a variant guess also named it) never is."""
+
+    return item.posterior_mean is not None and item.posterior_mean < SHOWN_MIN_CHANCE
 
 
 @dataclass(frozen=True)

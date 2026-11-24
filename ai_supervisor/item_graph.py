@@ -1038,6 +1038,10 @@ def _review_candidate(
         raise ItemGraphInvariantError("required high-risk review has no reason")
 
     found: dict[tuple[str, int | str], FoundIngredient] = {}
+    # The highest estimate per ingredient, and the ingredients that also came as an owner
+    # answer or a variant guess: those carry no number (⑧ hides only estimates).
+    best: dict[tuple[str, int | str], float] = {}
+    not_estimate: set[tuple[str, int | str]] = set()
     for item in [
         *request.confirmed_results,
         *request.probability_results,
@@ -1048,10 +1052,20 @@ def _review_candidate(
         tags = list(item.constraint_tags)
         if previous is not None:
             tags = list(dict.fromkeys([*previous.constraint_tags, *tags]))
+        if isinstance(item, DecisionProbabilityResult):
+            best[key] = max(best.get(key, 0.0), item.posterior_mean)
+        else:
+            not_estimate.add(key)
         found[key] = FoundIngredient(
             ingredient=item.ingredient,
             constraint_tags=tags,
         )
+    found = {
+        key: item.model_copy(
+            update={"posterior_mean": None if key in not_estimate else best.get(key)}
+        )
+        for key, item in found.items()
+    }
     answered = frozenset(
         _ingredient_key(item.ingredient)
         for item in request.confirmed_results
