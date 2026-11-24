@@ -60,7 +60,7 @@ def ontology(name, menu=None, *, store_id=1, residual=()):
 
 
 def probabilities(response):
-    fields = ("ingredient", "constraint_tags", "role", "source", "depth", "curated",
+    fields = ("ingredient", "constraint_tags", "role", "source", "depth", "curated", "in_menu_name",
               "observation_basis", "observations", "evidence_refs")
     request = BayesianRequest.model_validate(
         {
@@ -380,3 +380,25 @@ def test_new_name_takes_the_next_id(tmp_path):
     path.write_text("kind,name_ko,id\ningredient,가,1\ningredient,다,2\n", encoding="utf-8")
     fixed = db_seed.load_ids(path)["ingredient"]
     assert db_seed._assign(["가", "나", "다"], fixed) == {"가": 1, "다": 2, "나": 3}
+
+
+@pytest.mark.parametrize(
+    "menu, ingredient", [("칼국수", "칼국수면"), ("만두사리", "만두"), ("생선전", "생선"), ("갈비구이", "갈비")]
+)
+def test_ingredient_the_menu_is_named_after_reads_as_almost_certain(menu, ingredient):
+    # a wheat-allergic guest saw "68% chance of wheat" on 칼국수
+    p = next(p for p in probabilities(ontology(menu)) if p.ingredient.canonical_name == ingredient)
+    assert p.posterior_mean >= 0.95
+
+
+def test_other_curated_ingredients_keep_their_estimate():
+    # 감자전's 간장 is a dipping sauce: curated but not what the dish is named after
+    res = ontology("감자전")
+    soy = next(i for i in res.ingredients if i.ingredient.canonical_name == "간장")
+    assert soy.curated and not soy.in_menu_name
+    assert next(p for p in probabilities(res) if p.ingredient.canonical_name == "간장").posterior_mean < 0.5
+
+
+def test_rice_cake_side_can_be_wheat():
+    # 떡사리 is often 밀떡: a wheat-allergic guest must see wheat
+    assert "is_wheat" in tags(ontology("떡사리"))

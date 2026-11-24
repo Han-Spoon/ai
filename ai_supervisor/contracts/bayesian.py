@@ -39,6 +39,7 @@ class BayesianIngredient(StrictModel):
     source: IngredientSource
     depth: NonNegativeInt
     curated: StrictBool
+    in_menu_name: StrictBool = False
     observation_basis: ObservationBasis
     observations: list[IngredientObservation]
     anomaly_locked: StrictBool = Field(default=False, exclude=True)

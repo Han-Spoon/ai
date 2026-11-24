@@ -29,7 +29,7 @@ CONTEXT = {
     "call_scope": "item",
     "item_id": "eval:0",
 }
-FIELDS = ("ingredient", "constraint_tags", "role", "source", "depth", "curated",
+FIELDS = ("ingredient", "constraint_tags", "role", "source", "depth", "curated", "in_menu_name",
           "observation_basis", "observations", "evidence_refs")
 
 
