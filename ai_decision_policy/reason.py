@@ -445,7 +445,11 @@ def check_reason(
     dropped = {name.strip().lower() for name in dropped_names if name and name.strip()}
     if dropped:
         probe = lowered
+        # An allowed name inside a dropped one stays (2026-11-25): blanking the allowed
+        # restriction 새우 cut a hidden 새우젓 down to "젓" and let it through.
         for name in sorted(blanks - dropped, key=len, reverse=True):
+            if any(name in d for d in dropped):
+                continue
             probe = probe.replace(name, " ")
         if any(_mentions(probe, name, locale) for name in dropped):
             return None

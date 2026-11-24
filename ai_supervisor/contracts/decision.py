@@ -218,6 +218,10 @@ class ReviewDecision(StrictModel):
 class FoundIngredient(StrictModel):
     ingredient: IngredientRef
     constraint_tags: list[ConstraintTag]
+    # The highest ⑤ estimate when the ingredient came only as an estimate; null when an
+    # owner answer or a variant guess also named it. ⑧ leaves an estimate under 5% out of
+    # the review, as it does on the result screen (2026-11-25).
+    posterior_mean: Probability | None = None
 
 
 class IngredientChoice(LocalizedIngredientRef):

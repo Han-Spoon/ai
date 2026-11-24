@@ -2936,7 +2936,8 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
         "ingredient_id": 120,
         "canonical_name": "소고기"
       },
-      "constraint_tags": ["is_beef"]
+      "constraint_tags": ["is_beef"],
+      "posterior_mean": 0.4
     }
   ],
   "ingredient_choices": [
@@ -2964,7 +2965,8 @@ Judge Graph의 `high_risk_review` node가 메뉴별 판정을 모두 모은 뒤,
 - `menu`의 `raw_menu_name`·`description`은 Judge 요청 `prepared_items[]`의 같은 `item_id` 값이다. 설명 문구에 "땅콩소스"처럼 놓친 재료의 단서가 있을 수 있어 넘긴다.
 - `reason_code`는 ⑧이 낸 `high_risk_review.reason_code`다.
 - `decision`은 ⑧이 이 메뉴에 낸 판정·문장·카드다. 재검증은 이 판정을 바꾸지 않고 문장과 카드만 보강한다.
-- `found_ingredients`는 이 메뉴의 ⑧ 요청 세 목록(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`)에 나온 재료와 태그다.
+- `found_ingredients`는 이 메뉴의 ⑧ 요청 세 목록(`confirmed_results`·`probability_results`·`proposed_variant_ingredients`)에 나온 재료와 태그다. 같은 재료는 한 번만 넣고 태그는 합친다.
+- `posterior_mean`(2026-11-25 추가, 선택 칸, 기본 `null`)은 그 재료가 `probability_results`로만 왔을 때 그중 가장 높은 확률이다. 사장님 확인값(`confirmed_results`, `unknown` 포함)이나 변형 추정(`proposed_variant_ingredients`)으로도 왔으면 `null`이다. ⑧은 확률 5% 미만인 추정 재료를 결과 화면·문구에서 빼므로(⑧ §1-2), 재검증에서도 그 재료를 LLM 입력과 이유 문장에 쓸 수 있는 이름에서 뺀다. 5% 기준은 ⑧만 정한다(`SHOWN_MIN_CHANCE`). ⓪은 숫자만 넘긴다
 - `ingredient_choices`는 놓친 재료를 고를 선택지다. Bundle `ingredient_graph.ingredients[]`에서 `found_ingredients`에 없는 표준 재료를 넣고, `tags[]`로 `constraint_tags`를 붙인다. 재검증 LLM은 이 목록 밖의 재료를 낼 수 없다 (⑧ §2-3).
 - 사용자 금지 태그는 ⑧이 `user_profile`로 §4-7과 같은 방식으로 구한다.
 
