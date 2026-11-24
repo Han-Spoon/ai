@@ -5,6 +5,8 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import pytest
+
 from ai_supervisor.contracts.web_search import WebCollectRequest
 from ai_web_search_agent.aggregate import PRIORITY_DOMAINS
 from ai_web_search_agent import (
@@ -16,6 +18,7 @@ from ai_web_search_agent import (
     WebCollectAgent,
 )
 from ai_web_search_agent.collect import drop_dish_name
+from ai_web_search_agent.menu_identity import web_search_menu_names
 
 QUERY = "김치찌개 레시피"
 FETCHED_AT = datetime(2026, 10, 25, 3, 0, tzinfo=timezone.utc)
@@ -246,6 +249,118 @@ def test_menu_that_is_the_name_itself_is_not_an_ingredient() -> None:
         "순대",
     )
     assert "순대" not in names and "돼지고기" in names
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("개성식 손만두", ("개성식손만두", "만두")),
+        ("개성식손만두", ("개성식손만두", "만두")),
+        ("손만두", ("만두",)),
+        ("수제만두", ("만두",)),
+        ("오봉이네 백반", ("백반",)),
+        ("오봉이네백반", ("백반",)),
+        ("전주비빔밥", ("전주비빔밥", "비빔밥")),
+        ("서울식불고기", ("서울식불고기", "불고기")),
+    ],
+)
+def test_region_uses_full_then_base_while_brand_and_craft_use_base(
+    label: str, expected: tuple[str, ...]
+) -> None:
+    assert web_search_menu_names(label) == expected
+
+
+@pytest.mark.parametrize("label", ["치즈라면", "김치만두", "해물파전", "떡만두국"])
+def test_ingredient_variants_are_not_reduced_for_web_search(label: str) -> None:
+    assert web_search_menu_names(label) == (label,)
+
+
+def test_regional_dumpling_searches_full_then_base_and_drops_the_dish_name() -> None:
+    req = request().model_copy(
+        update={
+            "menu": request().menu.model_copy(
+                update={"normalized_menu_name": "개성식손만두"}
+            )
+        }
+    )
+    search = StaticSearchProvider(
+        {
+            "개성식손만두 레시피": [],
+            "만두 레시피": [
+                result(
+                    0,
+                    content="만두 만들기 재료: 돼지고기 200g, 두부 1/2모, 부추 1줌",
+                    title="손만두 만들기",
+                )
+            ]
+        }
+    )
+
+    # A generous unit-test deadline keeps slow CI workers from exercising the
+    # production timeout instead of the menu-identity behavior under test.
+    response = run(WebCollectAgent(search, Reader(), total_seconds=60), req)
+
+    assert response.menu.normalized_menu_name == "개성식손만두"
+    names = [item.canonical_name for item in response.sources[0].ingredients]
+    assert "만두" not in names
+    assert {"돼지고기", "두부", "부추"} <= set(names)
+
+
+def test_regional_results_are_used_before_the_base_fallback() -> None:
+    req = request().model_copy(
+        update={
+            "menu": request().menu.model_copy(
+                update={"normalized_menu_name": "개성식손만두"}
+            ),
+            "max_sources": 1,
+        }
+    )
+
+    class QueryRecorder(StaticSearchProvider):
+        def __init__(self) -> None:
+            super().__init__(
+                {
+                    "개성식손만두 레시피": [
+                        result(0, content="재료: 돼지고기, 두부, 부추", title="개성식 손만두")
+                    ],
+                    "만두 레시피": [result(1, title="일반 만두")],
+                }
+            )
+            self.queries: list[str] = []
+
+        def search(self, query, start, count, sites=()):
+            self.queries.append(query)
+            return super().search(query, start, count, sites)
+
+    search = QueryRecorder()
+    response = run(WebCollectAgent(search, Reader(), total_seconds=60), req)
+
+    assert [source.title for source in response.sources] == ["개성식 손만두"]
+    assert "만두 레시피" not in search.queries
+
+
+def test_store_name_searches_only_the_base_dish() -> None:
+    req = request().model_copy(
+        update={
+            "menu": request().menu.model_copy(
+                update={"normalized_menu_name": "오봉이네백반"}
+            )
+        }
+    )
+
+    class QueryRecorder(SearchProvider):
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search(self, query, start, count, sites=()):
+            self.queries.append(query)
+            return []
+
+    search = QueryRecorder()
+    run(WebCollectAgent(search, Reader(), total_seconds=60), req)
+
+    assert search.queries
+    assert set(search.queries) == {"백반 레시피"}
 
 
 def test_ingredient_at_the_front_of_the_menu_name_stays() -> None:

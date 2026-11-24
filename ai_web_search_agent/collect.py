@@ -39,6 +39,7 @@ from ai_supervisor.contracts.web_search import (
 
 from .aggregate import PRIORITY_DOMAINS
 from .dictionary import find_ingredient_names, ingredient_line_names
+from .menu_identity import web_search_menu_names
 from .providers import SearchNotConfiguredError, SearchProvider, SearchResult, domain_of
 
 NODE = "web_search"
@@ -199,7 +200,7 @@ class _Collection:
     not_configured: bool = False
     llm_failed: bool = False
 
-    def keep_read_first(self, max_sources: int, menu_name: str) -> None:
+    def keep_read_first(self, max_sources: int, menu_names: tuple[str, ...]) -> None:
         """Keep ``max_sources`` sources, the LLM-read ones first, in rank order.
 
         A result the LLM could not read is kept unread (§3 2단계), but only to fill what
@@ -214,7 +215,8 @@ class _Collection:
         read = [s for s in self.sources if s.source_url not in self.unread_urls]
         unread = [
             s for s in self.sources
-            if s.source_url in self.unread_urls and has_menu_name(s.title, menu_name)
+            if s.source_url in self.unread_urls
+            and any(has_menu_name(s.title, menu_name) for menu_name in menu_names)
         ]
         kept = {id(s) for s in read[:max_sources] + unread[: max(0, max_sources - len(read))]}
         self.sources = [s for s in self.sources if id(s) in kept]
@@ -335,15 +337,25 @@ class WebCollectAgent:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.total_seconds
         menu_name = request.menu.normalized_menu_name
-        query = search_query(menu_name)
+        # Regional styles keep their full identity first and use the base dish only to
+        # fill a shortage. Store labels use only the base dish. The response still keeps
+        # the original normalized menu name from the request.
+        search_names = web_search_menu_names(menu_name)
+        search_index = 0
         cached_urls = {source.source_url for source in request.cached_sources}
         seen = set(cached_urls)
         cached_left = len(cached_urls)
         collection = _Collection(sources=[])
-        rank = {PRIORITY_DOMAINS: 1, (): 1}
-        done = {PRIORITY_DOMAINS: False, (): False}
+        rank = {
+            (name, sites): 1
+            for name in search_names
+            for sites in (PRIORITY_DOMAINS, ())
+        }
+        done = {key: False for key in rank}
 
-        async def search(sites: tuple[str, ...], need: int) -> list[SearchResult] | None:
+        async def search(
+            search_name: str, sites: tuple[str, ...], need: int
+        ) -> list[SearchResult] | None:
             """Up to ``need`` unseen candidates from ``sites``; ``None`` stops the search."""
 
             nonlocal cached_left
@@ -352,9 +364,16 @@ class WebCollectAgent:
                 collection.timed_out = True
                 return None
             count = need + cached_left
+            key = (search_name, sites)
             try:
                 batch = await asyncio.wait_for(
-                    asyncio.to_thread(self.provider.search, query, rank[sites], count, sites),
+                    asyncio.to_thread(
+                        self.provider.search,
+                        search_query(search_name),
+                        rank[key],
+                        count,
+                        sites,
+                    ),
                     timeout=min(self.search_seconds, remaining),
                 )
             except asyncio.TimeoutError:
@@ -366,33 +385,40 @@ class WebCollectAgent:
             except Exception:
                 collection.search_failed = True
                 return None
-            rank[sites] += len(batch)
-            done[sites] = len(batch) < count
+            rank[key] += len(batch)
+            done[key] = len(batch) < count
             collection.read_count += len(batch)
             cached_left = max(0, cached_left - sum(r.url in cached_urls for r in batch))
             fresh = [
                 r for r in batch
-                if r.url not in seen and (not sites or is_priority_candidate(r, menu_name))
+                if r.url not in seen and (not sites or is_priority_candidate(r, search_name))
             ]
             seen.update(r.url for r in batch)
             return fresh
 
-        while len(collection.sources) < request.max_sources and not all(done.values()):
+        while len(collection.sources) < request.max_sources:
+            search_name = search_names[search_index]
+            active_done = all(done[(search_name, sites)] for sites in (PRIORITY_DOMAINS, ()))
+            if active_done:
+                if search_index + 1 >= len(search_names):
+                    break
+                search_index += 1
+                search_name = search_names[search_index]
             # Read twice what is missing: one round (search, pages, LLM) takes about
             # 4.5 seconds, so a second round to replace dropped results rarely fits.
             wanted = READ_AHEAD * (request.max_sources - len(collection.sources))
             fresh: list[SearchResult] = []
             for sites in (PRIORITY_DOMAINS, ()):
-                if done[sites] or len(fresh) >= wanted:
+                if done[(search_name, sites)] or len(fresh) >= wanted:
                     continue
-                found = await search(sites, wanted - len(fresh))
+                found = await search(search_name, sites, wanted - len(fresh))
                 if found is None:
                     break
                 fresh += found
             if collection.timed_out or collection.search_failed or collection.not_configured:
                 break
             fresh = await self._fetch_pages(fresh, deadline)
-            readings = await self._read(menu_name, fresh, deadline, collection)
+            readings = await self._read(search_name, fresh, deadline, collection)
             for result, reading in zip(fresh, readings):
                 if reading is not None and not reading.is_menu_recipe:
                     continue
@@ -406,13 +432,17 @@ class WebCollectAgent:
                         text,
                     ),
                     text,
-                    menu_name,
+                    search_name,
                 )
                 if names:
                     collection.sources.append(to_web_source(result, names))
                     if reading is None:
                         collection.unread_urls.add(result.url)
-        collection.keep_read_first(request.max_sources, menu_name)
+            # For a regional style, use one full-name result page first, then let the
+            # base dish fill whatever the LLM or ingredient checks rejected.
+            if search_index + 1 < len(search_names):
+                search_index += 1
+        collection.keep_read_first(request.max_sources, search_names)
         return collection
 
     async def _fetch_pages(

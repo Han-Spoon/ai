@@ -7,6 +7,7 @@ DB (the backend does, from ⑦ commands).
 from .aggregate import WebAggregateAgent, aggregate_sources
 from .collect import PageFetcher, RecipeReader, RecipeReading, WebCollectAgent
 from .dictionary import find_ingredient_names, load_dictionary
+from .menu_identity import dish_identity_suffix, web_search_menu_name, web_search_menu_names
 from .pages import HttpPageFetcher
 from .providers import (
     NaverSearchProvider,
@@ -34,7 +35,10 @@ __all__ = [
     "WebAggregateAgent",
     "WebCollectAgent",
     "aggregate_sources",
+    "dish_identity_suffix",
     "find_ingredient_names",
     "load_dictionary",
     "search_provider_from_env",
+    "web_search_menu_name",
+    "web_search_menu_names",
 ]
