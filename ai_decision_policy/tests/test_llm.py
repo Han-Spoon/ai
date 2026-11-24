@@ -933,7 +933,7 @@ def test_shrimp_tempura_with_only_pork_gets_no_llm_story() -> None:
     others = [IngredientRef(ingredient_id=None, canonical_name=n) for n in ("가쓰오부시", "간장", "튀김가루")]
     req = request(
         HALAL,
-        probability_results=[probability(PORK, ["is_pork"], 0.045), *(probability(o, [], 0.5) for o in others)],
+        probability_results=[probability(PORK, ["is_pork"], 0.059), *(probability(o, [], 0.5) for o in others)],
         store_id=None,
         locale="ko",
     )
@@ -943,7 +943,17 @@ def test_shrimp_tempura_with_only_pork_gets_no_llm_story() -> None:
     assert response.message.reason == (
         "질문 카드로 직원에게 직접 확인해 보세요. 식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
     )
-    assert response.message.verdict.endswith("돼지고기가 들어갈 확률이 4% 이상이에요.")
+    assert response.message.verdict.endswith("돼지고기가 들어갈 확률이 5% 이상이에요.")
+
+    # At the real 4.5% the pork row is not shown (2026-11-25): no card step about it,
+    # only the limit, and the verdict reads like nothing restricted was found.
+    low = req.model_copy(
+        update={"probability_results": [probability(PORK, ["is_pork"], 0.045), *req.probability_results[1:]]}
+    )
+    response = asyncio.run(DecisionTool(ReasonWriter(FakeLLM(one_phrase("unused")))).run(low))
+    assert response.risk_ingredients == [] and response.owner_cards == []
+    assert response.message.reason == "식당을 고르지 않아서 사장님 확인 없이 레시피로만 추정했어요."
+    assert response.message.verdict == "피해야 할 재료는 찾지 못했지만, 추정 결과예요."
 
 
 @pytest.mark.parametrize("locale", ["ko", "en", "ar", "zh-CN", "zh-TW", "ja", "es"])

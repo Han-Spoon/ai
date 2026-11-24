@@ -71,8 +71,14 @@ def test_unconfirmed_overlap_gets_one_card_per_ingredient() -> None:
     assert card.evidence_refs == ["recipe:120"]
 
 
-def test_probability_number_does_not_filter_cards() -> None:
-    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.01)])
+def test_estimate_under_five_percent_gets_no_card() -> None:
+    # 2026-11-25: the screen does not show it, so the staff is not asked about it either.
+    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.049)])
+    assert cards(req) == []
+
+
+def test_estimate_at_five_percent_still_gets_a_card() -> None:
+    req = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.05)])
     assert [c.ingredient for c in cards(req)] == [PORK]
 
 

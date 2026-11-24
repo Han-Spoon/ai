@@ -37,7 +37,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 from .llm import XaiLLM
 from .messages import EXPLAIN_SENTENCE, card_step, limit_sentences, shown_percent, side_item_text
 from .names import all_rows, dictionary_name, display_name, standard_rows, taxonomy_categories
-from .policy import information_failed
+from .policy import information_failed, is_low_chance
 from .profile import forbidden_tags
 from .questions import TAG_NAMES, _has_final_consonant, tag_name
 
@@ -542,10 +542,13 @@ def limit_text(request: DecisionRequest) -> list[str]:
         for v in request.proposed_variant_ingredients
         if set(v.constraint_tags) & forbidden
     ]
+    # Not an estimate under 5%: the screen does not show it (2026-11-25).
     no_data = [
         name(r.ingredient)
         for r in request.probability_results
-        if r.prior_source in THIN_PRIORS and set(r.constraint_tags) & forbidden
+        if r.prior_source in THIN_PRIORS
+        and set(r.constraint_tags) & forbidden
+        and not is_low_chance(r)
     ]
     return limit_sentences(
         codes, list(dict.fromkeys(guessed)), list(dict.fromkeys(no_data)), request.locale

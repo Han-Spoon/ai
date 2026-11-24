@@ -41,6 +41,15 @@ UNKNOWN_TAG_WARNINGS = frozenset({"unmapped_constraint_tags", "constraint_tags_l
 WEB_SHORTAGE_WARNINGS = frozenset(
     {"insufficient_sources", "web_search_deadline_exceeded", "web_llm_extraction_failed"}
 )
+# An estimate under this is not shown (2026-11-25, ⑧ 담당): not in ``risk_ingredients``,
+# the verdict names, the notes or the owner cards. 비건 김치찌개 listed 생선 2.2% next to
+# 멸치 97%, and rows of 1~4% filled the screen. It still counts for the verdict: any
+# estimate keeps the menu at CAUTION (§2-1 step 4).
+SHOWN_MIN_CHANCE = 0.05
+
+
+def is_low_chance(item: DecisionProbabilityResult) -> bool:
+    return item.posterior_mean < SHOWN_MIN_CHANCE
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,10 @@ class DecisionOutcome:
     evidence_refs: list[str]
     flag_checks: list[FlagCheck]
     high_risk_review: HighRiskReview
+    # Tags in ``matched_tags`` that only those hidden estimates carry. ``matched_tags``
+    # keeps them (detection, QA B25: every allergen in a recipe is caught), but the
+    # verdict must not name them as a menu attribute.
+    low_chance_tags: tuple[str, ...] = ()
 
 
 def _key(ingredient: IngredientRef) -> tuple[str, int | str]:
@@ -218,9 +231,15 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
             evidence_refs=list(item.evidence_refs),
         )
 
+    # Rows under 5% are dropped before rows of the same ingredient are merged, so a 3%
+    # tag bundle (김치 속 액젓의 새우) does not ride on the 60% row's number.
+    shown = [p for p in probabilities if not is_low_chance(p)]
+    hidden_tags = {
+        t for p in probabilities if is_low_chance(p) for t in set(p.constraint_tags) & forbidden
+    }
     candidates = (
         [risk(c, c.status) for c in hard if c.status == "present"]
-        + [risk(p, "unknown") for p in probabilities]
+        + [risk(p, "unknown") for p in shown]
         + [risk(v, "unknown") for v in variants]
     )
     risk_ingredients = sort_by_risk(
@@ -235,11 +254,14 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
     ]
     danger_flags = [f for f in flag_checks if f.state == "danger"]
 
-    matched_tags = sorted(
+    shown_tags = (
         {t for r in risk_ingredients for t in r.matched_tags}
         | {o.tag for o in observed}
         | {t for f in danger_flags for t in f.matched_tags}
     )
+    # Hidden estimates stay in the detected tags; only the screen leaves them out.
+    matched_tags = sorted(shown_tags | hidden_tags)
+    low_chance_tags = tuple(sorted(hidden_tags - shown_tags))
     evidence_refs = _dedupe(
         [ref for c in hard for ref in c.evidence_refs]
         + [ref for p in probabilities for ref in p.evidence_refs]
@@ -259,6 +281,7 @@ def decide(request: DecisionRequest) -> DecisionOutcome:
             evidence_refs=evidence_refs,
             flag_checks=flag_checks,
             high_risk_review=review,
+            low_chance_tags=low_chance_tags,
         )
 
     # Step 2: an owner-confirmed forbidden ingredient (or flag answer) is DANGER at once.

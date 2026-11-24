@@ -230,13 +230,43 @@ def test_02_probability_only_is_caution_with_number() -> None:
     assert outcome.risk_ingredients[0].posterior_mean == 0.3
 
 
-def test_low_probability_candidate_is_kept_as_a_risk_ingredient() -> None:
+def test_estimate_under_five_percent_is_not_shown_but_stays_caution() -> None:
+    # 2026-11-25: under 5% leaves the screen list and its tags, never the verdict basis.
     outcome = decide(
-        request(SHRIMP_ALLERGY, probability_results=[probability(TUNA, ["is_shrimp"], 0.012)])
+        request(SHRIMP_ALLERGY, probability_results=[probability(TUNA, ["is_shrimp"], 0.049)])
     )
     assert (outcome.risk_level, outcome.evidence_basis) == ("caution", "estimated")
-    assert outcome.risk_ingredients[0].posterior_mean == 0.012
+    assert outcome.risk_ingredients == []
+    # Still detected (QA B25): only the screen leaves it out.
     assert outcome.matched_tags == ["is_shrimp"]
+    assert outcome.low_chance_tags == ("is_shrimp",)
+
+
+def test_estimate_at_five_percent_is_shown() -> None:
+    outcome = decide(
+        request(SHRIMP_ALLERGY, probability_results=[probability(TUNA, ["is_shrimp"], 0.05)])
+    )
+    assert [r.posterior_mean for r in outcome.risk_ingredients] == [0.05]
+    assert outcome.matched_tags == ["is_shrimp"]
+    assert outcome.low_chance_tags == ()
+
+
+def test_low_tag_bundle_does_not_add_its_tags_to_the_shown_row() -> None:
+    # ④ sends 액젓 once per tag bundle (#327). The 3% shellfish bundle must not show as
+    # shellfish at the fish row's 60%.
+    fish_sauce = IngredientRef(ingredient_id=None, canonical_name="액젓")
+    outcome = decide(
+        request(
+            VEGAN,
+            probability_results=[
+                probability(fish_sauce, ["is_fish"], 0.6),
+                probability(fish_sauce, ["is_fish", "is_shellfish"], 0.03),
+            ],
+        )
+    )
+    assert [(r.posterior_mean, r.matched_tags) for r in outcome.risk_ingredients] == [(0.6, ["is_fish"])]
+    assert outcome.matched_tags == ["is_fish", "is_shellfish"]
+    assert outcome.low_chance_tags == ("is_shellfish",)
 
 
 def test_03_no_information_is_caution() -> None:
