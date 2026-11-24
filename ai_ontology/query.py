@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -250,7 +251,7 @@ def _drop_confirmed(nodes: list[_Node], confirmed: dict[int, str]) -> list[_Node
     ]
 
 
-def _merge(nodes: list[_Node]) -> list[_Node]:
+def _merge(nodes: list[_Node], named: Callable[[_Node], bool] = lambda _: False) -> list[_Node]:
     """Merge occurrences of the same ingredient with the same tags; shallowest wins.
 
     Occurrences with different tags stay apart. A path tag belongs to that path only:
@@ -258,41 +259,50 @@ def _merge(nodes: list[_Node]) -> list[_Node]:
     is_egg on plain 식초 with plain 식초's (high) recipe counts. ⑧ groups the entries
     per ingredient for cards, so no tag is lost.
 
-    The shallowest occurrence keeps its place (depth, parent, role), but its counts are
-    the largest of all merged occurrences per corpus, like a child's max(direct, parent)
-    (§1-5). Otherwise the place decides the probability: in 부대찌개 새우젓 sits under
-    배추김치 (238/289) and under 김치국물 (4/289), and keeping whichever came first gave
-    새우 2% instead of 82% (2026-11-23).
+    The counts are the largest of all merged occurrences per corpus, like a child's
+    max(direct, parent) (§1-5). Otherwise the place decides the probability: in 부대찌개
+    새우젓 sits under 배추김치 (238/289) and under 김치국물 (4/289), and keeping whichever
+    came first gave 새우 2% instead of 82% (2026-11-23).
+
+    The place (depth, parent, source, so the role) comes from the occurrence those counts
+    mostly come from: the one with the most recipe appearances, the shallowest on a tie.
+    In 김치찌개 멸치 is in 29 of 130 recipes directly but under 배추김치 → 멸치액젓 in
+    126; keeping the direct place showed "멸치 97%, the main ingredient" when it is the
+    anchovy inside the kimchi (2026-11-24). ⑧ keeps the role of the stronger row the
+    same way (``merge_same_ingredient``). An ingredient the menu is named after keeps its
+    own place: the dish is made of it (``named`` is checked on the shallowest occurrence).
     """
 
     ordered = sorted(enumerate(nodes), key=lambda pair: (pair[1].depth, pair[0]))
-    merged: dict[tuple[int, frozenset[str]], _Node] = {}
+    groups: dict[tuple[int, frozenset[str]], list[_Node]] = {}
     for _, node in ordered:
-        key = (node.ingredient_id, frozenset(node.tags))
-        kept = merged.setdefault(key, node)
-        if kept is not node:
-            merged[key] = _with_larger_counts(kept, node)
-    return list(merged.values())
+        groups.setdefault((node.ingredient_id, frozenset(node.tags)), []).append(node)
+    return [_merged(group, named(group[0])) for group in groups.values()]
 
 
-def _with_larger_counts(kept: _Node, other: _Node) -> _Node:
-    """``kept`` with each corpus' k raised to ``other``'s when larger."""
+def _appearances(node: _Node) -> int:
+    return sum(o.k_count for o in node.observations)
 
-    if kept.source == "variant_suggested":
-        return kept  # base recipes never observed the variant (§1-5): stays without counts
-    counts = {o.corpus: o for o in kept.observations}
-    raised = False
-    for o in other.observations:
-        if o.k_count > (counts[o.corpus].k_count if o.corpus in counts else -1):
-            counts[o.corpus] = o
-            raised = True
-    if not raised:
-        return kept
-    return replace(
-        kept,
-        observations=[counts[c] for c in dict.fromkeys([*(o.corpus for o in kept.observations), *counts])],
-        basis=other.basis if other.basis != "none" else kept.basis,
+
+def _merged(group: list[_Node], named: bool) -> _Node:
+    """One node for the occurrences of ``group`` (shallowest first): the place of the
+    occurrence with the most appearances (the shallowest when ``named``), each corpus'
+    k raised to the largest."""
+
+    first = group[0]
+    if len(group) == 1 or first.source == "variant_suggested":
+        return first  # base recipes never observed the variant (§1-5): stays without counts
+    # max keeps the first (shallowest) on a tie
+    place = first if named else max(group, key=_appearances)
+    counts: dict[str, IngredientObservation] = {}
+    for node in [place, *group]:
+        for o in node.observations:
+            if o.corpus not in counts or o.k_count > counts[o.corpus].k_count:
+                counts[o.corpus] = o
+    basis = place.basis if place.basis != "none" else next(
+        (n.basis for n in group if n.basis != "none"), "none"
     )
+    return replace(place, observations=list(counts.values()), basis=basis)
 
 
 def _role(node: _Node, graph: _Graph, menu_name: str) -> str:
@@ -302,13 +312,21 @@ def _role(node: _Node, graph: _Graph, menu_name: str) -> str:
         return "hidden"
     if node.source == "variant_suggested":
         return "identity"
-    names = [normalize(graph.names.get(node.ingredient_id, ""))]
-    names += [key for key, value in graph.lookup.items() if value == node.ingredient_id]
-    if any(name and name in menu_name for name in names):
+    if _named_in_menu(node, graph, menu_name):
         return "identity"
     if any(o.n_total and o.k_count / o.n_total >= IDENTITY_SHARE for o in node.observations):
         return "identity"
     return "component"
+
+
+def _named_in_menu(node: _Node, graph: _Graph, menu_name: str) -> bool:
+    """A depth-0 ingredient whose name (or an alias) is in the menu name (§1-2 rule 2)."""
+
+    if node.depth != 0 or not menu_name:
+        return False
+    names = [normalize(graph.names.get(node.ingredient_id, ""))]
+    names += [key for key, value in graph.lookup.items() if value == node.ingredient_id]
+    return any(name and name in menu_name for name in names)
 
 
 def _in_menu_name(node: _Node, graph: _Graph, menu_name: str, curated: set[int]) -> bool:
@@ -509,11 +527,14 @@ def query_ontology(request: OntologyRequest, *, now: datetime | None = None) -> 
         if c.ingredient.ingredient_id is not None
     }
     curated_set = set(curated)
-    full = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(occurrences)]
+    def named(node: _Node) -> bool:
+        return _named_in_menu(node, graph, menu_name)
+
+    full = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(occurrences, named)]
     kept = (
         _drop_confirmed(occurrences, confirmed) if request.unconfirmed_only else occurrences
     )
-    ingredients = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(kept)]
+    ingredients = [_to_wire(n, graph, menu_name, curated_set) for n in _merge(kept, named)]
 
     runtime = origin == "runtime_tagged"
     menu = OntologyResultMenu(
