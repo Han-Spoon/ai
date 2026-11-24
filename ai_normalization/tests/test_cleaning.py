@@ -39,7 +39,7 @@ def item(index: int, name: str, *, locale: str | None = "ko") -> dict:
 @pytest.mark.parametrize(
     ("raw", "display", "normalized", "options"),
     [
-        ("■ 김치 찌개 8,000원", "김치찌개", "김치찌개", []),
+        ("■ 김치 찌개 8,000원", "김치 찌개", "김치찌개", []),
         ("돈까스", "돈까스", "돈가스", []),
         ("부대찌개 2인", "부대찌개", "부대찌개", ["2인"]),
         ("부대찌개 대자", "부대찌개", "부대찌개", ["대자"]),
@@ -86,7 +86,7 @@ def test_deterministic_cleaning_examples(
 
 def test_ingredient_option_is_never_removed() -> None:
     result = clean_menu_name("라면 치즈 추가")
-    assert result.display_name == "라면치즈추가"
+    assert result.display_name == "라면 치즈 추가"
     assert result.normalized_menu_name == "라면치즈추가"
     assert result.options == ("치즈 추가",)
     assert result.residual_tokens == ("치즈",)
@@ -95,8 +95,8 @@ def test_ingredient_option_is_never_removed() -> None:
 def test_leading_number_requires_list_punctuation_and_space() -> None:
     assert clean_menu_name("1) 불고기").normalized_menu_name == "불고기"
     assert clean_menu_name("①불고기").status == "cleaned"
-    assert clean_menu_name("24시 뼈해장국").display_name == "24시뼈해장국"
-    assert clean_menu_name("1.5인분 피자").display_name == "1.5인분피자"
+    assert clean_menu_name("24시 뼈해장국").display_name == "24시 뼈해장국"
+    assert clean_menu_name("1.5인분 피자").display_name == "1.5인분 피자"
 
 
 def test_price_without_currency_requires_a_separating_space() -> None:
@@ -111,8 +111,14 @@ def test_terminal_option_requires_a_real_menu_prefix() -> None:
 
 
 def test_origin_like_text_is_removed_only_as_a_known_suffix() -> None:
-    assert clean_menu_name("국내산 한우육회").display_name == "국내산한우육회"
+    assert clean_menu_name("국내산 한우육회").display_name == "국내산 한우육회"
     assert clean_menu_name("자연산광어회").display_name == "자연산광어회"
+
+
+def test_only_final_standalone_tang_is_joined_in_display_name() -> None:
+    assert clean_menu_name("해물 탕").display_name == "해물탕"
+    assert clean_menu_name("탕 수육").display_name == "탕 수육"
+    assert clean_menu_name("탕수육").display_name == "탕수육"
 
 
 def test_nonduplicate_mixed_language_name_is_preserved_for_llm() -> None:
