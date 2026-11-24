@@ -258,8 +258,8 @@ def test_menu_that_is_the_name_itself_is_not_an_ingredient() -> None:
         ("개성식손만두", ("개성식손만두", "만두")),
         ("손만두", ("만두",)),
         ("수제만두", ("만두",)),
-        ("오봉이네 백반", ("백반",)),
-        ("오봉이네백반", ("백반",)),
+        ("오봉이네 손만두", ("만두",)),
+        ("오봉이네손만두", ("만두",)),
         ("전주비빔밥", ("전주비빔밥", "비빔밥")),
         ("서울식불고기", ("서울식불고기", "불고기")),
     ],
@@ -343,7 +343,7 @@ def test_store_name_searches_only_the_base_dish() -> None:
     req = request().model_copy(
         update={
             "menu": request().menu.model_copy(
-                update={"normalized_menu_name": "오봉이네백반"}
+                update={"normalized_menu_name": "오봉이네손만두"}
             )
         }
     )
@@ -360,7 +360,83 @@ def test_store_name_searches_only_the_base_dish() -> None:
     run(WebCollectAgent(search, Reader(), total_seconds=60), req)
 
     assert search.queries
-    assert set(search.queries) == {"백반 레시피"}
+    assert set(search.queries) == {"만두 레시피"}
+
+
+@pytest.mark.parametrize(
+    ("label", "main"),
+    [
+        ("오늘의 찌개", None),
+        ("이달의정식", None),
+        ("백반", None),
+        ("가정식백반", None),
+        ("자율식 백반", None),
+        ("한식뷔페", None),
+        ("오봉이네백반", None),
+        ("전주백반", None),
+        ("된장찌개백반", "된장찌개"),
+        ("제육 백반", "제육"),
+        ("불고기정식", "불고기"),
+        ("제육한상", "제육"),
+        # 면·리 are region endings elsewhere, but these are dishes.
+        ("냉면정식", "냉면"),
+        ("오리백반", "오리"),
+    ],
+)
+def test_set_meals_are_daily_or_named_after_their_main_dish(label: str, main: str | None) -> None:
+    from ai_web_search_agent.menu_identity import set_meal_main
+
+    assert set_meal_main(label) == (True, main)
+    assert web_search_menu_names(label) == ((main,) if main else ())
+
+
+@pytest.mark.parametrize("label", ["김치찌개", "치즈라면", "가정식반찬"])
+def test_other_menus_are_not_set_meals(label: str) -> None:
+    from ai_web_search_agent.menu_identity import set_meal_main
+
+    assert set_meal_main(label) == (False, None)
+
+
+def test_daily_menu_is_not_searched_and_has_no_information() -> None:
+    req = request().model_copy(
+        update={"menu": request().menu.model_copy(update={"normalized_menu_name": "오늘의찌개"})}
+    )
+
+    class QueryRecorder(SearchProvider):
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search(self, query, start, count, sites=()):
+            self.queries.append(query)
+            return []
+
+    search = QueryRecorder()
+    response = run(WebCollectAgent(search, Reader(), total_seconds=60), req)
+
+    assert search.queries == []
+    assert response.found is False and response.sources == []
+    error = response.errors[-1]
+    assert error.code == "web_search_daily_menu"
+    assert error.fallback == "no_information" and error.retryable is False
+
+
+def test_set_meal_searches_its_main_dish() -> None:
+    req = request().model_copy(
+        update={"menu": request().menu.model_copy(update={"normalized_menu_name": "된장찌개백반"})}
+    )
+
+    class QueryRecorder(SearchProvider):
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search(self, query, start, count, sites=()):
+            self.queries.append(query)
+            return []
+
+    search = QueryRecorder()
+    run(WebCollectAgent(search, Reader(), total_seconds=60), req)
+
+    assert set(search.queries) == {"된장찌개 레시피"}
 
 
 def test_ingredient_at_the_front_of_the_menu_name_stays() -> None:

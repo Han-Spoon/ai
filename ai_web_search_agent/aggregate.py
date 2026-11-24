@@ -273,8 +273,14 @@ def recipe_signals(
 
 
 def aggregate_sources(request: WebAggregateRequest) -> AggregateOutcome:
-    """Core of ⑥ stage 2. Input warnings are kept by the caller; only new ones are returned."""
+    """Core of ⑥ stage 2. Input warnings are kept by the caller; only new ones are returned.
 
+    A menu whose contents change daily (오늘의 찌개, 백반) finds nothing, even from
+    recipes cached before 2026-11-25: ⓪ still sends cached recipes here, and another
+    home's side dishes would say nothing about today's (``set_meal_main``)."""
+
+    if not web_search_menu_names(request.menu.normalized_menu_name):
+        return AggregateOutcome(found=False, ingredients=[], warnings=[], recipe_signals=[])
     sources = drop_menu_identity_ingredients(
         request.menu.normalized_menu_name, request.mapped_sources
     )

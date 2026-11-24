@@ -1,8 +1,9 @@
 """Resolve a branded or regional menu label to its dish identity for web search.
 
 The OCR/display name stays untouched.  This module only chooses the name sent to the
-recipe search and reader: ``오봉이네백반`` should search for ``백반``, while an actual
-ingredient variant such as ``치즈라면`` must keep the full name.
+recipe search and reader: ``오봉이네손만두`` should search for ``만두``, while an actual
+ingredient variant such as ``치즈라면`` must keep the full name. A set meal searches its
+main dish, and a menu whose contents change daily is not searched (``set_meal_main``).
 """
 
 from __future__ import annotations
@@ -36,8 +37,48 @@ BRAND_ENDINGS = ("이네", "식당", "음식점", "전문점", "명가", "할머
 BRAND_PREFIXES = ("원조",)
 
 
+# Set meals (2026-11-25, ⑥ 담당). A menu whose contents change from day to day
+# ("오늘의 찌개", "백반", "가정식백반") has no recipe to search: web recipes would only show
+# another home's side dishes, so it is not searched at all. A set named after its main
+# dish ("된장찌개백반", "불고기정식") is searched as that dish; the rice and side dishes
+# that come with it are left to ⑧'s sentence.
+DAILY_PREFIXES = ("오늘의", "이달의")
+SET_MEAL_SUFFIXES = ("백반", "정식", "한상", "뷔페")
+# What a home-style set is, not what is in it: 가정식백반, 자율식백반, 한식뷔페.
+SET_MEAL_STYLE_LABELS = ("가정식", "자율식", "한식", "집밥", "기사식당")
+
+
 def _compact(value: str) -> str:
     return "".join(value.split())
+
+
+def set_meal_main(menu_name: str) -> tuple[bool, str | None]:
+    """``(True, None)`` for a menu whose contents change daily, ``(True, "된장찌개")``
+    for a set named after its main dish, ``(False, None)`` for any other menu.
+
+    A daily menu starts with 오늘의/이달의, or is a set suffix (백반·정식·한상·뷔페) with
+    nothing before it but a style, craft, store or region label (가정식, 손, 오봉이네,
+    전주). Anything else before the suffix is the main dish (제육백반 → 제육)."""
+
+    compact = _compact(menu_name)
+    if compact.startswith(DAILY_PREFIXES):
+        return True, None
+    if compact.endswith(SET_MEAL_STYLE_LABELS):
+        return True, None
+    for suffix in SET_MEAL_SUFFIXES:
+        if not compact.endswith(suffix):
+            continue
+        prefix = compact[: -len(suffix)]
+        for label in SET_MEAL_STYLE_LABELS:
+            if prefix.endswith(label):
+                prefix = prefix[: -len(label)]
+        prefix, _ = _strip_craft_labels(prefix)
+        # Region names only, not administrative endings: 냉면정식 and 오리백반 end in
+        # 면·리 but are dishes.
+        if not prefix or _is_brand_label(prefix) or prefix.removesuffix("식") in REGION_NAMES:
+            return True, None
+        return True, prefix
+    return False, None
 
 
 @lru_cache(maxsize=1)
@@ -83,10 +124,17 @@ def web_search_menu_names(menu_name: str) -> tuple[str, ...]:
 
     A regional style can change a recipe, so ``개성식손만두`` is searched first and
     ``만두`` fills a shortage.  A store label does not describe the recipe, so
-    ``오봉이네백반`` searches only ``백반``.  Ingredient variants such as 김치만두 are
+    ``오봉이네손만두`` searches only ``만두``.  Ingredient variants such as 김치만두 are
     not recognised as either prefix and therefore keep their full name.
+
+    A set meal (:func:`set_meal_main`) searches its main dish (된장찌개백반 →
+    된장찌개), and a menu whose contents change daily (오늘의 찌개, 오봉이네백반) gets
+    no search name at all (2026-11-25).
     """
 
+    is_set, main = set_meal_main(menu_name)
+    if is_set:
+        return web_search_menu_names(main) if main else ()
     compact = _compact(menu_name)
     for dish in dish_identities():
         if compact == dish or not compact.endswith(dish):
@@ -103,9 +151,11 @@ def web_search_menu_names(menu_name: str) -> tuple[str, ...]:
 
 
 def web_search_menu_name(menu_name: str) -> str:
-    """The first web-search target (kept for callers that need one display name)."""
+    """The first web-search target (kept for callers that need one display name); the
+    name itself for a daily menu, which is not searched."""
 
-    return web_search_menu_names(menu_name)[0]
+    names = web_search_menu_names(menu_name)
+    return names[0] if names else _compact(menu_name)
 
 
 def dish_identity_suffix(menu_name: str) -> str:

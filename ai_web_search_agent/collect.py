@@ -293,10 +293,32 @@ class WebCollectAgent:
         self.llm_min_seconds = llm_min_seconds
 
     async def run(self, request: WebCollectRequest) -> WebCollectResponse:
-        collection = await self._collect(request)
         item_id = request.context.item_id
         warnings = list(request.warnings)
         errors = list(request.errors)
+        if not web_search_menu_names(request.menu.normalized_menu_name):
+            # Contents change daily (오늘의 찌개, 백반): no recipe to search (2026-11-25).
+            # ⑧ says so in its own sentence; the menu goes on as "no information".
+            errors.append(NodeError(
+                code="web_search_daily_menu",
+                node=NODE,
+                item_id=item_id,
+                message="그날그날 구성이 바뀌는 메뉴라 웹 레시피를 찾지 않았습니다.",
+                retryable=False,
+                fallback="no_information",
+            ))
+            return WebCollectResponse(
+                context=request.context,
+                menu=WebMenu(
+                    menu_id=request.menu.menu_id,
+                    normalized_menu_name=request.menu.normalized_menu_name,
+                ),
+                found=False,
+                sources=[],
+                warnings=warnings,
+                errors=errors,
+            )
+        collection = await self._collect(request)
         has_cache = bool(request.cached_sources)
 
         if collection.llm_failed and collection.read_count:
