@@ -364,6 +364,25 @@ def test_path_tag_stays_on_its_path():  # §7-27
     ]
 
 
+def test_role_share_is_over_every_site_together():
+    # 2026-11-24: a site with one 김치찌개 recipe made 연두 "the main ingredient" at 1/1,
+    # though it is in 2 of 130 recipes. 돼지고기 here: 1/1 on semie, 1/128 overall.
+    k = knowledge(
+        recipe=(1, 4, 5),
+        corpora=(("10000recipe", 128), ("semie", 1)),
+        priors=(("10000recipe", 4, 1), ("semie", 4, 1), ("10000recipe", 5, 100)),
+    )
+    items = by_name(query_ontology(request(name="된장국", candidate_name="된장국", k=k), now=NOW))
+    assert items["돼지고기"].role == "component"
+    assert items["두부"].role == "identity"  # 100 of 129, at least 75%
+
+
+def test_ingredient_named_after_the_menu_is_identity_either_way():
+    # 칼국수 → 칼국수면: the menu name inside the ingredient name (2026-11-24)
+    items = by_name(query_ontology(request(name="김", candidate_name="김", k=knowledge(priors=())), now=NOW))
+    assert items["김치"].role == "identity"
+
+
 def test_same_ingredient_same_tags_is_merged():
     # 액젓 is listed directly in 2 recipes and comes inside 김치 in all 10: one row, placed
     # inside 김치 where its number comes from, so ⑧ does not call it a main ingredient

@@ -70,6 +70,23 @@ TAG_ADD: dict[str, set[str]] = {
     "와인": {"is_sulfite"},  # wine almost always has sulfites
 }
 
+# Hidden-rule edges dropped because the rule's name collapses onto another ingredient on
+# canonicalization and its child or tag then lands on every use of that ingredient
+# (2026-11-24, 비건 순천기사식당 scan): (rule parent, rule child, tag), None = every tag.
+# (쌈장 → 된장 put 쌈장's pork fat in every 된장 the same way; common 쌈장 has no pork,
+# so the pork fat was taken out of the 쌈장 rule itself, ai_result/rules/hidden_rules_data.py.)
+# - 청주 → 맛술: 청주's wheat (누룩) put wheat in every 맛술 ("맛술은 술과 밀로 만든").
+#   맛술 keeps its own 알코올.
+# Kept: 김치 → 액젓 (→ 멸치액젓) shellfish. It reads as "멸치액젓 has shellfish", but it is
+# kimchi's only shellfish path once the owner says no 새우젓, and kimchi can have oysters.
+RULE_DROP: set[tuple[str, str, str | None]] = {
+    ("청주", "밀", None),
+}
+
+
+def _dropped(parent: str, child: str, tag: str) -> bool:
+    return (parent, child, None) in RULE_DROP or (parent, child, tag) in RULE_DROP
+
 
 # Fixed ids (kind, name_ko, id). Ids used to be sorted-name positions, so one new name
 # shifted every id after it (#393: 68 menu ids, 248 ingredient ids), and the backend's
@@ -193,7 +210,12 @@ def build() -> SeedData:
     dropped: list[tuple[str, str]] = []
     for parent, flags in HIDDEN_RULES.items():
         p = canon(parent)
-        children = [(flag, canon(ch["name"]), ch["tag"]) for flag, chs in flags.items() for ch in chs]
+        children = [
+            (flag, canon(ch["name"]), ch["tag"])
+            for flag, chs in flags.items()
+            for ch in chs
+            if not _dropped(parent, ch["name"], ch["tag"])
+        ]
         endpoints |= {x for x in [p, *(c for _, c, _ in children)] if x}
         if p and p != parent and taxonomy_rows.get(p) in RAW_TAXONOMY:
             dropped.append((parent, p))  # dish parent collapsed onto a raw ingredient

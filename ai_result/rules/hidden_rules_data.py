@@ -97,7 +97,6 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
         "has_unclear_seasoning": [
             {"name": "대두", "tag": "is_soybean"},
             {"name": "밀", "tag": "is_wheat"},
-            {"name": "돼지고기 지방", "tag": "is_pork"},
         ],
     },
     "간장": {

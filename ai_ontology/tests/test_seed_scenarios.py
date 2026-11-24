@@ -88,8 +88,8 @@ def test_seed_matches_db_export():
     g = seed().graph
     # 326 ingredients (324 as first loaded + 돼지감자 from the 22 Yongsan menus, 2026-11-22,
     # + 라면사리 split from 라면, 2026-11-24); 101 edges minus 9 from dish-parent rules
-    # (김밥→밥 etc.)
-    assert (len(g.ingredients), len(g.compositions)) == (326, 92)
+    # (김밥→밥 etc.) minus 된장→돼지고기 (쌈장 rule) and 맛술→밀 (RULE_DROP), 2026-11-24
+    assert (len(g.ingredients), len(g.compositions)) == (326, 90)
 
 
 def test_no_composition_hangs_under_a_dish_turned_raw_ingredient():
@@ -272,8 +272,21 @@ def test_parent_keeps_every_hidden_rule_tag():
         for chs in flags.values():
             for ch in chs:
                 c = db_seed.canon(ch["name"])
-                if c and c != p:
+                if c and c != p and not db_seed._dropped(parent, ch["name"], ch["tag"]):
                     assert (p, ch["tag"]) in kept, (parent, ch)
+
+
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [("된장", "돼지고기"), ("맛술", "밀")],
+)
+def test_alias_rule_does_not_put_its_child_on_the_ingredient(parent, child):
+    # 쌈장 and 청주 collapse onto 된장 and 맛술: 쌈장's pork fat (now out of the rule) and
+    # 청주's wheat (RULE_DROP) put pork in every 된장 and wheat in every 맛술 (2026-11-24,
+    # "된장은 대두·밀·돼지고기 원료").
+    s = seed()
+    assert (parent, child) not in s.edges
+    assert (parent, "대두" if parent == "된장" else "알코올") in s.edges
 
 
 def test_path_tag_sits_on_an_owning_child_when_there_is_one():
