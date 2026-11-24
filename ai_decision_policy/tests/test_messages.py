@@ -559,11 +559,11 @@ def test_side_item_says_what_it_adds_to_the_main_dish() -> None:
     from ai_decision_policy.messages import side_item_text
 
     one = _side("파사리", [probability(GREEN_ONION, [], 0.6)])
-    assert side_item_text(one) == "파사리는 메인 메뉴에 대파를 추가해 먹는 사리예요."
+    assert side_item_text(one) == "파사리는 메인 메뉴에 파를 추가해 먹는 사리예요."
 
     meats = [probability(BEEF, ["is_beef"], 0.6), probability(PORK, ["is_pork"], 0.6), probability(CHICKEN, ["is_chicken"], 0.6)]
     many = _side("고기사리", meats)
-    assert side_item_text(many) == "고기사리는 메인 메뉴에 소고기, 돼지고기, 닭고기 등을 추가해 먹는 사리예요."
+    assert side_item_text(many) == "고기사리는 메인 메뉴에 고기(소고기, 돼지고기, 닭고기 등)를 추가해 먹는 사리예요."
     assert side_item_text(_side("고기사리", meats, "en")) == (
         "This is an add-on for the main dish: such as beef, pork and chicken."
     )
@@ -599,4 +599,13 @@ def test_side_item_sentence_comes_first_without_the_llm() -> None:
 
     req = _side("파사리", [probability(GREEN_ONION, [], 0.6)])
     response = asyncio.run(DecisionTool(None).run(req))
-    assert response.message.reason == "파사리는 메인 메뉴에 대파를 추가해 먹는 사리예요."
+    assert response.message.reason == "파사리는 메인 메뉴에 파를 추가해 먹는 사리예요."
+
+
+def test_korean_side_item_shows_ingredients_that_say_more_than_the_menu_word() -> None:
+    from ai_decision_policy.messages import side_item_text
+
+    wheat = IngredientRef(ingredient_id=None, canonical_name="밀")
+    assert side_item_text(_side("라면사리", [probability(wheat, ["is_wheat"], 0.6)])) == (
+        "라면사리는 메인 메뉴에 라면(밀)을 추가해 먹는 사리예요."
+    )

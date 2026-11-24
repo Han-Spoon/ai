@@ -35,7 +35,7 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
-from .messages import card_step, limit_sentences, shown_percent
+from .messages import EXPLAIN_SENTENCE, card_step, limit_sentences, shown_percent
 from .names import all_rows, dictionary_name, display_name, standard_rows, taxonomy_categories
 from .policy import information_failed
 from .profile import forbidden_tags
@@ -133,14 +133,14 @@ _ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 # to read (2026-11-23): the same names came three or four times, and two percentages.
 # The hard-to-remove sentence went (the notes say it), and so did "80% 이상" (the
 # verdict gives a percent).
-REASON_PROMPT = """You write short "why" lines under a food safety verdict for a tourist at
+REASON_PROMPT = """You write the short "why" text under a food safety verdict for a tourist at
 a Korean restaurant. Code already decided the verdict; you only explain it.
 For each group in explain_groups, in order, write one short phrase in {language}
 saying what kind of food its ingredients are and what they are made from, so the
-tourist sees why they may contain avoided_in_them. Code shows each phrase after the
-group's ingredient names, as "names: phrase", one line per group.
+tourist sees why they may contain avoided_in_them. Code makes each phrase a sentence
+with the group's ingredient names as its subject ("names are phrase").
 - Do not start with the ingredient names and do not repeat them.
-- A phrase, not a sentence: no sentence ending and no period. At most {max_chars}
+- A noun phrase, not a sentence: no verb ending and no period. At most {max_chars}
   characters.
 - Make clear what in them the tourist avoids: say avoided_in_them as given, or the
   ingredient they are made from.
@@ -159,7 +159,7 @@ TRANSLATE_RULE = """
 # Korean only: an English example in the shared rules was copied into Korean and
 # Chinese (2026-11-17). A copied example name not in the input fails the name check.
 KOREAN_PHRASE_EXAMPLES = (
-    "\n- Korean lines look like these (names: phrase); write only the phrase, with this"
+    "\n- Korean phrases look like these (names: phrase); write only the phrase, with this"
     " dish's own ingredients:"
     "\n  만두: 돼지고기와 채소로 소를 만들어 빚은 음식"
     "\n  멸치액젓: 멸치를 소금에 절여 발효시킨 액젓"
@@ -170,14 +170,10 @@ KOREAN_PHRASE_EXAMPLES = (
 MAX_PHRASE_CHARS: dict[str, int] = {
     "ko": 30, "ja": 30, "zh-CN": 25, "zh-TW": 25, "en": 70, "es": 80, "ar": 70,
 }
-# "• 햄·소시지: …": how the group's names are joined and what comes before the phrase.
+# "햄·소시지는 …": how the group's names are joined in front of the phrase.
 LABEL_JOIN: dict[str, str] = {
     "ko": "·", "ja": "・", "zh-CN": "、", "zh-TW": "、", "en": ", ", "es": ", ", "ar": "، ",
 }
-LABEL_SEPARATOR: dict[str, str] = {
-    "ko": ": ", "ja": "：", "zh-CN": "：", "zh-TW": "：", "en": ": ", "es": ": ", "ar": ": ",
-}
-BULLET = "• "
 _PHRASE_END_RE = re.compile(r"[\s.。!！]+$")
 
 # Added only for Korean: told to every language, the model put "요" after Chinese.
@@ -727,10 +723,11 @@ class ReasonWriter:
         self.timeout_seconds = timeout_seconds
 
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
-        """By route (``reason_route``), one line each (2026-11-23): "• names: phrase" for
-        each group the LLM explained and code checked, the card step, then the most
-        serious limit. "limits_only" calls no LLM. With no line left and no limit,
-        ``reason`` stays None (§4 "LLM 실패")."""
+        """By route (``reason_route``), plain sentences (2026-11-24; bullet lines until
+        then, which the result screen ran together): a sentence for each group the LLM
+        explained and code checked, the card step, then the most serious limit.
+        "limits_only" calls no LLM. With no sentence left and no limit, ``reason`` stays
+        None (§4 "LLM 실패")."""
 
         route = reason_route(request, response)
         if route == "none":
@@ -790,5 +787,6 @@ class ReasonWriter:
             label = group_label(group, output.name_translations, request.locale)
             if checked is None or label is None:
                 continue
-            lines.append(f"{BULLET}{label}{LABEL_SEPARATOR[request.locale]}{_PHRASE_END_RE.sub('', checked)}")
+            many = len(group["ingredients"]) > 1
+            lines.append(EXPLAIN_SENTENCE[request.locale](label, _PHRASE_END_RE.sub("", checked), many))
         return lines or None
