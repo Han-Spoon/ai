@@ -30,7 +30,10 @@ from crawling.normalize_ingredients import canonicalize, clean_text
 
 from .tags import MAX_DEPTH, NODE
 
-IDENTITY_SHARE = 0.9  # §1-2 role rule 3, revisited in QA (#192)
+# §1-2 role rule 3, over every site's recipes together. 0.9 per site until 2026-11-24:
+# pooled, 0.9 also dropped 불고기 소고기 (84%) and 감자탕 돼지고기 (88%); 0.75 keeps them and
+# still drops one-recipe-site noise (김치찌개 연두 2%). QA (#192) may revisit it.
+IDENTITY_SHARE = 0.75
 VARIANT_RELIABILITY = 0.3  # ⓪ §4-3 runtime variant evidence example
 
 
@@ -314,19 +317,25 @@ def _role(node: _Node, graph: _Graph, menu_name: str) -> str:
         return "identity"
     if _named_in_menu(node, graph, menu_name):
         return "identity"
-    if any(o.n_total and o.k_count / o.n_total >= IDENTITY_SHARE for o in node.observations):
+    # Share over every site's recipes together, not per site (2026-11-24): a site with one
+    # 김치찌개 recipe made 연두 and 토마토 "the main ingredient" at 1/1, though 연두 is in 2
+    # of 130 recipes.
+    k = sum(o.k_count for o in node.observations)
+    n = sum(o.n_total for o in node.observations)
+    if n and k / n >= IDENTITY_SHARE:
         return "identity"
     return "component"
 
 
 def _named_in_menu(node: _Node, graph: _Graph, menu_name: str) -> bool:
-    """A depth-0 ingredient whose name (or an alias) is in the menu name (§1-2 rule 2)."""
+    """A depth-0 ingredient whose name (or an alias) overlaps the menu name either way
+    (§1-2 rule 2): 참치 in 참치김밥, 칼국수 in 칼국수면 (2026-11-24, as ``_in_menu_name``)."""
 
     if node.depth != 0 or not menu_name:
         return False
     names = [normalize(graph.names.get(node.ingredient_id, ""))]
     names += [key for key, value in graph.lookup.items() if value == node.ingredient_id]
-    return any(name and name in menu_name for name in names)
+    return any(name and (name in menu_name or menu_name in name) for name in names)
 
 
 def _in_menu_name(node: _Node, graph: _Graph, menu_name: str, curated: set[int]) -> bool:
