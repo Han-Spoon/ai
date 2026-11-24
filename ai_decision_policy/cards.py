@@ -1,7 +1,8 @@
 """⑧ owner question cards (docs/8-agent-xai.md §1-3, §2-1 step 7; ⓪ §4-7).
 
 Rules only, no LLM. A card goes out for every ingredient that overlaps the user's
-forbidden tags and has no owner answer yet, whatever its probability. The owner is
+forbidden tags and has no owner answer yet, except an estimate under 5% that the screen
+does not show (``SHOWN_MIN_CHANCE``, 2026-11-25). The owner is
 asked once per target: an answered ingredient is never asked again, even when its
 answer was flagged as anomalous (10/26 meeting, §1-3). Unresolved menu ambiguity flags get
 one card each, and a menu with no information gets one display-only card that asks
@@ -17,7 +18,7 @@ from ai_supervisor.contracts.decision import DecisionRequest
 from ai_supervisor.contracts.external import OwnerCard
 
 from .names import display_name
-from .policy import DecisionOutcome, has_no_ingredients
+from .policy import DecisionOutcome, has_no_ingredients, is_low_chance
 from .questions import flag_question, ingredient_question, menu_question
 
 # Card order: reasons whose answer is most likely to change the verdict first (§1-3).
@@ -83,7 +84,9 @@ def _collect_ingredients(
         if _key(c.ingredient) not in answered:
             target(c.ingredient, c.constraint_tags, c.evidence_refs)
     for p in request.probability_results:
-        if _key(p.ingredient) in answered:
+        # Not on the screen, so not asked either (2026-11-25): "질문 10개" next to 6 shown
+        # ingredients asked about ones the tourist never saw.
+        if _key(p.ingredient) in answered or is_low_chance(p):
             continue
         entry = target(p.ingredient, p.constraint_tags, p.evidence_refs)
         if p.confidence is not None and p.confidence < LOW_CONFIDENCE:

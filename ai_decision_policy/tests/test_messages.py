@@ -502,23 +502,40 @@ def test_shown_percent_rounds_down(posterior: float, shown: int) -> None:
     assert messages.shown_percent(posterior) == shown
 
 
-def test_estimate_at_four_and_a_half_percent_says_at_least_four() -> None:
-    ko = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.045)], locale="ko")
-    assert message(ko).verdict.endswith("돼지고기가 들어갈 확률이 4% 이상이에요.")
+def test_estimate_at_five_point_nine_percent_says_at_least_five() -> None:
+    ko = request(HALAL, probability_results=[probability(PORK, ["is_pork"], 0.059)], locale="ko")
+    assert message(ko).verdict == "돼지고기가 들어갈 확률이 5% 이상이에요."
 
 
-def test_estimate_under_one_percent_says_under_one_percent() -> None:
-    results = [probability(PORK, ["is_pork"], 0.005)]
+def test_only_estimates_under_five_percent_read_like_nothing_found() -> None:
+    # 2026-11-25 (⑧ 담당): treated like a result with no restricted ingredient, since
+    # the screen hides them. The verdict stays CAUTION.
+    ham = IngredientRef(ingredient_id=None, canonical_name="햄")
+    results = [probability(PORK, ["is_pork"], 0.045), probability(ham, ["is_pork"], 0.005)]
     ko = request(HALAL, probability_results=results, locale="ko")
-    assert message(ko).verdict.endswith("돼지고기가 들어갈 확률은 1% 미만이에요.")
+    assert message(ko).verdict == messages.NOT_CONFIRMED["ko"]
     en = request(HALAL, probability_results=results, localized_names={101: "pork"})
-    assert message(en).verdict.endswith("The chance it contains pork is under 1%.")
+    assert message(en).verdict == messages.NOT_CONFIRMED["en"]
 
 
-@pytest.mark.parametrize("locale", LOCALES)
-def test_under_one_percent_template_exists_in_every_language(locale: str) -> None:
-    text = messages.BELOW_ONE_PERCENT[locale]("X", messages.FROM_INGREDIENT[locale]("Y"))
-    assert "X" in text and "Y" in text and "1" in text
+def test_hidden_low_estimate_is_not_named_next_to_a_shown_one() -> None:
+    ham = IngredientRef(ingredient_id=None, canonical_name="햄")
+    results = [probability(PORK, ["is_pork"], 0.62), probability(ham, ["is_pork"], 0.03)]
+    ko = request(HALAL, probability_results=results, locale="ko")
+    assert message(ko).verdict == "돼지고기가 들어갈 확률이 62% 이상이에요."
+
+
+def test_tag_of_a_hidden_estimate_is_not_named_as_an_attribute() -> None:
+    # 굴 3% keeps is_shellfish in matched_tags (detection), but the verdict must not
+    # say 조개류 "may be in it" with no row on the screen.
+    anchovy = IngredientRef(ingredient_id=None, canonical_name="멸치")
+    oyster = IngredientRef(ingredient_id=None, canonical_name="굴")
+    req = request(
+        VEGAN,
+        probability_results=[probability(anchovy, ["is_fish"], 0.97), probability(oyster, ["is_shellfish"], 0.03)],
+        locale="ko",
+    )
+    assert message(req).verdict == "생선(멸치)이 들어갈 확률이 97% 이상이에요."
 
 
 def test_percent_names_the_ingredient_it_belongs_to() -> None:
@@ -528,10 +545,15 @@ def test_percent_names_the_ingredient_it_belongs_to() -> None:
     fish = IngredientRef(ingredient_id=None, canonical_name="생선")
     req = request(
         VEGAN,
-        probability_results=[probability(fish, ["is_fish"], 0.022), probability(anchovy, ["is_fish"], 0.97)],
+        probability_results=[probability(fish, ["is_fish"], 0.12), probability(anchovy, ["is_fish"], 0.97)],
         locale="ko",
     )
     assert message(req).verdict == "생선(멸치)이 들어갈 확률이 97% 이상이에요. 멸치, 생선이 들어 있을 수 있어요."
+    # The 2.2% 생선 row itself is no longer shown (2026-11-25), so only 멸치 is left.
+    low = req.model_copy(
+        update={"probability_results": [probability(fish, ["is_fish"], 0.022), probability(anchovy, ["is_fish"], 0.97)]}
+    )
+    assert message(low).verdict == "생선(멸치)이 들어갈 확률이 97% 이상이에요."
 
 
 def test_korean_broth_names_say_they_are_broth() -> None:

@@ -19,7 +19,7 @@ from ai_supervisor.contracts.external import DecisionMessage, MessageNote
 
 from .names import display_name
 from .notes import NoteChoice, select_notes
-from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence
+from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence, is_low_chance
 from .questions import FLAG_PLACES, LISTS, _has_final_consonant, _tags, tag_name
 
 
@@ -122,16 +122,6 @@ AT_LEAST: dict[str, Callable[[str, int, str], str]] = {
     "ja": lambda x, p, of: f"{x}{of}が入っている確率は{p}%以上です。",
     "es": lambda x, p, of: f"La probabilidad de que lleve {x}{of} es de al menos un {p}%.",
 }
-# Under 1%: "1% 이상" would be untrue and "0%" reads as "none" (§3 확률 수치 표시).
-BELOW_ONE_PERCENT: dict[str, Callable[[str, str], str]] = {
-    "ko": lambda x, of: f"{x}{of}{_ko(x, '이', '가')} 들어갈 확률은 1% 미만이에요.",
-    "en": lambda x, of: f"The chance it contains {x}{of} is under 1%.",
-    "ar": lambda x, of: f"احتمال احتوائه على {x}{of} أقل من 1%.",
-    "zh-CN": lambda x, of: f"含有{x}{of}的可能性低于1%。",
-    "zh-TW": lambda x, of: f"含有{x}{of}的可能性低於1%。",
-    "ja": lambda x, of: f"{x}{of}が入っている確率は1%未満です。",
-    "es": lambda x, of: f"La probabilidad de que lleve {x}{of} es menor del 1%.",
-}
 # Which ingredient the percent belongs to, after the restricted name: "생선(멸치)".
 # Korean particles follow the word before the brackets (생선(멸치)이).
 FROM_INGREDIENT: dict[str, Callable[[str], str]] = {
@@ -147,17 +137,11 @@ FROM_INGREDIENT: dict[str, Callable[[str], str]] = {
 
 def shown_percent(posterior_mean: float) -> int:
     """The whole number shown for an estimate, rounded down (2026-11-23): the verdict
-    says "n% 이상", so 4.5% is "4%", never "5%". Never 0% or 100%: under 1% is 1 (the
-    verdict says "1% 미만" then, ``is_below_one_percent``), and 100% is 99."""
+    says "n% 이상", so 5.9% is "5%", never "6%". Never 0% or 100%: 100% is 99, and the
+    floor of 1 only guards a caller (shown estimates are 5% or more, ``SHOWN_MIN_CHANCE``)."""
 
-    if is_below_one_percent(posterior_mean):
-        return 1
     # round() first so 0.29 * 100 = 28.999… still shows 29.
-    return min(99, math.floor(round(posterior_mean * 100, 6)))
-
-
-def is_below_one_percent(posterior_mean: float) -> bool:
-    return posterior_mean < 0.01
+    return max(1, min(99, math.floor(round(posterior_mean * 100, 6))))
 
 
 # CAUTION/estimated: ingredients that may be in the dish (an estimate, never "is in").
@@ -539,8 +523,6 @@ def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str]
     # No bracket when it would repeat a name: "돼지고기", "생선이나 새우(새우)".
     restricted = {subject, *(tag_name(tag, lang) for tag in top.matched_tags)}
     of = FROM_INGREDIENT[lang](name) if name and name not in restricted else ""
-    if is_below_one_percent(top.posterior_mean):
-        return [BELOW_ONE_PERCENT[lang](subject, of)], [subject, name]
     return [AT_LEAST[lang](subject, shown_percent(top.posterior_mean), of)], [subject, name]
 
 
@@ -579,7 +561,9 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
         items = _without_carried(outcome.risk_ingredients)
         names = _named(items)
         # Tags matched by a menu attribute (e.g. spicy) rather than an ingredient (§2-1 5-1).
+        # Tags only an estimate under 5% carries are not an attribute and are not shown.
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
+        by_ingredient |= set(outcome.low_chance_tags)
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]
         if names:
             at_least, said = _at_least(items, lang)
@@ -588,6 +572,8 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
             # ("생선(어묵)이 …" and "어묵이 …", 2026-11-24).
             may_contain = [] if len(names) == 1 and names[0] in said else [_say(MAY_CONTAIN, names, lang)]
             return _sentences([*owner, *at_least, *may_contain], lang)
+        # Every restricted estimate is under 5%: said like nothing found (2026-11-25, ⑧
+        # 담당). The screen shows none of them, and the verdict stays CAUTION.
         return _sentences([*owner, NOT_CONFIRMED[lang]], lang)
     # caution/unknown, and anything the policy does not produce: never a sentence that
     # sounds safe.
@@ -665,7 +651,8 @@ SIDE_ITEM: dict[str, Callable[[str, str, bool], str]] = {
 
 def side_item_text(request: DecisionRequest) -> str | None:
     """The side-item sentence for a menu whose name ends in 사리, naming its own
-    ingredients (not those hidden inside them). None for any other menu, with no
+    ingredients (not those hidden inside them nor estimates under 5%, which the screen
+    does not show). None for any other menu, with no
     ingredient, or when a name has no translation (Korean must not show elsewhere)."""
 
     menu = request.menu.normalized_menu_name
@@ -677,7 +664,7 @@ def side_item_text(request: DecisionRequest) -> str | None:
         dict.fromkeys(
             display_name(item.ingredient, localized, lang)
             for item in request.probability_results
-            if item.role != "hidden"
+            if item.role != "hidden" and not is_low_chance(item)
         )
     )
     if not names:
