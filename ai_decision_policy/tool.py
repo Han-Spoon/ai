@@ -6,7 +6,7 @@ from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .cards import build_owner_cards
 from .llm import XaiLLM
-from .messages import build_message, side_item_text
+from .messages import build_message, set_meal_text, side_item_text
 from .policy import decide
 from .reason import ReasonWriter
 
@@ -53,8 +53,10 @@ class DecisionTool:
             reason = await self.reason_writer.write(request, response)
         # A side item (…사리, …추가) says what it adds first, with or without the LLM (2026-11-24),
         # in place of the menu description (``ReasonWriter`` skips it for a side item).
+        # A set meal (백반·정식, 오늘의 ~) says what is unknown about it the same way
+        # (2026-11-25), but the menu description stays.
         # One space between sentences: the result screen shows the reason as one paragraph.
-        side = side_item_text(request)
+        side = side_item_text(request) or set_meal_text(request)
         if side is not None:
             reason = side if reason is None else f"{side} {reason}"
         if reason is None:

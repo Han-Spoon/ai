@@ -660,3 +660,53 @@ def test_korean_side_item_shows_ingredients_that_say_more_than_the_menu_word() -
     assert side_item_text(_side("라면사리", [probability(wheat, ["is_wheat"], 0.6)])) == (
         "라면사리는 메인 메뉴에 라면(밀)을 추가해 먹는 사리예요."
     )
+
+
+def test_daily_menu_says_contents_change_from_day_to_day() -> None:
+    # 2026-11-25: 오늘의 찌개·백반 are not web-searched; the reason says why.
+    from ai_decision_policy.messages import set_meal_text
+
+    for menu in ["오늘의찌개", "가정식백반", "백반"]:
+        assert set_meal_text(_side(menu, [])) == (
+            "그날그날 구성이 바뀌는 메뉴라 들어가는 재료를 미리 알 수 없어요. 직원에게 확인해 주세요."
+        )
+
+
+def test_set_meal_names_its_main_dish_and_unknown_side_dishes() -> None:
+    from ai_decision_policy.messages import set_meal_text
+
+    assert set_meal_text(_side("된장찌개백반", [])) == (
+        "된장찌개백반은 된장찌개에 밥과 반찬이 함께 나오는 메뉴예요. "
+        "반찬은 그날그날 바뀔 수 있어 확인이 필요해요."
+    )
+    assert set_meal_text(_side("불고기정식", [], "en")) == (
+        "This set comes with rice and side dishes besides the main dish. "
+        "The side dishes can change from day to day, so please check them."
+    )
+
+
+@pytest.mark.parametrize("menu", ["김치찌개", "파사리"])
+def test_set_meal_sentence_is_only_for_set_meals(menu: str) -> None:
+    from ai_decision_policy.messages import set_meal_text
+
+    assert set_meal_text(_side(menu, [])) is None
+
+
+@pytest.mark.parametrize("locale", LOCALES)
+@pytest.mark.parametrize("menu", ["오늘의찌개", "제육백반"])
+def test_set_meal_sentence_has_every_language_and_no_korean_elsewhere(locale: str, menu: str) -> None:
+    from ai_decision_policy.messages import set_meal_text
+
+    text = set_meal_text(_side(menu, [], locale))
+    assert text
+    if locale != "ko":
+        assert not any("가" <= ch <= "힣" for ch in text)
+
+
+def test_daily_menu_with_no_information_leads_with_its_sentence() -> None:
+    import asyncio
+
+    req = _side("오늘의찌개", []).model_copy(update={"no_information": True})
+    response = asyncio.run(DecisionTool(None).run(req))
+    assert response.risk_level == "caution"
+    assert response.message.reason.startswith("그날그날 구성이 바뀌는 메뉴라")

@@ -100,6 +100,13 @@ def test_04_identical_recipes_each_count() -> None:
     assert outcome.warnings == []
 
 
+def test_daily_menu_finds_nothing_even_from_cached_recipes() -> None:
+    # 2026-11-25: 백반 recipes cached before then are another home's side dishes.
+    outcome = aggregate_sources(request(ten_kimchi_stew_recipes(), menu="가정식백반"))
+    assert outcome.found is False
+    assert outcome.ingredients == [] and outcome.recipe_signals == []
+
+
 def test_05_fewer_than_ten_keeps_result_with_warning() -> None:
     outcome = aggregate_sources(request(ten_kimchi_stew_recipes()[:8]))
     assert outcome.found is True
