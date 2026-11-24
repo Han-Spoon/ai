@@ -610,7 +610,25 @@ def test_side_item_names_only_its_own_ingredients() -> None:
     assert side_item_text(req) == "만두사리는 메인 메뉴에 만두를 추가해 먹는 사리예요."
 
 
-@pytest.mark.parametrize("menu", ["김치찌개", "사리"])
+def test_add_on_menu_is_a_side_item_like_sari() -> None:
+    # "…추가" is the same add-on as "…사리" (2026-11-25), but 치즈 is not a 사리.
+    from ai_decision_policy.messages import side_item_text
+
+    cheese = IngredientRef(ingredient_id=None, canonical_name="치즈")
+    assert side_item_text(_side("치즈추가", [probability(cheese, ["is_milk"], 0.6)])) == (
+        "치즈추가는 메인 메뉴에 치즈를 추가해 먹는 메뉴예요."
+    )
+    wheat = IngredientRef(ingredient_id=None, canonical_name="밀")
+    assert side_item_text(_side("라면추가", [probability(wheat, ["is_wheat"], 0.6)])) == (
+        "라면추가는 메인 메뉴에 라면(밀)을 추가해 먹는 메뉴예요."
+    )
+    meats = [probability(BEEF, ["is_beef"], 0.6), probability(PORK, ["is_pork"], 0.6)]
+    assert side_item_text(_side("고기추가", meats, "en")) == (
+        "This is an add-on for the main dish: such as beef and pork."
+    )
+
+
+@pytest.mark.parametrize("menu", ["김치찌개", "사리", "추가"])
 def test_side_item_sentence_is_only_for_side_items(menu: str) -> None:
     from ai_decision_policy.messages import side_item_text
 

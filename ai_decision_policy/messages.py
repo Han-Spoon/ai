@@ -639,7 +639,9 @@ def build_message(request: DecisionRequest, outcome: DecisionOutcome) -> Decisio
 # (2026-11-24, 파사리·고기사리): say so, naming what it adds. More than one name means
 # "one of these, or the like" (고기사리: 소고기, 돼지고기, 닭고기 등). Korean is built
 # by ``_korean_side_item``; the other languages cannot name the menu's own word.
-SIDE_ITEM_SUFFIX = "사리"
+# "…추가" (치즈추가, 계란추가) is the same add-on (2026-11-25); Korean calls it a 메뉴,
+# since 치즈 is not a 사리. Suffix → the word the Korean sentence ends with.
+SIDE_ITEM_SUFFIXES = {"사리": "사리", "추가": "메뉴"}
 SIDE_ITEM: dict[str, Callable[[str, str, bool], str]] = {
     "en": lambda menu, names, many: f"This is an add-on for the main dish: {'such as ' if many else ''}{names}.",
     "ar": lambda menu, names, many: f"هذه إضافة توضع في الطبق الرئيسي: {'مثل ' if many else ''}{names}.",
@@ -651,13 +653,14 @@ SIDE_ITEM: dict[str, Callable[[str, str, bool], str]] = {
 
 
 def side_item_text(request: DecisionRequest) -> str | None:
-    """The side-item sentence for a menu whose name ends in 사리, naming its own
+    """The side-item sentence for a menu whose name ends in 사리 or 추가, naming its own
     ingredients (not those hidden inside them, estimates under 5% nor vague names, which
     the screen does not show). None for any other menu, with no
     ingredient, or when a name has no translation (Korean must not show elsewhere)."""
 
     menu = request.menu.normalized_menu_name
-    if not menu.endswith(SIDE_ITEM_SUFFIX) or len(menu) <= len(SIDE_ITEM_SUFFIX):
+    suffix = _side_item_suffix(menu)
+    if suffix is None:
         return None
     lang = request.locale
     localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
@@ -671,23 +674,34 @@ def side_item_text(request: DecisionRequest) -> str | None:
     if not names:
         return None
     if lang == "ko":
-        return _korean_side_item(menu, names)
+        return _korean_side_item(menu, suffix, names)
     if any("가" <= ch <= "힣" for name in names for ch in name):
         return None
     return SIDE_ITEM[lang](menu, AND_LISTS[lang](names), len(names) > 1)
 
 
-def _korean_side_item(menu: str, names: list[str]) -> str:
+def _side_item_suffix(menu: str) -> str | None:
+    """사리 or 추가 when the menu is a side item: the suffix with a word before it."""
+
+    for suffix in SIDE_ITEM_SUFFIXES:
+        if menu.endswith(suffix) and len(menu) > len(suffix):
+            return suffix
+    return None
+
+
+def _korean_side_item(menu: str, suffix: str, names: list[str]) -> str:
     """Korean names what it adds by the menu's own word, ingredients in brackets when
     they say more (2026-11-24): "라면사리 … 라면(밀)을", "고기사리 … 고기(소고기, 돼지고기,
-    닭고기 등)를", but "파사리 … 파를" (대파 only repeats 파)."""
+    닭고기 등)를", but "파사리 … 파를" (대파 only repeats 파). "…추가" ends in 메뉴
+    (2026-11-25): "치즈추가는 메인 메뉴에 치즈를 추가해 먹는 메뉴예요"."""
 
-    stem = menu[: -len(SIDE_ITEM_SUFFIX)]
+    stem = menu[: -len(suffix)]
     many = len(names) > 1
     detail = ""
     if many or any(stem not in name for name in names):
         detail = f"({AND_LISTS['ko'](names)}{' 등' if many else ''})"
-    return f"{menu}{_ko(menu, '은', '는')} 메인 메뉴에 {stem}{detail}{_ko(stem, '을', '를')} 추가해 먹는 사리예요."
+    noun = SIDE_ITEM_SUFFIXES[suffix]
+    return f"{menu}{_ko(menu, '은', '는')} 메인 메뉴에 {stem}{detail}{_ko(stem, '을', '를')} 추가해 먹는 {noun}예요."
 
 
 # The reason reads as plain sentences (2026-11-24): the result screen shows it in one
