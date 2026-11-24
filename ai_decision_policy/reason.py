@@ -35,7 +35,7 @@ from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionResponse
 
 from .llm import XaiLLM
-from .messages import EXPLAIN_SENTENCE, card_step, limit_sentences, shown_percent
+from .messages import EXPLAIN_SENTENCE, card_step, limit_sentences, shown_percent, side_item_text
 from .names import all_rows, dictionary_name, display_name, standard_rows, taxonomy_categories
 from .policy import information_failed
 from .profile import forbidden_tags
@@ -133,9 +133,40 @@ _ZH_PERCENT_RE = re.compile(r"百分之\s*(\d+(?:[.,]\d+)?)")
 # to read (2026-11-23): the same names came three or four times, and two percentages.
 # The hard-to-remove sentence went (the notes say it), and so did "80% 이상" (the
 # verdict gives a percent).
-REASON_PROMPT = """You write the short "why" text under a food safety verdict for a tourist at
-a Korean restaurant. Code already decided the verdict; you only explain it.
-For each group in explain_groups, in order, write one short phrase in {language}
+# A menu description comes first since 2026-11-24, for every menu: a tourist who has
+# never seen the dish learns what it is before why it was flagged. Its ingredients are
+# the menu's own main ones (``menu_ingredients``), so it does not guess any.
+REASON_PROMPT = """You write short text for a tourist at a Korean restaurant, shown under a
+food safety verdict. Code already decided the verdict; you never judge it.
+{description_task}{groups_task}
+Rules for everything you write:
+- Never write a percentage, how likely or how often anything is, what to do next, a
+  card, whether it can be left out, or why the result is uncertain. Code adds what is
+  needed.
+- Never say or imply the dish is safe. Do not use the word "safe" (or its translation).
+- Write every word in {language}.
+- Do not mention the input, data, codes, or field names. No medical advice.{translate}{examples}"""
+DESCRIPTION_TASK = """
+menu_description: one short noun phrase in {language} saying what kind of dish the menu
+is and how it is made, as a menu card would, so a tourist who has never seen it can
+picture it. Code makes it a sentence with the dish as its subject ("dish is phrase").
+- Do not start with the menu name and do not repeat it.
+- A noun phrase, not a sentence: no verb ending and no period. At most {description_chars}
+  characters.
+- main_ingredients lists what this dish commonly has, the surest first. Pick at most
+  {max_ingredients} that best show what the dish is; leave out seasonings, oils,
+  garnishes and aromatic vegetables unless the dish is known for them. Since a
+  restaurant's version may differ, end the ingredients you name with a word like
+  "and so on" in {language}.
+- Never name an ingredient, sauce or dish that main_ingredients lacks, even one this
+  dish usually has: it is checked, and the whole description is dropped. Naming none
+  is fine.
+{article}"""
+NO_DESCRIPTION_TASK = """
+menu_description: leave it empty.
+"""
+GROUPS_TASK = """
+phrases: for each group in explain_groups, in order, one short phrase in {language}
 saying what kind of food its ingredients are and what they are made from, so the
 tourist sees why they may contain avoided_in_them. Code makes each phrase a sentence
 with the group's ingredient names as its subject ("names are phrase").
@@ -146,18 +177,32 @@ with the group's ingredient names as its subject ("names are phrase").
   ingredient they are made from.
 - Name no other ingredient or dish. Saying what an ingredient itself is made from is
   fine.
-- Never write a percentage, how likely or how often anything is, what to do next, a
-  card, whether it can be left out, or why the result is uncertain. Code adds what is
-  needed.
-- Never say or imply the dish is safe. Do not use the word "safe" (or its translation).
-- Write every word in {language}.
-- Do not mention the input, data, codes, or field names. No medical advice.{translate}{examples}"""
-# Only when a group name has no translation yet (non-Korean answers).
+{article}"""
+NO_GROUPS_TASK = """
+phrases: leave the list empty.
+"""
+# English and Spanish only (2026-11-24): code puts "is" / "es" in front of the phrase, and
+# "This dish is spicy mixed stew with ham" came back with no article.
+ARTICLE_RULE: dict[str, str] = {
+    "en": '- Start the phrase with "a" or "an" ("a stew of ...").\n',
+    "es": '- Start the phrase with "un" or "una" ("un guiso de ...").\n',
+}
+# Only when a name has no translation yet (non-Korean answers).
 TRANSLATE_RULE = """
 - Some names are given in Korean with no translation yet: translate each into
   {language} and list it with your translation in name_translations."""
 # Korean only: an English example in the shared rules was copied into Korean and
 # Chinese (2026-11-17). A copied example name not in the input fails the name check.
+# No meat or fish named as what a dish is made with (2026-11-24): "김치찌개: 김치와
+# 돼지고기를 넣고 끓인 찌개" taught that 김치찌개 is pork, though many are made with tuna.
+# "… 등" since a restaurant's version may differ (부대찌개, 잡채; ⑧ 담당 the same day).
+KOREAN_DESCRIPTION_EXAMPLES = (
+    "\n- Korean menu_description looks like these (menu: phrase); write only the phrase,"
+    " with this dish's own ingredients:"
+    "\n  부대찌개: 햄과 소시지, 라면 등을 넣고 얼큰하게 끓인 찌개"
+    "\n  잡채: 당면과 여러 채소 등을 볶아 무친 음식"
+    "\n  떡볶이: 떡을 매콤달콤한 양념에 볶은 음식"
+)
 KOREAN_PHRASE_EXAMPLES = (
     "\n- Korean phrases look like these (names: phrase); write only the phrase, with this"
     " dish's own ingredients:"
@@ -169,6 +214,15 @@ KOREAN_PHRASE_EXAMPLES = (
 # Longest phrase kept, by language (a longer one is dropped, not cut).
 MAX_PHRASE_CHARS: dict[str, int] = {
     "ko": 30, "ja": 30, "zh-CN": 25, "zh-TW": 25, "en": 70, "es": 80, "ar": 70,
+}
+MAX_DESCRIPTION_CHARS: dict[str, int] = {
+    "ko": 40, "ja": 40, "zh-CN": 30, "zh-TW": 30, "en": 90, "es": 100, "ar": 90,
+}
+# The description's subject outside Korean, which names the menu: the Korean menu name
+# inside another language read as a slip (``DISH_OTHERWISE``).
+DISH_SUBJECT: dict[str, str] = {
+    "en": "this dish", "es": "este plato", "ar": "هذا الطبق",
+    "zh-CN": "这道菜", "zh-TW": "這道菜", "ja": "この料理",
 }
 # "햄·소시지는 …": how the group's names are joined in front of the phrase.
 LABEL_JOIN: dict[str, str] = {
@@ -230,8 +284,11 @@ class NameTranslation(BaseModel):
 class ReasonOutput(BaseModel):
     # Before the phrases, so the model settles each translation first.
     name_translations: list[NameTranslation] = Field(default_factory=list)
+    # default_factory, not default="": a "default" key in the strict schema may be refused.
+    menu_description: str = Field(default_factory=str, description="What kind of dish the menu is")
     phrases: list[str] = Field(
-        description="One short phrase per group in explain_groups, in the same order"
+        default_factory=list,
+        description="One short phrase per group in explain_groups, in the same order",
     )
 
 
@@ -495,15 +552,82 @@ def limit_text(request: DecisionRequest) -> list[str]:
     )
 
 
-def reason_payload(request: DecisionRequest, response: DecisionResponse) -> dict:
-    """Only what the LLM explains (2026-11-23): the groups. The menu's other
-    ingredients and the known limits went in too until then, and the model tied them
-    together as causes."""
+def reason_payload(
+    request: DecisionRequest, response: DecisionResponse, *, describe: bool = True, explain: bool = True
+) -> dict:
+    """Only what the LLM writes about (2026-11-23): the groups, and since 2026-11-24 the
+    menu's main ingredients for its description. The menu's other ingredients and the
+    known limits went in too until 2026-11-23, and the model tied them together as
+    causes."""
 
     return {
         "menu": request.menu.normalized_menu_name,
-        "explain_groups": explain_groups(request, response),
+        "main_ingredients": menu_ingredients(request) if describe else [],
+        "explain_groups": explain_groups(request, response) if explain else [],
     }
+
+
+# The menu description names at most this many ingredients (2026-11-24): a long list
+# reads like the ingredient table, which the result screen already has. The LLM picks
+# them from ``menu_ingredients`` (prompt rule; the length cap keeps it short).
+MAX_MENU_INGREDIENTS = 3
+# Sure: in this share of recipes or more, or a main ingredient at ``HIGH_CHANCE``
+# (2026-11-24, "무조건 들어가는 재료").
+SURE_CHANCE = 0.8
+# Common: in this share of recipes or more (2026-11-24). Sure ones only left 부대찌개
+# without its noodles (라면 44%), and the LLM, writing "ham, sausage, kimchi, and
+# noodles", was dropped for naming one the list lacked. The description says "등" /
+# "such as", since a restaurant's version may differ.
+COMMON_CHANCE = 0.3
+# Meat and seafood are offered only when sure (2026-11-24): the meat or fish in many
+# dishes differs by restaurant, and 김치찌개 is made with pork (65% of crawled recipes)
+# or tuna. "김치와 돼지고기를 넣고 끓인 찌개" taught that it is pork.
+SWAPPABLE_TAGS = frozenset({
+    "is_pork", "is_beef", "is_chicken", "is_duck", "is_fish", "is_shrimp", "is_crab",
+    "is_squid", "is_shellfish", "is_mackerel",
+})
+# How many ingredients the LLM chooses from (2026-11-24). In the first real run code
+# took the top three by likelihood and 김치찌개 read "배추김치와 대파, 마늘을 넣어 끓인
+# 찌개" (대파 81%, 마늘 73%). A list of names to skip (aromatics, pastes) was tried the
+# same day and dropped: whether a seasoning matters depends on the dish, so the LLM gets
+# the list and picks the ones that show what the dish is.
+MAX_MENU_CANDIDATES = 8
+
+
+def menu_ingredients(request: DecisionRequest) -> list[dict]:
+    """The ingredients the menu description may use (2026-11-24), at most
+    ``MAX_MENU_CANDIDATES``: first the sure ones (owner-confirmed present, a main
+    ingredient (``role: identity``) at ``HIGH_CHANCE`` or more, others at ``SURE_CHANCE``
+    or more; main ingredients first, then most likely), then common ones at
+    ``COMMON_CHANCE`` or more that are not meat or seafood (``SWAPPABLE_TAGS``), most
+    likely first. Not those hidden inside another ingredient (a sauce's 멸치) nor any the
+    owner said is not in it."""
+
+    absent = {c.ingredient.canonical_name for c in request.confirmed_results if c.status == "absent"}
+    sure = [(c.role, 1.0, c.ingredient) for c in request.confirmed_results if c.status == "present"]
+    common = []
+    for r in request.probability_results:
+        if r.ingredient.canonical_name in absent:
+            continue
+        if r.posterior_mean >= (HIGH_CHANCE if r.role == "identity" else SURE_CHANCE):
+            sure.append((r.role, r.posterior_mean, r.ingredient))
+        elif r.posterior_mean >= COMMON_CHANCE and not set(r.constraint_tags) & SWAPPABLE_TAGS:
+            common.append((r.role, r.posterior_mean, r.ingredient))
+    sure.sort(key=lambda f: (f[0] != "identity", -f[1]))
+    common.sort(key=lambda f: -f[1])
+    localized = {n.ingredient_id: n.localized_name for n in request.localized_names}
+    picked: dict[str, dict] = {}
+    for role, _, ref in [*sure, *common]:
+        name = ref.canonical_name
+        if role == "hidden" or name in picked:
+            continue
+        picked[name] = {
+            "name": display_name(ref, localized, request.locale),
+            "korean_name": name,
+        }
+        if len(picked) == MAX_MENU_CANDIDATES:
+            break
+    return list(picked.values())
 
 
 # Groups of ingredients the reason explains, one sentence each (2026-11-22). "At most two
@@ -685,18 +809,34 @@ def needs_reason(request: DecisionRequest, response: DecisionResponse) -> bool:
     return reason_route(request, response) != "none"
 
 
-def reason_instructions(request: DecisionRequest, groups: list[dict]) -> str:
-    """The reason prompt: the translation rule only when a group name has no translation
-    yet, the Korean examples only in Korean."""
+def reason_instructions(request: DecisionRequest, groups: list[dict], main: list[dict] | None = None) -> str:
+    """The reason prompt: the description task with ``main`` (None: no description),
+    the group task with ``groups``, the translation rule only when a name has no
+    translation yet, the Korean examples only in Korean and only for the tasks given."""
 
     language = LANGUAGE_NAMES[request.locale]
-    names = [item["name"] for g in groups for item in g["ingredients"]]
+    names = [item["name"] for g in groups for item in g["ingredients"]] + [i["name"] for i in main or []]
     translate = TRANSLATE_RULE if untranslated(names, request.locale) else ""
+    examples = ""
+    if request.locale == "ko":
+        examples = (KOREAN_DESCRIPTION_EXAMPLES if main is not None else "") + (
+            KOREAN_PHRASE_EXAMPLES if groups else ""
+        )
+    description_task = DESCRIPTION_TASK if main is not None else NO_DESCRIPTION_TASK
+    article = ARTICLE_RULE.get(request.locale, "")
     return REASON_PROMPT.format(
         language=language,
-        max_chars=MAX_PHRASE_CHARS[request.locale],
+        description_task=description_task.format(
+            language=language,
+            description_chars=MAX_DESCRIPTION_CHARS[request.locale],
+            max_ingredients=MAX_MENU_INGREDIENTS,
+            article=article,
+        ),
+        groups_task=(GROUPS_TASK if groups else NO_GROUPS_TASK).format(
+            language=language, max_chars=MAX_PHRASE_CHARS[request.locale], article=article
+        ),
         translate=translate.format(language=language),
-        examples=KOREAN_PHRASE_EXAMPLES if request.locale == "ko" else "",
+        examples=examples,
     )
 
 
@@ -715,6 +855,58 @@ def group_label(group: dict, translations: Iterable[NameTranslation], locale: Lo
     return LABEL_JOIN[locale].join(dict.fromkeys(names))
 
 
+# "등" after the last ingredient a Korean menu description names (2026-11-24, ⑧ 담당):
+# a restaurant's version may differ, and the model left it out though told to
+# ("배추김치와 두부를 넣고 얼큰하게 끓인 찌개"). The particle after the name moves behind
+# 등, which ends in a consonant: 두부를 → 두부 등을. Longest first (으로 before 로).
+_ETC_PARTICLES: dict[str, str] = {
+    "으로": "으로", "이나": "이나", "로": "으로", "을": "을", "를": "을", "이": "이", "가": "이",
+    "와": "과", "과": "과", "은": "은", "는": "은", "의": "의", "에": "에", "도": "도", "나": "이나",
+}
+_ETC_RE = re.compile(r"(?<![가-힣])등(?![가-힣])|등(?:을|이|과|으로|은|의|에|도|이나)")
+# Where a list that goes on after 와/과 ends: a word with an object, subject or "with"
+# particle ("채소를", "채소로").
+_LIST_END_RE = re.compile(r"([가-힣]+?)(으로|을|를|이|가|로)(?![가-힣])")
+
+
+def with_etc(phrase: str, names: Iterable[str]) -> str:
+    """``phrase`` with "등" after the last of ``names`` it mentions as a word of its own
+    (followed by a particle above), unless it says 등 already. The names are tried from
+    the last one back, so a name inside a longer word ("두부조림", 김 in "김치를") is
+    skipped. Unchanged when none fits."""
+
+    if _ETC_RE.search(phrase):
+        return phrase
+    spans = {
+        (match.end(), match.end() - match.start())
+        for name in {n.strip() for n in names if n and n.strip()}
+        for match in re.finditer(re.escape(name), phrase)
+    }
+    for end, length in sorted(spans, reverse=True):
+        if re.match(r"[가-힣]", phrase[end - length - 1:end - length] or " "):
+            continue
+        changed = _etc_after(phrase, end)
+        if changed is not None:
+            return changed
+    return phrase
+
+
+def _etc_after(phrase: str, end: int) -> str | None:
+    rest = phrase[end:]
+    # "당면과 여러 채소를": the list goes on past the last name, so 등 closes the list
+    # ("여러 채소 등을"), not the name ("당면 등과 여러 채소를").
+    if rest[:1] in ("와", "과"):
+        tail = _LIST_END_RE.search(rest, 1)
+        if tail is None:
+            return None
+        cut = end + tail.start(2)
+        return f"{phrase[:cut]} 등{_ETC_PARTICLES[tail.group(2)]}{phrase[end + tail.end(2):]}"
+    for particle in sorted(_ETC_PARTICLES, key=len, reverse=True):
+        if rest.startswith(particle) and not re.match(r"[가-힣]", rest[len(particle):len(particle) + 1] or " "):
+            return f"{phrase[:end]} 등{_ETC_PARTICLES[particle]}{rest[len(particle):]}"
+    return None
+
+
 class ReasonWriter:
     """LLM side of ``message.reason``. Never raises; a failure is ``None``."""
 
@@ -723,37 +915,94 @@ class ReasonWriter:
         self.timeout_seconds = timeout_seconds
 
     async def write(self, request: DecisionRequest, response: DecisionResponse) -> str | None:
-        """By route (``reason_route``), plain sentences (2026-11-24; bullet lines until
-        then, which the result screen ran together): a sentence for each group the LLM
-        explained and code checked, the card step, then the most serious limit.
-        "limits_only" calls no LLM. With no sentence left and no limit, ``reason`` stays
-        None (§4 "LLM 실패")."""
+        """Plain sentences in one paragraph, joined by a space (2026-11-24; bullet lines
+        until then, which the result screen ran together, and a line break between
+        sentences until the same day): the menu description, a sentence for each group
+        the LLM explained and code checked, the card step, then the most serious limit.
+
+        The description goes on every menu (2026-11-24), so every menu with a writer
+        calls the LLM once, except a side item (…사리), which has its own template
+        sentence (``tool.py``) and calls it only for groups. ``reason_route`` still decides
+        the rest: groups, card and limit only when it is not "none", the card and limit
+        only with a group sentence or a limit to go with. With nothing left, ``reason``
+        stays None (§4 "LLM 실패")."""
 
         route = reason_route(request, response)
-        if route == "none":
-            return None
-        limits = limit_text(request)[:1]
-        lines: list[str] = []
-        if route in ("groups", "groups_and_limits"):
-            lines = await self._lines(request, response) or []
-            if not lines and not limits:
-                return None
-        parts = [*lines, card_text(request, response), *limits]
-        return "\n".join(p for p in parts if p)
+        explain = route in ("groups", "groups_and_limits")
+        describe = side_item_text(request) is None
+        description, lines = None, []
+        if describe or explain:
+            description, lines = await self._llm_sentences(request, response, describe, explain)
+        limits = limit_text(request)[:1] if route != "none" else []
+        tail = [card_text(request, response), *limits] if lines or limits else []
+        parts = [description, *lines, *tail]
+        return " ".join(p for p in parts if p) or None
 
-    async def _lines(self, request: DecisionRequest, response: DecisionResponse) -> list[str] | None:
-        payload = reason_payload(request, response)
+    async def _llm_sentences(
+        self, request: DecisionRequest, response: DecisionResponse, describe: bool, explain: bool
+    ) -> tuple[str | None, list[str]]:
+        payload = reason_payload(request, response, describe=describe, explain=explain)
         groups = payload["explain_groups"]
+        main = payload["main_ingredients"] if describe else None
         try:
             output = await asyncio.wait_for(
-                self.llm.parse(reason_instructions(request, groups), payload, ReasonOutput, MAX_OUTPUT_TOKENS),
+                self.llm.parse(reason_instructions(request, groups, main), payload, ReasonOutput, MAX_OUTPUT_TOKENS),
                 timeout=self.timeout_seconds,
             )
         except Exception:
+            return None, []
+        description = self._description(request, response, output, main) if main is not None else None
+        return description, self._lines(request, response, output, groups)
+
+    def _description(
+        self, request: DecisionRequest, response: DecisionResponse, output: ReasonOutput, main: list[dict]
+    ) -> str | None:
+        """The menu description as a sentence with the dish as its subject, checked like
+        the group sentences: only the main ingredients given, standard names inside the
+        menu name (김치 in 김치찌개, 밥 in 비빔밥) and generic words may be named; no
+        percentage at all; never Korean in another language (2026-11-24)."""
+
+        locale = request.locale
+        menu = request.menu.normalized_menu_name
+        phrase = _PHRASE_END_RE.sub("", " ".join(output.menu_description.split()))
+        if not phrase or len(phrase) > MAX_DESCRIPTION_CHARS[locale]:
             return None
+        korean = [i["korean_name"] for i in main]
+        parts = {n for n in known_names("ko") if n in menu or any(n in name for name in korean)}
+        korean_only = untranslated([i["name"] for i in main], locale)
+        allowed = (
+            with_translations([*korean, *parts])
+            | {i["name"] for i in main}
+            | translated_names(output.name_translations, korean_only)
+            | generic_words()
+        )
+        checked = check_reason(
+            phrase,
+            locale=locale,
+            risk_level=response.risk_level,
+            percents=[],
+            allowed_names=allowed,
+            menu_names=[menu],
+            verdict=response.message.verdict,
+            evidence_basis=response.evidence_basis,
+            korean_names=[],
+        )
+        # ``check_reason`` lets the menu name through as is; outside Korean it must not be
+        # in Korean either ("a spicy 김치찌개 with pork").
+        if checked is None or (locale != "ko" and _HANGUL_RUN_RE.search(checked)):
+            return None
+        phrase = _PHRASE_END_RE.sub("", checked)
+        if locale == "ko":
+            phrase = with_etc(phrase, [*korean, *(i["name"] for i in main)])
+        subject = menu if locale == "ko" else DISH_SUBJECT[locale]
+        return EXPLAIN_SENTENCE[locale](subject, phrase, False)
+
+    def _lines(
+        self, request: DecisionRequest, response: DecisionResponse, output: ReasonOutput, groups: list[dict]
+    ) -> list[str]:
         # One phrase per group, or the order cannot be trusted.
-        if len(output.phrases) != len(groups):
-            return None
+        if not groups or len(output.phrases) != len(groups):
+            return []
         korean_only = untranslated(
             [i.ingredient.localized_name for i in response.risk_ingredients], request.locale
         )
@@ -789,4 +1038,4 @@ class ReasonWriter:
                 continue
             many = len(group["ingredients"]) > 1
             lines.append(EXPLAIN_SENTENCE[request.locale](label, _PHRASE_END_RE.sub("", checked), many))
-        return lines or None
+        return lines
