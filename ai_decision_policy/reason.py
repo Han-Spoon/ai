@@ -524,8 +524,8 @@ def explain_groups(request: DecisionRequest, response: DecisionResponse) -> list
     the user's restriction: called "matched_user_restrictions" until 2026-11-22, it made
     the model write "생선 제한" for a vegan's 어묵. A per-item rule with an English example
     was removed on 2026-11-17 (the model copied "may contain" into Korean); see ⑧ §8.
-    How often and the user's restriction stay out: the fixed tail and the verdict say
-    them ("잡채에는 이것도 자주 들어가고, 비건 기준에 맞지 않아요" only added words)."""
+    How often and the user's restriction stay out: the fixed tail and the result screen
+    say them ("잡채에는 이것도 자주 들어가고, 비건 기준에 맞지 않아요" only added words)."""
 
     groups: dict[tuple[str, ...], list] = {}
     for item in _by_likelihood(response.risk_ingredients):

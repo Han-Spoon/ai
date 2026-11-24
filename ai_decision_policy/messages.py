@@ -2,9 +2,9 @@
 
 Fixed templates, no LLM. Ingredient names come from ``localized_name`` (Korean when
 there is no translation); nothing here translates or guesses. The verdict line follows
-the result screen, but first says whether the user can eat the dish (2026-11-22), then
-who confirmed what and what is still unchecked; an estimate also gives the highest
-chance as "n% 이상" (2026-11-23). ``reason`` is the
+the result screen: who confirmed what and what is still unchecked, with no "can you eat
+it" lead (dropped 2026-11-24); an estimate also gives the highest chance as "n% 이상"
+(2026-11-23). ``reason`` is the
 LLM part (§0-2); the verdict and notes stand on their own (§4 "LLM 실패").
 """
 
@@ -13,14 +13,13 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 
-from ai_supervisor.contracts.common import Locale, UserProfile
+from ai_supervisor.contracts.common import Locale
 from ai_supervisor.contracts.decision import DecisionRequest, DecisionRiskIngredient
 from ai_supervisor.contracts.external import DecisionMessage, MessageNote
 
 from .names import display_name
 from .notes import NoteChoice, select_notes
 from .policy import DecisionOutcome, has_no_ingredients, is_hard_evidence
-from .profile import RELIGION_TAGS, VEGETARIAN_TAGS
 from .questions import FLAG_PLACES, LISTS, _has_final_consonant, _tags, tag_name
 
 
@@ -70,12 +69,10 @@ def _ko(word: str, with_final: str, without: str) -> str:
     return with_final if _has_final_consonant(word) else without
 
 
-# The verdict line follows the result screen (front Figma S10, 2026-11-06): whether the
-# user can eat it and for which restriction (first, 2026-11-22), who confirmed what, and
-# what is still unchecked.
-# Probabilities are not in the sentence; the screen shows them next to each ingredient.
-# {x} is a joined list of names, {last} its last plain name (Korean particles follow it),
-# {r} the user's restriction names.
+# The verdict line follows the result screen (front Figma S10, 2026-11-06): who confirmed
+# what and what is still unchecked. The "can you eat it, for which restriction" lead
+# (2026-11-22) was dropped on 2026-11-24: the screen already shows the level and the diet.
+# {x} is a joined list of names, {last} its last plain name (Korean particles follow it).
 VerdictTemplate = Callable[[str, str], str]
 
 # DANGER: the owner said a forbidden ingredient (or flag tag) is in the dish.
@@ -161,65 +158,7 @@ MAY_CONTAIN: dict[str, VerdictTemplate] = {
     "es": lambda x, last: f"Puede llevar {x}.",
 }
 
-# The first sentence says whether the user can eat the dish (2026-11-22 feedback: the
-# user wants to know at once if they can eat it, then why). {r} names the restrictions
-# the dish goes against; the plain versions are for when there is none to name.
-CANNOT_EAT_FOR: dict[str, Callable[[str], str]] = {
-    "ko": lambda r: f"{r} 기준으로는 드시기 어려워요.",
-    "en": lambda r: f"This dish isn't suitable for your dietary needs ({r}).",
-    "ar": lambda r: f"هذا الطبق غير مناسب لاحتياجاتك الغذائية ({r}).",
-    "zh-CN": lambda r: f"这道菜不符合您的饮食限制（{r}），不宜食用。",
-    "zh-TW": lambda r: f"這道菜不符合您的飲食限制（{r}），不宜食用。",
-    "ja": lambda r: f"食事制限（{r}）があるため、この料理は食べられません。",
-    "es": lambda r: f"Este plato no es apto para tus restricciones ({r}).",
-}
-CANNOT_EAT: dict[str, str] = {
-    "ko": "드시기 어려워요.",
-    "en": "This dish isn't suitable for you.",
-    "ar": "هذا الطبق غير مناسب لك.",
-    "zh-CN": "这道菜不适合您食用。",
-    "zh-TW": "這道菜不適合您食用。",
-    "ja": "この料理は食べられません。",
-    "es": "Este plato no es apto para ti.",
-}
-CHECK_BEFORE_EATING_FOR: dict[str, Callable[[str], str]] = {
-    "ko": lambda r: f"{r} 기준으로는 드시기 전에 직원 확인이 필요해요.",
-    "en": lambda r: f"With your dietary needs ({r}), please check with the staff before eating this dish.",
-    "ar": lambda r: f"بسبب احتياجاتك الغذائية ({r})، يُرجى التأكد من الموظفين قبل تناول هذا الطبق.",
-    "zh-CN": lambda r: f"根据您的饮食限制（{r}），食用前请先向店员确认。",
-    "zh-TW": lambda r: f"依您的飲食限制（{r}），食用前請先向店員確認。",
-    "ja": lambda r: f"食事制限（{r}）があるため、食べる前にスタッフに確認してください。",
-    "es": lambda r: f"Por tus restricciones ({r}), consulta con el personal antes de comer este plato.",
-}
-CHECK_BEFORE_EATING: dict[str, str] = {
-    "ko": "드시기 전에 직원 확인이 필요해요.",
-    "en": "Please check with the staff before eating this dish.",
-    "ar": "يُرجى التأكد من الموظفين قبل تناول هذا الطبق.",
-    "zh-CN": "食用前请先向店员确认。",
-    "zh-TW": "食用前請先向店員確認。",
-    "ja": "食べる前にスタッフに確認してください。",
-    "es": "Consulta con el personal antes de comer este plato.",
-}
-CAN_EAT_FOR: dict[str, Callable[[str], str]] = {
-    "ko": lambda r: f"{r} 기준으로 드실 수 있어요.",
-    "en": lambda r: f"This dish fits your dietary needs ({r}).",
-    "ar": lambda r: f"هذا الطبق يناسب احتياجاتك الغذائية ({r}).",
-    "zh-CN": lambda r: f"这道菜符合您的饮食限制（{r}），可以食用。",
-    "zh-TW": lambda r: f"這道菜符合您的飲食限制（{r}），可以食用。",
-    "ja": lambda r: f"この料理は食事制限（{r}）に合っていて、食べられます。",
-    "es": lambda r: f"Este plato es apto para tus restricciones ({r}).",
-}
-CAN_EAT: dict[str, str] = {
-    "ko": "드실 수 있어요.",
-    "en": "You can eat this dish.",
-    "ar": "يمكنك تناول هذا الطبق.",
-    "zh-CN": "这道菜可以食用。",
-    "zh-TW": "這道菜可以食用。",
-    "ja": "この料理は食べられます。",
-    "es": "Puedes comer este plato.",
-}
-
-# SAFE: what the owner's answers showed, after CAN_EAT(_FOR).
+# SAFE: what the owner's answers showed.
 SAFE: dict[str, str] = {
     "ko": "사장님이 확인한 재료 중 피해야 할 재료가 없어요.",
     "en": "The owner confirmed none of the ingredients you avoid are in this dish.",
@@ -290,27 +229,6 @@ QUESTION_CARD_STEP: dict[str, str] = {
     "zh-TW": "您可以用問題卡片直接向店員確認。",
     "ja": "質問カードでスタッフに直接確認してみてください。",
     "es": "Puedes preguntarle directamente al personal con la tarjeta de preguntas.",
-}
-
-# The user's restrictions by name, as the screen shows them ("내 식단: 비건 · 새우 알레르기").
-RESTRICTION_NAMES: dict[str, dict[str, str]] = {
-    "halal": {"ko": "할랄", "en": "halal", "ar": "الحلال", "zh-CN": "清真", "zh-TW": "清真", "ja": "ハラール", "es": "halal"},
-    "kosher": {"ko": "코셔", "en": "kosher", "ar": "الكوشر", "zh-CN": "犹太洁食", "zh-TW": "猶太潔食", "ja": "コーシャ", "es": "kosher"},
-    "hindu": {"ko": "힌두교 식단", "en": "Hindu diet", "ar": "النظام الغذائي الهندوسي", "zh-CN": "印度教饮食", "zh-TW": "印度教飲食", "ja": "ヒンドゥー教の食事", "es": "dieta hindú"},
-    "vegan": {"ko": "비건", "en": "vegan", "ar": "نباتي صرف", "zh-CN": "纯素", "zh-TW": "純素", "ja": "ヴィーガン", "es": "vegano"},
-    "lacto": {"ko": "락토 채식", "en": "lacto-vegetarian", "ar": "نباتي يتناول الألبان", "zh-CN": "奶素", "zh-TW": "奶素", "ja": "ラクト・ベジタリアン", "es": "lactovegetariano"},
-    "ovo": {"ko": "오보 채식", "en": "ovo-vegetarian", "ar": "نباتي يتناول البيض", "zh-CN": "蛋素", "zh-TW": "蛋素", "ja": "オボ・ベジタリアン", "es": "ovovegetariano"},
-    "lacto_ovo": {"ko": "락토오보 채식", "en": "lacto-ovo vegetarian", "ar": "نباتي يتناول الألبان والبيض", "zh-CN": "蛋奶素", "zh-TW": "蛋奶素", "ja": "ラクト・オボ・ベジタリアン", "es": "ovolactovegetariano"},
-    "pesco": {"ko": "페스코 채식", "en": "pescatarian", "ar": "نباتي يأكل المأكولات البحرية", "zh-CN": "鱼素", "zh-TW": "魚素", "ja": "ペスコ・ベジタリアン", "es": "pescetariano"},
-    "no_alcohol": {"ko": "무알코올", "en": "no alcohol", "ar": "بدون كحول", "zh-CN": "不含酒", "zh-TW": "不含酒", "ja": "アルコールなし", "es": "sin alcohol"},
-    "no_spicy": {"ko": "안 매운 음식", "en": "no spicy food", "ar": "بدون طعام حار", "zh-CN": "不吃辣", "zh-TW": "不吃辣", "ja": "辛くない料理", "es": "sin picante"},
-}
-ALLERGY: dict[str, str] = {
-    "ko": "{x} 알레르기", "en": "{x} allergy", "ar": "حساسية {x}", "zh-CN": "{x}过敏",
-    "zh-TW": "{x}過敏", "ja": "{x}アレルギー", "es": "alergia a {x}",
-}
-RESTRICTION_SEPARATOR: dict[str, str] = {
-    "ko": " · ", "en": ", ", "ar": "، ", "zh-CN": "、", "zh-TW": "、", "ja": "・", "es": ", ",
 }
 
 # Notes. {x} is an "A or B" tag list, {place} where a flag hides it, {name} an ingredient.
@@ -580,38 +498,6 @@ def _sentences(parts: list[str], lang: str) -> str:
     return ("" if lang in ("zh-CN", "zh-TW", "ja") else " ").join(parts)
 
 
-def restriction_names(profile: UserProfile, lang: str, tags: set[str] | None = None) -> str:
-    """The user's restrictions by name; with ``tags``, only those that forbid one of them
-    ("비건" for 어묵, "새우 알레르기" for 새우)."""
-
-    return RESTRICTION_SEPARATOR[lang].join(restriction_list(profile, lang, tags))
-
-
-def restriction_list(
-    profile: UserProfile, lang: str, tags: set[str] | None = None, *, allergies: bool = True
-) -> list[str]:
-    """``restriction_names`` as a list, for the reason LLM (2026-11-22); without
-    ``allergies``, only diets, religion, alcohol and spicy."""
-
-    names: list[str] = []
-
-    def add(covers: frozenset[str], name: str) -> None:
-        if tags is None or covers & tags:
-            names.append(name)
-
-    if profile.religion_type is not None:
-        add(RELIGION_TAGS[profile.religion_type], RESTRICTION_NAMES[profile.religion_type][lang])
-    if profile.vegetarian_type is not None:
-        add(VEGETARIAN_TAGS[profile.vegetarian_type], RESTRICTION_NAMES[profile.vegetarian_type][lang])
-    if profile.no_alcohol:
-        add(frozenset({"is_alcohol"}), RESTRICTION_NAMES["no_alcohol"][lang])
-    if profile.no_spicy:
-        add(frozenset({"is_spicy"}), RESTRICTION_NAMES["no_spicy"][lang])
-    for tag in profile.allergies if allergies else ():
-        add(frozenset({tag}), ALLERGY[lang].format(x=tag_name(tag, lang)))
-    return list(dict.fromkeys(names))
-
-
 def owner_said_absent(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> list[str]:
     """Forbidden ingredients the owner said are not in the dish (달걀 지단 for a vegan)."""
 
@@ -622,10 +508,6 @@ def owner_said_absent(request: DecisionRequest, outcome: DecisionOutcome, lang: 
         for c in request.confirmed_results
         if is_hard_evidence(c) and c.status == "absent" and set(c.constraint_tags) & forbidden
     ))
-
-
-def _lead(table_for: dict[str, Callable[[str], str]], table: dict[str, str], restrictions: str, lang: str) -> str:
-    return table_for[lang](restrictions) if restrictions else table[lang]
 
 
 def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str], str | None]:
@@ -644,12 +526,13 @@ def _at_least(items: list[DecisionRiskIngredient], lang: str) -> tuple[list[str]
 
 
 def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> str:
-    """Whether the user can eat it first, then why (2026-11-22)."""
+    """Why, with no lead sentence (2026-11-24): "할랄 기준으로는 드시기 어려워요" only
+    repeated what the screen already shows (the DANGER/CAUTION/SAFE badge and the user's
+    diet), so the line starts with who confirmed what or how likely it is."""
 
     level, basis = outcome.risk_level, outcome.evidence_basis
-    profile = request.user_profile
     if level == "safe" and basis == "confirmed":
-        return _sentences([_lead(CAN_EAT_FOR, CAN_EAT, restriction_names(profile, lang), lang), SAFE[lang]], lang)
+        return SAFE[lang]
     if level == "danger" and basis == "confirmed":
         present = [r for r in outcome.risk_ingredients if r.status == "present"]
         names = _named(present)
@@ -670,11 +553,7 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
             place = FLAG_PLACES[check.flag]
             parts.append(OWNER_SAYS_ONE_OF[lang](place[lang] if place else None, _tags(check.matched_tags, lang)))
         if parts:
-            # Restrictions it surely breaks; with only "or" answers, any of them may be the one.
-            if not tags:
-                tags = {t for c in one_of for t in c.matched_tags}
-            restrictions = restriction_names(profile, lang, tags)
-            return _sentences([_lead(CANNOT_EAT_FOR, CANNOT_EAT, restrictions, lang), *parts], lang)
+            return _sentences(parts, lang)
     absent = owner_said_absent(request, outcome, lang)
     owner = [_say(OWNER_SAYS_ABSENT, absent, lang)] if absent else []
     if level == "caution" and basis == "estimated":
@@ -684,20 +563,17 @@ def verdict(request: DecisionRequest, outcome: DecisionOutcome, lang: str) -> st
         by_ingredient = {t for r in outcome.risk_ingredients for t in r.matched_tags}
         names += [tag_name(tag, lang) for tag in outcome.matched_tags if tag not in by_ingredient]
         if names:
-            tags = by_ingredient | set(outcome.matched_tags)
-            restrictions = restriction_names(profile, lang, tags)
-            lead = _lead(CHECK_BEFORE_EATING_FOR, CHECK_BEFORE_EATING, restrictions, lang)
             at_least, subject = _at_least(items, lang)
             # "돼지고기가 들어갈 확률이 62% 이상이에요. 돼지고기가 들어 있을 수 있어요." says it
             # twice: the list goes when it only names what the percent already does.
             may_contain = [] if names == [subject] else [_say(MAY_CONTAIN, names, lang)]
-            return _sentences([lead, *owner, *at_least, *may_contain], lang)
-        return _sentences([CHECK_BEFORE_EATING[lang], *owner, NOT_CONFIRMED[lang]], lang)
-    # caution/unknown, and anything the policy does not produce, asks the user to check
-    # with the staff: never a sentence that sounds safe.
+            return _sentences([*owner, *at_least, *may_contain], lang)
+        return _sentences([*owner, NOT_CONFIRMED[lang]], lang)
+    # caution/unknown, and anything the policy does not produce: never a sentence that
+    # sounds safe.
     if request.no_information or has_no_ingredients(request):
-        return _sentences([CHECK_BEFORE_EATING[lang], NO_INFORMATION[lang]], lang)
-    return _sentences([CHECK_BEFORE_EATING[lang], *owner, NOT_ENOUGH_INFORMATION[lang]], lang)
+        return NO_INFORMATION[lang]
+    return _sentences([*owner, NOT_ENOUGH_INFORMATION[lang]], lang)
 
 
 def note_text(note: NoteChoice, check_tags: dict[str, list[str]], lang: str) -> str:
