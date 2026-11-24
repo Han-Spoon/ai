@@ -240,20 +240,23 @@ def _nine_fish(locale: str):
     )
 
 
-def test_verdict_names_at_most_seven_ingredients_and_counts_the_rest() -> None:
+def test_verdict_names_at_most_seven_ingredients_then_says_others() -> None:
     # 2026-11-08: the screen lists every ingredient with its probability under the
     # sentence (Figma S10), so the sentence stops at seven, highest probability first.
-    assert message(_nine_fish("ko")).verdict.endswith(
-        "멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵 외 2개가 들어 있을 수 있어요."
-    )
+    # 2026-11-24: no count after them. "외 31개" next to the screen's "+43" looked like
+    # two counts of the same thing; only the screen counts.
+    ko = message(_nine_fish("ko")).verdict
+    assert ko.endswith("멸치, 새우젓, 까나리, 참치, 꽁치, 굴, 어묵 등이 들어 있을 수 있어요.")
     en = message(_nine_fish("en")).verdict
-    assert "It may contain " in en and en.endswith(" and 2 more.")
+    assert "It may contain " in en and en.endswith(" and other ingredients.")
     assert en.split("It may contain ")[1].count(", ") == 6
-    assert message(_nine_fish("ja")).verdict.endswith("ほか2種類が入っている可能性があります。")
-    assert message(_nine_fish("zh-CN")).verdict.endswith("及其他2种。")
-    assert message(_nine_fish("zh-TW")).verdict.endswith("及其他2種。")
-    assert message(_nine_fish("es")).verdict.endswith(" y 2 más.")
-    assert "من المكونات الأخرى" in message(_nine_fish("ar")).verdict
+    assert message(_nine_fish("ja")).verdict.endswith("などが入っている可能性があります。")
+    assert message(_nine_fish("zh-CN")).verdict.endswith("等。")
+    assert message(_nine_fish("zh-TW")).verdict.endswith("等。")
+    assert message(_nine_fish("es")).verdict.endswith(" y otros ingredientes.")
+    assert "مكونات أخرى" in message(_nine_fish("ar")).verdict
+    for locale in ("ko", "en", "ar", "zh-CN", "zh-TW", "ja", "es"):
+        assert not any(ch.isdigit() for ch in message(_nine_fish(locale)).verdict.split("%")[-1])
 
 
 def test_seven_ingredients_are_all_named() -> None:
