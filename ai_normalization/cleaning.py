@@ -54,6 +54,12 @@ _HOURS_RE = re.compile(
     r"^(?:영업시간\s*)?(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:~|-|–)\s*(?:[01]?\d|2[0-3]):[0-5]\d$"
 )
 _SERVING_ONLY_RE = re.compile(r"^\d+(?:\.\d+)?인분(?:추가)?$")
+_ESTABLISHMENT_LABEL = r"(?:since|est(?:ablished)?\.?|founded|창업|개업|설립)"
+_ESTABLISHMENT_LABEL_RE = re.compile(rf"^{_ESTABLISHMENT_LABEL}$", re.IGNORECASE)
+_ESTABLISHMENT_LINE_RE = re.compile(
+    rf"^{_ESTABLISHMENT_LABEL}[\s.:·\-]*(?:18|19|20)\d{{2}}년?$",
+    re.IGNORECASE,
+)
 _NON_MENU_NOTICES = frozenset({"셀프코너이용"})
 _HAS_LATIN_RE = re.compile(r"[A-Za-z]")
 _HAS_FOREIGN_SCRIPT_RE = re.compile(
@@ -273,7 +279,12 @@ class NameCleaningAgent:
         llm_slots: asyncio.Semaphore,
     ) -> tuple[CleanedMenuItem, list[NodeWarning]]:
         warnings: list[NodeWarning] = []
-        outcome = clean_menu_name(source.raw_menu_name)
+        if _is_establishment_year_item(source.raw_menu_name, source.price_text):
+            outcome = _invalid(
+                _canonicalize_text(source.raw_menu_name), "invalid_menu_text"
+            )
+        else:
+            outcome = clean_menu_name(source.raw_menu_name)
         item = _to_cleaned_item(source, outcome)
         item = item.model_copy(
             update={
@@ -363,8 +374,23 @@ def _is_non_menu_text(text: str) -> bool:
             _PHONE_RE.fullmatch(text)
             or _HOURS_RE.fullmatch(text)
             or _SERVING_ONLY_RE.fullmatch(compact)
+            or _ESTABLISHMENT_LINE_RE.fullmatch(text)
         )
     )
+
+
+def _is_establishment_year_item(
+    raw_menu_name: str, price_text: str | None
+) -> bool:
+    """Reject an opening-year label even when OCR paired its year as a price."""
+
+    name = _canonicalize_text(raw_menu_name)
+    if _ESTABLISHMENT_LINE_RE.fullmatch(name):
+        return True
+    if not _ESTABLISHMENT_LABEL_RE.fullmatch(name) or not price_text:
+        return False
+    digits = "".join(character for character in price_text if character.isdigit())
+    return len(digits) == 4 and 1800 <= int(digits) <= 2099
 
 
 def _invalid(display_name: str, warning_code: str) -> CleaningOutcome:
