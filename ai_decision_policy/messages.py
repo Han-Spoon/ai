@@ -804,3 +804,21 @@ def _korean_side_item(menu: str, names: list[str]) -> str:
     if many or any(stem not in name for name in names):
         detail = f"({AND_LISTS['ko'](names)}{' 등' if many else ''})"
     return f"{menu}{_ko(menu, '은', '는')} 메인 메뉴에 {stem}{detail}{_ko(stem, '을', '를')} 추가해 먹는 사리예요."
+
+
+# The reason reads as plain sentences (2026-11-24): the result screen shows it in one
+# paragraph, so "• 멸치액젓: 생선으로 만든 젓갈" lines ran into each other. Code turns
+# each LLM phrase into "<names> is <phrase>." in the user's language.
+EXPLAIN_SENTENCE: dict[str, Callable[[str, str, bool], str]] = {
+    "ko": lambda names, phrase, many: (
+        f"{names}{_ko(names, '은', '는')} {phrase}."
+        if phrase.endswith("요")
+        else f"{names}{_ko(names, '은', '는')} {phrase}{_ko(phrase, '이에요', '예요')}."
+    ),
+    "en": lambda names, phrase, many: f"{names[:1].upper()}{names[1:]} {'are' if many else 'is'} {phrase}.",
+    "ar": lambda names, phrase, many: f"{names}: {phrase}.",
+    "zh-CN": lambda names, phrase, many: f"{names}是{phrase}。",
+    "zh-TW": lambda names, phrase, many: f"{names}是{phrase}。",
+    "ja": lambda names, phrase, many: f"{names}は{phrase}です。",
+    "es": lambda names, phrase, many: f"{names[:1].upper()}{names[1:]} {'son' if many else 'es'} {phrase}.",
+}
