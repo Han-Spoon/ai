@@ -51,7 +51,8 @@ def normalize_price(text: str):
     if shorthand_match:
         whole = int(shorthand_match.group(1).replace("O", "0").replace("o", "0"))
         decimal = shorthand_match.group(2).replace("O", "0").replace("o", "0")
-        price = (whole * 1000) + int(decimal.ljust(3, "0"))
+        # 메뉴판의 1.9, 0.5 표기는 각각 1.9만원, 0.5만원을 뜻한다.
+        price = (whole * 10000) + int(decimal.ljust(4, "0"))
         if PRICE_MIN <= price <= PRICE_MAX:
             return price
 

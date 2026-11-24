@@ -20,7 +20,11 @@ from clova_layout import (  # noqa: E402
     should_retry_with_preprocessing,
 )
 from ocr_client import ClovaOCRClient, OCRConfigError  # noqa: E402
-from normalizer import normalize_menu_name, split_menu_name_and_origin  # noqa: E402
+from normalizer import (  # noqa: E402
+    normalize_menu_name,
+    normalize_price,
+    split_menu_name_and_origin,
+)
 from parser import build_menu_item, parse_menu_candidates  # noqa: E402
 from result_builder import (  # noqa: E402
     build_final_result,
@@ -166,6 +170,62 @@ def _clova_token(text, x1, y1, x2, y2):
         "confidence": 0.99,
         "source": "clova_field",
     }
+
+
+@pytest.mark.parametrize(
+    ("price_text", "expected"),
+    [
+        ("1.9", 19000),
+        ("1.95", 19500),
+        ("2.3", 23000),
+        ("0.5", 5000),
+        ("3.5", 35000),
+    ],
+)
+def test_ten_thousand_won_shorthand_is_normalized(price_text, expected):
+    assert normalize_price(price_text) == expected
+
+
+def test_repeated_decimal_prices_enable_ten_thousand_won_shorthand():
+    tokens = [
+        _clova_token("소금돌고기", 100, 100, 220, 124),
+        _clova_token("1.9", 300, 100, 340, 124),
+        _clova_token("생갈비", 100, 140, 180, 164),
+        _clova_token("2.3", 300, 140, 340, 164),
+        _clova_token("계란찜", 100, 180, 180, 204),
+        _clova_token("0.5", 300, 180, 340, 204),
+    ]
+
+    pairs = parse_spatial_pairs(tokens)
+
+    assert [(pair.name, pair.price) for pair in pairs] == [
+        ("소금돌고기", 19000),
+        ("생갈비", 23000),
+        ("계란찜", 5000),
+    ]
+    assert count_price_anchors(tokens) == 3
+
+
+def test_single_decimal_is_not_enough_to_enable_shorthand_price_mode():
+    tokens = [
+        _clova_token("소금돌고기", 100, 100, 220, 124),
+        _clova_token("1.9", 300, 100, 340, 124),
+    ]
+
+    assert parse_spatial_pairs(tokens) == []
+    assert count_price_anchors(tokens) == 0
+
+
+def test_decimal_serving_units_do_not_enable_shorthand_price_mode():
+    tokens = [
+        _clova_token("모둠고기", 100, 100, 200, 124),
+        _clova_token("1.5kg", 220, 100, 280, 124),
+        _clova_token("한우세트", 100, 140, 200, 164),
+        _clova_token("2.0kg", 220, 140, 280, 164),
+    ]
+
+    assert parse_spatial_pairs(tokens) == []
+    assert count_price_anchors(tokens) == 0
 
 
 @pytest.mark.parametrize("menu_name", ["Chicken", "牛肉麵", "チキンカレー"])
