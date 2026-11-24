@@ -46,16 +46,18 @@ AND_LISTS: dict[str, Callable[[list[str]], str]] = {
 
 # The verdict names at most this many ingredients (2026-11-08); the screen shows them all.
 MAX_NAMES = 7
-# "and N more". Korean, Chinese and Japanese attach it to the list without "and";
-# the Korean particle then follows "개".
-MORE: dict[str, Callable[[int], str]] = {
-    "ko": lambda n: f" 외 {n}개",
-    "en": lambda n: f"{n} more",
-    "ar": lambda n: f"{n} من المكونات الأخرى",
-    "zh-CN": lambda n: f"及其他{n}种",
-    "zh-TW": lambda n: f"及其他{n}種",
-    "ja": lambda n: f"ほか{n}種類",
-    "es": lambda n: f"{n} más",
+# "and others", with no count (2026-11-24): "외 31개" next to the screen's "+43" chip
+# looked like two different counts (the sentence leaves out carried rows, the screen
+# does not), so only the screen counts. Korean, Chinese and Japanese attach it to the
+# list without "and"; the Korean particle then follows "등".
+MORE: dict[str, str] = {
+    "ko": " 등",
+    "en": "other ingredients",
+    "ar": "مكونات أخرى",
+    "zh-CN": "等",
+    "zh-TW": "等",
+    "ja": "など",
+    "es": "otros ingredientes",
 }
 LISTS_NO_AND: dict[str, Callable[[list[str]], str]] = {
     "ko": ", ".join,
@@ -330,7 +332,7 @@ def _without_carried(items: list[DecisionRiskIngredient]) -> list[DecisionRiskIn
 
 
 def _say(template: dict[str, VerdictTemplate], names: list[str], lang: str) -> str:
-    """At most ``MAX_NAMES`` names, the rest counted ("외 6개"). The screen lists every
+    """At most ``MAX_NAMES`` names, then "등" with no count. The screen lists every
     ingredient with its own probability below the sentence (Figma S10), so the sentence
     need not repeat a long list; names come in the order given (highest probability
     first for estimates)."""
@@ -339,13 +341,12 @@ def _say(template: dict[str, VerdictTemplate], names: list[str], lang: str) -> s
 
 
 def _joined(names: list[str], lang: str) -> tuple[str, str]:
-    """``names`` joined, at most ``MAX_NAMES`` and the rest counted, with the last word
-    (Korean particles follow it)."""
+    """``names`` joined, at most ``MAX_NAMES`` then "등", with the last word (Korean
+    particles follow it)."""
 
     if len(names) <= MAX_NAMES:
         return AND_LISTS[lang](names), names[-1]
-    shown, rest = names[:MAX_NAMES], len(names) - MAX_NAMES
-    more = MORE[lang](rest)
+    shown, more = names[:MAX_NAMES], MORE[lang]
     if lang in ("ko", "zh-CN", "zh-TW", "ja"):
         return LISTS_NO_AND[lang](shown) + more, more
     return AND_LISTS[lang]([*shown, more]), more
