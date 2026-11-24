@@ -75,6 +75,26 @@ def test_ingredient_modifier_is_variant_but_same_menu_alias_is_exact():
     assert alias.relation == "exact"
 
 
+def test_spaced_seaweed_modifier_does_not_enter_base_gimbap_prior():
+    known = {"김밥"}
+
+    seaweed = classify_recipe_title("김밥", "해초 김밥", known)
+    hijiki = classify_recipe_title("김밥", "톳 김밥", known)
+    base = classify_recipe_title("김밥", "김밥 맛있게 싸는 법", known)
+
+    assert (seaweed.relation, seaweed.base_menu_name, seaweed.remain_token) == (
+        "variant",
+        "김밥",
+        "해초",
+    )
+    assert (hijiki.relation, hijiki.base_menu_name, hijiki.remain_token) == (
+        "variant",
+        "김밥",
+        "톳",
+    )
+    assert base.relation == "exact"
+
+
 def test_finished_dish_phrase_drops_whole_recipe_and_is_auditable():
     rows = [
         row("잡채", "남은 잡채 활용", "derived", "완성된 잡채"),

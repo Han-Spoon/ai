@@ -610,9 +610,9 @@
 김밥,과메기 김밥,https://wtable.co.kr/recipes/mgY8Zw6fREzaV9MPa5vEhnNE,exact,김밥,,,true,same_menu_alias:김밥,10
 김밥,당근 김밥,https://wtable.co.kr/recipes/F26tPyWrkvW3SPyXsgBeEgZH,variant,당근 김밥,김밥,당근,false,spaced_ingredient_modifier:당근,9
 김밥,냉이김밥,https://wtable.co.kr/recipes/gCFDPHP5izadaChm4dU6pmUt,variant,냉이 김밥,김밥,냉이,false,ingredient_modifier:냉이,10
-김밥,해초 김밥,https://wtable.co.kr/recipes/VUVVwTu5YzZnA4bXcEe7zAQw,exact,김밥,,,true,same_menu_alias:김밥,14
+김밥,해초 김밥,https://wtable.co.kr/recipes/VUVVwTu5YzZnA4bXcEe7zAQw,variant,해초 김밥,김밥,해초,false,spaced_ingredient_modifier:해초,14
 김밥,연어김밥,https://wtable.co.kr/recipes/Tc7dheo81X6te6FYgto48Qrm,variant,연어 김밥,김밥,연어,false,ingredient_modifier:연어,16
-김밥,톳 김밥,https://wtable.co.kr/recipes/6Je1AkxkVgzaogrXonJp7y6S,exact,김밥,,,true,same_menu_alias:김밥,13
+김밥,톳 김밥,https://wtable.co.kr/recipes/6Je1AkxkVgzaogrXonJp7y6S,variant,톳 김밥,김밥,톳,false,spaced_ingredient_modifier:톳,13
 김밥,나물 김밥,https://wtable.co.kr/recipes/bsU9WBp3xz5CEKJmpXTFRMf3,exact,김밥,,,true,same_menu_alias:김밥,11
 김밥,메밀김밥,https://wtable.co.kr/recipes/TajamUJ7n8rterc8RD1zWYAy,variant,밀 김밥,김밥,밀,false,ingredient_modifier:밀,12
 김밥,청양 마요 김밥,https://wtable.co.kr/recipes/cHRaHtZBooQcuWBFfYrQYNaf,exact,김밥,,,true,same_menu_alias:김밥,11
@@ -659,7 +659,7 @@
 김밥,수박 감태 주먹밥,https://wtable.co.kr/recipes/T5CCbDWUqVPyiPQbCBAa7tph,unrelated,,,,false,title_has_no_menu_alias,9
 김밥,전복짭짤이,https://wtable.co.kr/recipes/dYYZzLLfuprqhipv79GpFt8j,unrelated,,,,false,title_has_no_menu_alias,12
 김치볶음밥,김치볶음밥,https://wtable.co.kr/recipes/iPkDxFTy5k1dxUrnCGhnvQd5,exact,김치볶음밥,,,true,same_menu_alias:김치볶음밥,12
-비빔밥,해초 비빔밥,https://wtable.co.kr/recipes/pFxtM9ktmKoCsHQxQKQaqHQj,exact,비빔밥,,,true,same_menu_alias:비빔밥,13
+비빔밥,해초 비빔밥,https://wtable.co.kr/recipes/pFxtM9ktmKoCsHQxQKQaqHQj,variant,해초 비빔밥,비빔밥,해초,false,spaced_ingredient_modifier:해초,13
 비빔밥,꼬막비빔밥,https://wtable.co.kr/recipes/zdcgFEr5MR5Ht5my8MDGuN6F,variant,꼬막 비빔밥,비빔밥,꼬막,false,ingredient_modifier:꼬막,14
 비빔밥,골뱅이 비빔밥,https://wtable.co.kr/recipes/rg177d75RKzERSRt66Ye7xmc,variant,골뱅이 비빔밥,비빔밥,골뱅이,false,spaced_ingredient_modifier:골뱅이,16
 비빔밥,꼬막비빔밥,https://wtable.co.kr/recipes/p7oyUEY9ju4o2PMvLXrXD6bs,variant,꼬막 비빔밥,비빔밥,꼬막,false,ingredient_modifier:꼬막,15
