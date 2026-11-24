@@ -88,8 +88,24 @@ def test_seed_matches_db_export():
     g = seed().graph
     # 326 ingredients (324 as first loaded + 돼지감자 from the 22 Yongsan menus, 2026-11-22,
     # + 라면사리 split from 라면, 2026-11-24); 101 edges minus 9 from dish-parent rules
-    # (김밥→밥 etc.) minus 된장→돼지고기 (쌈장 rule) and 맛술→밀 (RULE_DROP), 2026-11-24
-    assert (len(g.ingredients), len(g.compositions)) == (326, 90)
+    # (김밥→밥 etc.) minus 된장→돼지고기 (쌈장 rule) and 맛술→밀 (RULE_DROP), 2026-11-24,
+    # plus 배추김치→굴 (2026-11-25)
+    assert (len(g.ingredients), len(g.compositions)) == (326, 91)
+
+
+def test_shrimp_is_not_tagged_shellfish_and_kimchi_shellfish_is_oyster():
+    # is_shellfish is 조개류 (굴·조개·바지락). The hidden rules used it as English
+    # "shellfish" for 새우·새우젓 and kimchi's 액젓, so 멸치액젓 read "생선과 조개류로 담근"
+    # (2026-11-25). Kimchi keeps 조개류 through 굴 and shrimp through 새우젓.
+    import db_seed
+
+    for parent, flags in db_seed.HIDDEN_RULES.items():
+        for chs in flags.values():
+            for ch in chs:
+                assert not (ch["tag"] == "is_shellfish" and ch["name"] in ("새우", "새우젓", "액젓")), parent
+    edge = {(c, t) for p, c, t in seed().data.edge_tags if p == "배추김치"}
+    assert ("굴", "is_shellfish") in edge and ("새우젓", "is_shrimp") in edge
+    assert ("멸치액젓", "is_shellfish") not in edge
 
 
 def test_no_composition_hangs_under_a_dish_turned_raw_ingredient():

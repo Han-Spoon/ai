@@ -136,7 +136,8 @@ def test_caution_with_hidden_rule_hits_returns_owner_card():
 
     _assert_final_output(result)
     assert result.risk_level == "caution"
-    assert result.hits == ["is_fish", "is_shellfish"]
+    # 새우젓 is shrimp, kimchi's oysters are 조개류 (2026-11-25; 새우젓 was tagged shellfish)
+    assert result.hits == ["is_fish", "is_shellfish", "is_shrimp"]
     assert result.owner_card is not None
     assert result.owner_card.flag == "has_unclear_jeotgal"
 

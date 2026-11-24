@@ -11,53 +11,53 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
     "김치": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "액젓", "tag": "is_shellfish"},
+            {"name": "굴", "tag": "is_shellfish"},
             {"name": "멸치액젓", "tag": "is_fish"},
             {"name": "까나리액젓", "tag": "is_fish"},
             {"name": "새우젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "배추김치": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "액젓", "tag": "is_shellfish"},
+            {"name": "굴", "tag": "is_shellfish"},
             {"name": "멸치액젓", "tag": "is_fish"},
             {"name": "새우젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "열무김치": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "액젓", "tag": "is_shellfish"},
+            {"name": "굴", "tag": "is_shellfish"},
             {"name": "멸치액젓", "tag": "is_fish"},
             {"name": "새우젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "신김치": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "김칫국물": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "김칫잎": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "김치잎": {
         "has_unclear_jeotgal": [
             {"name": "액젓", "tag": "is_fish"},
-            {"name": "새우젓", "tag": "is_shellfish"},
+            {"name": "새우젓", "tag": "is_shrimp"},
         ],
     },
     "된장": {
@@ -159,13 +159,11 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
     },
     "새우젓": {
         "has_unclear_jeotgal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
     "새우젓국": {
         "has_unclear_jeotgal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
@@ -208,7 +206,6 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
     },
     "감동젓": {
         "has_unclear_jeotgal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
@@ -510,25 +507,21 @@ HIDDEN_RULES: dict[str, dict[str, list[dict]]] = {
     },
     "마른새우": {
         "has_hidden_animal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
     "말린새우": {
         "has_hidden_animal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
     "건새우가루": {
         "has_hidden_animal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
     "잔새우": {
         "has_hidden_animal": [
-            {"name": "새우", "tag": "is_shellfish"},
             {"name": "새우", "tag": "is_shrimp"},
         ],
     },
