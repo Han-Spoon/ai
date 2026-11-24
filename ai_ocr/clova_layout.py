@@ -20,6 +20,11 @@ _FORMATTED_PRICE_RE = re.compile(
     r"(?P<price>(?:[1-9]\d{0,2}(?:\s*[,\.]\s*\d{3})+|[1-9]\d{2,5}))"
     r"\s*원?(?![\d-])"
 )
+_SHORTHAND_PRICE_RE = re.compile(
+    r"(?<![\d])(?:₩\s*)?"
+    r"(?P<price>[\dOoO]{1,2}\s*\.\s*[\dOoO]{1,2})"
+    r"\s*원?(?![\dA-Za-z가-힣-])"
+)
 _KOREAN_RE = re.compile(r"[가-힣]")
 _BULLET_RE = re.compile(r"^[·•▶▷■□◆◇★☆▪▫/|\-]+$")
 _SERVING_ONLY_RE = re.compile(
@@ -127,9 +132,12 @@ def extract_clova_fields(payload: dict) -> list[dict]:
 
 def parse_spatial_pairs(tokens: list[dict]) -> list[SpatialPair]:
     """가격 field를 anchor로 왼쪽의 메뉴명 token을 결합한다."""
+    allow_shorthand = _uses_shorthand_price_notation(tokens)
     expanded = []
     for token in tokens:
-        expanded.extend(_split_price_token(token))
+        expanded.extend(
+            _split_price_token(token, allow_shorthand=allow_shorthand)
+        )
 
     price_tokens = [token for token in expanded if token.get("price") is not None]
     text_tokens = [token for token in expanded if token.get("price") is None]
@@ -436,10 +444,11 @@ def _is_monotonic_size_price(
 
 
 def count_price_anchors(tokens: list[dict]) -> int:
+    allow_shorthand = _uses_shorthand_price_notation(tokens)
     return sum(
         1
         for token in tokens
-        for part in _split_price_token(token)
+        for part in _split_price_token(token, allow_shorthand=allow_shorthand)
         if part.get("price") is not None
     )
 
@@ -479,7 +488,28 @@ def should_retry_with_preprocessing(tokens: list[dict], menus: list[dict]) -> bo
     return coverage < 0.72 or single_chars > max(1, len(menus) // 4)
 
 
-def _split_price_token(token: dict) -> list[dict]:
+def _uses_shorthand_price_notation(tokens: list[dict]) -> bool:
+    """반복되는 독립 소수 토큰이 있을 때만 만원 단위 축약 표기로 본다."""
+    shorthand_count = 0
+    for token in tokens:
+        text = token.get("text", "").strip()
+        if not text or _SERVING_ONLY_RE.fullmatch(text):
+            continue
+
+        match = _SHORTHAND_PRICE_RE.fullmatch(text)
+        if match is None or normalize_price(match.group()) is None:
+            continue
+
+        shorthand_count += 1
+        if shorthand_count >= 2:
+            return True
+
+    return False
+
+
+def _split_price_token(
+    token: dict, *, allow_shorthand: bool = False
+) -> list[dict]:
     text = token.get("text", "").strip()
     if not text or any(
         marker in text.lower() for marker in ("http://", "https://", "www.")
@@ -487,6 +517,10 @@ def _split_price_token(token: dict) -> list[dict]:
         return [token]
 
     match = _FORMATTED_PRICE_RE.search(text)
+    shorthand_match = False
+    if match is None and allow_shorthand:
+        match = _SHORTHAND_PRICE_RE.search(text)
+        shorthand_match = match is not None
     if not match:
         return [token]
 
@@ -496,7 +530,7 @@ def _split_price_token(token: dict) -> list[dict]:
 
     price_raw = match.group().strip()
     digit_count = len(re.sub(r"\D", "", match.group("price")))
-    if digit_count == 3 and "원" not in price_raw:
+    if digit_count == 3 and "원" not in price_raw and not shorthand_match:
         return [token]
     price = normalize_price(price_raw)
     if price is None:
