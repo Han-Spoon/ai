@@ -4583,7 +4583,7 @@
 곰탕,#닭안심요리 #닭곰탕만들기 #닭안심을 이용해서 담백하게 끓이는 닭곰탕,https://www.10000recipe.com/recipe/6886100,ambiguous,,,닭,false,unknown_attached_text:닭,8
 곰탕,진하고 깔끔한 한우사골곰탕 끓이는 법,https://www.10000recipe.com/recipe/6953611,variant,사골 곰탕,곰탕,사골,false,ingredient_modifier:사골,3
 곰탕,차가운 날씨에 더 좋은 차승원 얼큰닭곰탕,https://www.10000recipe.com/recipe/6858084,ambiguous,,,얼큰닭,false,unknown_attached_text:얼큰닭,12
-곰탕,사골곰탕으로 맛있는 부대찌개만들기(부대찌개만드는법),https://www.10000recipe.com/recipe/6836119,other_dish,부대찌개,,,false,different_known_menu:부대찌개,14
+곰탕,사골곰탕으로 맛있는 부대찌개만들기(부대찌개만드는법),https://www.10000recipe.com/recipe/6836119,other_dish,부대찌개,,,false,different_known_menu:부대찌개,15
 곰탕,사골곰탕,https://www.10000recipe.com/recipe/6842278,variant,사골 곰탕,곰탕,사골,false,ingredient_modifier:사골,3
 곰탕,꼬리곰탕,https://www.10000recipe.com/recipe/6844849,ambiguous,,,꼬리,false,unknown_attached_text:꼬리,6
 곰탕,[여름 보양식] 닭다리살 닭 곰탕,https://www.10000recipe.com/recipe/6917288,exact,곰탕,,,true,same_menu_alias:곰탕,9
@@ -11058,7 +11058,7 @@
 떡볶이,알리오올리오떡볶이,https://www.10000recipe.com/recipe/6864041,ambiguous,,,알리오올리오,false,unknown_attached_text:알리오올리오,8
 떡볶이,국물 떡볶이 간식 만들기,https://www.10000recipe.com/recipe/6866637,exact,떡볶이,,,true,same_menu_alias:떡볶이,12
 떡볶이,엽떡? NONO! 전자렌지로 뚝딱 '얌떡' 만들기ㅣ국물떡볶이ㅣYAMMoo,https://www.10000recipe.com/recipe/6915007,variant,물 떡볶이,떡볶이,물,false,ingredient_modifier:물,10
-떡볶이,떡볶이는 이제 노잼~ 차돌국물떡볶이가 진리!,https://www.10000recipe.com/recipe/6880837,variant,물 떡볶이,떡볶이,물,false,ingredient_modifier:물,17
+떡볶이,떡볶이는 이제 노잼~ 차돌국물떡볶이가 진리!,https://www.10000recipe.com/recipe/6880837,variant,물 떡볶이,떡볶이,물,false,ingredient_modifier:물,18
 떡볶이,추억소환~ 길거리표 밀떡 떡볶이,https://www.10000recipe.com/recipe/6879433,variant,밀떡 떡볶이,떡볶이,밀떡,false,spaced_ingredient_modifier:밀떡,9
 떡볶이,떡볶이,https://www.10000recipe.com/recipe/1701808,exact,떡볶이,,,true,same_menu_alias:떡볶이,6
 떡볶이,떡볶이,https://www.10000recipe.com/recipe/6931048,exact,떡볶이,,,true,same_menu_alias:떡볶이,5
@@ -11140,12 +11140,12 @@
 라볶이,"초스피드 라볶이(간편요리, 한그릇요리, 간식, 술안주, 자취요리)",https://www.10000recipe.com/recipe/6947587,exact,라볶이,,,true,same_menu_alias:라볶이,7
 라볶이,초간단 라볶이 황금레시피 국민간식 즉석떡볶이,https://www.10000recipe.com/recipe/6978225,other_dish,떡볶이,,,false,different_known_menu:떡볶이,10
 라볶이,"치즈떡볶이, 라볶이 만들기",https://www.10000recipe.com/recipe/6832019,other_dish,떡볶이,,,false,different_known_menu:떡볶이,12
-라볶이,라볶이 레시피 라볶이 만들기 라볶이 라면,https://www.10000recipe.com/recipe/7005769,other_dish,라면,,,false,different_dish_form:라면,13
+라볶이,라볶이 레시피 라볶이 만들기 라볶이 라면,https://www.10000recipe.com/recipe/7005769,other_dish,라면,,,false,different_dish_form:라면,14
 라볶이,라볶이 만들기,https://www.10000recipe.com/recipe/4607842,exact,라볶이,,,true,same_menu_alias:라볶이,11
 라볶이,라볶이,https://www.10000recipe.com/recipe/6855693,exact,라볶이,,,true,same_menu_alias:라볶이,13
 라볶이,라볶이,https://www.10000recipe.com/recipe/1212077,exact,라볶이,,,true,same_menu_alias:라볶이,14
 라볶이,라볶이 만들기,https://www.10000recipe.com/recipe/6945491,exact,라볶이,,,true,same_menu_alias:라볶이,17
-라볶이,라볶이 만들기,https://www.10000recipe.com/recipe/7030448,exact,라볶이,,,true,same_menu_alias:라볶이,11
+라볶이,라볶이 만들기,https://www.10000recipe.com/recipe/7030448,exact,라볶이,,,true,same_menu_alias:라볶이,12
 라볶이,라볶이 만들기 라면소프 라볶이 레시피,https://www.10000recipe.com/recipe/7014359,other_dish,라면,,,false,different_dish_form:라면,8
 라볶이,백파더 라볶이 /초간단 라볶이,https://www.10000recipe.com/recipe/6938575,exact,라볶이,,,true,same_menu_alias:라볶이,5
 라볶이,라볶이 레시피 라볶이 황금레시피,https://www.10000recipe.com/recipe/7020128,exact,라볶이,,,true,same_menu_alias:라볶이,12
@@ -11154,7 +11154,7 @@
 라볶이,라볶이,https://www.10000recipe.com/recipe/6648820,exact,라볶이,,,true,same_menu_alias:라볶이,12
 라볶이,라볶이~*,https://www.10000recipe.com/recipe/6951788,exact,라볶이,,,true,same_menu_alias:라볶이,10
 라볶이,#라면요리 #라볶이만들기 #라볶이양념 #라볶이육수 #라면스프 #신라면블랙,https://www.10000recipe.com/recipe/7064191,other_dish,라면,,,false,different_dish_form:라면,12
-라볶이,라볶이 레시피,https://www.10000recipe.com/recipe/7054810,exact,라볶이,,,true,same_menu_alias:라볶이,13
+라볶이,라볶이 레시피,https://www.10000recipe.com/recipe/7054810,exact,라볶이,,,true,same_menu_alias:라볶이,14
 라볶이,라볶이 만드는법,https://www.10000recipe.com/recipe/6884884,exact,라볶이,,,true,same_menu_alias:라볶이,12
 라볶이,라볶이는 정석대로~,https://www.10000recipe.com/recipe/6833481,ambiguous,,,는,false,unknown_attached_text:는,11
 라볶이,라볶이 레시피,https://www.10000recipe.com/recipe/7068128,exact,라볶이,,,true,same_menu_alias:라볶이,9
@@ -11165,7 +11165,7 @@
 라볶이,매운 라볶이 황금레시피 라볶이 맛있게 만드는 방법,https://www.10000recipe.com/recipe/6940353,variant,매운 라볶이,라볶이,매운,false,spaced_ingredient_modifier:매운,11
 라볶이,간단 라볶이 만드는 법/ 백종원라볶이/ 라면볶이 레시피,https://www.10000recipe.com/recipe/7042792,other_dish,라면,,,false,different_dish_form:라면,8
 라볶이,[라볶이] 맛있는 간식 라볶이~ 간단하게 만들어볼까요 -양싸,https://www.10000recipe.com/recipe/6833733,exact,라볶이,,,true,same_menu_alias:라볶이,15
-라볶이,라볶이만드는법 떡국떡 간단 라볶이 만들기 소스 황금레시피,https://www.10000recipe.com/recipe/7080385,exact,라볶이,,,true,same_menu_alias:라볶이,13
+라볶이,라볶이만드는법 떡국떡 간단 라볶이 만들기 소스 황금레시피,https://www.10000recipe.com/recipe/7080385,exact,라볶이,,,true,same_menu_alias:라볶이,14
 라볶이,밥솥 라볶이,https://www.10000recipe.com/recipe/6938450,exact,라볶이,,,true,same_menu_alias:라볶이,6
 라볶이,간식 라볶이~*,https://www.10000recipe.com/recipe/6920154,exact,라볶이,,,true,same_menu_alias:라볶이,10
 라볶이,떡없는 라볶이 만들기,https://www.10000recipe.com/recipe/6949716,exact,라볶이,,,true,same_menu_alias:라볶이,6
@@ -11202,10 +11202,10 @@
 라볶이,짜모니 라볶이,https://www.10000recipe.com/recipe/6855961,exact,라볶이,,,true,same_menu_alias:라볶이,5
 라볶이,분식집 라볶이 만들기 편스토랑 류수영 라볶이 레시피 간단 라면볶이,https://www.10000recipe.com/recipe/7031441,other_dish,라면,,,false,different_dish_form:라면,8
 라볶이,시판용 국물떡볶이로 만드는 라볶이,https://www.10000recipe.com/recipe/6589845,other_dish,떡볶이,,,false,different_known_menu:떡볶이,8
-라볶이,라볶이 (초간단 초스피드레시피),https://www.10000recipe.com/recipe/6974102,exact,라볶이,,,true,same_menu_alias:라볶이,9
+라볶이,라볶이 (초간단 초스피드레시피),https://www.10000recipe.com/recipe/6974102,exact,라볶이,,,true,same_menu_alias:라볶이,10
 라볶이,라볶이 만들기 국물 쌀 떡볶이 만들기,https://www.10000recipe.com/recipe/7023007,other_dish,떡볶이,,,false,different_known_menu:떡볶이,11
 라볶이,"납작한 떡국떡으로 만드는, '만두 국물라볶이' !!",https://www.10000recipe.com/recipe/6885680,other_dish,떡만두국,,,false,different_known_menu:떡만두국,14
-라볶이,사골육수 국물 라볶이 황금레시피,https://www.10000recipe.com/recipe/7010191,exact,라볶이,,,true,same_menu_alias:라볶이,14
+라볶이,사골육수 국물 라볶이 황금레시피,https://www.10000recipe.com/recipe/7010191,exact,라볶이,,,true,same_menu_alias:라볶이,15
 라볶이,"백파더 라볶이 만들기, 초간단 5분 레시피",https://www.10000recipe.com/recipe/6939750,exact,라볶이,,,true,same_menu_alias:라볶이,9
 라볶이,어남선생 초간단 감칠맛 라볶이,https://www.10000recipe.com/recipe/7075840,exact,라볶이,,,true,same_menu_alias:라볶이,10
 라볶이,라볶이 (라면요리 라면볶이 간식 분식),https://www.10000recipe.com/recipe/7084318,other_dish,라면,,,false,different_dish_form:라면,11
@@ -11213,7 +11213,7 @@
 라볶이,라면요리 : 백종원 라볶이,https://www.10000recipe.com/recipe/6980659,other_dish,라면,,,false,different_dish_form:라면,8
 라볶이,초간단 분식집 라볶이,https://www.10000recipe.com/recipe/6893097,exact,라볶이,,,true,same_menu_alias:라볶이,11
 라볶이,라면만큼 쉬운 마약라볶이 만들기,https://www.10000recipe.com/recipe/7002352,other_dish,라면,,,false,different_dish_form:라면,9
-라볶이,국물 라볶이 양념 맛있게 만들어 먹어요!,https://www.10000recipe.com/recipe/7003094,variant,양념 라볶이,라볶이,양념,false,spaced_ingredient_modifier:양념,7
+라볶이,국물 라볶이 양념 맛있게 만들어 먹어요!,https://www.10000recipe.com/recipe/7003094,variant,양념 라볶이,라볶이,양념,false,spaced_ingredient_modifier:양념,8
 라볶이,라면으로 만드는 초간단 라볶이 레시피!,https://www.10000recipe.com/recipe/7064547,other_dish,라면,,,false,different_dish_form:라면,10
 라볶이,스페셜떡볶이 라볶이 레시피,https://www.10000recipe.com/recipe/7077518,other_dish,떡볶이,,,false,different_known_menu:떡볶이,13
 라볶이,♥[신혼밥상] 국민간식 라볶이,https://www.10000recipe.com/recipe/6916387,exact,라볶이,,,true,same_menu_alias:라볶이,16
@@ -11289,7 +11289,7 @@
 라볶이,매콤크림라볶이,https://www.10000recipe.com/recipe/6882551,ambiguous,,,매콤크림,false,unknown_attached_text:매콤크림,4
 라볶이,#일상먹거리 #소떡라볶이만들기 #불장란 #문어소떡 #라볶이만들기,https://www.10000recipe.com/recipe/7065606,variant,떡 라볶이,라볶이,떡,false,ingredient_modifier:떡,11
 라볶이,대패삼겹라볶이,https://www.10000recipe.com/recipe/7010754,ambiguous,,,대패삼겹,false,unknown_attached_text:대패삼겹,12
-라볶이,밥솥 로제 라볶이,https://www.10000recipe.com/recipe/6977863,exact,라볶이,,,true,same_menu_alias:라볶이,5
+라볶이,밥솥 로제 라볶이,https://www.10000recipe.com/recipe/6977863,exact,라볶이,,,true,same_menu_alias:라볶이,6
 라볶이,떡국떡라볶이,https://www.10000recipe.com/recipe/7020000,variant,떡 라볶이,라볶이,떡,false,ingredient_modifier:떡,13
 라볶이,남은피자 맛있게 먹는 피자라볶이 만들기! 피자와 라볶이는 찰떡궁합,https://www.10000recipe.com/recipe/6961386,other_dish,피자,,,false,different_dish_form:피자,10
 라볶이,오징어 간장라볶이 황금레시피 리얼리? : 이번엔 진짜다.,https://www.10000recipe.com/recipe/6889849,other_dish,오징어볶음,,,false,different_known_menu:오징어볶음,11
@@ -11319,7 +11319,7 @@
 라볶이,카레 라볶이 떡볶이 황금레시피,https://www.10000recipe.com/recipe/7013554,other_dish,떡볶이,,,false,different_known_menu:떡볶이,15
 라볶이,"인기메뉴 짜장면과 떡볶이를 함께 ,, 짜장 라볶이 황금레시피~!",https://www.10000recipe.com/recipe/6876274,other_dish,떡볶이,,,false,different_known_menu:떡볶이,7
 라볶이,떡볶이 고추장 양념장 황금레시피 국물떡볶이 라볶이 모두가능,https://www.10000recipe.com/recipe/7037819,other_dish,떡볶이,,,false,different_known_menu:떡볶이,12
-라볶이,중독성 갑 JMT 치즈 라볶이 레시피,https://www.10000recipe.com/recipe/6914663,variant,치즈 라볶이,라볶이,치즈,false,spaced_ingredient_modifier:치즈,13
+라볶이,중독성 갑 JMT 치즈 라볶이 레시피,https://www.10000recipe.com/recipe/6914663,variant,치즈 라볶이,라볶이,치즈,false,spaced_ingredient_modifier:치즈,14
 라볶이,살아있는 문어를 넣고 만든 문어라볶이 황금레시피입니다.,https://www.10000recipe.com/recipe/6854245,variant,문어 라볶이,라볶이,문어,false,ingredient_modifier:문어,11
 라볶이,인기만점 간식 라볶이짜장,https://www.10000recipe.com/recipe/6860032,ambiguous,,,짜장,false,unknown_attached_text:짜장,11
 라볶이,매콤 아삭한 깻잎 숙주 라볶이,https://www.10000recipe.com/recipe/6891789,variant,숙주 라볶이,라볶이,숙주,false,spaced_ingredient_modifier:숙주,15
@@ -11352,8 +11352,8 @@
 라볶이,국물떡볶이 황금레시피 /쌀떡볶이 라볶이 떡볶이양념 맛있게 만드는 법,https://www.10000recipe.com/recipe/7042356,other_dish,떡볶이,,,false,different_known_menu:떡볶이,11
 라볶이,남은 엽떡 요리 엽떡 활용법 / 엽떡짜장라볶이,https://www.10000recipe.com/recipe/7008966,ambiguous,,,엽떡짜장,false,unknown_attached_text:엽떡짜장,4
 라볶이,떡국떡 떡볶이 레시피 류수영 분식집 라볶이 만들기 냉동 떡국떡 요리,https://www.10000recipe.com/recipe/7044063,other_dish,떡볶이,,,false,different_known_menu:떡볶이,9
-라볶이,국물떡볶이 누들떡볶이 밀떡볶이 라볶이 황금레시피 분식 점심메뉴추천,https://www.10000recipe.com/recipe/6996601,other_dish,떡볶이,,,false,different_known_menu:떡볶이,15
-라볶이,#순대라볶이만들기 #만능떡볶이양념육수만들기 #만능떡볶이양념 #뚝딱떡볶이만들기,https://www.10000recipe.com/recipe/6985869,other_dish,떡볶이,,,false,different_known_menu:떡볶이,11
+라볶이,국물떡볶이 누들떡볶이 밀떡볶이 라볶이 황금레시피 분식 점심메뉴추천,https://www.10000recipe.com/recipe/6996601,other_dish,떡볶이,,,false,different_known_menu:떡볶이,16
+라볶이,#순대라볶이만들기 #만능떡볶이양념육수만들기 #만능떡볶이양념 #뚝딱떡볶이만들기,https://www.10000recipe.com/recipe/6985869,other_dish,떡볶이,,,false,different_known_menu:떡볶이,12
 라볶이,"짜장떡볶이 만드는 방법 라볶이 떡볶이세트 (김말이튀김, 오징어튀김) 떡볶이 만들기",https://www.10000recipe.com/recipe/6848078,other_dish,오징어볶음,,,false,different_known_menu:오징어볶음,10
 라볶이,초간단레시피 쉬운요리 짜장떡볶이 만들기 짜장라볶이 아이간식 쉬운분식 짜장라면레시피,https://www.10000recipe.com/recipe/7043178,other_dish,떡볶이,,,false,different_known_menu:떡볶이,6
 라볶이,#개인의취향 #짜장라볶이만들기 #짜슐랭과짜장가루 #짜장라면과짜장떡볶이 #짜장떡볶이,https://www.10000recipe.com/recipe/7032298,other_dish,떡볶이,,,false,different_known_menu:떡볶이,7
@@ -15125,7 +15125,7 @@
 곱창전골,#냉동순대와 곱창볶음을 이용한 곱창전골만들기 #쉽게 구할 수 있는 사골곰탕국물로 끓이는 곱창전골~~ 이맛 알면 마트,https://www.10000recipe.com/recipe/6857239,other_dish,곰탕,,,false,different_known_menu:곰탕,13
 곱창전골,자칭 프리미업급 곱창전골,https://www.10000recipe.com/recipe/3188369,exact,곱창전골,,,true,same_menu_alias:곱창전골,16
 곱창전골,이열치열 '소곱창전골',https://www.10000recipe.com/recipe/6917154,ambiguous,,,소,false,unknown_attached_text:소,12
-곱창전골,#Gaucho곱창전골 #가우초곱창전골 #곱창전골만들기 #완제품 가우초곱창전골,https://www.10000recipe.com/recipe/6955152,other_dish,전골,,,false,different_dish_form:전골,4
+곱창전골,#Gaucho곱창전골 #가우초곱창전골 #곱창전골만들기 #완제품 가우초곱창전골,https://www.10000recipe.com/recipe/6955152,other_dish,전골,,,false,different_dish_form:전골,5
 곱창전골,"곱창전골 만들기,곱창전골양념 만드는법 ♬",https://www.10000recipe.com/recipe/6841636,other_dish,전골,,,false,different_dish_form:전골,23
 곱창전골,얼큰하고 구수한 돼지곱창 전골 황금레시피,https://www.10000recipe.com/recipe/6905178,exact,곱창전골,,,true,same_menu_alias:곱창전골,14
 곱창전골,한잔을 부르는 곱창전골,https://www.10000recipe.com/recipe/7003092,exact,곱창전골,,,true,same_menu_alias:곱창전골,21
@@ -16013,7 +16013,7 @@
 김치찌개,김치찌개 인기반찬,https://www.10000recipe.com/recipe/6872465,exact,김치찌개,,,true,same_menu_alias:김치찌개,11
 김치찌개,색다르게 즐기는 김치찌개 레시피,https://www.10000recipe.com/recipe/6892542,exact,김치찌개,,,true,same_menu_alias:김치찌개,14
 김치찌개,참치김치찌개 맛있게 끓이는법 바로 이거죠!,https://www.10000recipe.com/recipe/6919359,variant,참치 김치찌개,김치찌개,참치,false,ingredient_modifier:참치,5
-김치찌개,김치찌개와 라면사리,https://www.10000recipe.com/recipe/6946732,other_dish,라면,,,false,different_dish_form:라면,11
+김치찌개,김치찌개와 라면사리,https://www.10000recipe.com/recipe/6946732,other_dish,라면,,,false,different_dish_form:라면,12
 김치찌개,김치찌개 (백종원레시피따라해보기),https://www.10000recipe.com/recipe/6944445,exact,김치찌개,,,true,same_menu_alias:김치찌개,9
 김치찌개,김치찌개 맛있게 끓이는 법,https://www.10000recipe.com/recipe/6599220,exact,김치찌개,,,true,same_menu_alias:김치찌개,12
 김치찌개,백종원 꽁치김치찌개,https://www.10000recipe.com/recipe/6840428,variant,꽁치 김치찌개,김치찌개,꽁치,false,ingredient_modifier:꽁치,9
@@ -16804,7 +16804,7 @@
 순두부찌개,"들깨 순두부찌개, 들깨 두부찌개",https://www.10000recipe.com/recipe/6950586,other_dish,찌개,,,false,different_dish_form:찌개,9
 부대찌개,부대찌개 양념 만드는법 홀릭되는 맛임,https://www.10000recipe.com/recipe/6884636,variant,양념 부대찌개,부대찌개,양념,false,spaced_ingredient_modifier:양념,15
 부대찌개,부대찌개 황금레시피 만드는법,https://www.10000recipe.com/recipe/6842041,exact,부대찌개,,,true,same_menu_alias:부대찌개,13
-부대찌개,부대찌개 황금레시피! 육수 NO!,https://www.10000recipe.com/recipe/6869764,exact,부대찌개,,,true,same_menu_alias:부대찌개,16
+부대찌개,부대찌개 황금레시피! 육수 NO!,https://www.10000recipe.com/recipe/6869764,exact,부대찌개,,,true,same_menu_alias:부대찌개,17
 부대찌개,【초간단으로 놀부부대찌개 완벽하게 따라잡는 비법~!!】,https://www.10000recipe.com/recipe/6868533,ambiguous,,,놀부,false,unknown_attached_text:놀부,11
 부대찌개,식당보다 맛있는 간단 부대찌개 레시피,https://www.10000recipe.com/recipe/6924025,exact,부대찌개,,,true,same_menu_alias:부대찌개,11
 부대찌개,부대찌개 끓이기,https://www.10000recipe.com/recipe/4053370,exact,부대찌개,,,true,same_menu_alias:부대찌개,13
@@ -16856,7 +16856,7 @@
 부대찌개,집에서 부대찌개 끓이기,https://www.10000recipe.com/recipe/6843465,exact,부대찌개,,,true,same_menu_alias:부대찌개,14
 부대찌개,냉장고에 있는 재료들을 모두 모아 내맘대로 Johnson탕(부대찌개),https://www.10000recipe.com/recipe/3136266,exact,부대찌개,,,true,same_menu_alias:부대찌개,7
 부대찌개,의정부 부대찌개 따라잡기,https://www.10000recipe.com/recipe/2513024,exact,부대찌개,,,true,same_menu_alias:부대찌개,17
-부대찌개,사골곰탕으로 맛있는 부대찌개만들기(부대찌개만드는법),https://www.10000recipe.com/recipe/6836119,other_dish,곰탕,,,false,different_known_menu:곰탕,14
+부대찌개,사골곰탕으로 맛있는 부대찌개만들기(부대찌개만드는법),https://www.10000recipe.com/recipe/6836119,other_dish,곰탕,,,false,different_known_menu:곰탕,15
 부대찌개,부대찌개 맛있게 끓이는 법,https://www.10000recipe.com/recipe/4591706,exact,부대찌개,,,true,same_menu_alias:부대찌개,13
 부대찌개,사먹는 것보다 맛있는 부대찌개 끓이기,https://www.10000recipe.com/recipe/6872408,exact,부대찌개,,,true,same_menu_alias:부대찌개,21
 부대찌개,집에서 만드는 푸짐한 부대찌개,https://www.10000recipe.com/recipe/6838413,exact,부대찌개,,,true,same_menu_alias:부대찌개,15
@@ -16899,7 +16899,7 @@
 부대찌개,'요리' 김치부대찌개,https://www.10000recipe.com/recipe/6862334,variant,김치 부대찌개,부대찌개,김치,false,ingredient_modifier:김치,16
 부대찌개,육수 없이 만드는 백종원 부대찌개 만들기,https://www.10000recipe.com/recipe/6966128,exact,부대찌개,,,true,same_menu_alias:부대찌개,15
 부대찌개,베이크드빈스가 들어간 부대찌개 레시피,https://www.10000recipe.com/recipe/6990836,other_dish,베이크,,,false,different_dish_form:베이크,15
-부대찌개,사골육수없이 부대찌개 만들기,https://www.10000recipe.com/recipe/6945109,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
+부대찌개,사골육수없이 부대찌개 만들기,https://www.10000recipe.com/recipe/6945109,exact,부대찌개,,,true,same_menu_alias:부대찌개,11
 부대찌개,저녁메뉴추천! 사골곰탕 육수로 부대찌개 끓이기 초간단 부대찌개 황금레시피,https://www.10000recipe.com/recipe/7021569,other_dish,곰탕,,,false,different_known_menu:곰탕,17
 부대찌개,스팸부대찌개 & 스팸전,https://www.10000recipe.com/recipe/6835150,ambiguous,,,스팸,false,unknown_attached_text:스팸,15
 부대찌개,집에서 푸짐하게 즐기는 부대찌개 황금레시피,https://www.10000recipe.com/recipe/6919633,exact,부대찌개,,,true,same_menu_alias:부대찌개,22
@@ -16988,7 +16988,7 @@
 부대찌개,밥솥 부대찌개,https://www.10000recipe.com/recipe/6973077,exact,부대찌개,,,true,same_menu_alias:부대찌개,14
 부대찌개,매콤한 부대찌개,https://www.10000recipe.com/recipe/7084622,exact,부대찌개,,,true,same_menu_alias:부대찌개,17
 부대찌개,"부대찌개 맛있게 끓이는 법, 부대찌개 양념장 황금레시피",https://www.10000recipe.com/recipe/7053049,other_dish,찌개,,,false,different_dish_form:찌개,15
-부대찌개,보글보글 끓여먹는 부대찌개,https://www.10000recipe.com/recipe/6843681,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
+부대찌개,보글보글 끓여먹는 부대찌개,https://www.10000recipe.com/recipe/6843681,exact,부대찌개,,,true,same_menu_alias:부대찌개,11
 부대찌개,찐~한 맛의 부대찌개 끓이기,https://www.10000recipe.com/recipe/7071755,exact,부대찌개,,,true,same_menu_alias:부대찌개,18
 부대찌개,부대찌개..비오는날엔 얼큰한 부대찌개!!(생생정보통),https://www.10000recipe.com/recipe/6846787,other_dish,찌개,,,false,different_dish_form:찌개,11
 부대찌개,부대찌개 간단 레시피 사골육수 부대찌개 황금레시피 양념,https://www.10000recipe.com/recipe/7071976,other_dish,찌개,,,false,different_dish_form:찌개,18
@@ -16996,7 +16996,7 @@
 부대찌개,[은식당]부대찌개,https://www.10000recipe.com/recipe/6880533,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
 부대찌개,부대찌개 황금레시피 깔끔하면서도 개운한맛의 부대찌개...,https://www.10000recipe.com/recipe/6944642,other_dish,찌개,,,false,different_dish_form:찌개,14
 부대찌개,부대찌개 양념장 저녁 메뉴 추천 부대찌개 만들기,https://www.10000recipe.com/recipe/7023730,other_dish,찌개,,,false,different_dish_form:찌개,10
-부대찌개,부대찌개 황금레시피 부대찌개양념 맛있게 만드는법,https://www.10000recipe.com/recipe/7067399,other_dish,찌개,,,false,different_dish_form:찌개,15
+부대찌개,부대찌개 황금레시피 부대찌개양념 맛있게 만드는법,https://www.10000recipe.com/recipe/7067399,other_dish,찌개,,,false,different_dish_form:찌개,16
 부대찌개,부대찌개햄 듬뿍! 진한 국물 부대찌개 레시피,https://www.10000recipe.com/recipe/7083854,other_dish,찌개,,,false,different_dish_form:찌개,16
 부대찌개,초간단 부대찌개 황금레시피/ 짜글이 부대찌개 맛있게 끓이는법/ 간편하고 맛있는 부대찌개 레시피,https://www.10000recipe.com/recipe/7034947,other_dish,짜글이,,,false,different_dish_form:짜글이,19
 부대찌개,#소세지요리 #김치요리 #부대찌개만들기 #부대찌개양념만들기 #집에서햄소세지듬뿍넣고만드는부대찌개,https://www.10000recipe.com/recipe/7067656,other_dish,찌개,,,false,different_dish_form:찌개,12
@@ -17004,7 +17004,7 @@
 부대찌개,류수영 부대찌개 양념장 사골곰탕 부대찌개 만드는법,https://www.10000recipe.com/recipe/7060214,other_dish,곰탕,,,false,different_known_menu:곰탕,17
 부대찌개,부대찌개 황금레시피 간단 사골육수 부대찌개 양념 재료,https://www.10000recipe.com/recipe/7048265,other_dish,찌개,,,false,different_dish_form:찌개,18
 부대찌개,부대찌개 맛있게 끓이는 법,https://www.10000recipe.com/recipe/6836824,exact,부대찌개,,,true,same_menu_alias:부대찌개,11
-부대찌개,얼큰한 부대찌개 끓이는 법,https://www.10000recipe.com/recipe/6591458,exact,부대찌개,,,true,same_menu_alias:부대찌개,12
+부대찌개,얼큰한 부대찌개 끓이는 법,https://www.10000recipe.com/recipe/6591458,exact,부대찌개,,,true,same_menu_alias:부대찌개,13
 부대찌개,(20분요리)부대찌개,https://www.10000recipe.com/recipe/6902116,exact,부대찌개,,,true,same_menu_alias:부대찌개,15
 부대찌개,부대찌개 황금레시피,https://www.10000recipe.com/recipe/6975415,exact,부대찌개,,,true,same_menu_alias:부대찌개,17
 부대찌개,부대찌개 황금레시피 부대찌개 양념장 만드는법,https://www.10000recipe.com/recipe/7027461,other_dish,찌개,,,false,different_dish_form:찌개,17
@@ -17035,7 +17035,7 @@
 부대찌개,부대찌개끓이기 황금레시피,https://www.10000recipe.com/recipe/6935948,ambiguous,,,끓이기,false,unknown_attached_text:끓이기,16
 부대찌개,햄듬뿍 부대찌개,https://www.10000recipe.com/recipe/7085380,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
 부대찌개,끓이지 마세요! 볶아먹는 부대찌개 레시피를 소개합니다!,https://www.10000recipe.com/recipe/7070732,exact,부대찌개,,,true,same_menu_alias:부대찌개,15
-부대찌개,실패없이 간단하게 만드는 부대찌개레시피/ 놀부부대찌개맛 완벽히 따라잡기!,https://www.10000recipe.com/recipe/6966558,other_dish,찌개,,,false,different_dish_form:찌개,13
+부대찌개,실패없이 간단하게 만드는 부대찌개레시피/ 놀부부대찌개맛 완벽히 따라잡기!,https://www.10000recipe.com/recipe/6966558,other_dish,찌개,,,false,different_dish_form:찌개,14
 부대찌개,부대찌개 황금레시피 햄듬뿍 부대찌개 양념 너무 쉬워요,https://www.10000recipe.com/recipe/7022757,other_dish,찌개,,,false,different_dish_form:찌개,17
 부대찌개,수제 소시지 스테이크와 부대찌개,https://www.10000recipe.com/recipe/6866972,exact,부대찌개,,,true,same_menu_alias:부대찌개,9
 부대찌개,사골육수 부대찌개 레시피,https://www.10000recipe.com/recipe/7066797,exact,부대찌개,,,true,same_menu_alias:부대찌개,16
@@ -17074,7 +17074,7 @@
 부대찌개,편스토랑 류수영 부대찌개 레시피,https://www.10000recipe.com/recipe/7036218,exact,부대찌개,,,true,same_menu_alias:부대찌개,14
 부대찌개,육수가 필요 없는 얼큰한 부대찌개 쉽게 만드는 법 #부대찌개 #스팸 요리 #열라면 #레시피,https://www.10000recipe.com/recipe/7051955,other_dish,찌개,,,false,different_dish_form:찌개,12
 부대찌개,버섯을 넣어 감칠맛을 살린 부대찌개,https://www.10000recipe.com/recipe/6732518,exact,부대찌개,,,true,same_menu_alias:부대찌개,17
-부대찌개,부대찌개 황금레시피 ♥ 보글보글 끓이기!!,https://www.10000recipe.com/recipe/6852007,exact,부대찌개,,,true,same_menu_alias:부대찌개,10
+부대찌개,부대찌개 황금레시피 ♥ 보글보글 끓이기!!,https://www.10000recipe.com/recipe/6852007,exact,부대찌개,,,true,same_menu_alias:부대찌개,11
 부대찌개,부대찌개 이 레시피대로만 해드세요! 꿀팁들 전수,https://www.10000recipe.com/recipe/7046020,exact,부대찌개,,,true,same_menu_alias:부대찌개,15
 부대찌개,"간단한 부대찌개 레시피, 집에서 만들어 먹자!",https://www.10000recipe.com/recipe/6970509,exact,부대찌개,,,true,same_menu_alias:부대찌개,12
 부대찌개,부대찌개 양념장 끓이는 법,https://www.10000recipe.com/recipe/6978531,variant,양념장 부대찌개,부대찌개,양념장,false,spaced_ingredient_modifier:양념장,14
